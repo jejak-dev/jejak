@@ -4,6 +4,7 @@ import { createRunner, type AgentRunner } from "./agent";
 import { localGuard } from "./guard";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
 import { loadRegistry, providersPath } from "./provider-store";
+import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
 import { SessionManager } from "./sessions/session-manager";
@@ -19,6 +20,7 @@ export interface CreateAppOptions {
   fetch?: typeof fetch;
   runner?: AgentRunner;
   sessions?: SessionManager;
+  client?: ClientRoutesOptions;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -38,16 +40,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .use(sessionRoutes({ manager }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
-    .get(
-      "/",
-      () =>
-        new Response(
-          "<!doctype html><meta charset=utf-8><title>Jejak</title>" +
-            "<body style=\"font-family:system-ui;margin:3rem\"><h1>Jejak</h1>" +
-            `<p>Server berjalan. Versi ${VERSION}.</p></body>`,
-          { headers: { "content-type": "text/html; charset=utf-8" } },
-        ),
-    );
+    .use(clientRoutes(options.client));
 }
 
 export function startServer(options: ServeOptions = {}) {
