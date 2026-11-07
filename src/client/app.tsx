@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { Composer } from "./components/Composer";
+import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { ReplyBar } from "./components/ReplyBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
@@ -8,6 +9,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
 import { useHashRoute, useInfo, useRegistry, useSessions, useTimeline } from "./hooks";
 import { createApiClient } from "./lib/api";
+import { readPanelPrefs, writePanelPrefs } from "./lib/panel-prefs";
 
 export function App() {
   const api = useMemo(() => createApiClient(), []);
@@ -22,6 +24,7 @@ export function App() {
   const [interruptError, setInterruptError] = useState<string | undefined>(undefined);
   const [interrupting, setInterrupting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(() => readPanelPrefs().open);
 
   const activeProfile = view?.profiles.find((profile) => profile.id === view.activeProfileId);
   const activeProfileLabel = activeProfile?.name ?? view?.activeProfileId;
@@ -46,6 +49,16 @@ export function App() {
 
   const openDrawer = useCallback((): void => setDrawerOpen(true), []);
   const closeDrawer = useCallback((): void => setDrawerOpen(false), []);
+
+  const onPanelOpenChange = useCallback((open: boolean): void => {
+    setPanelOpen(open);
+    writePanelPrefs({ open });
+  }, []);
+  const togglePanel = useCallback((): void => {
+    const next = !panelOpen;
+    setPanelOpen(next);
+    writePanelPrefs({ open: next });
+  }, [panelOpen]);
 
   const onSaved = useCallback((): void => {
     void reload();
@@ -141,15 +154,32 @@ export function App() {
               onInterrupt={onInterrupt}
               onMenu={openDrawer}
               busy={interrupting}
+              panelOpen={panelOpen}
+              onTogglePanel={togglePanel}
               error={headerError}
             />
-            <Timeline
-              items={timeline.items}
-              connection={timeline.connection}
-              cwd={selected.cwd}
-              onDecide={onDecide}
-            />
-            <ReplyBar key={selected.id} api={api} session={selected} refresh={refresh} />
+            <div class="jk-main-body">
+              <div class="jk-main-col">
+                <Timeline
+                  items={timeline.items}
+                  connection={timeline.connection}
+                  cwd={selected.cwd}
+                  onDecide={onDecide}
+                />
+                <ReplyBar key={selected.id} api={api} session={selected} refresh={refresh} />
+              </div>
+              {panelOpen && (
+                <Panel
+                  key={selected.id}
+                  api={api}
+                  sessionId={selected.id}
+                  eventCount={selected.eventCount}
+                  status={timeline.status ?? selected.status}
+                  open={panelOpen}
+                  onOpenChange={onPanelOpenChange}
+                />
+              )}
+            </div>
           </>
         ) : (
           <>

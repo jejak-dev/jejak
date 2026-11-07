@@ -167,6 +167,94 @@ describe("createApiClient", () => {
     expect((caught as ApiError).message).toBe("antrean penuh");
   });
 
+  test("getFiles GET dengan query path ter-encode", async () => {
+    const payload = {
+      path: "src/isi folder",
+      entries: [{ name: "a.txt", type: "file" as const, size: 12 }],
+      truncated: false,
+    };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getFiles("s 1", "src/isi folder")).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/files?path=src%2Fisi%20folder");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("getFiles tanpa path tidak memakai query", async () => {
+    const payload = { path: "", entries: [], truncated: false };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getFiles("s1")).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/sessions/s1/files");
+  });
+
+  test("getFiles 404 memakai pesan server sebagai ApiError", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Path tidak ditemukan." }, 404));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.getFiles("s1", "hilang");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(404);
+    expect((caught as ApiError).message).toBe("Path tidak ditemukan.");
+  });
+
+  test("getFile GET memakai query path ter-encode dan mengembalikan isi", async () => {
+    const payload = { path: "a b.txt", size: 5, binary: false, truncated: false, content: "halo\n" };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getFile("s1", "a b.txt")).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/sessions/s1/file?path=a%20b.txt");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("getFile 400 memakai pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Path bukan berkas biasa." }, 400));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.getFile("s1", "dir");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(400);
+    expect((caught as ApiError).message).toBe("Path bukan berkas biasa.");
+  });
+
+  test("getChanges GET dan mengembalikan daftar perubahan", async () => {
+    const payload = {
+      isRepo: true,
+      files: [
+        {
+          path: "src/a.ts",
+          status: "M" as const,
+          additions: 2,
+          deletions: 1,
+          binary: false,
+          hunks: [],
+        },
+      ],
+      truncated: false,
+    };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch, baseUrl: "http://localhost:9" });
+
+    expect(await api.getChanges("s 1")).toEqual(payload);
+    expect(calls[0]?.url).toBe("http://localhost:9/api/sessions/s%201/changes");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
   test("getProviders GET dan mengembalikan payload apa adanya", async () => {
     const payload = { registry: { profiles: [] } };
     const { fetch, calls } = fakeFetch(() => jsonResponse(payload));

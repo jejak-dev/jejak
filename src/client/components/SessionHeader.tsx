@@ -9,10 +9,11 @@ export interface TopbarProps {
   subtitleTitle?: string;
   state?: { label: string; dot: "" | "run" | "warn" | "bad" };
   action?: { label: string; onClick: () => void; disabled?: boolean };
+  panel?: { open: boolean; onToggle: () => void };
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, action, error }: TopbarProps) {
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, action, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
       <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
@@ -31,6 +32,17 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, action, 
           <span class={`jk-dot${state.dot === "" ? "" : ` jk-dot-${state.dot}`}`} aria-hidden="true" />
           {state.label}
         </span>
+      )}
+      {panel !== undefined && (
+        <button
+          type="button"
+          class="jk-icon-btn"
+          aria-label="Perubahan dan berkas"
+          aria-pressed={panel.open}
+          onClick={panel.onToggle}
+        >
+          <Icon name="folder" />
+        </button>
       )}
       {action !== undefined && (
         <button type="button" class="jk-pill-btn" onClick={action.onClick} disabled={action.disabled}>
@@ -53,6 +65,8 @@ export interface SessionHeaderProps {
   onInterrupt: () => void;
   onMenu: () => void;
   busy: boolean;
+  panelOpen: boolean;
+  onTogglePanel: () => void;
   error?: string;
 }
 
@@ -70,13 +84,23 @@ export function sessionState(
   return { label: "Selesai", dot: "" };
 }
 
-export function SessionHeader({ session, status, onInterrupt, onMenu, busy, error }: SessionHeaderProps) {
+export function SessionHeader({
+  session,
+  status,
+  onInterrupt,
+  onMenu,
+  busy,
+  panelOpen,
+  onTogglePanel,
+  error,
+}: SessionHeaderProps) {
   const props: TopbarProps = {
     onMenu,
     title: session.title,
     subtitle: shortPath(session.cwd),
     subtitleTitle: session.cwd,
     state: sessionState(status, session.pendingPermissions),
+    panel: { open: panelOpen, onToggle: onTogglePanel },
   };
   if (status === "berjalan") props.action = { label: "Hentikan", onClick: onInterrupt, disabled: busy };
   if (error !== undefined) props.error = error;

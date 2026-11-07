@@ -1,4 +1,17 @@
+import type { Changes } from "../../server/files/changes";
+import type { DirectoryListing } from "../../server/files/list";
+import type { FileContent } from "../../server/files/read";
 import type { SessionInfo } from "../../server/sessions/session-manager";
+
+export type {
+  ChangedFile,
+  ChangeStatus,
+  Changes,
+  DiffLine,
+  Hunk,
+} from "../../server/files/changes";
+export type { DirEntry, DirectoryListing } from "../../server/files/list";
+export type { FileContent } from "../../server/files/read";
 
 export class ApiError extends Error {
   constructor(
@@ -34,6 +47,9 @@ export interface ApiClient {
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
+  getFiles(id: string, path?: string): Promise<DirectoryListing>;
+  getFile(id: string, path: string): Promise<FileContent>;
+  getChanges(id: string): Promise<Changes>;
   decidePermission(
     sessionId: string,
     requestId: string,
@@ -189,6 +205,28 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         { text },
       );
       return { queued: field(data, "queued") === true };
+    },
+
+    async getFiles(id, path) {
+      const query = path === undefined ? "" : `?path=${encodeURIComponent(path)}`;
+      return (await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/files${query}`,
+      )) as DirectoryListing;
+    },
+
+    async getFile(id, path) {
+      return (await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`,
+      )) as FileContent;
+    },
+
+    async getChanges(id) {
+      return (await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/changes`,
+      )) as Changes;
     },
 
     async getProviders() {
