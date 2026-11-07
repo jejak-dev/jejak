@@ -106,6 +106,9 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       if (input.provider.model !== undefined) {
         sdkOptions.model = input.provider.model;
       }
+      if (input.resumeSessionId !== undefined) {
+        sdkOptions.resume = input.resumeSessionId;
+      }
 
       // Add canUseTool handler if requestPermission is provided
       const requestPermission = input.requestPermission;

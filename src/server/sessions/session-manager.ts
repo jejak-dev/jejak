@@ -29,6 +29,7 @@ export interface SessionInfo {
   updatedAt: string;
   eventCount: number;
   pendingPermissions: number;
+  queued: number;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
 }
 
@@ -84,7 +85,12 @@ interface SessionRecord {
   pending: Map<string, Pending>;
   permissionTimeoutMs: number;
   price?: ModelPrice;
+  resolved: ResolvedProvider;
+  sdkSessionId?: string;
+  queue: string[];
 }
+
+const MAX_QUEUED_MESSAGES = 5;
 
 const PERMISSION_MODES: readonly SessionPermissionMode[] = ["default", "acceptEdits", "plan"];
 
@@ -207,6 +213,7 @@ export class SessionManager {
       updatedAt: timestamp,
       eventCount: 0,
       pendingPermissions: 0,
+      queued: 0,
     };
     if (resolved.model !== undefined) {
       info.model = resolved.model;
@@ -230,10 +237,12 @@ export class SessionManager {
       pending: new Map(),
       permissionTimeoutMs: this.permissionTimeoutMs,
       price: resolved.price,
+      resolved,
+      queue: [],
     };
     this.sessions.set(info.id, record);
 
-    void this.execute(record, validated.prompt, validated.cwd, resolved, validated.permissionMode);
+    this.startTurn(record, validated.prompt, false);
 
     return { ...info };
   }
@@ -278,12 +287,46 @@ export class SessionManager {
     }
   }
 
+  async send(id: string, text: string): Promise<{ queued: boolean }> {
+    const record = this.sessions.get(id);
+    if (record === undefined) {
+      throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
+    }
+
+    const message = this.validateMessage(text);
+
+    if (record.info.status === "berjalan") {
+      if (record.queue.length >= MAX_QUEUED_MESSAGES) {
+        throw new SessionError(
+          `Antrean pesan penuh; maksimal ${MAX_QUEUED_MESSAGES} pesan.`,
+          "penuh",
+        );
+      }
+      record.queue.push(message);
+      record.info.queued = record.queue.length;
+      this.notify(record);
+      return { queued: true };
+    }
+
+    if (record.sdkSessionId === undefined) {
+      throw new SessionError(
+        "Sesi ini belum punya riwayat untuk dilanjutkan.",
+        "tidak-valid",
+      );
+    }
+
+    this.assertConcurrencyCapacity();
+    this.startTurn(record, message, true);
+    return { queued: false };
+  }
+
   interrupt(id: string): boolean {
     const record = this.sessions.get(id);
     if (record === undefined || record.info.status !== "berjalan") {
       return false;
     }
     record.controller.abort();
+    this.clearQueue(record);
     return true;
   }
 
@@ -349,13 +392,34 @@ export class SessionManager {
     return { prompt, cwd, title, permissionMode };
   }
 
-  private ensureCapacity(): void {
+  private validateMessage(text: string): string {
+    if (typeof text !== "string") {
+      throw new SessionError("Pesan harus berupa teks.", "tidak-valid");
+    }
+    const message = text.trim();
+    if (message === "") {
+      throw new SessionError("Pesan tidak boleh kosong.", "tidak-valid");
+    }
+    if (message.length > this.maxPromptLength) {
+      throw new SessionError(
+        `Pesan terlalu panjang; maksimal ${this.maxPromptLength} karakter.`,
+        "tidak-valid",
+      );
+    }
+    return message;
+  }
+
+  private assertConcurrencyCapacity(): void {
     const running = Array.from(this.sessions.values()).filter(
       (record) => record.info.status === "berjalan",
     ).length;
     if (running >= this.maxConcurrent) {
       throw new SessionError("Terlalu banyak sesi berjalan; coba lagi nanti.", "penuh");
     }
+  }
+
+  private ensureCapacity(): void {
+    this.assertConcurrencyCapacity();
 
     while (this.sessions.size >= this.maxSessions) {
       const victim = Array.from(this.sessions.values()).find(
@@ -368,25 +432,63 @@ export class SessionManager {
     }
   }
 
+  private clearQueue(record: SessionRecord): void {
+    if (record.queue.length === 0 && record.info.queued === 0) {
+      return;
+    }
+    record.queue.length = 0;
+    record.info.queued = 0;
+    this.notify(record);
+  }
+
+  private startTurn(record: SessionRecord, text: string, isFollowUp: boolean): void {
+    record.controller = new AbortController();
+    let settle: () => void = () => {};
+    record.done = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    record.settle = settle;
+
+    this.setStatus(record, "berjalan");
+    if (isFollowUp) {
+      this.append(record, { type: "user_message", text });
+    }
+
+    void this.execute(
+      record,
+      text,
+      record.resolved,
+      record.info.permissionMode,
+      record.sdkSessionId,
+    );
+  }
+
   private async execute(
     record: SessionRecord,
     prompt: string,
-    cwd: string,
     provider: ResolvedProvider,
     permissionMode: SessionPermissionMode,
+    resumeSessionId: string | undefined,
   ): Promise<void> {
     let sawResult = false;
+    const input: Parameters<AgentRunner["run"]>[0] = {
+      prompt,
+      cwd: record.info.cwd,
+      provider,
+      permissionMode: permissionMode as PermissionMode,
+      signal: record.controller.signal,
+      requestPermission: (request) => this.requestPermission(record, request),
+    };
+    if (resumeSessionId !== undefined) {
+      input.resumeSessionId = resumeSessionId;
+    }
     try {
-      const events = this.runner.run({
-        prompt,
-        cwd,
-        provider,
-        permissionMode: permissionMode as PermissionMode,
-        signal: record.controller.signal,
-        requestPermission: (request) => this.requestPermission(record, request),
-      });
+      const events = this.runner.run(input);
 
       for await (const event of events) {
+        if (event.type === "session" && record.sdkSessionId === undefined) {
+          record.sdkSessionId = event.sessionId;
+        }
         if (event.type === "result") {
           sawResult = true;
           if (record.price !== undefined) {
@@ -422,6 +524,14 @@ export class SessionManager {
       }
       record.settle();
       this.notify(record);
+
+      if (record.info.status === "dibatalkan" || record.info.status === "gagal") {
+        this.clearQueue(record);
+      } else if (record.queue.length > 0) {
+        const next = record.queue.shift()!;
+        record.info.queued = record.queue.length;
+        this.startTurn(record, next, true);
+      }
     }
   }
 

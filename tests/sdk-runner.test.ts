@@ -319,3 +319,25 @@ test("createRunner memakai mock saat MOCK=true dan SDK saat tidak", async () => 
   expect(typeof sdkRunner.run).toBe("function");
   expect(sdkRunner).not.toBe(mockRunner);
 });
+
+test("resumeSessionId diteruskan sebagai opsi resume ke query", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ resumeSessionId: "s-lama" }),
+    ),
+  );
+
+  expect(received?.resume).toBe("s-lama");
+});
+
+test("tanpa resumeSessionId tidak ada kunci resume pada opsi query", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()));
+
+  expect("resume" in (received ?? {})).toBe(false);
+});

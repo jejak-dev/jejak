@@ -37,6 +37,7 @@ const SESSION: SessionInfo = {
   updatedAt: "2026-01-01T00:00:00.000Z",
   eventCount: 0,
   pendingPermissions: 0,
+  queued: 0,
 };
 
 describe("createApiClient", () => {

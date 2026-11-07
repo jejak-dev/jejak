@@ -79,6 +79,18 @@ function parseCreateBody(body: unknown): CreateSessionInput {
   return input;
 }
 
+function parseMessagesBody(body: unknown): string {
+  const parsed = parseJsonBody(body);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw invalid("Body permintaan harus berupa objek.");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.text !== "string") {
+    throw invalid("Field text harus berupa string.");
+  }
+  return record.text;
+}
+
 function parseSequence(raw: string | null): number {
   if (raw === null) return 0;
   const trimmed = raw.trim();
@@ -122,6 +134,19 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
       }
       return { session };
     })
+    .post(
+      "/api/sessions/:id/messages",
+      async ({ params, body }) => {
+        try {
+          const text = parseMessagesBody(body);
+          const result = await manager.send(params.id, text);
+          return jsonResponse(200, { ok: true, queued: result.queued });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
     .post("/api/sessions/:id/interrupt", ({ params }) => {
       if (manager.get(params.id) === undefined) {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });

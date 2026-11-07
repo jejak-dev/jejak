@@ -31,7 +31,8 @@ export type AgentEvent =
       /** Batas waktu keputusan (ISO); setelah itu izin ditolak otomatis. */
       expiresAt?: string;
     }
-  | { type: "permission_resolved"; id: string; decision: "allow" | "deny"; message?: string };
+  | { type: "permission_resolved"; id: string; decision: "allow" | "deny"; message?: string }
+  | { type: "user_message"; text: string };
 
 export const PERMISSION_EXPIRED_MESSAGE = "waktu izin habis";
 export const PERMISSION_STOPPED_MESSAGE = "sesi dihentikan";
@@ -47,6 +48,7 @@ export interface RunInput {
   permissionMode?: PermissionMode;
   signal?: AbortSignal;
   requestPermission?: PermissionHandler;
+  resumeSessionId?: string;
 }
 
 export interface AgentRunner {

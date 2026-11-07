@@ -474,3 +474,310 @@ describe("SessionManager kapasitas", () => {
     expect(usage?.estimatedCostUsd).toBeUndefined();
   });
 });
+
+interface RecordedRun {
+  prompt: string;
+  resumeSessionId?: string;
+}
+
+interface GatedTurn {
+  sessionId?: string;
+  result?: AgentEvent;
+}
+
+function gatedTurns(turns: GatedTurn[]): {
+  runner: AgentRunner;
+  runs: RecordedRun[];
+  releases: Array<() => void>;
+} {
+  const runs: RecordedRun[] = [];
+  const releases: Array<() => void> = [];
+  const runner: AgentRunner = {
+    async *run(input) {
+      const index = runs.length;
+      runs.push({ prompt: input.prompt, resumeSessionId: input.resumeSessionId });
+      const turn = turns[Math.min(index, turns.length - 1)] ?? {};
+      if (turn.sessionId !== undefined) {
+        yield { type: "session", sessionId: turn.sessionId };
+      }
+      yield { type: "text", text: `giliran ${index}` };
+      await new Promise<void>((resolve) => {
+        releases[index] = resolve;
+      });
+      yield turn.result ?? { type: "result", ok: true };
+    },
+  };
+  return { runner, runs, releases };
+}
+
+function scriptedTurns(turns: AgentEvent[][]): { runner: AgentRunner; runs: RecordedRun[] } {
+  const runs: RecordedRun[] = [];
+  const runner: AgentRunner = {
+    async *run(input) {
+      const index = runs.length;
+      runs.push({ prompt: input.prompt, resumeSessionId: input.resumeSessionId });
+      const events = turns[Math.min(index, turns.length - 1)] ?? [];
+      for (const event of events) yield event;
+    },
+  };
+  return { runner, runs };
+}
+
+function recordingRunner(inner: AgentRunner): { runner: AgentRunner; runs: RecordedRun[] } {
+  const runs: RecordedRun[] = [];
+  return {
+    runs,
+    runner: {
+      async *run(input) {
+        runs.push({ prompt: input.prompt, resumeSessionId: input.resumeSessionId });
+        yield* inner.run(input);
+      },
+    },
+  };
+}
+
+async function waitUntil(check: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    if (check()) return;
+    await new Promise((resolve) => setTimeout(resolve, 1));
+  }
+  throw new Error("kondisi tidak tercapai");
+}
+
+describe("SessionManager.send", () => {
+  test("giliran selesai dilanjutkan dengan resume dan event user_message", async () => {
+    const gated = gatedTurns([{ sessionId: "s-1" }, {}]);
+    const mgr = manager({ runner: gated.runner });
+    const info = await createOk(mgr);
+    await waitUntil(() => gated.releases.length > 0);
+    gated.releases[0]!();
+    await mgr.done(info.id);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+
+    const result = await mgr.send(info.id, "  pesan kedua  ");
+    expect(result).toEqual({ queued: false });
+    expect(mgr.get(info.id)?.status).toBe("berjalan");
+    expect(mgr.get(info.id)?.queued).toBe(0);
+    expect(gated.runs[1]).toEqual({ prompt: "pesan kedua", resumeSessionId: "s-1" });
+
+    await waitUntil(() => gated.releases.length > 1);
+    gated.releases[1]!();
+    await mgr.done(info.id);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+
+    const events = (await collect(mgr.events(info.id))).map((item) => item.event);
+    const userIndex = events.findIndex((event) => event.type === "user_message");
+    const firstResultIndex = events.findIndex((event) => event.type === "result");
+    const secondTurnTextIndex = events.findIndex(
+      (event) => event.type === "text" && event.text === "giliran 1",
+    );
+    expect(events[userIndex]).toEqual({ type: "user_message", text: "pesan kedua" });
+    expect(userIndex).toBeGreaterThan(firstResultIndex);
+    expect(secondTurnTextIndex).toBeGreaterThan(userIndex);
+    expect(events.filter((event) => event.type === "result")).toHaveLength(2);
+  });
+
+  test("sesi tanpa event session menolak lanjutan dengan tidak-valid", async () => {
+    const gated = gatedTurns([{}]);
+    const mgr = manager({ runner: gated.runner });
+    const info = await createOk(mgr);
+    await waitUntil(() => gated.releases.length > 0);
+    gated.releases[0]!();
+    await mgr.done(info.id);
+
+    await expect(mgr.send(info.id, "lanjut")).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "Sesi ini belum punya riwayat untuk dilanjutkan.",
+    });
+  });
+
+  test("event session kedua tidak menimpa sdkSessionId", async () => {
+    const scripted = scriptedTurns([
+      [
+        { type: "session", sessionId: "s-pertama" },
+        { type: "session", sessionId: "s-kedua" },
+        { type: "result", ok: true },
+      ],
+      [{ type: "result", ok: true }],
+    ]);
+    const mgr = manager({ runner: scripted.runner });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(await mgr.send(info.id, "lanjut")).toEqual({ queued: false });
+    await mgr.done(info.id);
+
+    expect(scripted.runs[1]?.resumeSessionId).toBe("s-pertama");
+  });
+
+  test("send saat berjalan mengantre lalu dijalankan FIFO otomatis", async () => {
+    const gated = gatedTurns([{ sessionId: "s-1" }, {}, {}]);
+    const mgr = manager({ runner: gated.runner });
+    const info = await createOk(mgr);
+    await waitUntil(() => gated.releases.length > 0);
+
+    expect(await mgr.send(info.id, "dua")).toEqual({ queued: true });
+    expect(mgr.get(info.id)?.queued).toBe(1);
+    expect(await mgr.send(info.id, "tiga")).toEqual({ queued: true });
+    expect(mgr.get(info.id)?.queued).toBe(2);
+    expect(gated.runs).toHaveLength(1);
+
+    gated.releases[0]!();
+    await waitUntil(() => gated.runs.length === 2 && gated.releases.length > 1);
+    expect(gated.runs[1]).toEqual({ prompt: "dua", resumeSessionId: "s-1" });
+    expect(mgr.get(info.id)?.status).toBe("berjalan");
+    expect(mgr.get(info.id)?.queued).toBe(1);
+
+    gated.releases[1]!();
+    await waitUntil(() => gated.runs.length === 3 && gated.releases.length > 2);
+    expect(gated.runs[2]).toEqual({ prompt: "tiga", resumeSessionId: "s-1" });
+    expect(mgr.get(info.id)?.queued).toBe(0);
+
+    gated.releases[2]!();
+    await mgr.done(info.id);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(mgr.get(info.id)?.queued).toBe(0);
+    expect(gated.runs).toHaveLength(3);
+  });
+
+  test("antrean maksimal 5 pesan lalu penuh", async () => {
+    const gated = gatedTurns([
+      { sessionId: "s-1" },
+      {},
+      {},
+      {},
+      {},
+      {},
+    ]);
+    const mgr = manager({ runner: gated.runner });
+    const info = await createOk(mgr);
+    await waitUntil(() => gated.releases.length > 0);
+
+    for (let index = 1; index <= 5; index += 1) {
+      expect(await mgr.send(info.id, `pesan-${index}`)).toEqual({ queued: true });
+    }
+    expect(mgr.get(info.id)?.queued).toBe(5);
+    await expect(mgr.send(info.id, "pesan-6")).rejects.toMatchObject({ code: "penuh" });
+    expect(mgr.get(info.id)?.queued).toBe(5);
+
+    mgr.interrupt(info.id);
+    await waitUntil(() => gated.releases.length > 0);
+    gated.releases[0]!();
+    await mgr.done(info.id);
+    expect(mgr.get(info.id)?.queued).toBe(0);
+  });
+
+  test("interrupt mengosongkan antrean dan pesan antre tidak berjalan", async () => {
+    const recorded = recordingRunner(abortingRunner());
+    const mgr = manager({ runner: recorded.runner });
+    const info = await createOk(mgr);
+
+    expect(await mgr.send(info.id, "antre")).toEqual({ queued: true });
+    expect(mgr.get(info.id)?.queued).toBe(1);
+
+    expect(mgr.interrupt(info.id)).toBe(true);
+    expect(mgr.get(info.id)?.queued).toBe(0);
+    await mgr.done(info.id);
+    expect(mgr.get(info.id)?.status).toBe("dibatalkan");
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(recorded.runs).toHaveLength(1);
+  });
+
+  test("giliran gagal mengosongkan antrean", async () => {
+    const gated = gatedTurns([
+      { sessionId: "s-1", result: { type: "result", ok: false, error: "meledak" } },
+      {},
+    ]);
+    const mgr = manager({ runner: gated.runner });
+    const info = await createOk(mgr);
+    await waitUntil(() => gated.releases.length > 0);
+
+    expect(await mgr.send(info.id, "antre")).toEqual({ queued: true });
+    gated.releases[0]!();
+    await mgr.done(info.id);
+
+    expect(mgr.get(info.id)?.status).toBe("gagal");
+    expect(mgr.get(info.id)?.queued).toBe(0);
+    expect(gated.runs).toHaveLength(1);
+  });
+
+  test("sesi tidak ditemukan, teks kosong, dan teks terlalu panjang ditolak", async () => {
+    const gated = gatedTurns([{ sessionId: "s-1" }]);
+    const mgr = manager({ runner: gated.runner, maxPromptLength: 10 });
+    await expect(mgr.send("s_tidakada", "halo")).rejects.toMatchObject({
+      code: "tidak-ditemukan",
+    });
+
+    const info = await createOk(mgr);
+    await waitUntil(() => gated.releases.length > 0);
+
+    for (const text of ["", "   ", "\n\t"]) {
+      await expect(mgr.send(info.id, text)).rejects.toMatchObject({ code: "tidak-valid" });
+    }
+    await expect(mgr.send(info.id, "x".repeat(11))).rejects.toMatchObject({
+      code: "tidak-valid",
+    });
+
+    mgr.interrupt(info.id);
+    await waitUntil(() => gated.releases.length > 0);
+    gated.releases[0]!();
+    await mgr.done(info.id);
+  });
+
+  test("kapasitas maxConcurrent penuh menolak lanjutan dengan penuh", async () => {
+    const runs: RecordedRun[] = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        runs.push({ prompt: input.prompt, resumeSessionId: input.resumeSessionId });
+        yield { type: "session", sessionId: "s-mixed" };
+        if (input.prompt.includes("tunggu")) {
+          await new Promise<void>((resolve) => {
+            if (input.signal?.aborted === true) {
+              resolve();
+              return;
+            }
+            input.signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+        }
+        yield { type: "result", ok: true };
+      },
+    };
+    const mgr = manager({ runner, maxConcurrent: 2 });
+
+    const first = await createOk(mgr, { prompt: "tunggu satu" });
+    const done = await createOk(mgr, { prompt: "selesai" });
+    await mgr.done(done.id);
+    const third = await createOk(mgr, { prompt: "tunggu tiga" });
+
+    await expect(mgr.send(done.id, "lanjut")).rejects.toMatchObject({ code: "penuh" });
+
+    mgr.interrupt(first.id);
+    await mgr.done(first.id);
+    mgr.interrupt(third.id);
+    await mgr.done(third.id);
+    expect(runs.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test("usage dari beberapa result per sesi tetap terakumulasi", async () => {
+    const scripted = scriptedTurns([
+      [
+        { type: "session", sessionId: "s-1" },
+        { type: "result", ok: true, inputTokens: 10, outputTokens: 5 },
+      ],
+      [{ type: "result", ok: true, inputTokens: 20, outputTokens: 7 }],
+    ]);
+    const mgr = manager({ runner: scripted.runner });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    await mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+
+    expect(mgr.get(info.id)?.usage).toMatchObject({
+      inputTokens: 30,
+      outputTokens: 12,
+    });
+    const events = await collect(mgr.events(info.id));
+    expect(events.filter((item) => item.event.type === "result")).toHaveLength(2);
+  });
+});

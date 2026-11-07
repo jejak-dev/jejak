@@ -385,3 +385,116 @@ describe("guard pada API sesi", () => {
     expect(res.status).toBe(415);
   });
 });
+
+describe("POST /api/sessions/:id/messages", () => {
+  test("sesi selesai dilanjutkan dengan 200 queued false", async () => {
+    const manager = new SessionManager({
+      runner: createMockRunner(),
+      resolveProvider: async () => ({ profileId: "lokal", apiKey: KEY }),
+    });
+    const server = makeApp({ sessions: manager });
+    const { id } = await createSession(server);
+    await manager.done(id);
+
+    const res = await req(server, "POST", `/api/sessions/${id}/messages`, {
+      body: { text: "lanjutkan" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, queued: false });
+
+    await manager.done(id);
+    const detail = await req(server, "GET", `/api/sessions/${id}`);
+    const data = (await detail.json()) as { session: { status: string; queued: number } };
+    expect(data.session.status).toBe("selesai");
+    expect(data.session.queued).toBe(0);
+  });
+
+  test("sesi berjalan mengantrekan pesan dengan 200 queued true", async () => {
+    const runner = waitingRunner();
+    const manager = new SessionManager({
+      runner,
+      resolveProvider: async () => ({ profileId: "lokal", apiKey: KEY }),
+    });
+    const server = makeApp({ runner, sessions: manager });
+    const { id } = await createSession(server);
+
+    const res = await req(server, "POST", `/api/sessions/${id}/messages`, {
+      body: { text: "antre" },
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, queued: true });
+
+    const detail = await req(server, "GET", `/api/sessions/${id}`);
+    const data = (await detail.json()) as { session: { queued: number } };
+    expect(data.session.queued).toBe(1);
+
+    manager.interrupt(id);
+    await manager.done(id);
+  });
+
+  test("penuh pada antrean menghasilkan 429", async () => {
+    const runner = waitingRunner();
+    const manager = new SessionManager({
+      runner,
+      resolveProvider: async () => ({ profileId: "lokal", apiKey: KEY }),
+    });
+    const server = makeApp({ runner, sessions: manager });
+    const { id } = await createSession(server);
+
+    for (let index = 0; index < 5; index += 1) {
+      const res = await req(server, "POST", `/api/sessions/${id}/messages`, {
+        body: { text: `antre-${index}` },
+      });
+      expect(res.status).toBe(200);
+    }
+    const full = await req(server, "POST", `/api/sessions/${id}/messages`, {
+      body: { text: "keenam" },
+    });
+    expect(full.status).toBe(429);
+
+    manager.interrupt(id);
+    await manager.done(id);
+  });
+
+  test("validasi 400 dan id tak ada 404", async () => {
+    const server = makeApp();
+    const { id } = await createSession(server);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    for (const body of [{ text: "" }, { text: 42 }, {}]) {
+      const res = await req(server, "POST", `/api/sessions/${id}/messages`, { body });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as { error: string };
+      expect(typeof data.error).toBe("string");
+    }
+
+    const missing = await req(server, "POST", "/api/sessions/s_tidakada/messages", {
+      body: { text: "halo" },
+    });
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toHaveProperty("error");
+  });
+
+  test("body non-JSON ditolak guard dan body JSON rusak ditolak 400", async () => {
+    const server = makeApp();
+    const { id } = await createSession(server);
+
+    const noContentType = await server.handle(
+      new Request(`http://127.0.0.1:3000/api/sessions/${id}/messages`, {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000" },
+        body: JSON.stringify({ text: "halo" }),
+      }),
+    );
+    expect(noContentType.status).toBe(415);
+
+    const broken = await server.handle(
+      new Request(`http://127.0.0.1:3000/api/sessions/${id}/messages`, {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+        body: "{bukan json",
+      }),
+    );
+    expect(broken.status).toBe(400);
+  });
+});

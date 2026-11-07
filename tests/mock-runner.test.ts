@@ -108,3 +108,16 @@ test("signal yang sudah aborted langsung menghasilkan error dan satu result", as
     { type: "result", ok: false, error: "dibatalkan" },
   ]);
 });
+
+test("resumeSessionId diterima dan skrip tetap berjalan dengan event session", async () => {
+  const events = await collect(
+    createMockRunner().run({ ...baseInput(), resumeSessionId: "s-lama" }),
+  );
+
+  expect(events[0]?.type).toBe("session");
+  const session = events[0]!;
+  if (session.type === "session") {
+    expect(typeof session.sessionId).toBe("string");
+  }
+  expect(events[events.length - 1]?.type).toBe("result");
+});
