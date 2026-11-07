@@ -1,6 +1,14 @@
+export interface ModelPrice {
+  input: number;
+  output: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
 export interface ModelEntry {
   id: string;
   label?: string;
+  price?: ModelPrice;
 }
 
 export interface ProviderProfile {
@@ -31,6 +39,7 @@ export interface ResolvedProvider {
   apiKey?: string;
   model?: string;
   lightModel?: string;
+  price?: ModelPrice;
 }
 
 const PROFILE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -105,8 +114,29 @@ function parseModels(raw: unknown, context: string): ModelEntry[] {
         entry.label = trimmedLabel;
       }
     }
+    const price = item.price;
+    if (price !== undefined && isRecord(price)) {
+      const parsed = parsePrice(price);
+      if (parsed !== undefined) entry.price = parsed;
+    }
     return entry;
   });
+}
+
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function parsePrice(raw: Record<string, unknown>): ModelPrice | undefined {
+  const input = raw.input;
+  const output = raw.output;
+  if (!isNonNegativeFiniteNumber(input) || !isNonNegativeFiniteNumber(output)) {
+    return undefined;
+  }
+  const price: ModelPrice = { input, output };
+  if (isNonNegativeFiniteNumber(raw.cacheRead)) price.cacheRead = raw.cacheRead;
+  if (isNonNegativeFiniteNumber(raw.cacheWrite)) price.cacheWrite = raw.cacheWrite;
+  return price;
 }
 
 function parseProfile(raw: unknown, index: number, env: Record<string, string | undefined>): ProviderProfile {
@@ -225,9 +255,18 @@ export function serializeRegistry(registry: ProviderRegistry): unknown {
     };
     if (profile.baseUrl !== undefined) serialized.baseUrl = profile.baseUrl;
     if (profile.apiKeyEnv !== undefined) serialized.apiKeyEnv = profile.apiKeyEnv;
-    serialized.models = profile.models.map((model) =>
-      model.label === undefined ? { id: model.id } : { id: model.id, label: model.label },
-    );
+    serialized.models = profile.models.map((model) => {
+      if (model.label === undefined) {
+        if (model.price === undefined) {
+          return { id: model.id };
+        }
+        return { id: model.id, price: model.price };
+      }
+      if (model.price === undefined) {
+        return { id: model.id, label: model.label };
+      }
+      return { id: model.id, label: model.label, price: model.price };
+    });
     if (profile.apiKey !== undefined && profile.apiKeyEnv === undefined) {
       serialized.apiKey = profile.apiKey;
     }
@@ -287,6 +326,27 @@ export function validateRegistry(registry: ProviderRegistry): string[] {
         errors.push(`Profil "${profile.id}" memiliki id model duplikat: "${model.id}".`);
       }
       modelIds.add(model.id);
+
+      // Validate price if present
+      if (model.price !== undefined) {
+        if (!isRecord(model.price)) {
+          errors.push(`Profil "${profile.id}" memiliki price untuk model "${model.id}" yang bukan objek.`);
+        } else {
+          const price = model.price;
+          if (typeof price.input !== "number" || !Number.isFinite(price.input) || price.input < 0) {
+            errors.push(`Profil "${profile.id}" memiliki price.input untuk model "${model.id}" yang tidak valid (harus angka berhingga >= 0).`);
+          }
+          if (typeof price.output !== "number" || !Number.isFinite(price.output) || price.output < 0) {
+            errors.push(`Profil "${profile.id}" memiliki price.output untuk model "${model.id}" yang tidak valid (harus angka berhingga >= 0).`);
+          }
+          if (price.cacheRead !== undefined && (typeof price.cacheRead !== "number" || !Number.isFinite(price.cacheRead) || price.cacheRead < 0)) {
+            errors.push(`Profil "${profile.id}" memiliki price.cacheRead untuk model "${model.id}" yang tidak valid (harus angka berhingga >= 0).`);
+          }
+          if (price.cacheWrite !== undefined && (typeof price.cacheWrite !== "number" || !Number.isFinite(price.cacheWrite) || price.cacheWrite < 0)) {
+            errors.push(`Profil "${profile.id}" memiliki price.cacheWrite untuk model "${model.id}" yang tidak valid (harus angka berhingga >= 0).`);
+          }
+        }
+      }
     }
 
     if (profile.models.length > 0 && modelIds.size > 0) {
@@ -349,7 +409,13 @@ export function resolveProvider(
   if (profile.apiKey !== undefined) resolved.apiKey = profile.apiKey;
 
   const model = selection.model ?? profile.defaultModel;
-  if (model !== undefined) resolved.model = model;
+  if (model !== undefined) {
+    resolved.model = model;
+    const modelEntry = profile.models.find((entry) => entry.id === model);
+    if (modelEntry?.price !== undefined) {
+      resolved.price = modelEntry.price;
+    }
+  }
 
   const lightModel = selection.lightModel ?? profile.lightModel;
   if (lightModel !== undefined) resolved.lightModel = lightModel;
@@ -384,9 +450,12 @@ export function redactRegistry(registry: ProviderRegistry): unknown {
     const redacted: Record<string, unknown> = {
       id: profile.id,
       name: profile.name,
-      models: profile.models.map((model) =>
-        model.label === undefined ? { id: model.id } : { id: model.id, label: model.label },
-      ),
+      models: profile.models.map((model) => {
+        const serialized: Record<string, unknown> = { id: model.id };
+        if (model.label !== undefined) serialized.label = model.label;
+        if (model.price !== undefined) serialized.price = model.price;
+        return serialized;
+      }),
     };
     if (profile.baseUrl !== undefined) redacted.baseUrl = redactBaseUrl(profile.baseUrl);
     if (profile.apiKeyEnv !== undefined) redacted.apiKeyEnv = profile.apiKeyEnv;

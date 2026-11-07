@@ -222,3 +222,63 @@ test("tipe pesan lain dan input sampah menghasilkan array kosong", () => {
   expect(mapSdkMessage({ type: "assistant" })).toEqual([]);
   expect(mapSdkMessage({ type: "assistant", message: { content: "bukan array" } })).toEqual([]);
 });
+
+test("result memuat cacheReadTokens dan cacheWriteTokens dari usage", () => {
+  const [event] = mapSdkMessage({
+    type: "result",
+    subtype: "success",
+    usage: {
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: 20,
+      cache_creation_input_tokens: 15
+    },
+  });
+
+  expect(event).toEqual({
+    type: "result",
+    ok: true,
+    inputTokens: 100,
+    outputTokens: 50,
+    cacheReadTokens: 20,
+    cacheWriteTokens: 15,
+  });
+});
+
+test("result tidak memuat cache tokens bila tidak ada di usage", () => {
+  const [event] = mapSdkMessage({
+    type: "result",
+    subtype: "success",
+    usage: {
+      input_tokens: 100,
+      output_tokens: 50,
+    },
+  });
+
+  expect(event).toEqual({
+    type: "result",
+    ok: true,
+    inputTokens: 100,
+    outputTokens: 50,
+  });
+});
+
+test("result tidak memuat cache tokens bila bukan angka", () => {
+  const [event] = mapSdkMessage({
+    type: "result",
+    subtype: "success",
+    usage: {
+      input_tokens: 100,
+      output_tokens: 50,
+      cache_read_input_tokens: "invalid",
+      cache_creation_input_tokens: null
+    },
+  });
+
+  expect(event).toEqual({
+    type: "result",
+    ok: true,
+    inputTokens: 100,
+    outputTokens: 50,
+  });
+});

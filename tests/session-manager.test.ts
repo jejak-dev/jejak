@@ -420,4 +420,57 @@ describe("SessionManager kapasitas", () => {
     mgr.interrupt(first.id);
     await mgr.done(first.id);
   });
+
+  test("profil berharga: result memuat estimatedCostUsd dan usage sesi terakumulasi", async () => {
+    const mgr = manager({
+      runner: scriptedRunner([
+        {
+          type: "result",
+          ok: true,
+          inputTokens: 100,
+          outputTokens: 50,
+          cacheReadTokens: 20,
+          cacheWriteTokens: 15,
+          costUsd: 0.5,
+        },
+      ]),
+      resolveProvider: async () => ({
+        profileId: "test",
+        model: "test-model",
+        price: { input: 10, output: 20, cacheRead: 1 },
+      }),
+    });
+
+    const session = await createOk(mgr);
+    await mgr.done(session.id);
+
+    // (100*10 + 50*20 + 20*1 + 15*10) / 1e6
+    const expected = 0.002170;
+    const result = (await collect(mgr.events(session.id))).find((item) => item.event.type === "result")?.event;
+    expect(result).toMatchObject({ type: "result", estimatedCostUsd: expected });
+    expect(mgr.get(session.id)?.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 20,
+      cacheWriteTokens: 15,
+      estimatedCostUsd: expected,
+      sdkCostUsd: 0.5,
+    });
+  });
+
+  test("tanpa price: token terakumulasi tetapi tidak ada estimatedCostUsd", async () => {
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true, inputTokens: 100, outputTokens: 50 }]),
+    });
+
+    const session = await createOk(mgr);
+    await mgr.done(session.id);
+
+    const result = (await collect(mgr.events(session.id))).find((item) => item.event.type === "result")?.event;
+    expect(result).not.toHaveProperty("estimatedCostUsd");
+    const usage = mgr.get(session.id)?.usage;
+    expect(usage?.inputTokens).toBe(100);
+    expect(usage?.outputTokens).toBe(50);
+    expect(usage?.estimatedCostUsd).toBeUndefined();
+  });
 });

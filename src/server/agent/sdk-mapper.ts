@@ -127,6 +127,8 @@ function mapResult(message: Record<string, unknown>): AgentEvent[] {
   if (isRecord(usage)) {
     if (typeof usage.input_tokens === "number") event.inputTokens = usage.input_tokens;
     if (typeof usage.output_tokens === "number") event.outputTokens = usage.output_tokens;
+    if (typeof usage.cache_read_input_tokens === "number") event.cacheReadTokens = usage.cache_read_input_tokens;
+    if (typeof usage.cache_creation_input_tokens === "number") event.cacheWriteTokens = usage.cache_creation_input_tokens;
   }
 
   return [event];

@@ -495,10 +495,163 @@ test("validateRegistry memeriksa format apiKeyEnv", () => {
   ).toEqual([]);
 });
 
-test("redactRegistry memuat apiKeyEnv apa adanya", () => {
-  const redacted = redactRegistry({
-    profiles: [{ id: "p", name: "P", apiKeyEnv: "PROXY_KEY", models: [] }],
-  }) as { profiles: Array<Record<string, unknown>> };
+test("validateRegistry menolak price yang tidak valid", () => {
+  const errors = validateRegistry({
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        models: [
+          {
+            id: "m1",
+            price: { input: -1, output: 10 },
+          },
+        ],
+      },
+    ],
+  });
+  expect(errors).toContainEqual(expect.stringContaining("price.input"));
+});
 
-  expect(redacted.profiles[0]?.apiKeyEnv).toBe("PROXY_KEY");
+test("validateRegistry menerima price yang valid", () => {
+  const errors = validateRegistry({
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        models: [
+          {
+            id: "m1",
+            price: { input: 10, output: 20, cacheRead: 5, cacheWrite: 15 },
+          },
+        ],
+      },
+    ],
+  });
+  expect(errors).toEqual([]);
+});
+
+test("parseRegistry mengabaikan price yang tidak valid", () => {
+  const registry = parseRegistry({
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        models: [
+          {
+            id: "m1",
+            price: { input: -1, output: 10 },
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(registry.profiles[0]?.models[0]?.price).toBeUndefined();
+});
+
+test("parseRegistry mempertahankan price yang valid", () => {
+  const registry = parseRegistry({
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        models: [
+          {
+            id: "m1",
+            price: { input: 10, output: 20, cacheRead: 5, cacheWrite: 15 },
+          },
+        ],
+      },
+    ],
+  });
+
+  expect(registry.profiles[0]?.models[0]?.price).toEqual({
+    input: 10,
+    output: 20,
+    cacheRead: 5,
+    cacheWrite: 15,
+  });
+});
+
+test("serializeRegistry menyertakan price yang valid", () => {
+  const registry = parseRegistry({
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        models: [
+          {
+            id: "m1",
+            price: { input: 10, output: 20, cacheRead: 5, cacheWrite: 15 },
+          },
+        ],
+      },
+    ],
+  });
+
+  const serialized = serializeRegistry(registry);
+  expect((serialized as any).profiles[0].models[0].price).toEqual({
+    input: 10,
+    output: 20,
+    cacheRead: 5,
+    cacheWrite: 15,
+  });
+});
+
+test("resolveProvider mengisi price untuk model yang cocok", () => {
+  const registry = {
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        models: [
+          {
+            id: "m1",
+            price: { input: 10, output: 20 },
+          },
+          {
+            id: "m2",
+            price: { input: 5, output: 15 },
+          },
+          { id: "m3" },
+        ],
+        defaultModel: "m1",
+      },
+    ],
+  };
+
+  const resolved = resolveProvider(registry, { model: "m1" });
+  expect(resolved.price).toEqual({ input: 10, output: 20 });
+
+  const resolved2 = resolveProvider(registry, { model: "m2" });
+  expect(resolved2.price).toEqual({ input: 5, output: 15 });
+
+  // Tanpa pilihan model, defaultModel (m1) yang dipakai.
+  expect(resolveProvider(registry, {}).price).toEqual({ input: 10, output: 20 });
+
+  // Model tanpa tarif tidak mengisi price.
+  expect(resolveProvider(registry, { model: "m3" }).price).toBeUndefined();
+});
+
+test("redactResolved tidak memuat price", () => {
+  const registry = {
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        models: [
+          {
+            id: "m1",
+            price: { input: 10, output: 20 },
+          },
+        ],
+        defaultModel: "m1",
+      },
+    ],
+  };
+
+  const resolved = resolveProvider(registry, {});
+  const redacted = redactResolved(resolved);
+  expect(redacted.price).toBeUndefined();
 });

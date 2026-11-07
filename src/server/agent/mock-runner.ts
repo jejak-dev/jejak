@@ -14,6 +14,8 @@ const DEFAULT_SCRIPT: AgentEvent[] = [
     costUsd: 0,
     inputTokens: 12,
     outputTokens: 24,
+    cacheReadTokens: 100,
+    cacheWriteTokens: 0,
     numTurns: 1,
   },
 ];

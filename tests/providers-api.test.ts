@@ -215,6 +215,43 @@ describe("GET /api/providers/resolve", () => {
     const data = (await res.json()) as { error: string };
     expect(typeof data.error).toBe("string");
   });
+
+  test("PUT profil dengan price tersimpan dan terbaca kembali lewat GET", async () => {
+    const registryWithPrice = {
+      profiles: [
+        {
+          id: "alpha",
+          name: "Alpha",
+          baseUrl: "https://alpha.test",
+          apiKey: "sk-alpha-rahasia",
+          models: [
+            {
+              id: "m1",
+              price: { input: 10, output: 20 },
+            },
+          ],
+          defaultModel: "m1",
+        },
+      ],
+      activeProfileId: "alpha",
+    };
+
+    // PUT the registry with price
+    const putRes = await request("PUT", "/api/providers", { body: registryWithPrice });
+    expect(putRes.status).toBe(200);
+
+    // GET it back
+    const getRes = await request("GET", "/api/providers");
+    expect(getRes.status).toBe(200);
+    const getData = (await getRes.json()) as { registry: unknown };
+
+    // Check that price is in the returned registry
+    const returnedRegistry = getData.registry as any;
+    expect(returnedRegistry.profiles[0].models[0].price).toEqual({
+      input: 10,
+      output: 20,
+    });
+  });
 });
 
 describe("POST /api/providers/test", () => {

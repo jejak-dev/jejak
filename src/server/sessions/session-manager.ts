@@ -9,7 +9,8 @@ import {
   type PermissionMode,
   type PermissionRequest,
 } from "../agent";
-import type { ProviderSelection, ResolvedProvider } from "../provider";
+import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
+import { estimateCostUsd } from "../pricing";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
 
@@ -28,6 +29,7 @@ export interface SessionInfo {
   updatedAt: string;
   eventCount: number;
   pendingPermissions: number;
+  usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
 }
 
 export interface SequencedEvent {
@@ -81,6 +83,7 @@ interface SessionRecord {
   settle: () => void;
   pending: Map<string, Pending>;
   permissionTimeoutMs: number;
+  price?: ModelPrice;
 }
 
 const PERMISSION_MODES: readonly SessionPermissionMode[] = ["default", "acceptEdits", "plan"];
@@ -226,6 +229,7 @@ export class SessionManager {
       settle,
       pending: new Map(),
       permissionTimeoutMs: this.permissionTimeoutMs,
+      price: resolved.price,
     };
     this.sessions.set(info.id, record);
 
@@ -385,6 +389,9 @@ export class SessionManager {
       for await (const event of events) {
         if (event.type === "result") {
           sawResult = true;
+          if (record.price !== undefined) {
+            event.estimatedCostUsd = estimateCostUsd(event, record.price);
+          }
           this.append(record, event);
           this.setStatus(
             record,
@@ -430,6 +437,45 @@ export class SessionManager {
     }
     record.info.eventCount += 1;
     record.info.updatedAt = this.now().toISOString();
+
+    // Accumulate usage for result events
+    if (event.type === "result") {
+      if (event.inputTokens !== undefined || event.outputTokens !== undefined || event.cacheReadTokens !== undefined || event.cacheWriteTokens !== undefined) {
+        if (record.info.usage === undefined) {
+          record.info.usage = {
+            inputTokens: 0,
+            outputTokens: 0,
+            cacheReadTokens: 0,
+            cacheWriteTokens: 0,
+          };
+        }
+        if (event.inputTokens !== undefined) {
+          record.info.usage.inputTokens += event.inputTokens;
+        }
+        if (event.outputTokens !== undefined) {
+          record.info.usage.outputTokens += event.outputTokens;
+        }
+        if (event.cacheReadTokens !== undefined) {
+          record.info.usage.cacheReadTokens += event.cacheReadTokens;
+        }
+        if (event.cacheWriteTokens !== undefined) {
+          record.info.usage.cacheWriteTokens += event.cacheWriteTokens;
+        }
+        if (event.estimatedCostUsd !== undefined) {
+          if (record.info.usage.estimatedCostUsd === undefined) {
+            record.info.usage.estimatedCostUsd = 0;
+          }
+          record.info.usage.estimatedCostUsd += event.estimatedCostUsd;
+        }
+        if (event.costUsd !== undefined) {
+          if (record.info.usage.sdkCostUsd === undefined) {
+            record.info.usage.sdkCostUsd = 0;
+          }
+          record.info.usage.sdkCostUsd += event.costUsd;
+        }
+      }
+    }
+
     this.notify(record);
   }
 

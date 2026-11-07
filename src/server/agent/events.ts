@@ -16,6 +16,9 @@ export type AgentEvent =
       costUsd?: number;
       inputTokens?: number;
       outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+      estimatedCostUsd?: number;
       numTurns?: number;
     }
   | { type: "error"; message: string }
