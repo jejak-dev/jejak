@@ -341,3 +341,63 @@ test("tanpa resumeSessionId tidak ada kunci resume pada opsi query", async () =>
 
   expect("resume" in (received ?? {})).toBe(false);
 });
+
+test("systemPrompt preset claude_code dan append berisi cwd yang diberikan", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ cwd: "/var/workspace/projek" }),
+    ),
+  );
+
+  const prompt = received?.systemPrompt as Record<string, unknown> | undefined;
+  expect(prompt?.type).toBe("preset");
+  expect(prompt?.preset).toBe("claude_code");
+  expect(typeof prompt?.append).toBe("string");
+  expect(prompt?.append as string).toContain("/var/workspace/projek");
+});
+
+test("systemPrompt append tidak memuat karakter kontrol/baris baru dari cwd", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  // CWD dengan baris baru dan null byte
+  const cwdKotor = `/tmp/kerja\nbaris\x00kontrol\r`;
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ cwd: cwdKotor }),
+    ),
+  );
+
+  const prompt = received?.systemPrompt as Record<string, unknown> | undefined;
+  expect(prompt?.type).toBe("preset");
+  expect(prompt?.preset).toBe("claude_code");
+  expect(typeof prompt?.append).toBe("string");
+  const append = prompt?.append as string | undefined;
+  expect(append).not.toContain("\n");
+  expect(append).not.toContain("\r");
+  expect(append).not.toContain("\x00");
+  expect(append).toContain("/tmp/kerja baris kontrol");
+});
+
+test("opsi lain tidak berubah setelah penambahan systemPrompt", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({
+      load: async () => sdk.module,
+      baseEnv: { ANTHROPIC_API_KEY: "key", PATH: "/usr/bin" },
+    }).run(baseInput({ cwd: "/tmp/kerja" })),
+  );
+
+  expect(received?.cwd).toBe("/tmp/kerja");
+  expect(received?.permissionMode).toBe("default");
+  expect(received?.settingSources).toEqual(["project"]);
+
+  const env = received?.env as Record<string, string | undefined>;
+  expect(env.ANTHROPIC_API_KEY).toBe(API_KEY);
+  expect("ANTHROPIC_AUTH_TOKEN" in env).toBe(false);
+});

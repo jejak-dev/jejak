@@ -59,6 +59,10 @@ function sanitize(text: string, apiKey: string | undefined): string {
   return text.split(apiKey).join("***");
 }
 
+function sanitizeCwd(cwd: string): string {
+  return cwd.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+}
+
 export function buildSdkEnv(
   base: Record<string, string | undefined>,
   resolved: ResolvedProvider,
@@ -102,6 +106,11 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         permissionMode: input.permissionMode ?? "default",
         abortController,
         settingSources: ["project"],
+        systemPrompt: {
+          type: "preset",
+          preset: "claude_code",
+          append: `Folder kerja sesi ini adalah ${sanitizeCwd(input.cwd)}. Semua path relatif merujuk ke folder itu. Saat membaca atau mengubah berkas, pakai path relatif atau path absolut yang diawali folder tersebut; jangan menebak path lain seperti /home/... atau /Users/....`,
+        },
       };
       if (input.provider.model !== undefined) {
         sdkOptions.model = input.provider.model;
