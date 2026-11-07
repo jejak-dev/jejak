@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { testConnection } from "../connection-test";
 import {
   parseRegistry,
   redactRegistry,
@@ -12,6 +13,7 @@ import { loadRegistry, providersPath, saveRegistry } from "../provider-store";
 export interface ProviderRoutesOptions {
   path?: string;
   env?: Record<string, string | undefined>;
+  fetch?: typeof fetch;
 }
 
 const REDACTED_KEY = "***";
@@ -57,6 +59,30 @@ function optionalQuery(value: unknown): string | undefined {
   }
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+function parseTestBody(body: unknown): ProviderSelection {
+  if (body === undefined || (typeof body === "string" && body.trim() === "")) {
+    return {};
+  }
+  const parsed = parseJsonBody(body);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Body permintaan harus berupa objek.");
+  }
+
+  const selection: ProviderSelection = {};
+  for (const key of ["profileId", "model", "lightModel"] as const) {
+    const value = (parsed as Record<string, unknown>)[key];
+    if (value === undefined) {
+      continue;
+    }
+    if (typeof value !== "string") {
+      throw new Error(`Field ${key} harus berupa string.`);
+    }
+    const trimmed = value.trim();
+    if (trimmed !== "") selection[key] = trimmed;
+  }
+  return selection;
 }
 
 export function providerRoutes(options: ProviderRoutesOptions = {}): Elysia {
@@ -114,6 +140,21 @@ export function providerRoutes(options: ProviderRoutesOptions = {}): Elysia {
           const updated = setActiveProfile(registry, profileId);
           await saveRegistry(updated, path);
           return { registry: redactRegistry(updated) };
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/providers/test",
+      async ({ body }) => {
+        try {
+          const selection = parseTestBody(body);
+          const registry = await load();
+          const resolved = resolveProvider(registry, selection);
+          const result = await testConnection(resolved, { fetch: options.fetch });
+          return { result };
         } catch (error) {
           return errorResponse(error);
         }

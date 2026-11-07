@@ -22,17 +22,22 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function app() {
-  return createApp({ providersPath: providersFile, env: ENV });
+function app(options: { fetch?: typeof fetch } = {}) {
+  return createApp({ providersPath: providersFile, env: ENV, fetch: options.fetch });
 }
 
-function request(method: string, path: string, init: { body?: unknown; headers?: Record<string, string> } = {}) {
+function request(
+  method: string,
+  path: string,
+  init: { body?: unknown; headers?: Record<string, string> } = {},
+  options: { fetch?: typeof fetch } = {},
+) {
   const headers: Record<string, string> = { host: "127.0.0.1:3000", ...init.headers };
   const body = init.body === undefined ? undefined : JSON.stringify(init.body);
   if (body !== undefined) {
     headers["content-type"] = headers["content-type"] ?? "application/json";
   }
-  return app().handle(new Request(`http://127.0.0.1:3000${path}`, { method, headers, body }));
+  return app(options).handle(new Request(`http://127.0.0.1:3000${path}`, { method, headers, body }));
 }
 
 async function readFileText(): Promise<string> {
@@ -209,6 +214,150 @@ describe("GET /api/providers/resolve", () => {
     expect(res.status).toBe(400);
     const data = (await res.json()) as { error: string };
     expect(typeof data.error).toBe("string");
+  });
+});
+
+describe("POST /api/providers/test", () => {
+  const twoProfiles = {
+    profiles: [
+      {
+        id: "alpha",
+        name: "Alpha",
+        baseUrl: "https://alpha.test",
+        apiKey: "sk-alpha-rahasia",
+        models: [{ id: "m1" }],
+        defaultModel: "m1",
+      },
+      {
+        id: "beta",
+        name: "Beta",
+        baseUrl: "https://beta.test/api/",
+        apiKey: "sk-beta-rahasia",
+        models: [{ id: "m2" }],
+        defaultModel: "m2",
+      },
+    ],
+    activeProfileId: "alpha",
+  };
+
+  interface FetchCall {
+    url: string;
+    init: RequestInit;
+  }
+
+  function fakeFetch(payload: unknown) {
+    const calls: FetchCall[] = [];
+    const impl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      calls.push({ url, init: init ?? {} });
+      return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+    return { impl, calls };
+  }
+
+  const toolUsePayload = {
+    content: [{ type: "tool_use", name: "echo", input: { text: "ping" } }],
+  };
+
+  test("memakai profil aktif dan hasil memuat toolCalling", async () => {
+    await request("PUT", "/api/providers", { body: twoProfiles });
+    const { impl, calls } = fakeFetch(toolUsePayload);
+
+    const res = await request("POST", "/api/providers/test", { body: {} }, { fetch: impl });
+    expect(res.status).toBe(200);
+
+    const text = await res.text();
+    expect(text).not.toContain("sk-alpha-rahasia");
+    expect(text).not.toContain("sk-beta-rahasia");
+    const data = JSON.parse(text) as {
+      result: { ok: boolean; toolCalling: string; model?: string; status?: number };
+    };
+    expect(data.result.ok).toBe(true);
+    expect(data.result.toolCalling).toBe("ok");
+    expect(data.result.model).toBe("m1");
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://alpha.test/v1/messages");
+    const headers = calls[0]?.init.headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("sk-alpha-rahasia");
+  });
+
+  test("profil lain memakai baseUrl dan key profil itu", async () => {
+    await request("PUT", "/api/providers", { body: twoProfiles });
+    const { impl, calls } = fakeFetch(toolUsePayload);
+
+    const res = await request(
+      "POST",
+      "/api/providers/test",
+      { body: { profileId: "beta" } },
+      { fetch: impl },
+    );
+    expect(res.status).toBe(200);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.url).toBe("https://beta.test/api/v1/messages");
+    const headers = calls[0]?.init.headers as Record<string, string>;
+    expect(headers["x-api-key"]).toBe("sk-beta-rahasia");
+  });
+
+  test("model di luar daftar ditolak 400", async () => {
+    await request("PUT", "/api/providers", { body: twoProfiles });
+    const { impl, calls } = fakeFetch(toolUsePayload);
+
+    const res = await request(
+      "POST",
+      "/api/providers/test",
+      { body: { model: "tidak-ada" } },
+      { fetch: impl },
+    );
+    expect(res.status).toBe(400);
+    expect(calls).toHaveLength(0);
+  });
+
+  test("body bukan objek ditolak 400", async () => {
+    await request("PUT", "/api/providers", { body: twoProfiles });
+
+    const res = await request("POST", "/api/providers/test", { body: ["alpha"] });
+    expect(res.status).toBe(400);
+    const data = (await res.json()) as { error: string };
+    expect(typeof data.error).toBe("string");
+  });
+
+  test("body kosong dianggap objek kosong", async () => {
+    await request("PUT", "/api/providers", { body: twoProfiles });
+    const { impl } = fakeFetch(toolUsePayload);
+
+    const res = await app({ fetch: impl }).handle(
+      new Request("http://127.0.0.1:3000/api/providers/test", {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("respons tidak memuat key asli", async () => {
+    await request("PUT", "/api/providers", { body: twoProfiles });
+    const { impl } = fakeFetch({ content: [{ type: "tool_use", input: { text: "sk-alpha-rahasia" } }] });
+
+    const res = await request("POST", "/api/providers/test", { body: {} }, { fetch: impl });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain("sk-alpha-rahasia");
+    expect(text).not.toContain("sk-beta-rahasia");
+  });
+
+  test("Host evil.test ditolak 403", async () => {
+    const res = await request(
+      "POST",
+      "/api/providers/test",
+      { body: {}, headers: { host: "evil.test" } },
+      { fetch: fakeFetch(toolUsePayload).impl },
+    );
+    expect(res.status).toBe(403);
   });
 });
 

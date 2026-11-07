@@ -11,12 +11,13 @@ export interface ServeOptions {
 export interface CreateAppOptions {
   providersPath?: string;
   env?: Record<string, string | undefined>;
+  fetch?: typeof fetch;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   return new Elysia()
     .use(localGuard())
-    .use(providerRoutes({ path: options.providersPath, env: options.env }))
+    .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .get(
       "/",
