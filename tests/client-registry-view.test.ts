@@ -9,6 +9,9 @@ describe("parseRegistryView", () => {
         {
           id: "lokal",
           name: "Lokal",
+          baseUrl: "https://api.example.com",
+          apiKeyEnv: "LOKAL_KEY",
+          apiKey: "***",
           models: [{ id: "m1", label: "Model satu" }, { id: "m2" }],
           defaultModel: "m1",
           lightModel: "m2",
@@ -16,7 +19,21 @@ describe("parseRegistryView", () => {
       ],
     };
 
-    expect(parseRegistryView(input)).toEqual(input);
+    expect(parseRegistryView(input)).toEqual({
+      activeProfileId: "lokal",
+      profiles: [
+        {
+          id: "lokal",
+          name: "Lokal",
+          baseUrl: "https://api.example.com",
+          apiKeyEnv: "LOKAL_KEY",
+          hasKey: true,
+          models: [{ id: "m1", label: "Model satu" }, { id: "m2" }],
+          defaultModel: "m1",
+          lightModel: "m2",
+        },
+      ],
+    });
   });
 
   test("terbungkus registry", () => {
@@ -25,7 +42,10 @@ describe("parseRegistryView", () => {
       profiles: [{ id: "a", name: "A", models: [{ id: "m" }] }],
     };
 
-    expect(parseRegistryView({ registry })).toEqual(registry);
+    expect(parseRegistryView({ registry })).toEqual({
+      activeProfileId: "a",
+      profiles: [{ id: "a", name: "A", hasKey: false, models: [{ id: "m" }] }],
+    });
   });
 
   test("sampah menjadi daftar kosong", () => {
@@ -62,6 +82,29 @@ describe("parseRegistryView", () => {
     const view = parseRegistryView({ profiles: [{ id: "p" }] });
     expect(view.profiles[0]?.name).toBe("p");
     expect(view.profiles[0]?.models).toEqual([]);
+    expect(view.profiles[0]?.hasKey).toBe(false);
+    expect(view.profiles[0]?.baseUrl).toBeUndefined();
+    expect(view.profiles[0]?.apiKeyEnv).toBeUndefined();
+  });
+
+  test("hasKey hanya untuk key tak kosong, baseUrl dan apiKeyEnv dipangkas", () => {
+    const view = parseRegistryView({
+      profiles: [
+        { id: "a", apiKey: "***", baseUrl: "  https://x.test  ", apiKeyEnv: " KEYS " },
+        { id: "b", apiKey: "" },
+        { id: "c", apiKey: 42 },
+        { id: "d", baseUrl: "   " },
+      ],
+    });
+
+    expect(view.profiles[0]).toMatchObject({
+      hasKey: true,
+      baseUrl: "https://x.test",
+      apiKeyEnv: "KEYS",
+    });
+    expect(view.profiles[1]?.hasKey).toBe(false);
+    expect(view.profiles[2]?.hasKey).toBe(false);
+    expect(view.profiles[3]?.baseUrl).toBeUndefined();
   });
 
   test("tidak pernah melempar untuk input aneh", () => {

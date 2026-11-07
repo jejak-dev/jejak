@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+  describeToolCalling,
   formatCost,
   formatCount,
   formatRelative,
   parseHashRoute,
+  providersHash,
   sessionHash,
   shortPath,
   statusTone,
@@ -107,5 +109,29 @@ describe("hash route", () => {
   test("sessionHash", () => {
     expect(sessionHash("s1")).toBe("#/s/s1");
     expect(sessionHash()).toBe("#/");
+  });
+
+  test("rute providers", () => {
+    expect(parseHashRoute(providersHash())).toEqual({ view: "providers" });
+    expect(providersHash()).toBe("#/providers");
+    expect(parseHashRoute("#/providers/")).toEqual({});
+    expect(parseHashRoute("#/provider")).toEqual({});
+  });
+});
+
+describe("describeToolCalling", () => {
+  test("memetakan status ke label dan nada", () => {
+    expect(describeToolCalling("ok")).toEqual({
+      label: "Tool calling berfungsi",
+      tone: "success",
+    });
+    expect(describeToolCalling("tidak-dipanggil")).toEqual({
+      label: "Model tidak memanggil tool; agen mungkin kurang andal",
+      tone: "warning",
+    });
+    expect(describeToolCalling("tidak-diuji")).toEqual({
+      label: "Tool calling tidak diuji",
+      tone: "muted",
+    });
   });
 });

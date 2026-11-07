@@ -69,7 +69,16 @@ export function shortPath(path: string, max = 36): string {
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
-export function parseHashRoute(hash: string): { sessionId?: string } {
+export interface HashRoute {
+  sessionId?: string;
+  view?: "providers";
+}
+
+export function parseHashRoute(hash: string): HashRoute {
+  if (hash === "#/providers") {
+    return { view: "providers" };
+  }
+
   const match = /^#\/s\/([^/?#]+)$/.exec(hash);
   if (match === null) {
     return {};
@@ -94,4 +103,31 @@ export function sessionHash(id?: string): string {
     return "#/";
   }
   return `#/s/${id}`;
+}
+
+export function providersHash(): string {
+  return "#/providers";
+}
+
+export type ToolCallingTone = "success" | "warning" | "muted";
+
+export interface ToolCallingDescription {
+  label: string;
+  tone: ToolCallingTone;
+}
+
+export function describeToolCalling(
+  status: "ok" | "tidak-dipanggil" | "tidak-diuji",
+): ToolCallingDescription {
+  switch (status) {
+    case "ok":
+      return { label: "Tool calling berfungsi", tone: "success" };
+    case "tidak-dipanggil":
+      return {
+        label: "Model tidak memanggil tool; agen mungkin kurang andal",
+        tone: "warning",
+      };
+    default:
+      return { label: "Tool calling tidak diuji", tone: "muted" };
+  }
 }

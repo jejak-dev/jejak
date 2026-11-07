@@ -139,6 +139,35 @@ describe("createApiClient", () => {
     expect(calls[0]?.init.method).toBe("GET");
   });
 
+  test("saveProviders PUT JSON dan mengembalikan payload", async () => {
+    const payload = { registry: { profiles: [] } };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+    const registry = { activeProfileId: "a", profiles: [{ id: "a", name: "A" }] };
+
+    expect(await api.saveProviders(registry)).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/providers");
+    expect(calls[0]?.init.method).toBe("PUT");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual(registry);
+  });
+
+  test("saveProviders 400 memakai pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "tidak valid" }, 400));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.saveProviders({ profiles: [] });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(400);
+    expect((caught as ApiError).message).toBe("tidak valid");
+  });
+
   test("setActiveProvider POST body profileId", async () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse({ registry: {} }));
     const api = createApiClient({ fetch });
@@ -151,16 +180,62 @@ describe("createApiClient", () => {
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ profileId: "lokal" });
   });
 
-  test("testProvider POST selection dan mendukung tanpa argumen", async () => {
-    const { fetch, calls } = fakeFetch(() => jsonResponse({ result: { ok: true } }));
+  test("testProvider POST selection dan mengembalikan result", async () => {
+    const result = {
+      ok: true,
+      status: 200,
+      latencyMs: 123,
+      model: "m",
+      toolCalling: "ok" as const,
+    };
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ result }));
     const api = createApiClient({ fetch });
 
-    await api.testProvider({ profileId: "p", model: "m" });
-    await api.testProvider();
+    expect(await api.testProvider({ profileId: "p", model: "m" })).toEqual(result);
+    expect(await api.testProvider()).toEqual(result);
 
     expect(calls[0]?.url).toBe("/api/providers/test");
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ profileId: "p", model: "m" });
     expect(JSON.parse(String(calls[1]?.init.body))).toEqual({});
+  });
+
+  test("testProvider menerima error dari result dan membuang field asing", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({
+        result: {
+          ok: false,
+          latencyMs: 5,
+          toolCalling: "tidak-diuji",
+          error: "autentikasi ditolak",
+          rahasia: "x",
+        },
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    expect(await api.testProvider()).toEqual({
+      ok: false,
+      latencyMs: 5,
+      toolCalling: "tidak-diuji",
+      error: "autentikasi ditolak",
+    });
+  });
+
+  test("testProvider menolak bentuk hasil yang tidak valid", async () => {
+    const invalidPayloads: unknown[] = [
+      {},
+      { result: null },
+      { result: { ok: true } },
+      { result: { ok: true, latencyMs: 1, toolCalling: "entah" } },
+      { result: { ok: "ya", latencyMs: 1, toolCalling: "ok" } },
+      { result: { ok: true, latencyMs: Number.NaN, toolCalling: "ok" } },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+      await expect(api.testProvider()).rejects.toBeInstanceOf(ApiError);
+    }
   });
 
   test("error non-JSON memakai pesan status", async () => {

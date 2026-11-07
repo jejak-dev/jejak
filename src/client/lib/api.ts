@@ -10,6 +10,15 @@ export class ApiError extends Error {
   }
 }
 
+export interface ConnectionTestView {
+  ok: boolean;
+  status?: number;
+  latencyMs: number;
+  model?: string;
+  toolCalling: "ok" | "tidak-dipanggil" | "tidak-diuji";
+  error?: string;
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
@@ -25,8 +34,9 @@ export interface ApiClient {
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   getProviders(): Promise<unknown>;
+  saveProviders(registry: unknown): Promise<unknown>;
   setActiveProvider(profileId: string): Promise<unknown>;
-  testProvider(selection?: { profileId?: string; model?: string }): Promise<unknown>;
+  testProvider(selection?: { profileId?: string; model?: string }): Promise<ConnectionTestView>;
 }
 
 export interface ApiClientOptions {
@@ -48,6 +58,33 @@ function sessionFrom(payload: unknown): SessionInfo {
     throw new ApiError("respons server tidak valid", 200);
   }
   return session as unknown as SessionInfo;
+}
+
+const TOOL_CALLING_VALUES = new Set(["ok", "tidak-dipanggil", "tidak-diuji"]);
+
+function connectionTestFrom(payload: unknown): ConnectionTestView {
+  const result = field(payload, "result");
+  if (!isRecord(result)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+
+  const { ok, status, latencyMs, model, toolCalling, error } = result;
+  if (typeof ok !== "boolean" || typeof latencyMs !== "number" || !Number.isFinite(latencyMs)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  if (typeof toolCalling !== "string" || !TOOL_CALLING_VALUES.has(toolCalling)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+
+  const view: ConnectionTestView = {
+    ok,
+    latencyMs,
+    toolCalling: toolCalling as ConnectionTestView["toolCalling"],
+  };
+  if (typeof status === "number" && Number.isFinite(status)) view.status = status;
+  if (typeof model === "string") view.model = model;
+  if (typeof error === "string") view.error = error;
+  return view;
 }
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
@@ -142,12 +179,16 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return request("GET", "/api/providers");
     },
 
+    async saveProviders(registry) {
+      return request("PUT", "/api/providers", registry);
+    },
+
     async setActiveProvider(profileId) {
       return request("POST", "/api/providers/active", { profileId });
     },
 
     async testProvider(selection) {
-      return request("POST", "/api/providers/test", selection ?? {});
+      return connectionTestFrom(await request("POST", "/api/providers/test", selection ?? {}));
     },
   };
 }

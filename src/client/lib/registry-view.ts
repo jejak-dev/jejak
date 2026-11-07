@@ -3,6 +3,9 @@ export interface RegistryView {
   profiles: {
     id: string;
     name: string;
+    baseUrl?: string;
+    apiKeyEnv?: string;
+    hasKey: boolean;
     models: { id: string; label?: string }[];
     defaultModel?: string;
     lightModel?: string;
@@ -54,8 +57,14 @@ function parseProfile(
   const profile: RegistryView["profiles"][number] = {
     id,
     name: readString(raw, "name") ?? id,
+    hasKey: typeof raw.apiKey === "string" && raw.apiKey !== "",
     models: [],
   };
+
+  const baseUrl = readString(raw, "baseUrl");
+  if (baseUrl !== undefined) profile.baseUrl = baseUrl;
+  const apiKeyEnv = readString(raw, "apiKeyEnv");
+  if (apiKeyEnv !== undefined) profile.apiKeyEnv = apiKeyEnv;
 
   const models = raw.models;
   if (Array.isArray(models)) {
