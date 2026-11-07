@@ -39,6 +39,16 @@ const SESSION: SessionInfo = {
 };
 
 describe("createApiClient", () => {
+  test("getInfo GET /api/info dan mengembalikan payload", async () => {
+    const payload = { name: "jejak", version: "0.0.1", cwd: "/tmp", mock: true };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getInfo()).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/info");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
   test("listSessions GET /api/sessions", async () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse({ sessions: [SESSION] }));
     const api = createApiClient({ fetch });

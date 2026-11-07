@@ -11,6 +11,7 @@ export class ApiError extends Error {
 }
 
 export interface ApiClient {
+  getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
   getSession(id: string): Promise<SessionInfo>;
   createSession(input: {
@@ -102,6 +103,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   }
 
   return {
+    async getInfo() {
+      return (await request("GET", "/api/info")) as {
+        name: string;
+        version: string;
+        cwd: string;
+        mock: boolean;
+      };
+    },
+
     async listSessions() {
       const data = await request("GET", "/api/sessions");
       const sessions = field(data, "sessions");

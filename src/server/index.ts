@@ -5,6 +5,7 @@ import { localGuard } from "./guard";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
 import { loadRegistry, providersPath } from "./provider-store";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
+import { infoRoutes } from "./routes/info";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
 import { SessionManager } from "./sessions/session-manager";
@@ -17,6 +18,7 @@ export interface ServeOptions {
 export interface CreateAppOptions {
   providersPath?: string;
   env?: Record<string, string | undefined>;
+  cwd?: string;
   fetch?: typeof fetch;
   runner?: AgentRunner;
   sessions?: SessionManager;
@@ -40,6 +42,12 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .use(sessionRoutes({ manager }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
+    .use(
+      infoRoutes({
+        cwd: options.cwd,
+        mock: env.MOCK?.trim().toLowerCase() === "true",
+      }),
+    )
     .use(clientRoutes(options.client));
 }
 
