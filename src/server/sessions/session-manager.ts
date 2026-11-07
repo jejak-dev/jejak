@@ -1,6 +1,14 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { AgentEvent, AgentRunner, PermissionMode, PermissionRequest, PermissionDecision } from "../agent";
+import {
+  PERMISSION_EXPIRED_MESSAGE,
+  PERMISSION_STOPPED_MESSAGE,
+  type AgentEvent,
+  type AgentRunner,
+  type PermissionDecision,
+  type PermissionMode,
+  type PermissionRequest,
+} from "../agent";
 import type { ProviderSelection, ResolvedProvider } from "../provider";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
@@ -482,7 +490,7 @@ export class SessionManager {
           type: "permission_resolved",
           id: requestId,
           decision: "deny",
-          message: "waktu izin habis",
+          message: PERMISSION_EXPIRED_MESSAGE,
         };
 
         record.pending.delete(requestId);
@@ -492,7 +500,7 @@ export class SessionManager {
 
         this.append(record, denyEvent);
 
-        pending.resolve({ behavior: "deny", message: "waktu izin habis" });
+        pending.resolve({ behavior: "deny", message: PERMISSION_EXPIRED_MESSAGE });
       }
     }, record.permissionTimeoutMs);
 
@@ -503,7 +511,7 @@ export class SessionManager {
           type: "permission_resolved",
           id: requestId,
           decision: "deny",
-          message: "sesi dihentikan",
+          message: PERMISSION_STOPPED_MESSAGE,
         };
 
         record.pending.delete(requestId);
@@ -513,7 +521,7 @@ export class SessionManager {
 
         this.append(record, denyEvent);
 
-        pending.resolve({ behavior: "deny", message: "sesi dihentikan" });
+        pending.resolve({ behavior: "deny", message: PERMISSION_STOPPED_MESSAGE });
       }
       clearTimeout(timeoutId);
     };

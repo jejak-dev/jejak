@@ -30,6 +30,9 @@ export type AgentEvent =
     }
   | { type: "permission_resolved"; id: string; decision: "allow" | "deny"; message?: string };
 
+export const PERMISSION_EXPIRED_MESSAGE = "waktu izin habis";
+export const PERMISSION_STOPPED_MESSAGE = "sesi dihentikan";
+
 export interface PermissionRequest { toolUseId?: string; name: string; input: unknown }
 export type PermissionDecision = { behavior: "allow" } | { behavior: "deny"; message: string };
 export type PermissionHandler = (request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>;
