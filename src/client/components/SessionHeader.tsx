@@ -1,53 +1,84 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
-import { shortPath, statusTone } from "../lib/format";
+import { shortPath } from "../lib/format";
+import { Icon } from "./Icon";
 
-export interface SessionHeaderProps {
-  session: SessionInfo;
-  status: string;
-  onInterrupt: () => void;
-  busy: boolean;
+export interface TopbarProps {
+  onMenu: () => void;
+  title?: string;
+  subtitle?: string;
+  subtitleTitle?: string;
+  state?: { label: string; dot: "" | "run" | "warn" | "bad" };
+  action?: { label: string; onClick: () => void; disabled?: boolean };
   error?: string;
 }
 
-const PERMISSION_LABELS: Record<string, string> = {
-  default: "Tanya dulu",
-  acceptEdits: "Setujui edit",
-  plan: "Hanya rencana",
-};
-
-export function SessionHeader({ session, status, onInterrupt, busy, error }: SessionHeaderProps) {
-  const effectiveStatus = status;
-  const tone = statusTone(effectiveStatus);
-  const permissionLabel = PERMISSION_LABELS[session.permissionMode] ?? session.permissionMode;
-
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, action, error }: TopbarProps) {
   return (
-    <header class="jk-session-header">
-      <div class="jk-session-header-main">
-        <h2 class="jk-session-header-title">{session.title}</h2>
-        <p class="jk-session-header-meta">
-          <span class="jk-mono" title={session.cwd}>
-            {shortPath(session.cwd)}
+    <header class="jk-top">
+      <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
+        <Icon name="menu" />
+      </button>
+      <div class="jk-top-title">
+        {title !== undefined && <h2>{title}</h2>}
+        {subtitle !== undefined && (
+          <span class="jk-mono" title={subtitleTitle}>
+            {subtitle}
           </span>
-          <span aria-hidden="true">·</span>
-          <span>{permissionLabel}</span>
-          <span class={`jk-badge jk-badge-${tone}`}>{effectiveStatus}</span>
-        </p>
+        )}
       </div>
-      {effectiveStatus === "berjalan" && (
-        <button
-          type="button"
-          class="jk-button jk-button-secondary"
-          onClick={onInterrupt}
-          disabled={busy}
-        >
-          Hentikan
+      {state !== undefined && (
+        <span class="jk-state" role="status">
+          <span class={`jk-dot${state.dot === "" ? "" : ` jk-dot-${state.dot}`}`} aria-hidden="true" />
+          {state.label}
+        </span>
+      )}
+      {action !== undefined && (
+        <button type="button" class="jk-pill-btn" onClick={action.onClick} disabled={action.disabled}>
+          <Icon name="stop" />
+          {action.label}
         </button>
       )}
       {error !== undefined && (
-        <p class="jk-error-line" role="alert">
+        <p class="jk-top-error" role="alert">
           {error}
         </p>
       )}
     </header>
   );
+}
+
+export interface SessionHeaderProps {
+  session: SessionInfo;
+  status: string;
+  onInterrupt: () => void;
+  onMenu: () => void;
+  busy: boolean;
+  error?: string;
+}
+
+export function sessionState(
+  status: string,
+  pendingPermissions: number,
+): { label: string; dot: "" | "run" | "warn" | "bad" } {
+  if (status === "berjalan") {
+    return pendingPermissions > 0
+      ? { label: `Menunggu izin${pendingPermissions > 1 ? ` (${pendingPermissions})` : ""}`, dot: "warn" }
+      : { label: "Berjalan", dot: "run" };
+  }
+  if (status === "gagal") return { label: "Gagal", dot: "bad" };
+  if (status === "dibatalkan") return { label: "Dihentikan", dot: "" };
+  return { label: "Selesai", dot: "" };
+}
+
+export function SessionHeader({ session, status, onInterrupt, onMenu, busy, error }: SessionHeaderProps) {
+  const props: TopbarProps = {
+    onMenu,
+    title: session.title,
+    subtitle: shortPath(session.cwd),
+    subtitleTitle: session.cwd,
+    state: sessionState(status, session.pendingPermissions),
+  };
+  if (status === "berjalan") props.action = { label: "Hentikan", onClick: onInterrupt, disabled: busy };
+  if (error !== undefined) props.error = error;
+  return <Topbar {...props} />;
 }

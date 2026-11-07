@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { Composer } from "./components/Composer";
 import { ProviderSettings } from "./components/ProviderSettings";
-import { SessionHeader } from "./components/SessionHeader";
+import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
 import { useHashRoute, useInfo, useRegistry, useSessions, useTimeline } from "./hooks";
@@ -20,6 +20,7 @@ export function App() {
 
   const [interruptError, setInterruptError] = useState<string | undefined>(undefined);
   const [interrupting, setInterrupting] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const activeProfile = view?.profiles.find((profile) => profile.id === view.activeProfileId);
   const activeProfileLabel = activeProfile?.name ?? view?.activeProfileId;
@@ -33,6 +34,14 @@ export function App() {
       document.title = selected !== undefined ? `${selected.title} · Jejak` : "Jejak";
     }
   }, [selected, showingProviders]);
+
+  // Pindah halaman menutup laci sidebar (tampilan sempit).
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [selectedId, routeView]);
+
+  const openDrawer = useCallback((): void => setDrawerOpen(true), []);
+  const closeDrawer = useCallback((): void => setDrawerOpen(false), []);
 
   const onSaved = useCallback((): void => {
     void reload();
@@ -78,47 +87,69 @@ export function App() {
   }, [api, interruptId, refresh]);
 
   const headerError = selected !== undefined ? interruptError : undefined;
+  const recentCwds = useMemo(() => {
+    const seen: string[] = [];
+    for (const session of sessions) {
+      if (!seen.includes(session.cwd)) seen.push(session.cwd);
+    }
+    return seen;
+  }, [sessions]);
+
+  const mainClass =
+    showingProviders || selected !== undefined ? "jk-main" : "jk-main jk-main-home";
 
   return (
-    <div class="jk-app">
+    <div class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}`}>
       <Sidebar
         info={info}
         sessions={sessions}
         selectedId={showingProviders ? undefined : selectedId}
         onSelect={onSelect}
         onNew={onNew}
+        onClose={closeDrawer}
         activeProfileLabel={activeProfileLabel}
         providersActive={showingProviders}
       />
+      <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
 
-      <main class="jk-main">
+      <main class={mainClass}>
         {showingProviders ? (
-          <div class="jk-settings-page">
-            <a class="jk-back-link" href="#/">
-              ← Kembali ke sesi
-            </a>
-            <ProviderSettings api={api} onSaved={onSaved} />
-          </div>
+          <>
+            <Topbar onMenu={openDrawer} />
+            <div class="jk-page">
+              <ProviderSettings api={api} onSaved={onSaved} />
+            </div>
+          </>
         ) : selected !== undefined ? (
           <>
             <SessionHeader
               session={selected}
               status={timeline.status ?? selected.status}
               onInterrupt={onInterrupt}
+              onMenu={openDrawer}
               busy={interrupting}
               error={headerError}
             />
             <Timeline items={timeline.items} connection={timeline.connection} />
           </>
         ) : (
-          <section class="jk-empty-state" aria-labelledby="jk-empty-title">
-            <h2 id="jk-empty-title">Mulai sesi pertamamu</h2>
-            <p>Tulis tugas, pilih folder kerja, lalu mulai sesi untuk melihat jejaknya di sini.</p>
-          </section>
-        )}
-
-        {!showingProviders && (
-          <Composer api={api} defaultCwd={info?.cwd} registry={view} onCreated={onCreated} />
+          <>
+            <Topbar onMenu={openDrawer} />
+            <section class="jk-home" aria-labelledby="jk-greeting">
+              <h2 id="jk-greeting" class="jk-greeting">
+                Mau mengerjakan apa hari ini?
+              </h2>
+              <div class="jk-home-wrap">
+                <Composer
+                  api={api}
+                  defaultCwd={info?.cwd}
+                  registry={view}
+                  recentCwds={recentCwds}
+                  onCreated={onCreated}
+                />
+              </div>
+            </section>
+          </>
         )}
       </main>
     </div>

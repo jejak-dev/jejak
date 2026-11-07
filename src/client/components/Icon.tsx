@@ -1,0 +1,25 @@
+const PATHS = {
+  plus: "M8 3v10M3 8h10",
+  send: "M8 13V3M3.5 7.5 8 3l4.5 4.5",
+  chevron: "M6 3.5 10.5 8 6 12.5",
+  gear: "M8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8zM8 1.5v1.6M8 12.9v1.6M1.5 8h1.6M12.9 8h1.6M3.4 3.4l1.1 1.1M11.5 11.5l1.1 1.1M3.4 12.6l1.1-1.1M11.5 4.5l1.1-1.1",
+  folder: "M1.8 4.2c0-.7.5-1.2 1.2-1.2h2.8l1.4 1.5H13c.7 0 1.2.5 1.2 1.2v6.3c0 .7-.5 1.2-1.2 1.2H3c-.7 0-1.2-.5-1.2-1.2z",
+  file: "M4 1.8h5l3 3v9.4H4zM9 1.8v3h3",
+  edit: "M2.5 13.5l.7-3L10.8 3a1.4 1.4 0 0 1 2 2L5.2 12.8zM9.5 4.3l2 2",
+  terminal: "M2 3.5h12v9H2zM4.5 6.5l2 1.5-2 1.5M8 9.5h3",
+  eye: "M1.5 8s2.3-4.5 6.5-4.5S14.5 8 14.5 8 12.2 12.5 8 12.5 1.5 8 1.5 8zM8 9.8a1.8 1.8 0 1 0 0-3.6 1.8 1.8 0 0 0 0 3.6z",
+  menu: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11",
+  stop: "M4.5 4.5h7v7h-7z",
+  check: "M3 8.5l3.2 3L13 4.5",
+  cube: "M8 1.8l5.5 3v6.4L8 14.2l-5.5-3V4.8zM8 8.2l5.5-3.2M8 8.2v6M8 8.2L2.5 5",
+} as const;
+
+export type IconName = keyof typeof PATHS;
+
+export function Icon({ name }: { name: IconName }) {
+  return (
+    <svg class="jk-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d={PATHS[name]} />
+    </svg>
+  );
+}

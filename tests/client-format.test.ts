@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   describeToolCalling,
+  folderName,
+  formatAgo,
   formatCost,
   formatCount,
   formatRelative,
+  groupSessions,
   parseHashRoute,
   providersHash,
   sessionHash,
@@ -133,5 +136,48 @@ describe("describeToolCalling", () => {
       label: "Tool calling tidak diuji",
       tone: "muted",
     });
+  });
+});
+
+describe("folderName", () => {
+  test("mengambil segmen terakhir path", () => {
+    expect(folderName("/Users/boy/Developer/jejak")).toBe("jejak");
+    expect(folderName("/Users/boy/Developer/jejak/")).toBe("jejak");
+    expect(folderName("/")).toBe("/");
+  });
+});
+
+describe("formatAgo", () => {
+  const now = new Date("2026-11-08T12:00:00.000Z");
+  const ago = (ms: number): string => new Date(now.getTime() - ms).toISOString();
+
+  test("satuan ringkas", () => {
+    expect(formatAgo(ago(10_000), now)).toBe("baru");
+    expect(formatAgo(ago(5 * 60_000), now)).toBe("5m");
+    expect(formatAgo(ago(3 * 3_600_000), now)).toBe("3j");
+    expect(formatAgo(ago(2 * 86_400_000), now)).toBe("2h");
+  });
+
+  test("tanggal tak valid menjadi kosong", () => {
+    expect(formatAgo("bukan-tanggal", now)).toBe("");
+  });
+});
+
+describe("groupSessions", () => {
+  const make = (id: string, cwd: string, updatedAt: string) => ({ id, cwd, updatedAt });
+
+  test("mengelompokkan per folder, terbaru di atas", () => {
+    const groups = groupSessions([
+      make("a", "/x/jejak", "2026-11-08T10:00:00.000Z"),
+      make("b", "/x/artemis", "2026-11-08T12:00:00.000Z"),
+      make("c", "/x/jejak", "2026-11-08T11:00:00.000Z"),
+    ]);
+
+    expect(groups.map((group) => group.label)).toEqual(["artemis", "jejak"]);
+    expect(groups[1]?.items.map((item) => item.id)).toEqual(["c", "a"]);
+  });
+
+  test("daftar kosong menghasilkan kelompok kosong", () => {
+    expect(groupSessions([])).toEqual([]);
   });
 });

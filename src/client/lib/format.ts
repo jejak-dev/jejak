@@ -40,6 +40,51 @@ export function formatRelative(iso: string, now: Date): string {
   return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" }).format(date);
 }
 
+export function folderName(cwd: string): string {
+  const segments = cwd.split("/").filter((segment) => segment !== "");
+  return segments[segments.length - 1] ?? "/";
+}
+
+export function formatAgo(iso: string, now: Date): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  const diffMs = now.getTime() - date.getTime();
+  if (diffMs < 45_000) return "baru";
+  if (diffMs < 3_600_000) return `${Math.max(1, Math.floor(diffMs / 60_000))}m`;
+  if (diffMs < 86_400_000) return `${Math.max(1, Math.floor(diffMs / 3_600_000))}j`;
+  if (diffMs < 30 * 86_400_000) return `${Math.max(1, Math.floor(diffMs / 86_400_000))}h`;
+  return new Intl.DateTimeFormat("id-ID", { day: "numeric", month: "short" }).format(date);
+}
+
+export interface SessionGroup<T> {
+  cwd: string;
+  label: string;
+  items: T[];
+}
+
+/** Kelompokkan sesi per folder kerja; kelompok dan isinya diurutkan dari yang terbaru. */
+export function groupSessions<T extends { cwd: string; updatedAt: string }>(
+  sessions: readonly T[],
+): SessionGroup<T>[] {
+  const byCwd = new Map<string, T[]>();
+  for (const session of sessions) {
+    const list = byCwd.get(session.cwd);
+    if (list === undefined) byCwd.set(session.cwd, [session]);
+    else list.push(session);
+  }
+
+  const newestFirst = (a: T, b: T): number => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0);
+  const groups = [...byCwd.entries()].map(([cwd, items]) => ({
+    cwd,
+    label: folderName(cwd),
+    items: [...items].sort(newestFirst),
+  }));
+  return groups.sort((a, b) => newestFirst(a.items[0]!, b.items[0]!));
+}
+
 export type StatusTone = "accent" | "success" | "danger" | "muted";
 
 export function statusTone(status: string): StatusTone {

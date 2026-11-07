@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "../lib/api";
 import type { RegistryView } from "../lib/registry-view";
+import { folderName } from "../lib/format";
+import { Icon } from "./Icon";
 
 export interface ComposerProps {
   api: ApiClient;
   defaultCwd?: string;
   registry?: RegistryView;
+  recentCwds?: string[];
   onCreated: (session: SessionInfo) => void;
 }
 
@@ -50,7 +53,7 @@ function readStoredMode(): PermissionMode {
   return stored === "acceptEdits" || stored === "plan" ? stored : "default";
 }
 
-export function Composer({ api, defaultCwd, registry, onCreated }: ComposerProps) {
+export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated }: ComposerProps) {
   const [prompt, setPrompt] = useState("");
   const [cwd, setCwd] = useState(() => readStorage(STORAGE_CWD) ?? defaultCwd ?? "");
   const [profileId, setProfileId] = useState("");
@@ -84,7 +87,17 @@ export function Composer({ api, defaultCwd, registry, onCreated }: ComposerProps
 
   useEffect(() => {
     const element = promptRef.current;
-    if (element !== null) autosize(element);
+    if (element === null) return;
+    autosize(element);
+    // Ukur ulang saat lebarnya berubah (mis. stylesheet baru selesai dimuat).
+    let lastWidth = element.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth === lastWidth) return;
+      lastWidth = element.clientWidth;
+      autosize(element);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
   }, []);
 
   useEffect(() => {
@@ -162,18 +175,29 @@ export function Composer({ api, defaultCwd, registry, onCreated }: ComposerProps
     autosize(element);
   };
 
+  const providerLabel = selectedProfile?.name ?? "Belum ada profil";
+  const modelEntry = models.find((entry) => entry.id === model);
+  const modelLabel = hasModelList
+    ? model === ""
+      ? "Model bawaan"
+      : (modelEntry?.label ?? model)
+    : undefined;
+  const modeLabel = PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label ?? "";
+  const canSend = !busy && prompt.trim() !== "";
+  const suggestions = recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4);
+
   return (
     <form class="jk-composer" onSubmit={onSubmit} aria-busy={busy}>
-      <div class="jk-field">
+      <div class="jk-comp-card">
         <label class="jk-visually-hidden" for="jk-prompt">
           Tugas
         </label>
         <textarea
           id="jk-prompt"
           ref={promptRef}
-          class="jk-textarea"
-          rows={3}
-          placeholder="Contoh: jelaskan struktur proyek ini"
+          class="jk-comp-input"
+          rows={2}
+          placeholder="Tulis tugas, mis. “jelaskan struktur proyek ini”"
           value={prompt}
           onInput={onPromptInput}
           onKeyDown={onPromptKeyDown}
@@ -181,120 +205,133 @@ export function Composer({ api, defaultCwd, registry, onCreated }: ComposerProps
           aria-invalid={promptError !== undefined}
           aria-describedby={promptError !== undefined ? "jk-prompt-error" : undefined}
         />
-        {promptError !== undefined && (
-          <p class="jk-error-line" id="jk-prompt-error" role="alert">
-            {promptError}
-          </p>
-        )}
-      </div>
 
-      <div class="jk-composer-row">
-        <div class="jk-field jk-field-cwd">
-          <label class="jk-label" for="jk-cwd">
-            Folder kerja
-          </label>
-          <input
-            id="jk-cwd"
-            ref={cwdRef}
-            type="text"
-            class="jk-input"
-            value={cwd}
-            onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
-            disabled={busy}
-            aria-invalid={cwdError !== undefined}
-            aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
-          />
-          {cwdError !== undefined && (
-            <p class="jk-error-line" id="jk-cwd-error" role="alert">
-              {cwdError}
-            </p>
-          )}
-        </div>
-      </div>
-
-      <div class="jk-composer-row">
-        <div class="jk-field">
-          <label class="jk-label" for="jk-provider">
-            Provider
-          </label>
-          <select
-            id="jk-provider"
-            class="jk-select"
-            value={profileId}
-            onChange={(event) => setProfileId((event.currentTarget as HTMLSelectElement).value)}
-            disabled={busy || profiles.length === 0}
-          >
-            {profiles.length === 0 && <option value="">Belum ada profil</option>}
-            {profiles.map((profile) => (
-              <option key={profile.id} value={profile.id}>
-                {profile.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div class="jk-field">
-          <label class="jk-label" for="jk-model">
-            Model
-          </label>
-          {hasModelList ? (
-            <select
-              id="jk-model"
-              class="jk-select"
-              value={model}
-              onChange={(event) => setModel((event.currentTarget as HTMLSelectElement).value)}
+        <div class="jk-comp-bar">
+          <label class="jk-chip jk-chip-cwd" title="Folder kerja">
+            <Icon name="folder" />
+            <span class="jk-visually-hidden">Folder kerja</span>
+            <input
+              id="jk-cwd"
+              ref={cwdRef}
+              type="text"
+              class="jk-chip-input"
+              value={cwd}
+              size={Math.min(Math.max(cwd.length, 12), 34)}
+              spellcheck={false}
+              onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
               disabled={busy}
+              aria-invalid={cwdError !== undefined}
+              aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
+            />
+          </label>
+
+          <label class="jk-chip">
+            <Icon name="cube" />
+            <span>{providerLabel}</span>
+            <select
+              id="jk-provider"
+              class="jk-chip-select"
+              aria-label="Provider"
+              value={profileId}
+              onChange={(event) => setProfileId((event.currentTarget as HTMLSelectElement).value)}
+              disabled={busy || profiles.length === 0}
             >
-              <option value="">Model bawaan profil</option>
-              {models.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label ?? entry.id}
+              {profiles.length === 0 && <option value="">Belum ada profil</option>}
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
                 </option>
               ))}
             </select>
-          ) : (
-            <input
-              id="jk-model"
-              type="text"
-              class="jk-input"
-              placeholder="Model bawaan profil"
-              value={model}
-              onInput={(event) => setModel((event.currentTarget as HTMLInputElement).value)}
-              disabled={busy}
-            />
-          )}
-        </div>
-
-        <div class="jk-field">
-          <label class="jk-label" for="jk-mode">
-            Mode izin
           </label>
-          <select
-            id="jk-mode"
-            class="jk-select"
-            value={permissionMode}
-            onChange={(event) =>
-              setPermissionMode((event.currentTarget as HTMLSelectElement).value as PermissionMode)
-            }
-            disabled={busy}
-          >
-            {PERMISSION_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </div>
 
-        <button type="submit" class="jk-button jk-button-primary" disabled={busy}>
-          {busy ? "Memulai…" : "Mulai sesi"}
-        </button>
+          {hasModelList ? (
+            <label class="jk-chip">
+              <span>{modelLabel}</span>
+              <select
+                id="jk-model"
+                class="jk-chip-select"
+                aria-label="Model"
+                value={model}
+                onChange={(event) => setModel((event.currentTarget as HTMLSelectElement).value)}
+                disabled={busy}
+              >
+                <option value="">Model bawaan</option>
+                {models.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.label ?? entry.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label class="jk-chip">
+              <span class="jk-visually-hidden">Model</span>
+              <input
+                id="jk-model"
+                type="text"
+                class="jk-chip-input"
+                placeholder="Model bawaan"
+                size={14}
+                value={model}
+                onInput={(event) => setModel((event.currentTarget as HTMLInputElement).value)}
+                disabled={busy}
+              />
+            </label>
+          )}
+
+          <label class="jk-chip">
+            <Icon name="eye" />
+            <span>{modeLabel}</span>
+            <select
+              id="jk-mode"
+              class="jk-chip-select"
+              aria-label="Mode izin"
+              value={permissionMode}
+              onChange={(event) =>
+                setPermissionMode((event.currentTarget as HTMLSelectElement).value as PermissionMode)
+              }
+              disabled={busy}
+            >
+              {PERMISSION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button type="submit" class="jk-send" disabled={!canSend} aria-label={busy ? "Memulai…" : "Mulai sesi"}>
+            <Icon name="send" />
+          </button>
+        </div>
       </div>
 
+      {promptError !== undefined && (
+        <p class="jk-error-line" id="jk-prompt-error" role="alert">
+          {promptError}
+        </p>
+      )}
+      {cwdError !== undefined && (
+        <p class="jk-error-line" id="jk-cwd-error" role="alert">
+          {cwdError}
+        </p>
+      )}
       {apiError !== undefined && (
         <p class="jk-error-line" role="alert">
           {apiError}
         </p>
+      )}
+
+      {suggestions.length > 0 && (
+        <div class="jk-recent">
+          <span>Folder terakhir:</span>
+          {suggestions.map((path) => (
+            <button type="button" key={path} title={path} onClick={() => setCwd(path)} disabled={busy}>
+              {folderName(path)}
+            </button>
+          ))}
+        </div>
       )}
     </form>
   );

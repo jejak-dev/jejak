@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { TimelineItem } from "../lib/timeline";
-import { formatCost, formatCount, statusTone } from "../lib/format";
+import { formatCost, formatCount } from "../lib/format";
+import { Icon } from "./Icon";
 
 export interface TimelineProps {
   items: TimelineItem[];
@@ -61,103 +62,106 @@ export function Timeline({ items, connection }: TimelineProps) {
         aria-live="polite"
         aria-label="Timeline sesi"
       >
-        {items.length === 0 && <p class="jk-empty-line">Belum ada aktivitas.</p>}
+        <div class="jk-col">
+          {items.length === 0 && <p class="jk-empty-line">Belum ada aktivitas.</p>}
 
-        {items.map((item, index) => {
-          switch (item.kind) {
-            case "user":
-              return (
-                <div class="jk-row jk-row-user" key={index}>
-                  <div class="jk-bubble-user">{item.text}</div>
-                </div>
-              );
-
-            case "thinking":
-              return (
-                <details class="jk-thinking" key={index} style={depthStyle(item.depth)}>
-                  <summary>Berpikir</summary>
-                  <p class="jk-pre-wrap">{item.text}</p>
-                </details>
-              );
-
-            case "text":
-              return (
-                <div class="jk-text" key={index} style={depthStyle(item.depth)}>
-                  {item.text}
-                </div>
-              );
-
-            case "tool": {
-              const tone = statusTone(item.status);
-              const input = prettyInput(item.input);
-              return (
-                <details class="jk-tool" key={index} style={depthStyle(item.depth)}>
-                  <summary class="jk-tool-summary">
-                    <span class="jk-tool-name">{item.name}</span>
-                    {item.summary !== "" && (
-                      <span class="jk-mono jk-tool-call">{item.summary}</span>
-                    )}
-                    <span class={`jk-badge jk-badge-${tone}`}>{item.status}</span>
-                  </summary>
-                  <div class="jk-tool-body">
-                    {input !== "" && (
-                      <section>
-                        <h4 class="jk-tool-label">Masukan</h4>
-                        <pre class="jk-pre jk-pre-input">{input}</pre>
-                      </section>
-                    )}
-                    {item.output !== undefined && (
-                      <section>
-                        <h4 class="jk-tool-label">Hasil</h4>
-                        <pre class="jk-pre jk-pre-output">{clip(item.output, 20000)}</pre>
-                      </section>
-                    )}
+          {items.map((item, index) => {
+            switch (item.kind) {
+              case "user":
+                return (
+                  <div class="jk-user" key={index}>
+                    {item.text}
                   </div>
-                </details>
-              );
+                );
+
+              case "thinking":
+                return (
+                  <details class="jk-step jk-step-think" key={index} style={depthStyle(item.depth)}>
+                    <summary>
+                      <span class="jk-chev">
+                        <Icon name="chevron" />
+                      </span>
+                      Berpikir
+                    </summary>
+                    <div class="jk-step-body jk-pre-wrap">{item.text}</div>
+                  </details>
+                );
+
+              case "text":
+                return (
+                  <p class="jk-text" key={index} style={depthStyle(item.depth)}>
+                    {item.text}
+                  </p>
+                );
+
+              case "tool": {
+                const input = prettyInput(item.input);
+                return (
+                  <details class="jk-step" key={index} style={depthStyle(item.depth)}>
+                    <summary>
+                      <span class="jk-chev">
+                        <Icon name="chevron" />
+                      </span>
+                      <span class="jk-step-name">{item.name}</span>
+                      {item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>}
+                      <span class={`jk-step-status jk-step-${item.status}`}>{item.status}</span>
+                    </summary>
+                    <div class="jk-step-body">
+                      {input !== "" && (
+                        <section>
+                          <h4 class="jk-step-label">Masukan</h4>
+                          <pre class="jk-pre">{input}</pre>
+                        </section>
+                      )}
+                      {item.output !== undefined && (
+                        <section>
+                          <h4 class="jk-step-label">Hasil</h4>
+                          <pre class="jk-pre jk-pre-output">{clip(item.output, 20000)}</pre>
+                        </section>
+                      )}
+                    </div>
+                  </details>
+                );
+              }
+
+              case "error":
+                return (
+                  <div class="jk-danger-box" key={index} role="status">
+                    {item.message}
+                  </div>
+                );
+
+              case "result":
+                return (
+                  <footer class="jk-result" key={index}>
+                    <span class={`jk-result-mark ${item.ok ? "jk-ok" : "jk-bad"}`}>
+                      {item.ok ? "Selesai" : "Gagal"}
+                    </span>
+                    <span>{formatCount(item.inputTokens)} token masuk</span>
+                    <span>{formatCount(item.outputTokens)} keluar</span>
+                    <span>{formatCount(item.numTurns)} giliran</span>
+                    <span>{formatCost(item.costUsd)}</span>
+                    {!item.ok && item.error !== undefined && (
+                      <span class="jk-bad">{item.error}</span>
+                    )}
+                  </footer>
+                );
+
+              default:
+                return null;
             }
-
-            case "error":
-              return (
-                <div class="jk-danger-box" key={index} role="status">
-                  {item.message}
-                </div>
-              );
-
-            case "result":
-              return (
-                <footer class="jk-result" key={index}>
-                  <span class={`jk-badge jk-badge-${item.ok ? "success" : "danger"}`}>
-                    {item.ok ? "ok" : "gagal"}
-                  </span>
-                  <span class="jk-result-stat">
-                    Token masuk: {formatCount(item.inputTokens)}
-                  </span>
-                  <span class="jk-result-stat">
-                    Token keluar: {formatCount(item.outputTokens)}
-                  </span>
-                  <span class="jk-result-stat">Biaya: {formatCost(item.costUsd)}</span>
-                  <span class="jk-result-stat">Giliran: {formatCount(item.numTurns)}</span>
-                  {!item.ok && item.error !== undefined && (
-                    <span class="jk-result-error">{item.error}</span>
-                  )}
-                </footer>
-              );
-
-            default:
-              return null;
-          }
-        })}
+          })}
+        </div>
       </div>
 
       <div class="jk-timeline-foot">
         {connection === "menyambung" && (
-          <p class="jk-note" role="status">
+          <p class="jk-float-note" role="status">
             Menyambung ulang…
           </p>
         )}
         {!pinned && (
-          <button type="button" class="jk-button jk-button-secondary" onClick={scrollToBottom}>
+          <button type="button" class="jk-float-btn" onClick={scrollToBottom}>
             Ke bawah
           </button>
         )}

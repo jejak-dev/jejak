@@ -20,7 +20,7 @@ describe("buildClientBundle", () => {
     expect(bundle.js.length).toBeGreaterThan(0);
     expect(bundle.js).toContain("Jejak");
     expect(bundle.css.length).toBeGreaterThan(0);
-    expect(bundle.css).toContain("--accent");
+    expect(bundle.css).toContain("--ink");
   });
 
   test("entri dengan sintaks rusak melempar Error Bahasa Indonesia", async () => {
