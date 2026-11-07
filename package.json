@@ -1,0 +1,32 @@
+{
+  "name": "jejak",
+  "version": "0.0.1",
+  "description": "Workbench agent coding dengan memory lintas repo dan analisis dampak.",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "jejak": "src/cli/index.ts"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "scripts": {
+    "dev": "bun run --hot src/cli/index.ts serve",
+    "start": "bun run src/cli/index.ts serve",
+    "doctor": "bun run src/cli/index.ts doctor",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "elysia": "^1.4.0",
+    "preact": "^10.29.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "~5.8.2"
+  }
+}

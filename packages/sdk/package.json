@@ -1,0 +1,9 @@
+{
+  "name": "@jejak/sdk",
+  "version": "0.0.1",
+  "description": "Kontrak plugin Jejak: extractor, panel, dan adapter.",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}

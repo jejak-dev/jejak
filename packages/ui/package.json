@@ -1,0 +1,9 @@
+{
+  "name": "@jejak/ui",
+  "version": "0.0.1",
+  "description": "Kit komponen UI Jejak (Preact).",
+  "license": "MIT",
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts"
+}
