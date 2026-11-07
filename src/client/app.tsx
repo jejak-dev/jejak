@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { Composer } from "./components/Composer";
+import { ProviderSettings } from "./components/ProviderSettings";
 import { SessionHeader } from "./components/SessionHeader";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
@@ -9,10 +10,10 @@ import { createApiClient } from "./lib/api";
 
 export function App() {
   const api = useMemo(() => createApiClient(), []);
-  const [selectedId, navigate] = useHashRoute();
+  const { sessionId: selectedId, view: routeView, navigateToSession: navigate } = useHashRoute();
   const { info } = useInfo(api);
   const { sessions, refresh } = useSessions(api);
-  const { view } = useRegistry(api);
+  const { view, reload } = useRegistry(api);
 
   const selected = sessions.find((session) => session.id === selectedId);
   const timeline = useTimeline(api, selected);
@@ -23,9 +24,19 @@ export function App() {
   const activeProfile = view?.profiles.find((profile) => profile.id === view.activeProfileId);
   const activeProfileLabel = activeProfile?.name ?? view?.activeProfileId;
 
+  const showingProviders = routeView === "providers";
+
   useEffect(() => {
-    document.title = selected !== undefined ? `${selected.title} · Jejak` : "Jejak";
-  }, [selected]);
+    if (showingProviders) {
+      document.title = "Provider · Jejak";
+    } else {
+      document.title = selected !== undefined ? `${selected.title} · Jejak` : "Jejak";
+    }
+  }, [selected, showingProviders]);
+
+  const onSaved = useCallback((): void => {
+    void reload();
+  }, [reload]);
 
   const onSelect = useCallback(
     (id: string): void => {
@@ -73,14 +84,22 @@ export function App() {
       <Sidebar
         info={info}
         sessions={sessions}
-        selectedId={selectedId}
+        selectedId={showingProviders ? undefined : selectedId}
         onSelect={onSelect}
         onNew={onNew}
         activeProfileLabel={activeProfileLabel}
+        providersActive={showingProviders}
       />
 
       <main class="jk-main">
-        {selected !== undefined ? (
+        {showingProviders ? (
+          <div class="jk-settings-page">
+            <a class="jk-back-link" href="#/">
+              ← Kembali ke sesi
+            </a>
+            <ProviderSettings api={api} onSaved={onSaved} />
+          </div>
+        ) : selected !== undefined ? (
           <>
             <SessionHeader
               session={selected}
@@ -98,7 +117,9 @@ export function App() {
           </section>
         )}
 
-        <Composer api={api} defaultCwd={info?.cwd} registry={view} onCreated={onCreated} />
+        {!showingProviders && (
+          <Composer api={api} defaultCwd={info?.cwd} registry={view} onCreated={onCreated} />
+        )}
       </main>
     </div>
   );

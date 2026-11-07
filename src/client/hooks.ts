@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "./lib/api";
-import { parseHashRoute, sessionHash } from "./lib/format";
+import { parseHashRoute, providersHash, sessionHash } from "./lib/format";
 import { parseRegistryView, type RegistryView } from "./lib/registry-view";
 import { followSession } from "./lib/sse";
 import { reduceTimeline, startTimeline, type TimelineItem } from "./lib/timeline";
@@ -13,32 +13,64 @@ function messageOf(error: unknown): string {
   return "terjadi kesalahan";
 }
 
-function currentRoute(): string | undefined {
-  return parseHashRoute(window.location.hash).sessionId;
+interface Route {
+  sessionId?: string;
+  view?: "providers";
 }
 
-export function useHashRoute(): [string | undefined, (sessionId?: string) => void] {
-  const [sessionId, setSessionId] = useState<string | undefined>(currentRoute);
+function currentRoute(): Route {
+  return parseHashRoute(window.location.hash);
+}
+
+export interface HashRouteState {
+  sessionId?: string;
+  view?: "providers";
+  navigateToSession: (id?: string) => void;
+  navigateToProviders: () => void;
+}
+
+export function useHashRoute(): HashRouteState {
+  const [route, setRoute] = useState<Route>(currentRoute);
 
   useEffect(() => {
     const onChange = (): void => {
-      setSessionId(currentRoute());
+      setRoute(currentRoute());
     };
     window.addEventListener("hashchange", onChange);
+    window.addEventListener("popstate", onChange);
     return () => {
       window.removeEventListener("hashchange", onChange);
+      window.removeEventListener("popstate", onChange);
     };
   }, []);
 
-  const navigate = useCallback((next?: string) => {
-    const hash = sessionHash(next);
+  const applyHash = useCallback((hash: string) => {
     if (window.location.hash !== hash) {
       window.location.hash = hash;
     }
-    setSessionId(parseHashRoute(hash).sessionId);
+    setRoute(parseHashRoute(hash));
   }, []);
 
-  return [sessionId, navigate];
+  const navigateToSession = useCallback(
+    (id?: string) => {
+      applyHash(sessionHash(id));
+    },
+    [applyHash],
+  );
+
+  const navigateToProviders = useCallback(() => {
+    applyHash(providersHash());
+  }, [applyHash]);
+
+  return useMemo(
+    () => ({
+      sessionId: route.sessionId,
+      view: route.view,
+      navigateToSession,
+      navigateToProviders,
+    }),
+    [route, navigateToSession, navigateToProviders],
+  );
 }
 
 export interface InfoState {

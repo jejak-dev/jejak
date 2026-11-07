@@ -8,6 +8,7 @@ export interface SidebarProps {
   onSelect: (id: string) => void;
   onNew: () => void;
   activeProfileLabel?: string;
+  providersActive?: boolean;
 }
 
 export function Sidebar({
@@ -17,6 +18,7 @@ export function Sidebar({
   onSelect,
   onNew,
   activeProfileLabel,
+  providersActive = false,
 }: SidebarProps) {
   const now = new Date();
 
@@ -68,9 +70,16 @@ export function Sidebar({
       </nav>
 
       <footer class="jk-sidebar-foot">
-        {activeProfileLabel !== undefined && (
-          <p class="jk-foot-line">Provider: {activeProfileLabel}</p>
-        )}
+        <p class="jk-foot-line">
+          Aktif: {activeProfileLabel ?? "belum ada profil"}
+        </p>
+        <a
+          class={`jk-foot-link${providersActive ? " jk-foot-link-active" : ""}`}
+          href="#/providers"
+          aria-current={providersActive ? "page" : undefined}
+        >
+          Pengaturan provider
+        </a>
       </footer>
     </aside>
   );
