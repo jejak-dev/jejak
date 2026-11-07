@@ -227,6 +227,85 @@ describe("followSession", () => {
     expect(delays).toEqual([]);
   });
 
+  test("503 diulang lalu 200 sukses", async () => {
+    const okBody = streamFromChunks([
+      'id: 1\nevent: agent\ndata: {"type":"text","text":"a"}\n\n',
+      'event: end\ndata: {"status":"selesai"}\n\n',
+    ]);
+    const { fetch, calls } = fakeFetch((_call, index) =>
+      Promise.resolve(
+        index === 0
+          ? new Response(JSON.stringify({ error: "sibuk" }), { status: 503 })
+          : new Response(okBody, { status: 200 }),
+      ),
+    );
+    const delays: number[] = [];
+
+    const items = await collectFollow(
+      followSession("abc", {
+        fetch,
+        retryDelaysMs: [7],
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+      }),
+    );
+
+    expect(items).toEqual([
+      { kind: "event", seq: 1, event: { type: "text", text: "a" } },
+      { kind: "end", status: "selesai" },
+    ]);
+    expect(calls).toHaveLength(2);
+    expect(delays).toEqual([7]);
+  });
+
+  test("429 diulang tanpa melempar", async () => {
+    const okBody = streamFromChunks(['event: end\ndata: {"status":"selesai"}\n\n']);
+    const { fetch, calls } = fakeFetch((_call, index) =>
+      Promise.resolve(
+        index === 0
+          ? new Response(JSON.stringify({ error: "terlalu banyak" }), { status: 429 })
+          : new Response(okBody, { status: 200 }),
+      ),
+    );
+    const delays: number[] = [];
+
+    const items = await collectFollow(
+      followSession("abc", {
+        fetch,
+        retryDelaysMs: [3],
+        sleep: async (ms) => {
+          delays.push(ms);
+        },
+      }),
+    );
+
+    expect(items).toEqual([{ kind: "end", status: "selesai" }]);
+    expect(calls).toHaveLength(2);
+    expect(delays).toEqual([3]);
+  });
+
+  test("abort saat menunggu retry setelah 500 berhenti tanpa error", async () => {
+    const controller = new AbortController();
+    const { fetch, calls } = fakeFetch(() =>
+      Promise.resolve(new Response(JSON.stringify({ error: "meledak" }), { status: 500 })),
+    );
+
+    const items = await collectFollow(
+      followSession("abc", {
+        fetch,
+        signal: controller.signal,
+        retryDelaysMs: [1000],
+        sleep: async () => {
+          controller.abort();
+        },
+      }),
+    );
+
+    expect(items).toEqual([]);
+    expect(calls).toHaveLength(1);
+  });
+
   test("signal yang sudah abort selesai tanpa error dan tanpa fetch", async () => {
     const controller = new AbortController();
     controller.abort();

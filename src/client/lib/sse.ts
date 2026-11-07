@@ -185,6 +185,10 @@ export async function* followSession(
       }
 
       if (!response.ok) {
+        if (response.status === 429 || response.status >= 500) {
+          await sleep(nextDelay());
+          continue;
+        }
         const serverError = await response
           .json()
           .then((data: unknown) => {
