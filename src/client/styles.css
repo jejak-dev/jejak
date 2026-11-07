@@ -927,6 +927,268 @@ code {
   color: var(--t1);
 }
 
+/* Kartu izin */
+
+.jk-perm {
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  scroll-margin: 20px;
+}
+
+.jk-perm-risky {
+  border-color: color-mix(in srgb, var(--bad) 55%, transparent);
+}
+
+.jk-perm-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.jk-perm-name {
+  font-weight: 600;
+}
+
+.jk-perm-risk {
+  font-size: 12px;
+  color: var(--warn);
+}
+
+.jk-perm-warning {
+  font-size: 12px;
+  color: var(--bad);
+}
+
+.jk-perm-timer {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-perm-what {
+  margin: 6px 14px 0;
+  color: var(--t2);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.jk-perm-preview {
+  margin: 10px 14px 0;
+  border-radius: 10px;
+  background: var(--code);
+  overflow: hidden;
+}
+
+.jk-step-body .jk-perm-preview {
+  margin: 0;
+}
+
+.jk-perm-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 12px;
+  font: 11.5px var(--mono);
+  color: var(--t3);
+}
+
+.jk-perm-preview-head span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.jk-perm-preview-head span:last-child {
+  text-align: right;
+}
+
+.jk-perm-code {
+  padding: 0 0 8px;
+  font: 12px/1.6 var(--mono);
+  max-height: 220px;
+  overflow: auto;
+}
+
+.jk-perm-line {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+}
+
+.jk-perm-line i {
+  padding-right: 10px;
+  text-align: right;
+  font-style: normal;
+  color: var(--t3);
+  user-select: none;
+}
+
+.jk-perm-line span {
+  padding-right: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jk-perm-add {
+  background: var(--add);
+}
+
+.jk-perm-del {
+  background: var(--del);
+}
+
+.jk-perm-cmd {
+  margin: 0;
+  padding: 0 12px 10px;
+  font: 12.5px/1.6 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.jk-perm-cmd:not(.jk-perm-json)::before {
+  content: "$ ";
+  color: var(--t3);
+}
+
+.jk-perm-more {
+  display: block;
+  width: 100%;
+  padding: 6px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  font-size: 12px;
+  color: var(--t2);
+}
+
+.jk-perm-more:hover {
+  color: var(--t1);
+}
+
+.jk-perm-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 14px 14px;
+}
+
+.jk-perm-spacer {
+  flex: 1;
+}
+
+.jk-button-caution {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.jk-button-caution:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 10%, transparent);
+}
+
+.jk-button-ghost {
+  border-color: transparent;
+  color: var(--t2);
+}
+
+.jk-link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--t2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-2);
+}
+
+.jk-link-btn:hover:not(:disabled) {
+  color: var(--t1);
+}
+
+.jk-link-btn:disabled {
+  opacity: 0.5;
+}
+
+.jk-perm-reason {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 14px;
+}
+
+.jk-perm-reason textarea {
+  width: 100%;
+  min-height: 54px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.jk-perm-reason-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.jk-perm-error {
+  margin: 0 14px 14px;
+  font-size: 12px;
+  color: var(--bad);
+}
+
+.jk-perm-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--t3);
+}
+
+.jk-pending-pill {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 6px 8px 6px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12px;
+}
+
+.jk-pending-pill > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-pending-go {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--on-ink);
+}
+
+@media (max-width: 760px) {
+  .jk-perm-actions .jk-button {
+    flex: 1 1 auto;
+  }
+
+  .jk-perm-timer {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
 /* Halaman provider */
 
 .jk-page {

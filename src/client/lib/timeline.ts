@@ -1,6 +1,12 @@
-import type { AgentEvent } from "../../server/agent/events";
+import {
+  PERMISSION_EXPIRED_MESSAGE,
+  PERMISSION_STOPPED_MESSAGE,
+  type AgentEvent,
+} from "../../server/agent/events";
 
 export type ToolStatus = "berjalan" | "selesai" | "gagal";
+
+export type PermissionStatus = "menunggu" | "diizinkan" | "ditolak" | "kedaluwarsa" | "dihentikan";
 
 export type TimelineItem =
   | { kind: "user"; text: string }
@@ -15,6 +21,15 @@ export type TimelineItem =
       status: ToolStatus;
       output?: string;
       depth: number;
+    }
+  | {
+      kind: "permission";
+      id: string;
+      name: string;
+      input: unknown;
+      expiresAt?: string;
+      status: PermissionStatus;
+      message?: string;
     }
   | { kind: "error"; message: string }
   | {
@@ -144,6 +159,36 @@ export function reduceTimeline(
       return items.map((item, position) => {
         if (position !== index || item.kind !== "tool") return item;
         return { ...item, status, output: event.output };
+      });
+    }
+
+    case "permission_request": {
+      const item: TimelineItem = {
+        kind: "permission",
+        id: event.id,
+        name: event.name,
+        input: event.input,
+        status: "menunggu",
+      };
+      if (event.expiresAt !== undefined) item.expiresAt = event.expiresAt;
+      return [...items, item];
+    }
+
+    case "permission_resolved": {
+      const status: PermissionStatus =
+        event.decision === "allow"
+          ? "diizinkan"
+          : event.message === PERMISSION_EXPIRED_MESSAGE
+            ? "kedaluwarsa"
+            : event.message === PERMISSION_STOPPED_MESSAGE
+              ? "dihentikan"
+              : "ditolak";
+      const showMessage = status === "ditolak" && event.message !== undefined && event.message !== "";
+      return items.map((item) => {
+        if (item.kind !== "permission" || item.id !== event.id) return item;
+        const next: TimelineItem = { ...item, status };
+        if (showMessage) next.message = event.message;
+        return next;
       });
     }
 

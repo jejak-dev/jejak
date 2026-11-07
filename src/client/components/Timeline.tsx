@@ -2,10 +2,13 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { TimelineItem } from "../lib/timeline";
 import { formatCost, formatCount } from "../lib/format";
 import { Icon } from "./Icon";
+import { PermissionCard } from "./PermissionCard";
 
 export interface TimelineProps {
   items: TimelineItem[];
   connection: string;
+  cwd: string;
+  onDecide: (requestId: string, decision: "allow" | "deny", message?: string) => Promise<void>;
 }
 
 const MAX_INPUT_CHARS = 2000;
@@ -29,7 +32,7 @@ function depthStyle(depth: number): Record<string, string> | undefined {
   return depth > 0 ? { marginLeft: `${Math.min(depth, 3) * 16}px` } : undefined;
 }
 
-export function Timeline({ items, connection }: TimelineProps) {
+export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pinned, setPinned] = useState(true);
 
@@ -44,6 +47,42 @@ export function Timeline({ items, connection }: TimelineProps) {
     if (element === null) return;
     const distance = element.scrollHeight - element.scrollTop - element.clientHeight;
     setPinned(distance <= PIN_THRESHOLD_PX);
+  };
+
+  const pending = items.filter(
+    (item): item is Extract<TimelineItem, { kind: "permission" }> =>
+      item.kind === "permission" && item.status === "menunggu",
+  );
+  const firstPendingId = pending[0]?.id;
+  const [pendingHidden, setPendingHidden] = useState(false);
+
+  // Kartu izin pertama yang menunggu di luar layar: tampilkan pil penunjuk.
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (root === null || firstPendingId === undefined) {
+      setPendingHidden(false);
+      return;
+    }
+    const node = Array.from(root.querySelectorAll<HTMLElement>("[data-permission-id]")).find(
+      (element) => element.dataset.permissionId === firstPendingId,
+    );
+    if (node === undefined) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setPendingHidden(entry !== undefined && !entry.isIntersecting),
+      { root, threshold: 0.1 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [firstPendingId, items.length]);
+
+  const jumpToPending = (): void => {
+    const root = scrollRef.current;
+    if (root === null || firstPendingId === undefined) return;
+    const node = Array.from(root.querySelectorAll<HTMLElement>("[data-permission-id]")).find(
+      (element) => element.dataset.permissionId === firstPendingId,
+    );
+    node?.scrollIntoView({ block: "center" });
+    node?.focus({ preventScroll: true });
   };
 
   const scrollToBottom = (): void => {
@@ -124,6 +163,9 @@ export function Timeline({ items, connection }: TimelineProps) {
                 );
               }
 
+              case "permission":
+                return <PermissionCard key={item.id} item={item} cwd={cwd} onDecide={onDecide} />;
+
               case "error":
                 return (
                   <div class="jk-danger-box" key={index} role="status">
@@ -137,10 +179,14 @@ export function Timeline({ items, connection }: TimelineProps) {
                     <span class={`jk-result-mark ${item.ok ? "jk-ok" : "jk-bad"}`}>
                       {item.ok ? "Selesai" : "Gagal"}
                     </span>
-                    <span>{formatCount(item.inputTokens)} token masuk</span>
-                    <span>{formatCount(item.outputTokens)} keluar</span>
-                    <span>{formatCount(item.numTurns)} giliran</span>
-                    <span>{formatCost(item.costUsd)}</span>
+                    {item.inputTokens !== undefined && (
+                      <span>{formatCount(item.inputTokens)} token masuk</span>
+                    )}
+                    {item.outputTokens !== undefined && (
+                      <span>{formatCount(item.outputTokens)} keluar</span>
+                    )}
+                    {item.numTurns !== undefined && <span>{formatCount(item.numTurns)} giliran</span>}
+                    {item.costUsd !== undefined && <span>{formatCost(item.costUsd)}</span>}
                     {!item.ok && item.error !== undefined && (
                       <span class="jk-bad">{item.error}</span>
                     )}
@@ -155,6 +201,15 @@ export function Timeline({ items, connection }: TimelineProps) {
       </div>
 
       <div class="jk-timeline-foot">
+        {pendingHidden && pending.length > 0 && (
+          <button type="button" class="jk-pending-pill" onClick={jumpToPending}>
+            <span>
+              Menunggu izin: {pending[0]?.name}
+              {pending.length > 1 ? ` (+${pending.length - 1})` : ""}
+            </span>
+            <span class="jk-pending-go">Lihat</span>
+          </button>
+        )}
         {connection === "menyambung" && (
           <p class="jk-float-note" role="status">
             Menyambung ulang…

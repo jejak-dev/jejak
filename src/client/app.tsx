@@ -27,13 +27,16 @@ export function App() {
 
   const showingProviders = routeView === "providers";
 
+  const waiting = sessions.reduce((total, session) => total + session.pendingPermissions, 0);
+
   useEffect(() => {
-    if (showingProviders) {
-      document.title = "Provider · Jejak";
-    } else {
-      document.title = selected !== undefined ? `${selected.title} · Jejak` : "Jejak";
-    }
-  }, [selected, showingProviders]);
+    const base = showingProviders
+      ? "Provider · Jejak"
+      : selected !== undefined
+        ? `${selected.title} · Jejak`
+        : "Jejak";
+    document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
+  }, [selected, showingProviders, waiting]);
 
   // Pindah halaman menutup laci sidebar (tampilan sempit).
   useEffect(() => {
@@ -86,6 +89,15 @@ export function App() {
     })();
   }, [api, interruptId, refresh]);
 
+  const onDecide = useCallback(
+    async (requestId: string, decision: "allow" | "deny", message?: string): Promise<void> => {
+      if (interruptId === undefined) return;
+      await api.decidePermission(interruptId, requestId, decision, message);
+      void refresh();
+    },
+    [api, interruptId, refresh],
+  );
+
   const headerError = selected !== undefined ? interruptError : undefined;
   const recentCwds = useMemo(() => {
     const seen: string[] = [];
@@ -130,7 +142,12 @@ export function App() {
               busy={interrupting}
               error={headerError}
             />
-            <Timeline items={timeline.items} connection={timeline.connection} />
+            <Timeline
+              items={timeline.items}
+              connection={timeline.connection}
+              cwd={selected.cwd}
+              onDecide={onDecide}
+            />
           </>
         ) : (
           <>

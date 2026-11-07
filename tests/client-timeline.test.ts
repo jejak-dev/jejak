@@ -192,3 +192,59 @@ describe("reduceTimeline", () => {
     expect((items[1] as { status: string }).status).toBe("berjalan");
   });
 });
+
+describe("reduceTimeline: izin", () => {
+  const request: AgentEvent = {
+    type: "permission_request",
+    id: "p1",
+    name: "Write",
+    input: { file_path: "a.txt" },
+    expiresAt: "2026-11-08T10:10:00.000Z",
+  };
+
+  test("permission_request menambah kartu berstatus menunggu", () => {
+    expect(reduceAll([request])).toEqual([
+      {
+        kind: "permission",
+        id: "p1",
+        name: "Write",
+        input: { file_path: "a.txt" },
+        expiresAt: "2026-11-08T10:10:00.000Z",
+        status: "menunggu",
+      },
+    ]);
+  });
+
+  test("allow menjadi diizinkan", () => {
+    const items = reduceAll([request, { type: "permission_resolved", id: "p1", decision: "allow" }]);
+    expect(items[0]).toMatchObject({ kind: "permission", status: "diizinkan" });
+  });
+
+  test("deny membawa alasan pengguna", () => {
+    const items = reduceAll([
+      request,
+      { type: "permission_resolved", id: "p1", decision: "deny", message: "pakai tests/ saja" },
+    ]);
+    expect(items[0]).toMatchObject({ status: "ditolak", message: "pakai tests/ saja" });
+  });
+
+  test("pesan sistem dipetakan ke kedaluwarsa dan dihentikan tanpa alasan", () => {
+    const expired = reduceAll([
+      request,
+      { type: "permission_resolved", id: "p1", decision: "deny", message: "waktu izin habis" },
+    ]);
+    expect(expired[0]).toMatchObject({ status: "kedaluwarsa" });
+    expect(expired[0]).not.toHaveProperty("message");
+
+    const stopped = reduceAll([
+      request,
+      { type: "permission_resolved", id: "p1", decision: "deny", message: "sesi dihentikan" },
+    ]);
+    expect(stopped[0]).toMatchObject({ status: "dihentikan" });
+  });
+
+  test("resolved untuk id lain tidak mengubah kartu", () => {
+    const items = reduceAll([request, { type: "permission_resolved", id: "lain", decision: "allow" }]);
+    expect(items[0]).toMatchObject({ status: "menunggu" });
+  });
+});
