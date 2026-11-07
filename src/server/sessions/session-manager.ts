@@ -11,6 +11,7 @@ import {
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
 import { estimateCostUsd } from "../pricing";
+import type { SessionStore, StoredSession } from "./session-store";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
 
@@ -55,6 +56,7 @@ export interface SessionManagerOptions {
   maxPromptLength?: number;
   now?: () => Date;
   permissionTimeoutMs?: number;
+  store?: SessionStore;
 }
 
 export class SessionError extends Error {
@@ -85,7 +87,7 @@ interface SessionRecord {
   pending: Map<string, Pending>;
   permissionTimeoutMs: number;
   price?: ModelPrice;
-  resolved: ResolvedProvider;
+  resolved?: ResolvedProvider;
   sdkSessionId?: string;
   queue: string[];
 }
@@ -174,6 +176,8 @@ export class SessionManager {
   private readonly now: () => Date;
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly permissionTimeoutMs: number;
+  private readonly store: SessionStore | undefined;
+  private storeWarned = false;
 
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
@@ -184,6 +188,108 @@ export class SessionManager {
     this.maxPromptLength = options.maxPromptLength ?? DEFAULTS.maxPromptLength;
     this.now = options.now ?? (() => new Date());
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULTS.permissionTimeoutMs;
+    this.store = options.store;
+    if (this.store !== undefined) {
+      this.restore();
+    }
+  }
+
+  private storeGuard(action: () => void): void {
+    if (this.store === undefined) return;
+    try {
+      action();
+    } catch (error) {
+      if (!this.storeWarned) {
+        this.storeWarned = true;
+        console.warn(`Penyimpanan sesi gagal: ${errorMessage(error)}`);
+      }
+    }
+  }
+
+  private persistSession(record: SessionRecord): void {
+    const info = { ...record.info };
+    const sdkSessionId = record.sdkSessionId;
+    this.storeGuard(() => this.store?.saveSession(info, sdkSessionId));
+  }
+
+  private restore(): void {
+    const store = this.store;
+    if (store === undefined) return;
+
+    let stored: StoredSession[];
+    try {
+      stored = store.loadSessions();
+    } catch (error) {
+      this.storeWarned = true;
+      console.warn(`Penyimpanan sesi gagal dimuat: ${errorMessage(error)}`);
+      return;
+    }
+
+    for (const item of stored) {
+      let buffer: SequencedEvent[] = [];
+      try {
+        buffer = store.loadEvents(item.info.id).slice(-this.maxEventsPerSession);
+      } catch (error) {
+        if (!this.storeWarned) {
+          this.storeWarned = true;
+          console.warn(`Penyimpanan sesi gagal: ${errorMessage(error)}`);
+        }
+      }
+
+      const lastSeq = buffer.reduce((max, event) => Math.max(max, event.seq), 0);
+      const nextSeq = Math.max(item.nextSeq, lastSeq + 1);
+
+      let settle: () => void = () => {};
+      const done = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
+
+      const record: SessionRecord = {
+        info: { ...item.info, queued: 0, pendingPermissions: 0 },
+        controller: new AbortController(),
+        buffer,
+        nextSeq,
+        version: 0,
+        listeners: new Set(),
+        done,
+        settle,
+        pending: new Map(),
+        permissionTimeoutMs: this.permissionTimeoutMs,
+        queue: [],
+      };
+      if (item.sdkSessionId !== undefined) {
+        record.sdkSessionId = item.sdkSessionId;
+      }
+      this.sessions.set(record.info.id, record);
+
+      if (record.info.status === "berjalan") {
+        record.info.status = "gagal";
+        this.append(record, { type: "error", message: "server dimulai ulang saat sesi berjalan" });
+        this.append(record, {
+          type: "result",
+          ok: false,
+          error: "server dimulai ulang saat sesi berjalan",
+        });
+        record.info.updatedAt = this.now().toISOString();
+        this.persistSession(record);
+      }
+    }
+
+    // Urutkan agar eviksi (paling lama) bekerja seperti urutan createdAt.
+    const ordered = Array.from(this.sessions.values()).sort((a, b) =>
+      a.info.createdAt.localeCompare(b.info.createdAt),
+    );
+    this.sessions.clear();
+    for (const record of ordered) {
+      this.sessions.set(record.info.id, record);
+    }
+
+    while (this.sessions.size > this.maxSessions) {
+      const victim = this.sessions.values().next().value as SessionRecord | undefined;
+      if (victim === undefined) break;
+      this.sessions.delete(victim.info.id);
+      this.storeGuard(() => store.deleteSession(victim.info.id));
+    }
   }
 
   async create(input: CreateSessionInput): Promise<SessionInfo> {
@@ -241,6 +347,7 @@ export class SessionManager {
       queue: [],
     };
     this.sessions.set(info.id, record);
+    this.persistSession(record);
 
     this.startTurn(record, validated.prompt, false);
 
@@ -304,6 +411,7 @@ export class SessionManager {
       }
       record.queue.push(message);
       record.info.queued = record.queue.length;
+      this.persistSession(record);
       this.notify(record);
       return { queued: true };
     }
@@ -313,6 +421,21 @@ export class SessionManager {
         "Sesi ini belum punya riwayat untuk dilanjutkan.",
         "tidak-valid",
       );
+    }
+
+    if (record.resolved === undefined) {
+      let resolved: ResolvedProvider;
+      try {
+        resolved = await this.resolveProvider({
+          profileId: record.info.profileId,
+          model: record.info.model,
+        });
+      } catch (error) {
+        throw new SessionError(errorMessage(error), "tidak-valid");
+      }
+      record.resolved = resolved;
+      record.apiKey = resolved.apiKey;
+      record.price = resolved.price;
     }
 
     this.assertConcurrencyCapacity();
@@ -429,6 +552,8 @@ export class SessionManager {
         throw new SessionError("Kapasitas sesi penuh; tidak ada sesi selesai untuk dibuang.", "penuh");
       }
       this.sessions.delete(victim.info.id);
+      const id = victim.info.id;
+      this.storeGuard(() => this.store?.deleteSession(id));
     }
   }
 
@@ -438,6 +563,7 @@ export class SessionManager {
     }
     record.queue.length = 0;
     record.info.queued = 0;
+    this.persistSession(record);
     this.notify(record);
   }
 
@@ -454,10 +580,19 @@ export class SessionManager {
       this.append(record, { type: "user_message", text });
     }
 
+    const resolved = record.resolved;
+    if (resolved === undefined) {
+      this.append(record, { type: "error", message: "provider belum diselesaikan" });
+      this.append(record, { type: "result", ok: false, error: "provider belum diselesaikan" });
+      this.setStatus(record, "gagal");
+      record.settle();
+      return;
+    }
+
     void this.execute(
       record,
       text,
-      record.resolved,
+      resolved,
       record.info.permissionMode,
       record.sdkSessionId,
     );
@@ -488,6 +623,7 @@ export class SessionManager {
       for await (const event of events) {
         if (event.type === "session" && record.sdkSessionId === undefined) {
           record.sdkSessionId = event.sessionId;
+          this.persistSession(record);
         }
         if (event.type === "result") {
           sawResult = true;
@@ -542,11 +678,17 @@ export class SessionManager {
     };
     record.nextSeq += 1;
     record.buffer.push(stored);
-    if (record.buffer.length > this.maxEventsPerSession) {
+    const trimmed = record.buffer.length > this.maxEventsPerSession;
+    if (trimmed) {
       record.buffer.splice(0, record.buffer.length - this.maxEventsPerSession);
     }
     record.info.eventCount += 1;
     record.info.updatedAt = this.now().toISOString();
+    this.storeGuard(() => this.store?.appendEvent(record.info.id, stored));
+    if (trimmed) {
+      const oldest = record.buffer[0]?.seq ?? record.nextSeq;
+      this.storeGuard(() => this.store?.trimEvents(record.info.id, oldest));
+    }
 
     // Accumulate usage for result events
     if (event.type === "result") {
@@ -586,11 +728,13 @@ export class SessionManager {
       }
     }
 
+    this.persistSession(record);
     this.notify(record);
   }
 
   private setStatus(record: SessionRecord, status: SessionStatus): void {
     record.info.status = status;
+    this.persistSession(record);
     this.notify(record);
   }
 
@@ -624,6 +768,7 @@ export class SessionManager {
       // Update pendingPermissions count
       record.info.pendingPermissions += 1;
       record.info.updatedAt = this.now().toISOString();
+      this.persistSession(record);
       this.notify(record);
     });
 
@@ -652,6 +797,7 @@ export class SessionManager {
         record.pending.delete(requestId);
         record.info.pendingPermissions -= 1;
         record.info.updatedAt = this.now().toISOString();
+        this.persistSession(record);
         this.notify(record);
 
         this.append(record, denyEvent);
@@ -673,6 +819,7 @@ export class SessionManager {
         record.pending.delete(requestId);
         record.info.pendingPermissions -= 1;
         record.info.updatedAt = this.now().toISOString();
+        this.persistSession(record);
         this.notify(record);
 
         this.append(record, denyEvent);
@@ -715,6 +862,7 @@ export class SessionManager {
     // Update pendingPermissions count
     record.info.pendingPermissions -= 1;
     record.info.updatedAt = this.now().toISOString();
+    this.persistSession(record);
     this.notify(record);
 
     // Create resolved event

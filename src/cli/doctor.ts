@@ -2,6 +2,7 @@ import { stat } from "node:fs/promises";
 import { dirname } from "node:path";
 import { redactResolved, resolveProvider, type ProviderRegistry } from "../server/provider";
 import { loadRegistry, providersPath } from "../server/provider-store";
+import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
 import { VERSION } from "../shared/version";
 
 export type CheckStatus = "ok" | "peringatan" | "gagal";
@@ -145,6 +146,39 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
       status: issues.length === 0 ? "ok" : "peringatan",
       detail: issues.length === 0 ? "izin 600/700" : issues.join("; "),
     });
+  }
+
+  const storagePath = sessionsPath(env);
+  if (env.JEJAK_PERSIST?.trim() === "0") {
+    checks.push({ name: "Penyimpanan sesi", status: "peringatan", detail: "dimatikan (JEJAK_PERSIST=0)" });
+  } else {
+    let storageInfo: Awaited<ReturnType<typeof stat>> | null = null;
+    try {
+      storageInfo = await stat(storagePath);
+      if (!storageInfo.isFile()) storageInfo = null;
+    } catch {
+      storageInfo = null;
+    }
+
+    if (storageInfo === null) {
+      checks.push({
+        name: "Penyimpanan sesi",
+        status: "ok",
+        detail: `${storagePath} belum ada; dibuat saat server pertama berjalan`,
+      });
+    } else {
+      const sizeKb = Math.max(0, Math.round(storageInfo.size / 1024));
+      const loose = (storageInfo.mode & 0o077) !== 0;
+      const version = readSchemaVersion(storagePath);
+      const versionText = version === null ? "versi skema tidak terbaca" : `skema v${version}`;
+      const issues = [`${storagePath}; ${sizeKb} KB; ${versionText}`];
+      if (loose) issues.push("izin lebih longgar dari 600; sarankan chmod 600");
+      checks.push({
+        name: "Penyimpanan sesi",
+        status: loose ? "peringatan" : "ok",
+        detail: issues.join("; "),
+      });
+    }
   }
 
   let sdkLocation: string | null;

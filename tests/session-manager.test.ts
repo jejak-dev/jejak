@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRunner } from "../src/server/agent";
@@ -10,6 +10,7 @@ import {
   type SequencedEvent,
   type SessionManagerOptions,
 } from "../src/server/sessions/session-manager";
+import { SqliteSessionStore, type SessionStore } from "../src/server/sessions/session-store";
 
 const API_KEY = "sk-rahasia-123";
 
@@ -779,5 +780,304 @@ describe("SessionManager.send", () => {
     });
     const events = await collect(mgr.events(info.id));
     expect(events.filter((item) => item.event.type === "result")).toHaveLength(2);
+  });
+});
+
+describe("SessionManager + store", () => {
+  function storePath(): string {
+    return join(dir, "sessions.db");
+  }
+
+  test("sesi dan event bertahan lintas restart dengan nextSeq berlanjut", async () => {
+    const path = storePath();
+    const first = new SqliteSessionStore(path);
+    const scripted = scriptedTurns([
+      [
+        { type: "session", sessionId: "sdk-bertahan" },
+        { type: "text", text: "satu" },
+        { type: "result", ok: true },
+      ],
+    ]);
+    const mgr = manager({ runner: scripted.runner, store: first });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    first.close();
+
+    const second = new SqliteSessionStore(path);
+    const restored = manager({ runner: scriptedRunner([]), store: second });
+    const listed = restored.list();
+    expect(listed.map((item) => item.id)).toEqual([info.id]);
+    expect(restored.get(info.id)?.status).toBe("selesai");
+    expect(restored.get(info.id)?.eventCount).toBe(3);
+
+    const events = await collect(restored.events(info.id, { after: 1 }));
+    expect(events.map((item) => item.seq)).toEqual([2, 3]);
+
+    const runs = scriptedTurns([[{ type: "result", ok: true }]]);
+    const resumed = manager({ runner: runs.runner, store: second });
+    expect(await resumed.send(info.id, "lanjut")).toEqual({ queued: false });
+    await resumed.done(info.id);
+    expect(runs.runs[0]?.resumeSessionId).toBe("sdk-bertahan");
+
+    const afterSend = await collect(resumed.events(info.id, { after: 3 }));
+    expect(afterSend.map((item) => item.seq)).toEqual([4, 5]);
+    const persisted = second.loadEvents(info.id);
+    expect(persisted.every((item, index) => index === 0 || item.seq > persisted[index - 1]!.seq)).toBe(true);
+    expect(persisted.map((item) => item.seq)).toContain(5);
+    second.close();
+  });
+
+  test("sesi berjalan yang tersimpan menjadi gagal dengan error dan result", async () => {
+    const path = storePath();
+    const first = new SqliteSessionStore(path);
+    const info = await (async () => {
+      // Buat record berjalan tanpa menyelesaikan giliran: runner yang menunggu abort.
+      const gated = gatedTurns([{ sessionId: "sdk-x" }]);
+      const running = manager({ runner: gated.runner, store: first });
+      const created = await createOk(running);
+      await waitUntil(() => gated.releases.length > 0);
+      running.interrupt(created.id);
+      gated.releases[0]!();
+      await running.done(created.id);
+      return created;
+    })();
+    expect(info.id.startsWith("s_")).toBe(true);
+    first.close();
+
+    // Tulis ulang status tersimpan menjadi berjalan untuk mensimulasikan server mati.
+    const raw = new SqliteSessionStore(path);
+    const stored = raw.loadSessions()[0]!;
+    raw.saveSession({ ...stored.info, status: "berjalan" }, stored.sdkSessionId);
+    raw.close();
+
+    const second = new SqliteSessionStore(path);
+    const restored = manager({ runner: scriptedRunner([]), store: second });
+    expect(restored.get(info.id)?.status).toBe("gagal");
+    expect(restored.get(info.id)?.queued).toBe(0);
+    expect(restored.get(info.id)?.pendingPermissions).toBe(0);
+
+    const events = (await collect(restored.events(info.id))).map((item) => item.event);
+    expect(events.some((item) => item.type === "error" && item.message.includes("dimulai ulang"))).toBe(true);
+    expect(
+      events.some(
+        (item) =>
+          item.type === "result" &&
+          item.ok === false &&
+          item.error === "server dimulai ulang saat sesi berjalan",
+      ),
+    ).toBe(true);
+
+    const persisted = second.loadSessions()[0]!;
+    expect(persisted.info.status).toBe("gagal");
+    second.close();
+  });
+
+  test("send pada sesi restore memakai resolveProvider {profileId, model} dan resumeSessionId", async () => {
+    const path = storePath();
+    const first = new SqliteSessionStore(path);
+    const scripted = scriptedTurns([
+      [
+        { type: "session", sessionId: "sdk-resume" },
+        { type: "result", ok: true },
+      ],
+    ]);
+    const mgr = manager({ runner: scripted.runner, store: first });
+    const info = await createOk(mgr, { selection: { profileId: "lokal", model: "model-uji" } });
+    await mgr.done(info.id);
+    first.close();
+
+    const selections: ProviderSelection[] = [];
+    const second = new SqliteSessionStore(path);
+    const runs = scriptedTurns([[{ type: "result", ok: true }]]);
+    const restored = manager({
+      runner: runs.runner,
+      store: second,
+      resolveProvider: async (selection) => {
+        selections.push(selection);
+        return provider(selection);
+      },
+    });
+
+    await restored.send(info.id, "lanjutkan");
+    await restored.done(info.id);
+    expect(selections).toEqual([{ profileId: "lokal", model: "model-uji" }]);
+    expect(runs.runs[0]?.resumeSessionId).toBe("sdk-resume");
+    second.close();
+  });
+
+  test("sesi restore tanpa sdkSessionId tetap ditolak tidak-valid", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const stamp = "2026-01-01T00:00:00.000Z";
+    store.saveSession(
+      {
+        id: "s_tanpa",
+        title: "Tanpa sdk",
+        prompt: "halo",
+        cwd: dir,
+        profileId: "lokal",
+        permissionMode: "default",
+        status: "selesai",
+        createdAt: stamp,
+        updatedAt: stamp,
+        eventCount: 0,
+        pendingPermissions: 0,
+        queued: 0,
+      },
+      undefined,
+    );
+    const mgr = manager({ runner: scriptedRunner([]), store });
+    await expect(mgr.send("s_tanpa", "lanjut")).rejects.toMatchObject({ code: "tidak-valid" });
+    store.close();
+  });
+
+  test("galat resolveProvider saat melanjutkan menjadi tidak-valid", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const stamp = "2026-01-01T00:00:00.000Z";
+    store.saveSession(
+      {
+        id: "s_gagal",
+        title: "Gagal",
+        prompt: "halo",
+        cwd: dir,
+        profileId: "hilang",
+        permissionMode: "default",
+        status: "selesai",
+        createdAt: stamp,
+        updatedAt: stamp,
+        eventCount: 0,
+        pendingPermissions: 0,
+        queued: 0,
+      },
+      "sdk-1",
+    );
+    const mgr = new SessionManager({
+      runner: scriptedRunner([]),
+      store,
+      resolveProvider: async () => {
+        throw new Error("Profil provider \"hilang\" tidak ditemukan.");
+      },
+    });
+    await expect(mgr.send("s_gagal", "lanjut")).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "Profil provider \"hilang\" tidak ditemukan.",
+    });
+    store.close();
+  });
+
+  test("eviksi menghapus sesi dari store", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      store,
+      maxSessions: 1,
+      maxConcurrent: 4,
+    });
+
+    const first = await createOk(mgr);
+    await mgr.done(first.id);
+    const second = await createOk(mgr);
+    await mgr.done(second.id);
+
+    expect(store.loadSessions().map((item) => item.info.id)).toEqual([second.id]);
+    expect(store.loadEvents(first.id)).toHaveLength(0);
+    store.close();
+  });
+
+  test("pemangkasan buffer memanggil trimEvents", async () => {
+    const trimmed: number[] = [];
+    const inner = new SqliteSessionStore(":memory:");
+    const store: SessionStore = {
+      loadSessions: () => inner.loadSessions(),
+      loadEvents: (id) => inner.loadEvents(id),
+      saveSession: (info, sdk) => inner.saveSession(info, sdk),
+      appendEvent: (id, item) => inner.appendEvent(id, item),
+      trimEvents: (id, keep) => {
+        trimmed.push(keep);
+        inner.trimEvents(id, keep);
+      },
+      deleteSession: (id) => inner.deleteSession(id),
+      close: () => inner.close(),
+    };
+    const mgr = manager({
+      runner: scriptedRunner(
+        Array.from({ length: 5 }, (_, index): AgentEvent => ({ type: "text", text: `e${index}` })),
+      ),
+      maxEventsPerSession: 2,
+      store,
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(trimmed.length).toBeGreaterThan(0);
+    // 5 event teks + error + result dari manajer; buffer menyisakan dua terakhir.
+    expect(inner.loadEvents(info.id).map((item) => item.seq)).toEqual([6, 7]);
+    inner.close();
+  });
+
+  test("store yang melempar galat tidak menggagalkan sesi dan console.warn sekali", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const broken: SessionStore = {
+      loadSessions: () => [],
+      loadEvents: () => [],
+      saveSession: () => {
+        throw new Error("disk penuh");
+      },
+      appendEvent: () => {
+        throw new Error("disk penuh");
+      },
+      trimEvents: () => {
+        throw new Error("disk penuh");
+      },
+      deleteSession: () => {
+        throw new Error("disk penuh");
+      },
+      close: () => {},
+    };
+    const mgr = manager({
+      runner: scriptedRunner([
+        { type: "session", sessionId: "sdk-1" },
+        { type: "result", ok: true },
+      ]),
+      store: broken,
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect((await collect(mgr.events(info.id))).length).toBe(2);
+    expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
+    expect(warn.mock.calls.length).toBe(1);
+    for (const call of warn.mock.calls) {
+      expect(String(call[0])).not.toContain(API_KEY);
+      expect(String(call[0])).not.toContain("Halo dunia");
+    }
+    warn.mockRestore();
+  });
+
+  test("RAHASIA: apiKey tidak pernah muncul di berkas store", async () => {
+    const path = storePath();
+    const store = new SqliteSessionStore(path);
+    const mgr = manager({
+      runner: scriptedRunner([
+        { type: "text", text: `kunci ${API_KEY}` },
+        { type: "result", ok: true, summary: `ringkas ${API_KEY}` },
+      ]),
+      store,
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    store.close();
+
+    const files = await readdir(dir);
+    expect(files).toContain("sessions.db");
+    for (const file of files) {
+      if (!file.startsWith("sessions.db")) continue;
+      const contents = await readFile(join(dir, file), "utf8").catch(() => "");
+      expect(contents).not.toContain(API_KEY);
+    }
+    const reopened = new SqliteSessionStore(path);
+    expect(JSON.stringify(reopened.loadSessions())).not.toContain(API_KEY);
+    expect(JSON.stringify(reopened.loadEvents(info.id))).not.toContain(API_KEY);
+    reopened.close();
   });
 });

@@ -9,6 +9,7 @@ import { infoRoutes } from "./routes/info";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
 import { SessionManager } from "./sessions/session-manager";
+import { defaultSessionStore, type SessionStore } from "./sessions/session-store";
 
 export interface ServeOptions {
   host?: string;
@@ -22,6 +23,7 @@ export interface CreateAppOptions {
   fetch?: typeof fetch;
   runner?: AgentRunner;
   sessions?: SessionManager;
+  sessionStore?: SessionStore;
   client?: ClientRoutesOptions;
 }
 
@@ -35,6 +37,7 @@ export function createApp(options: CreateAppOptions = {}) {
       runner: options.runner ?? createRunner(env),
       resolveProvider: async (selection) =>
         resolveRegistryProvider(await loadRegistry(path, env), selection),
+      store: options.sessionStore,
     });
 
   return new Elysia()
@@ -54,7 +57,18 @@ export function createApp(options: CreateAppOptions = {}) {
 export function startServer(options: ServeOptions = {}) {
   const host = options.host ?? process.env.HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.PORT ?? 3000);
-  const app = createApp().listen({ hostname: host, port });
+  const store = defaultSessionStore(process.env);
+  const app = createApp({ sessionStore: store }).listen({ hostname: host, port });
   console.log(`Jejak berjalan di http://${host}:${port}`);
+  if (store !== undefined) {
+    const close = (): void => store.close();
+    process.once("exit", close);
+    for (const signal of ["SIGINT", "SIGTERM"] as const) {
+      process.once(signal, () => {
+        store.close();
+        process.exit(0);
+      });
+    }
+  }
   return app;
 }

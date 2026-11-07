@@ -272,3 +272,70 @@ test("formatCheck memakai label untuk tiap status", () => {
   );
   expect(formatCheck({ name: "C", status: "gagal", detail: "d" })).toBe("GAGAL  C  (d)");
 });
+
+test("penyimpanan sesi: berkas belum ada", async () => {
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const storage = find(checks, "Penyimpanan sesi");
+  expect(storage.status).toBe("ok");
+  expect(storage.detail).toContain(join(homeDir, "sessions.db"));
+  expect(storage.detail).toContain("belum ada");
+});
+
+test("penyimpanan sesi: berkas ada dengan izin dan versi skema", async () => {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  const { SqliteSessionStore } = await import("../src/server/sessions/session-store");
+  const store = new SqliteSessionStore(join(homeDir, "sessions.db"));
+  store.close();
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const storage = find(checks, "Penyimpanan sesi");
+  expect(storage.status).toBe("ok");
+  expect(storage.detail).toContain("skema v1");
+  expect(storage.detail).toContain("KB");
+});
+
+test("penyimpanan sesi: izin longgar memberi peringatan", async () => {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  const { SqliteSessionStore } = await import("../src/server/sessions/session-store");
+  const store = new SqliteSessionStore(join(homeDir, "sessions.db"));
+  store.close();
+  await chmod(join(homeDir, "sessions.db"), 0o644);
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const storage = find(checks, "Penyimpanan sesi");
+  expect(storage.status).toBe("peringatan");
+  expect(storage.detail).toContain("chmod 600");
+});
+
+test("penyimpanan sesi: dimatikan lewat JEJAK_PERSIST=0 dan tetap exit 0", async () => {
+  const logged: string[] = [];
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir, JEJAK_PERSIST: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const storage = find(checks, "Penyimpanan sesi");
+  expect(storage.status).toBe("peringatan");
+  expect(storage.detail).toContain("dimatikan");
+
+  const code = await runDoctor({
+    env: { JEJAK_HOME: homeDir, JEJAK_PERSIST: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    log: (line) => logged.push(line),
+  });
+  expect(code).toBe(0);
+  expect(logged.some((line) => line.includes("Penyimpanan sesi"))).toBe(true);
+});
