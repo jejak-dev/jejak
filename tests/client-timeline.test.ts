@@ -65,6 +65,17 @@ describe("reduceTimeline", () => {
     expect(next).not.toBe(items);
   });
 
+  test("user_message menambah item user tanpa mengubah item sebelumnya", () => {
+    const items: TimelineItem[] = [{ kind: "text", text: "jawaban", depth: 0 }];
+    const next = reduceTimeline(items, { type: "user_message", text: "pesan kedua" });
+
+    expect(next).toEqual([
+      { kind: "text", text: "jawaban", depth: 0 },
+      { kind: "user", text: "pesan kedua" },
+    ]);
+    expect(items).toEqual([{ kind: "text", text: "jawaban", depth: 0 }]);
+  });
+
   test("text dan thinking dengan depth dari parentToolUseId", () => {
     const next = reduceAll([
       { type: "text", text: "a" },
@@ -168,6 +179,35 @@ describe("reduceTimeline", () => {
       expect.objectContaining({ id: "t1", status: "selesai" }),
       expect.objectContaining({ id: "t2", status: "gagal" }),
     ]);
+  });
+
+  test("dua giliran menghasilkan dua item result terpisah", () => {
+    const next = reduceAll([
+      { type: "user_message", text: "giliran 1" },
+      { type: "text", text: "jawaban 1" },
+      { type: "result", ok: true, summary: "giliran 1 selesai", costUsd: 0.01 },
+      { type: "user_message", text: "giliran 2" },
+      { type: "text", text: "jawaban 2" },
+      { type: "result", ok: false, error: "giliran 2 gagal", costUsd: 0.02 },
+    ]);
+
+    expect(next).toEqual([
+      { kind: "user", text: "giliran 1" },
+      { kind: "text", text: "jawaban 1", depth: 0 },
+      { kind: "result", ok: true, summary: "giliran 1 selesai", costUsd: 0.01 },
+      { kind: "user", text: "giliran 2" },
+      { kind: "text", text: "jawaban 2", depth: 0 },
+      { kind: "result", ok: false, error: "giliran 2 gagal", costUsd: 0.02 },
+    ]);
+  });
+
+  test("dua result berurutan tanpa item lain tetap satu, yang terakhir menang", () => {
+    const next = reduceAll([
+      { type: "result", ok: true, summary: "pertama" },
+      { type: "result", ok: false, error: "kedua" },
+    ]);
+
+    expect(next).toEqual([{ kind: "result", ok: false, error: "kedua" }]);
   });
 
   test("result membawa field opsional yang ada saja", () => {

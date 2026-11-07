@@ -33,6 +33,7 @@ export interface ApiClient {
     permissionMode?: "default" | "acceptEdits" | "plan";
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
+  sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
   decidePermission(
     sessionId: string,
     requestId: string,
@@ -179,6 +180,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         {},
       );
       return { interrupted: field(data, "interrupted") === true };
+    },
+
+    async sendMessage(id, text) {
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/messages`,
+        { text },
+      );
+      return { queued: field(data, "queued") === true };
     },
 
     async getProviders() {

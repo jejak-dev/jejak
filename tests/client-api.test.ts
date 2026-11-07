@@ -131,6 +131,42 @@ describe("createApiClient", () => {
     expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
   });
 
+  test("sendMessage POST JSON ke /messages dan mengembalikan queued", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, queued: true }));
+    const api = createApiClient({ fetch });
+
+    const result = await api.sendMessage("a b", "halo lagi");
+
+    expect(result).toEqual({ queued: true });
+    expect(calls[0]?.url).toBe("/api/sessions/a%20b/messages");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ text: "halo lagi" });
+  });
+
+  test("sendMessage tanpa queued dianggap false", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.sendMessage("s1", "x")).toEqual({ queued: false });
+  });
+
+  test("sendMessage 429 memakai pesan server sebagai ApiError", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "antrean penuh" }, 429));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.sendMessage("s1", "x");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(429);
+    expect((caught as ApiError).message).toBe("antrean penuh");
+  });
+
   test("getProviders GET dan mengembalikan payload apa adanya", async () => {
     const payload = { registry: { profiles: [] } };
     const { fetch, calls } = fakeFetch(() => jsonResponse(payload));

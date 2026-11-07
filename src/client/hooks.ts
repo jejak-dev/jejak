@@ -176,10 +176,89 @@ export interface TimelineState {
 
 const IDLE_TIMELINE: TimelineState = { items: [], connection: "idle" };
 
+/** Sambung ulang hanya bila aliran sudah berakhir, belum ada aliran aktif, dan (sesi berjalan atau ada event baru). */
+export function shouldResume(
+  connection: TimelineConnection,
+  status: string | undefined,
+  hasActiveStream: boolean,
+  eventCount: number | undefined,
+  lastSeq: number,
+): boolean {
+  if (hasActiveStream) return false;
+  if (connection !== "selesai") return false;
+  if (status === "berjalan") return true;
+  // Cek apakah ada event baru yang belum diterima
+  if (eventCount !== undefined && eventCount > lastSeq) return true;
+  return false;
+}
+
 export function useTimeline(api: ApiClient, session: SessionInfo | undefined): TimelineState {
   const [state, setState] = useState<TimelineState>(IDLE_TIMELINE);
   const sessionId = session?.id;
   const prompt = session?.prompt;
+  const status = session?.status;
+  const eventCount = session?.eventCount;
+
+  const controllerRef = useRef<AbortController | null>(null);
+  const lastSeqRef = useRef(0);
+  const endedForRef = useRef<string | undefined>(undefined);
+
+  const openStream = useCallback(
+    (id: string, after: number, initialItems: TimelineItem[] | undefined): void => {
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
+      lastSeqRef.current = after;
+      endedForRef.current = undefined;
+
+      if (initialItems === undefined) {
+        setState((previous) => ({
+          ...previous,
+          connection: "menyambung",
+          status: "berjalan",
+          error: undefined,
+        }));
+      } else {
+        setState({ items: initialItems, connection: "menyambung" });
+      }
+
+      void (async () => {
+        try {
+          for await (const item of followSession(id, { after, signal: controller.signal })) {
+            if (controller.signal.aborted) return;
+            if (item.kind === "event") {
+              lastSeqRef.current = item.seq;
+              setState((previous) => ({
+                ...previous,
+                connection: previous.connection === "menyambung" ? "terhubung" : previous.connection,
+                items: reduceTimeline(previous.items, item.event),
+              }));
+            } else {
+              endedForRef.current = id;
+              setState((previous) => ({
+                ...previous,
+                connection: "selesai",
+                status: item.status,
+              }));
+              return;
+            }
+          }
+        } catch (caught) {
+          if (controller.signal.aborted) return;
+          setState((previous) => ({
+            ...previous,
+            connection: "galat",
+            error: caught instanceof ApiError ? caught.message : messageOf(caught),
+          }));
+        } finally {
+          if (controllerRef.current === controller) {
+            controllerRef.current = null;
+          }
+        }
+      })();
+    },
+    [api],
+  );
 
   useEffect(() => {
     if (sessionId === undefined || prompt === undefined) {
@@ -187,47 +266,24 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
       return;
     }
 
-    const controller = new AbortController();
-    let active = true;
-    setState({ items: startTimeline(prompt), connection: "menyambung" });
-
-    void (async () => {
-      try {
-        for await (const item of followSession(sessionId, { signal: controller.signal })) {
-          if (!active) return;
-          if (item.kind === "event") {
-            setState((previous) => {
-              const connection = previous.connection === "menyambung" ? "terhubung" : previous.connection;
-              return {
-                ...previous,
-                connection,
-                items: reduceTimeline(previous.items, item.event),
-              };
-            });
-          } else {
-            setState((previous) => ({
-              ...previous,
-              connection: "selesai",
-              status: item.status,
-            }));
-            return;
-          }
-        }
-      } catch (caught) {
-        if (!active) return;
-        setState((previous) => ({
-          ...previous,
-          connection: "galat",
-          error: caught instanceof ApiError ? caught.message : messageOf(caught),
-        }));
-      }
-    })();
+    openStream(sessionId, 0, startTimeline(prompt));
 
     return () => {
-      active = false;
-      controller.abort();
+      controllerRef.current?.abort();
+      controllerRef.current = null;
     };
-  }, [api, sessionId, prompt]);
+  }, [openStream, sessionId, prompt]);
+
+  // Giliran lanjutan: aliran sudah berakhir tetapi sesi kembali berjalan atau ada event baru.
+  useEffect(() => {
+    if (sessionId === undefined) return;
+    // Hanya sambung ulang untuk sesi yang alirannya memang baru saja berakhir.
+    if (endedForRef.current !== sessionId) return;
+    if (!shouldResume(state.connection, status, controllerRef.current !== null, eventCount, lastSeqRef.current)) {
+      return;
+    }
+    openStream(sessionId, lastSeqRef.current, undefined);
+  }, [openStream, sessionId, status, state.connection, eventCount]);
 
   return state;
 }

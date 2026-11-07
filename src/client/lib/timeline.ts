@@ -195,6 +195,9 @@ export function reduceTimeline(
       });
     }
 
+    case "user_message":
+      return [...items, { kind: "user", text: event.text }];
+
     case "error":
       return [...items, { kind: "error", message: event.message }];
 
@@ -211,11 +214,10 @@ export function reduceTimeline(
       if (event.numTurns !== undefined) result.numTurns = event.numTurns;
 
       const closed = markRunningToolsFailed([...items]);
-      const index = closed.findIndex((item) => item.kind === "result");
-      if (index === -1) {
-        return [...closed, result];
+      if (closed.at(-1)?.kind === "result") {
+        return [...closed.slice(0, -1), result];
       }
-      return closed.map((item, position) => (position === index ? result : item));
+      return [...closed, result];
     }
 
     default:

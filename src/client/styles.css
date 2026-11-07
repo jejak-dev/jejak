@@ -714,6 +714,33 @@ code {
   text-underline-offset: 3px;
 }
 
+/* Balasan pesan lanjutan */
+
+.jk-reply {
+  flex: none;
+  padding: 0 20px 14px;
+}
+
+.jk-reply-inner {
+  width: min(740px, 100%);
+  margin: 0 auto;
+}
+
+.jk-reply .jk-comp-card {
+  padding: 8px 10px 8px 14px;
+  border-radius: 16px;
+}
+
+.jk-reply .jk-comp-input {
+  min-height: 0;
+  padding: 4px 4px 0 0;
+}
+
+.jk-reply-queue {
+  color: var(--t3);
+  font-size: 12px;
+}
+
 /* Timeline */
 
 .jk-timeline {

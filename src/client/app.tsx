@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { Composer } from "./components/Composer";
 import { ProviderSettings } from "./components/ProviderSettings";
+import { ReplyBar } from "./components/ReplyBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
@@ -148,6 +149,7 @@ export function App() {
               cwd={selected.cwd}
               onDecide={onDecide}
             />
+            <ReplyBar key={selected.id} api={api} session={selected} refresh={refresh} />
           </>
         ) : (
           <>
