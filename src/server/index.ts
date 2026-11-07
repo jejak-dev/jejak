@@ -5,6 +5,7 @@ import { localGuard } from "./guard";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
 import { loadRegistry, providersPath } from "./provider-store";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
+import { fileRoutes } from "./routes/files";
 import { infoRoutes } from "./routes/info";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
@@ -44,6 +45,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(localGuard())
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .use(sessionRoutes({ manager }))
+    .use(fileRoutes({ manager }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({
