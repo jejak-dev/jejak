@@ -21,7 +21,9 @@ describe("formatCost", () => {
 
   test("nol dan nilai sangat kecil", () => {
     expect(formatCost(0)).toBe("$0,00");
-    expect(formatCost(0.004)).toBe("<$0,01");
+    expect(formatCost(0.004)).toBe("$0,004");
+    expect(formatCost(0.0021)).toBe("$0,0021");
+    expect(formatCost(0.00001)).toBe("<$0,0001");
   });
 
   test("dua desimal dengan koma", () => {

@@ -6,7 +6,11 @@ export function formatCost(usd?: number): string {
     return "$0,00";
   }
   if (usd > 0 && usd < 0.01) {
-    return "<$0,01";
+    const fixed = usd.toFixed(4);
+    if (Number(fixed) === 0) {
+      return "<$0,0001";
+    }
+    return `$${fixed.replace(/0+$/, "").replace(".", ",")}`;
   }
   return `$${usd.toFixed(2).replace(".", ",")}`;
 }

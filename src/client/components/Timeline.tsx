@@ -185,8 +185,16 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
                     {item.outputTokens !== undefined && (
                       <span>{formatCount(item.outputTokens)} keluar</span>
                     )}
+                    {item.cacheReadTokens !== undefined && item.cacheReadTokens > 0 && (
+                      <span>{formatCount(item.cacheReadTokens)} dari cache</span>
+                    )}
                     {item.numTurns !== undefined && <span>{formatCount(item.numTurns)} giliran</span>}
-                    {item.costUsd !== undefined && <span>{formatCost(item.costUsd)}</span>}
+                    {item.estimatedCostUsd !== undefined && (
+                      <span title="Perkiraan dari tarif di profil provider">{formatCost(item.estimatedCostUsd)}</span>
+                    )}
+                    {item.costUsd !== undefined && item.estimatedCostUsd === undefined && (
+                      <span title="Dihitung SDK dengan tarif Claude, mungkin tidak akurat untuk model lain">SDK {formatCost(item.costUsd)}</span>
+                    )}
                     {!item.ok && item.error !== undefined && (
                       <span class="jk-bad">{item.error}</span>
                     )}

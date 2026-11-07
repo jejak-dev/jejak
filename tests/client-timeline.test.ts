@@ -176,6 +176,31 @@ describe("reduceTimeline", () => {
     expect(next[0]).not.toHaveProperty("summary");
   });
 
+  test("result menyimpan token cache dan estimatedCostUsd", () => {
+    const next = reduceAll([
+      {
+        type: "result",
+        ok: true,
+        inputTokens: 10,
+        outputTokens: 20,
+        cacheReadTokens: 30,
+        cacheWriteTokens: 40,
+        estimatedCostUsd: 0.0021,
+        costUsd: 9,
+      },
+    ]);
+    expect(next[0]).toEqual({
+      kind: "result",
+      ok: true,
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 30,
+      cacheWriteTokens: 40,
+      estimatedCostUsd: 0.0021,
+      costUsd: 9,
+    });
+  });
+
   test("tidak memutasi input", () => {
     const items: readonly TimelineItem[] = [
       { kind: "user", text: "Halo" },

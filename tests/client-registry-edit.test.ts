@@ -47,6 +47,7 @@ function validProfile(patch: Partial<ProfileDraft> = {}): ProfileDraft {
     apiKey: "",
     modelsText: "",
     modelLabels: {},
+    modelPrices: {},
     defaultModel: "",
     lightModel: "",
     isNew: false,
@@ -72,6 +73,7 @@ describe("toDraft", () => {
       apiKey: "",
       modelsText: "m1\nm2",
       modelLabels: { m1: "Satu" },
+      modelPrices: {},
       defaultModel: "m1",
       lightModel: "m2",
       isNew: false,
@@ -407,5 +409,108 @@ describe("isDirty", () => {
   test("perubahan key literal terdeteksi", () => {
     const original = toDraft(fullView());
     expect(isDirty(original, updateProfile(original, "lokal", { apiKey: "baru" }))).toBe(true);
+  });
+});
+
+describe("tarif model", () => {
+  const pricedView: RegistryView = {
+    profiles: [
+      {
+        id: "p",
+        name: "P",
+        hasKey: false,
+        models: [
+          { id: "m1", price: { input: 0.5, output: 1.2, cacheRead: 0.1 } },
+          { id: "m2" },
+        ],
+      },
+    ],
+  };
+
+  test("toDraft memuat harga dari profil tersimpan", () => {
+    const draft = toDraft(pricedView);
+    expect(draft.profiles[0]?.modelPrices).toEqual({
+      m1: { input: "0.5", output: "1.2", cacheRead: "0.1", cacheWrite: "" },
+    });
+  });
+
+  test("payload memuat price hanya bila input dan output valid", () => {
+    const draft = toDraft(pricedView);
+    const payload = toPayload(draft) as { profiles: { models: unknown[] }[] };
+    expect(payload.profiles[0]?.models).toEqual([
+      { id: "m1", price: { input: 0.5, output: 1.2, cacheRead: 0.1 } },
+      "m2",
+    ]);
+  });
+
+  test("cache kosong tidak dikirim", () => {
+    const draft = toDraft({
+      profiles: [
+        {
+          id: "p",
+          name: "P",
+          hasKey: false,
+          models: [{ id: "m1", price: { input: 1, output: 2 } }],
+        },
+      ],
+    });
+    const payload = toPayload(draft) as { profiles: { models: unknown[] }[] };
+    expect(payload.profiles[0]?.models).toEqual([
+      { id: "m1", price: { input: 1, output: 2 } },
+    ]);
+  });
+
+  test("satu sisi terisi menghasilkan galat prices", () => {
+    const errors = validateDraft(
+      draftWith(
+        validProfile({
+          modelsText: "m1",
+          modelPrices: { m1: { input: "0.5", output: "", cacheRead: "", cacheWrite: "" } },
+        }),
+      ),
+    );
+    expect(errors.profil?.some((message) => message.startsWith("Tarif "))).toBe(true);
+  });
+
+  test("angka negatif atau bukan angka menghasilkan galat", () => {
+    for (const input of ["-1", "abc"]) {
+      const errors = validateDraft(
+        draftWith(
+          validProfile({
+            modelsText: "m1",
+            modelPrices: { m1: { input, output: "1", cacheRead: "", cacheWrite: "" } },
+          }),
+        ),
+      );
+      expect(errors.profil?.some((message) => message.startsWith("Tarif "))).toBe(true);
+    }
+  });
+
+  test("model dihapus membuang harganya", () => {
+    const draft = toDraft(pricedView);
+    const without = updateProfile(draft, "p", { modelsText: "m2" });
+    const payload = toPayload(without) as { profiles: { models: unknown[] }[] };
+    expect(payload.profiles[0]?.models).toEqual(["m2"]);
+    expect(JSON.stringify(payload)).not.toContain("0.5");
+  });
+
+  test("round-trip edit tanpa mengubah harga mempertahankan harga", () => {
+    const draft = toDraft(pricedView);
+    const renamed = updateProfile(draft, "p", { name: "Baru" });
+    const payload = toPayload(renamed) as { profiles: { models: unknown[] }[] };
+    expect(payload.profiles[0]?.models).toEqual([
+      { id: "m1", price: { input: 0.5, output: 1.2, cacheRead: 0.1 } },
+      "m2",
+    ]);
+  });
+
+  test("perubahan harga menandai draf kotor", () => {
+    const original = toDraft(pricedView);
+    const changed = updateProfile(original, "p", {
+      modelPrices: {
+        m1: { input: "0.5", output: "1.2", cacheRead: "0.1", cacheWrite: "9" },
+      },
+    });
+    expect(isDirty(original, changed)).toBe(true);
   });
 });

@@ -32,6 +32,15 @@ const KEEP_OPTION: { value: KeyMode; label: string } = {
   label: "Pertahankan key tersimpan",
 };
 
+type PriceKey = "input" | "output" | "cacheRead" | "cacheWrite";
+
+const PRICE_FIELDS: { key: PriceKey; label: string }[] = [
+  { key: "input", label: "Masuk" },
+  { key: "output", label: "Keluar" },
+  { key: "cacheRead", label: "Cache baca" },
+  { key: "cacheWrite", label: "Cache tulis" },
+];
+
 function splitModels(text: string): string[] {
   const models: string[] = [];
   for (const line of text.split(/\r?\n/)) {
@@ -49,6 +58,7 @@ function fieldOf(message: string): string {
   if (message.startsWith("API key")) return "apiKey";
   if (message.startsWith("Model utama")) return "defaultModel";
   if (message.startsWith("Model ringan")) return "lightModel";
+  if (message.startsWith("Tarif ")) return "prices";
   if (message.startsWith("Model ")) return "models";
   return "lain";
 }
@@ -122,6 +132,16 @@ export function ProfileForm({
   const onSubmit = (event: Event): void => {
     event.preventDefault();
     onSave();
+  };
+
+  const updatePrice = (modelId: string, key: PriceKey, value: string): void => {
+    const current = profile.modelPrices[modelId] ?? {
+      input: "",
+      output: "",
+      cacheRead: "",
+      cacheWrite: "",
+    };
+    onChange({ modelPrices: { ...profile.modelPrices, [modelId]: { ...current, [key]: value } } });
   };
 
   return (
@@ -365,6 +385,46 @@ export function ProfileForm({
           <FieldError id="jk-pf-lightModel-error" messages={messagesFor("lightModel")} />
         </div>
       </div>
+
+      {models.length > 0 && (
+        <div class="jk-field">
+          <span class="jk-label">Tarif (opsional)</span>
+          <p class="jk-help">
+            USD per 1 juta token. Dipakai untuk menghitung biaya sendiri, karena angka biaya
+            dari SDK memakai tarif Claude.
+          </p>
+          <div class="jk-price-list">
+            {models.map((modelId) => (
+              <div class="jk-price-row" key={modelId}>
+                <span class="jk-price-model jk-mono">{modelId}</span>
+                <div class="jk-price-fields">
+                  {PRICE_FIELDS.map((field) => (
+                    <label class="jk-price-field" key={field.key}>
+                      <span class="jk-label">{field.label}</span>
+                      <input
+                        class="jk-input jk-input-code jk-input-price"
+                        type="text"
+                        inputmode="decimal"
+                        value={profile.modelPrices[modelId]?.[field.key] ?? ""}
+                        placeholder="0"
+                        onInput={(event) =>
+                          updatePrice(
+                            modelId,
+                            field.key,
+                            (event.currentTarget as HTMLInputElement).value,
+                          )
+                        }
+                        aria-label={`${field.label} tarif model ${modelId}`}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <FieldError id="jk-pf-prices-error" messages={messagesFor("prices")} />
+        </div>
+      )}
 
       <div class="jk-form-actions">
         <button type="submit" class="jk-button jk-button-primary" disabled={!dirty || !valid || busy}>

@@ -11,6 +11,7 @@ export interface ProfileDraft {
   apiKey: string;
   modelsText: string;
   modelLabels: Record<string, string>;
+  modelPrices: Record<string, { input: string; output: string; cacheRead: string; cacheWrite: string }>;
   defaultModel: string;
   lightModel: string;
   isNew: boolean;
@@ -53,7 +54,40 @@ function hasEmptyModelLine(modelsText: string): boolean {
 }
 
 function copyProfile(profile: ProfileDraft): ProfileDraft {
-  return { ...profile, modelLabels: { ...profile.modelLabels } };
+  return { ...profile, modelLabels: { ...profile.modelLabels }, modelPrices: { ...profile.modelPrices } };
+}
+
+interface ModelPrice {
+  input: number;
+  output: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+function parseNonNegative(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  if (trimmed === "") return undefined;
+  const value = Number(trimmed);
+  if (!Number.isFinite(value) || value < 0) return undefined;
+  return value;
+}
+
+/** Bangun objek price untuk payload; butuh input dan output valid. */
+function buildPrice(
+  price: { input: string; output: string; cacheRead: string; cacheWrite: string } | undefined,
+): ModelPrice | undefined {
+  if (price === undefined) return undefined;
+  const input = parseNonNegative(price.input);
+  const output = parseNonNegative(price.output);
+  if (input === undefined || output === undefined) return undefined;
+
+  const result: ModelPrice = { input, output };
+  const cacheRead = parseNonNegative(price.cacheRead);
+  if (cacheRead !== undefined) result.cacheRead = cacheRead;
+  const cacheWrite = parseNonNegative(price.cacheWrite);
+  if (cacheWrite !== undefined) result.cacheWrite = cacheWrite;
+  return result;
 }
 
 export function toDraft(view: RegistryView): RegistryDraft {
@@ -61,8 +95,17 @@ export function toDraft(view: RegistryView): RegistryDraft {
     const mode: KeyMode =
       profile.apiKeyEnv !== undefined ? "env" : profile.hasKey ? "keep" : "none";
     const modelLabels: Record<string, string> = {};
+    const modelPrices: Record<string, { input: string; output: string; cacheRead: string; cacheWrite: string }> = {};
     for (const model of profile.models) {
       if (model.label !== undefined) modelLabels[model.id] = model.label;
+      if (model.price !== undefined) {
+        modelPrices[model.id] = {
+          input: String(model.price.input),
+          output: String(model.price.output),
+          cacheRead: model.price.cacheRead !== undefined ? String(model.price.cacheRead) : "",
+          cacheWrite: model.price.cacheWrite !== undefined ? String(model.price.cacheWrite) : "",
+        };
+      }
     }
     return {
       id: profile.id,
@@ -73,6 +116,7 @@ export function toDraft(view: RegistryView): RegistryDraft {
       apiKey: "",
       modelsText: profile.models.map((model) => model.id).join("\n"),
       modelLabels,
+      modelPrices,
       defaultModel: profile.defaultModel ?? "",
       lightModel: profile.lightModel ?? "",
       isNew: false,
@@ -99,6 +143,7 @@ export function newProfileDraft(existingIds: string[]): ProfileDraft {
     apiKey: "",
     modelsText: "",
     modelLabels: {},
+    modelPrices: {},
     defaultModel: "",
     lightModel: "",
     isNew: true,
@@ -198,6 +243,43 @@ export function validateDraft(draft: RegistryDraft): Record<string, string[]> {
         push(id, `Model ringan "${lightModel}" tidak ada di daftar model.`);
       }
     }
+
+    // Validasi tarif model (hanya untuk model yang masih ada di daftar)
+    const priceErrors: string[] = [];
+    for (const modelId of models) {
+      const price = profile.modelPrices[modelId];
+      if (price === undefined) continue;
+
+      const input = price.input.trim();
+      const output = price.output.trim();
+
+      if (input !== "" || output !== "") {
+        if (input === "" || output === "") {
+          priceErrors.push(`Tarif model "${modelId}": Masuk dan Keluar harus diisi keduanya.`);
+        } else if (
+          !Number.isFinite(Number(input)) ||
+          !Number.isFinite(Number(output)) ||
+          Number(input) < 0 ||
+          Number(output) < 0
+        ) {
+          priceErrors.push(`Tarif model "${modelId}": Masuk dan Keluar harus angka >= 0.`);
+        }
+      }
+
+      for (const [key, label] of [
+        ["cacheRead", "Cache baca"],
+        ["cacheWrite", "Cache tulis"],
+      ] as const) {
+        const raw = price[key].trim();
+        if (raw !== "" && (!Number.isFinite(Number(raw)) || Number(raw) < 0)) {
+          priceErrors.push(`Tarif model "${modelId}": ${label} harus angka >= 0.`);
+        }
+      }
+    }
+
+    for (const message of priceErrors) {
+      push(id, message);
+    }
   }
 
   return errors;
@@ -207,7 +289,12 @@ export function toPayload(draft: RegistryDraft): unknown {
   const profiles = draft.profiles.map((profile) => {
     const models = modelLines(profile.modelsText).map((id) => {
       const label = profile.modelLabels[id];
-      return label === undefined ? id : { id, label };
+      const price = buildPrice(profile.modelPrices[id]);
+      if (label === undefined && price === undefined) return id;
+      const model: Record<string, unknown> = { id };
+      if (label !== undefined) model.label = label;
+      if (price !== undefined) model.price = price;
+      return model;
     });
     const payload: Record<string, unknown> = {
       id: profile.id,
@@ -252,6 +339,7 @@ function comparable(profile: ProfileDraft): Record<string, unknown> {
     apiKeyEnv: profile.apiKeyEnv,
     apiKey: profile.apiKey,
     modelsText: profile.modelsText,
+    modelPrices: profile.modelPrices,
     defaultModel: profile.defaultModel,
     lightModel: profile.lightModel,
   };

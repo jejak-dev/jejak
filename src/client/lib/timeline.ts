@@ -40,6 +40,9 @@ export type TimelineItem =
       costUsd?: number;
       inputTokens?: number;
       outputTokens?: number;
+      cacheReadTokens?: number;
+      cacheWriteTokens?: number;
+      estimatedCostUsd?: number;
       numTurns?: number;
     };
 
@@ -202,6 +205,9 @@ export function reduceTimeline(
       if (event.costUsd !== undefined) result.costUsd = event.costUsd;
       if (event.inputTokens !== undefined) result.inputTokens = event.inputTokens;
       if (event.outputTokens !== undefined) result.outputTokens = event.outputTokens;
+      if (event.cacheReadTokens !== undefined) result.cacheReadTokens = event.cacheReadTokens;
+      if (event.cacheWriteTokens !== undefined) result.cacheWriteTokens = event.cacheWriteTokens;
+      if (event.estimatedCostUsd !== undefined) result.estimatedCostUsd = event.estimatedCostUsd;
       if (event.numTurns !== undefined) result.numTurns = event.numTurns;
 
       const closed = markRunningToolsFailed([...items]);

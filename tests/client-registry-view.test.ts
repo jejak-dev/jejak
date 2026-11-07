@@ -116,4 +116,37 @@ describe("parseRegistryView", () => {
     expect(() => parseRegistryView(getter)).not.toThrow();
     expect(parseRegistryView(getter)).toEqual({ profiles: [] });
   });
+
+  test("price terparse dengan benar", () => {
+    const input = {
+      profiles: [
+        {
+          id: "p",
+          name: "P",
+          models: [
+            { id: "m1", price: { input: 0.5, output: 1.2 } },
+            { id: "m2", price: { input: 0.3, output: 0.8, cacheRead: 0.1, cacheWrite: 0.15 } },
+            { id: "m3", price: { input: -1, output: 1.2 } },
+            { id: "m4", price: { input: 0.5, output: "invalid" } },
+            { id: "m5", price: { input: 0.5 } },
+          ],
+        },
+      ],
+    };
+
+    const result = parseRegistryView(input);
+    expect(result.profiles[0]?.models).toHaveLength(5);
+    expect(result.profiles[0]?.models[0]).toEqual({
+      id: "m1",
+      price: { input: 0.5, output: 1.2 },
+    });
+    expect(result.profiles[0]?.models[1]).toEqual({
+      id: "m2",
+      price: { input: 0.3, output: 0.8, cacheRead: 0.1, cacheWrite: 0.15 },
+    });
+    // Price tidak valid diabaikan
+    expect(result.profiles[0]?.models[2]).toEqual({ id: "m3" });
+    expect(result.profiles[0]?.models[3]).toEqual({ id: "m4" });
+    expect(result.profiles[0]?.models[4]).toEqual({ id: "m5" });
+  });
 });

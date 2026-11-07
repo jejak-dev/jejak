@@ -1,3 +1,16 @@
+export interface ModelPriceView {
+  input: number;
+  output: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}
+
+export interface ModelView {
+  id: string;
+  label?: string;
+  price?: ModelPriceView;
+}
+
 export interface RegistryView {
   activeProfileId?: string;
   profiles: {
@@ -6,7 +19,7 @@ export interface RegistryView {
     baseUrl?: string;
     apiKeyEnv?: string;
     hasKey: boolean;
-    models: { id: string; label?: string }[];
+    models: ModelView[];
     defaultModel?: string;
     lightModel?: string;
   }[];
@@ -23,7 +36,7 @@ function readString(source: Record<string, unknown>, key: string): string | unde
   return trimmed === "" ? undefined : trimmed;
 }
 
-function parseModel(raw: unknown): { id: string; label?: string } | undefined {
+function parseModel(raw: unknown): ModelView | undefined {
   if (typeof raw === "string") {
     const id = raw.trim();
     return id === "" ? undefined : { id };
@@ -35,12 +48,37 @@ function parseModel(raw: unknown): { id: string; label?: string } | undefined {
   if (id === undefined) {
     return undefined;
   }
-  const model: { id: string; label?: string } = { id };
+  const model: ModelView = { id };
   const label = readString(raw, "label");
   if (label !== undefined) {
     model.label = label;
   }
+
+  const price = parsePrice(raw.price);
+  if (price !== undefined) {
+    model.price = price;
+  }
+
   return model;
+}
+
+function readNonNegative(raw: unknown): number | undefined {
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return undefined;
+  return raw;
+}
+
+function parsePrice(raw: unknown): ModelPriceView | undefined {
+  if (!isRecord(raw)) return undefined;
+  const input = readNonNegative(raw.input);
+  const output = readNonNegative(raw.output);
+  if (input === undefined || output === undefined) return undefined;
+
+  const price: ModelPriceView = { input, output };
+  const cacheRead = readNonNegative(raw.cacheRead);
+  if (cacheRead !== undefined) price.cacheRead = cacheRead;
+  const cacheWrite = readNonNegative(raw.cacheWrite);
+  if (cacheWrite !== undefined) price.cacheWrite = cacheWrite;
+  return price;
 }
 
 function parseProfile(
