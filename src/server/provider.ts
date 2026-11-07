@@ -8,6 +8,7 @@ export interface ProviderProfile {
   name: string;
   baseUrl?: string;
   apiKey?: string;
+  apiKeyEnv?: string;
   models: ModelEntry[];
   defaultModel?: string;
   lightModel?: string;
@@ -33,6 +34,7 @@ export interface ResolvedProvider {
 }
 
 const PROFILE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
+const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const INVALID_BASE_URL = "(tidak valid)";
 
 function pickEnv(env: Record<string, string | undefined>, keys: readonly string[]): string | undefined {
@@ -124,6 +126,7 @@ function parseProfile(raw: unknown, index: number, env: Record<string, string | 
 
   const literalApiKey = readOptionalString(raw, "apiKey", context);
   const apiKeyEnv = readOptionalString(raw, "apiKeyEnv", context);
+  if (apiKeyEnv !== undefined) profile.apiKeyEnv = apiKeyEnv;
   let apiKey = literalApiKey;
   if (apiKeyEnv !== undefined) {
     const fromEnv = pickEnv(env, [apiKeyEnv]);
@@ -214,6 +217,30 @@ export function parseRegistry(
   return registry;
 }
 
+export function serializeRegistry(registry: ProviderRegistry): unknown {
+  const profiles = registry.profiles.map((profile) => {
+    const serialized: Record<string, unknown> = {
+      id: profile.id,
+      name: profile.name,
+    };
+    if (profile.baseUrl !== undefined) serialized.baseUrl = profile.baseUrl;
+    if (profile.apiKeyEnv !== undefined) serialized.apiKeyEnv = profile.apiKeyEnv;
+    serialized.models = profile.models.map((model) =>
+      model.label === undefined ? { id: model.id } : { id: model.id, label: model.label },
+    );
+    if (profile.apiKey !== undefined && profile.apiKeyEnv === undefined) {
+      serialized.apiKey = profile.apiKey;
+    }
+    if (profile.defaultModel !== undefined) serialized.defaultModel = profile.defaultModel;
+    if (profile.lightModel !== undefined) serialized.lightModel = profile.lightModel;
+    return serialized;
+  });
+
+  const result: Record<string, unknown> = { profiles };
+  if (registry.activeProfileId !== undefined) result.activeProfileId = registry.activeProfileId;
+  return result;
+}
+
 export function validateRegistry(registry: ProviderRegistry): string[] {
   const errors: string[] = [];
   const profiles = Array.isArray(registry.profiles) ? registry.profiles : [];
@@ -242,6 +269,12 @@ export function validateRegistry(registry: ProviderRegistry): string[] {
 
     if (profile.baseUrl !== undefined && !isHttpUrl(profile.baseUrl)) {
       errors.push(`baseUrl profil "${profile.id}" harus berupa URL http atau https yang valid.`);
+    }
+
+    if (profile.apiKeyEnv !== undefined && !ENV_NAME_PATTERN.test(profile.apiKeyEnv)) {
+      errors.push(
+        `apiKeyEnv profil "${profile.id}" harus berupa nama variabel lingkungan yang valid.`,
+      );
     }
 
     const modelIds = new Set<string>();
@@ -356,6 +389,7 @@ export function redactRegistry(registry: ProviderRegistry): unknown {
       ),
     };
     if (profile.baseUrl !== undefined) redacted.baseUrl = redactBaseUrl(profile.baseUrl);
+    if (profile.apiKeyEnv !== undefined) redacted.apiKeyEnv = profile.apiKeyEnv;
     if (profile.apiKey !== undefined) redacted.apiKey = "***";
     if (profile.defaultModel !== undefined) redacted.defaultModel = profile.defaultModel;
     if (profile.lightModel !== undefined) redacted.lightModel = profile.lightModel;

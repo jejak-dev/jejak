@@ -5,6 +5,7 @@ import {
   redactResolved,
   registryFromEnv,
   resolveProvider,
+  serializeRegistry,
   setActiveProfile,
   toSdkEnv,
   validateRegistry,
@@ -136,6 +137,7 @@ test("parseRegistry membaca apiKeyEnv dari env dan menormalkan models string", (
     id: "proxy",
     name: "Proxy LiteLLM",
     apiKey: "env-key",
+    apiKeyEnv: "LITELLM_KEY",
     models: [{ id: "gpt-1" }, { id: "gpt-2", label: "GPT 2" }],
   });
 });
@@ -395,4 +397,108 @@ test("redactRegistry menyembunyikan baseUrl tidak valid tanpa membocorkan teks m
 
   expect(serialized).toContain("(tidak valid)");
   expect(serialized).not.toContain("kunci-rahasia");
+});
+
+test("serializeRegistry tidak menyimpan key yang berasal dari apiKeyEnv", () => {
+  const registry = parseRegistry(
+    {
+      activeProfileId: "proxy",
+      profiles: [
+        {
+          id: "proxy",
+          name: "Proxy",
+          baseUrl: "https://proxy.test/v1",
+          apiKeyEnv: "PROXY_KEY",
+          models: ["m1"],
+          defaultModel: "m1",
+        },
+      ],
+    },
+    { PROXY_KEY: "rahasia-dari-env" },
+  );
+
+  const serialized = JSON.stringify(serializeRegistry(registry));
+
+  expect(serialized).not.toContain("rahasia-dari-env");
+  expect(serialized).not.toContain('"apiKey"');
+  expect(JSON.parse(serialized)).toEqual({
+    activeProfileId: "proxy",
+    profiles: [
+      {
+        id: "proxy",
+        name: "Proxy",
+        baseUrl: "https://proxy.test/v1",
+        apiKeyEnv: "PROXY_KEY",
+        models: [{ id: "m1" }],
+        defaultModel: "m1",
+      },
+    ],
+  });
+});
+
+test("serializeRegistry tetap menyimpan apiKey literal tanpa apiKeyEnv", () => {
+  const serialized = serializeRegistry({
+    profiles: [{ id: "p", name: "P", apiKey: "literal-key", models: [] }],
+  });
+
+  expect(JSON.parse(JSON.stringify(serialized)).profiles[0].apiKey).toBe("literal-key");
+});
+
+test("parseRegistry(serializeRegistry(r)) melakukan round-trip setara", () => {
+  const registry = parseRegistry(
+    {
+      activeProfileId: "anthropic",
+      profiles: [
+        {
+          id: "deepseek",
+          name: "DeepSeek",
+          baseUrl: "https://api.deepseek.test/v1",
+          apiKeyEnv: "DEEPSEEK_KEY",
+          models: [{ id: "deepseek-chat" }],
+          lightModel: "deepseek-chat",
+        },
+        { id: "anthropic", name: "Anthropic", apiKey: "anthropic-key", models: [] },
+      ],
+    },
+    { DEEPSEEK_KEY: "deepseek-env-key" },
+  );
+
+  const env = { DEEPSEEK_KEY: "deepseek-env-key" };
+  expect(parseRegistry(serializeRegistry(registry), env)).toEqual(registry);
+});
+
+test("serializeRegistry tidak memutasi registry asal", () => {
+  const registry: ProviderRegistry = {
+    profiles: [{ id: "p", name: "P", apiKey: "literal-key", apiKeyEnv: "P_KEY", models: [] }],
+  };
+
+  serializeRegistry(registry);
+
+  expect(registry.profiles[0]).toEqual({
+    id: "p",
+    name: "P",
+    apiKey: "literal-key",
+    apiKeyEnv: "P_KEY",
+    models: [],
+  });
+});
+
+test("validateRegistry memeriksa format apiKeyEnv", () => {
+  expect(
+    validateRegistry({ profiles: [{ id: "p", name: "P", apiKeyEnv: "1SALAH", models: [] }] }),
+  ).toEqual([expect.stringContaining("apiKeyEnv")]);
+  expect(
+    validateRegistry({ profiles: [{ id: "p", name: "P", apiKeyEnv: "ADA SPASI", models: [] }] }),
+  ).toEqual([expect.stringContaining("apiKeyEnv")]);
+  expect(
+    validateRegistry({ profiles: [{ id: "p", name: "P", apiKeyEnv: "_OK_123", models: [] }] }),
+  ).toEqual([]);
+});
+
+test("redactRegistry memuat apiKeyEnv apa adanya", () => {
+  const redacted = redactRegistry({
+    profiles: [{ id: "p", name: "P", apiKeyEnv: "PROXY_KEY", models: [] }],
+  }) as { profiles: Array<Record<string, unknown>> };
+
+  expect(redacted.profiles[0]?.apiKeyEnv).toBe("PROXY_KEY");
 });
