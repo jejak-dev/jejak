@@ -216,6 +216,15 @@ describe("session-manager: izin", () => {
     expect(mgr.get(info.id)?.pendingPermissions).toBe(0);
   });
 
+  test("permission_request memuat expiresAt sesuai batas waktu", async () => {
+    const fixed = new Date("2026-11-08T10:00:00.000Z");
+    const mgr = manager(askingRunner(), { permissionTimeoutMs: 20, now: () => fixed });
+    const info = await mgr.create({ prompt: "p", cwd: dir });
+    const events = await eventsOf(mgr, info.id);
+    const request = events.find((e) => e.type === "permission_request");
+    expect(request?.type === "permission_request" && request.expiresAt).toBe("2026-11-08T10:00:00.020Z");
+  });
+
   test("key provider pada input tool disamarkan di event", async () => {
     const mgr = manager(askingRunner({ command: `curl -H "x: ${KEY}"` }), { permissionTimeoutMs: 20 });
     const info = await mgr.create({ prompt: "p", cwd: dir });

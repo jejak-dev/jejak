@@ -19,7 +19,15 @@ export type AgentEvent =
       numTurns?: number;
     }
   | { type: "error"; message: string }
-  | { type: "permission_request"; id: string; toolUseId?: string; name: string; input: unknown }
+  | {
+      type: "permission_request";
+      id: string;
+      toolUseId?: string;
+      name: string;
+      input: unknown;
+      /** Batas waktu keputusan (ISO); setelah itu izin ditolak otomatis. */
+      expiresAt?: string;
+    }
   | { type: "permission_resolved"; id: string; decision: "allow" | "deny"; message?: string };
 
 export interface PermissionRequest { toolUseId?: string; name: string; input: unknown }

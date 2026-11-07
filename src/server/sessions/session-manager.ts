@@ -470,6 +470,7 @@ export class SessionManager {
       toolUseId: request.toolUseId,
       name: request.name,
       input: request.input,
+      expiresAt: new Date(this.now().getTime() + record.permissionTimeoutMs).toISOString(),
     };
 
     this.append(record, permissionRequestEvent);
