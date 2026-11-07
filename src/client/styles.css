@@ -790,6 +790,143 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Markdown teks agen */
+
+.jk-md {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.jk-md > * {
+  margin: 0 0 0.75em;
+}
+
+.jk-md > *:last-child {
+  margin-bottom: 0;
+}
+
+.jk-md ul,
+.jk-md ol {
+  padding-left: 1.4em;
+}
+
+.jk-md li > * {
+  margin: 0 0 0.35em;
+}
+
+.jk-md li > *:last-child {
+  margin-bottom: 0;
+}
+
+.jk-md-heading {
+  font-family: var(--sans);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+h1.jk-md-heading {
+  font-size: 1.1em;
+}
+
+h2.jk-md-heading {
+  font-size: 1.05em;
+}
+
+.jk-md-heading:not(h1, h2) {
+  font-size: 1em;
+}
+
+.jk-md-quote {
+  margin: 0 0 0.75em;
+  padding-left: 12px;
+  border-left: 2px solid var(--line-2);
+  color: var(--t2);
+}
+
+.jk-md-quote > *:last-child {
+  margin-bottom: 0;
+}
+
+.jk-md-code {
+  padding: 0.1em 0.32em;
+  border-radius: 4px;
+  background: var(--hover);
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.jk-md-pre {
+  position: relative;
+  margin: 0 0 0.75em;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--code);
+  font: 12px/1.6 var(--mono);
+  color: var(--t2);
+  overflow-x: auto;
+}
+
+.jk-md-pre:last-child {
+  margin-bottom: 0;
+}
+
+.jk-md-pre code {
+  font: inherit;
+  color: inherit;
+  white-space: pre;
+}
+
+.jk-md-lang {
+  display: block;
+  margin-bottom: 4px;
+  font: 11px var(--mono);
+  color: var(--t3);
+  user-select: none;
+}
+
+.jk-md-table-wrap {
+  margin: 0 0 0.75em;
+  overflow-x: auto;
+}
+
+.jk-md-table-wrap:last-child {
+  margin-bottom: 0;
+}
+
+.jk-md table {
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+
+.jk-md th,
+.jk-md td {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  text-align: left;
+}
+
+.jk-md th {
+  font-weight: 600;
+}
+
+.jk-md a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.jk-md a:hover {
+  text-decoration-color: currentColor;
+}
+
+.jk-md-rule {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0 0 0.75em;
+}
+
 .jk-step {
   border: 0;
   padding: 0;

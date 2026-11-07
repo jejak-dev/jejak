@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { TimelineItem } from "../lib/timeline";
 import { formatCost, formatCount } from "../lib/format";
 import { Icon } from "./Icon";
+import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
 
 export interface TimelineProps {
@@ -128,9 +129,9 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
 
               case "text":
                 return (
-                  <p class="jk-text" key={index} style={depthStyle(item.depth)}>
-                    {item.text}
-                  </p>
+                  <div class="jk-text" key={index} style={depthStyle(item.depth)}>
+                    <Markdown text={item.text} />
+                  </div>
                 );
 
               case "tool": {
