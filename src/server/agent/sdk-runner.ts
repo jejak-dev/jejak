@@ -1,5 +1,5 @@
 import { toSdkEnv, type ResolvedProvider } from "../provider";
-import type { AgentEvent, AgentRunner, RunInput } from "./events";
+import type { AgentEvent, AgentRunner, RunInput, PermissionRequest } from "./events";
 import { mapSdkMessage } from "./sdk-mapper";
 
 const SDK_MODULE: string = "@anthropic-ai/claude-agent-sdk";
@@ -105,6 +105,36 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       };
       if (input.provider.model !== undefined) {
         sdkOptions.model = input.provider.model;
+      }
+
+      // Add canUseTool handler if requestPermission is provided
+      const requestPermission = input.requestPermission;
+      if (requestPermission !== undefined) {
+        sdkOptions.canUseTool = async (
+          toolName: string,
+          toolInput: unknown,
+          ctx: { signal?: AbortSignal; toolUseID?: string } | undefined,
+        ): Promise<
+          { behavior: "allow"; updatedInput: unknown } | { behavior: "deny"; message: string }
+        > => {
+          const request: PermissionRequest = {
+            toolUseId: ctx?.toolUseID,
+            name: toolName,
+            input: toolInput,
+          };
+
+          try {
+            const decision = await requestPermission(request, ctx?.signal ?? abortController.signal);
+
+            if (decision.behavior === "allow") {
+              return { behavior: "allow", updatedInput: toolInput };
+            } else {
+              return { behavior: "deny", message: decision.message };
+            }
+          } catch {
+            return { behavior: "deny", message: "izin gagal diproses" };
+          }
+        };
       }
 
       let query: SdkQuery | undefined;

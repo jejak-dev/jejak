@@ -33,6 +33,12 @@ export interface ApiClient {
     permissionMode?: "default" | "acceptEdits" | "plan";
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
+  decidePermission(
+    sessionId: string,
+    requestId: string,
+    decision: "allow" | "deny",
+    message?: string,
+  ): Promise<{ ok: true }>;
   getProviders(): Promise<unknown>;
   saveProviders(registry: unknown): Promise<unknown>;
   setActiveProvider(profileId: string): Promise<unknown>;
@@ -189,6 +195,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async testProvider(selection) {
       return connectionTestFrom(await request("POST", "/api/providers/test", selection ?? {}));
+    },
+
+    async decidePermission(sessionId, requestId, decision, message) {
+      const body: { decision: "allow" | "deny"; message?: string } = { decision };
+      if (message !== undefined) {
+        body.message = message;
+      }
+      await request("POST", `/api/sessions/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(requestId)}`, body);
+      return { ok: true };
     },
   };
 }

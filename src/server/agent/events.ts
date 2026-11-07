@@ -18,7 +18,13 @@ export type AgentEvent =
       outputTokens?: number;
       numTurns?: number;
     }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "permission_request"; id: string; toolUseId?: string; name: string; input: unknown }
+  | { type: "permission_resolved"; id: string; decision: "allow" | "deny"; message?: string };
+
+export interface PermissionRequest { toolUseId?: string; name: string; input: unknown }
+export type PermissionDecision = { behavior: "allow" } | { behavior: "deny"; message: string };
+export type PermissionHandler = (request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>;
 
 export interface RunInput {
   prompt: string;
@@ -26,6 +32,7 @@ export interface RunInput {
   provider: ResolvedProvider;
   permissionMode?: PermissionMode;
   signal?: AbortSignal;
+  requestPermission?: PermissionHandler;
 }
 
 export interface AgentRunner {

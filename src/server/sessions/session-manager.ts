@@ -1,6 +1,6 @@
 import { stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
-import type { AgentEvent, AgentRunner, PermissionMode } from "../agent";
+import type { AgentEvent, AgentRunner, PermissionMode, PermissionRequest, PermissionDecision } from "../agent";
 import type { ProviderSelection, ResolvedProvider } from "../provider";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
@@ -19,6 +19,7 @@ export interface SessionInfo {
   createdAt: string;
   updatedAt: string;
   eventCount: number;
+  pendingPermissions: number;
 }
 
 export interface SequencedEvent {
@@ -42,6 +43,7 @@ export interface SessionManagerOptions {
   maxEventsPerSession?: number;
   maxPromptLength?: number;
   now?: () => Date;
+  permissionTimeoutMs?: number;
 }
 
 export class SessionError extends Error {
@@ -54,6 +56,11 @@ export class SessionError extends Error {
   }
 }
 
+interface Pending {
+  resolve: (value: PermissionDecision) => void;
+  name: string;
+}
+
 interface SessionRecord {
   info: SessionInfo;
   apiKey?: string;
@@ -64,6 +71,8 @@ interface SessionRecord {
   listeners: Set<() => void>;
   done: Promise<void>;
   settle: () => void;
+  pending: Map<string, Pending>;
+  permissionTimeoutMs: number;
 }
 
 const PERMISSION_MODES: readonly SessionPermissionMode[] = ["default", "acceptEdits", "plan"];
@@ -73,6 +82,7 @@ const DEFAULTS = {
   maxSessions: 100,
   maxEventsPerSession: 5000,
   maxPromptLength: 20000,
+  permissionTimeoutMs: 600_000,
 } as const;
 
 function errorMessage(error: unknown): string {
@@ -146,6 +156,7 @@ export class SessionManager {
   private readonly maxPromptLength: number;
   private readonly now: () => Date;
   private readonly sessions = new Map<string, SessionRecord>();
+  private readonly permissionTimeoutMs: number;
 
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
@@ -155,6 +166,7 @@ export class SessionManager {
     this.maxEventsPerSession = options.maxEventsPerSession ?? DEFAULTS.maxEventsPerSession;
     this.maxPromptLength = options.maxPromptLength ?? DEFAULTS.maxPromptLength;
     this.now = options.now ?? (() => new Date());
+    this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULTS.permissionTimeoutMs;
   }
 
   async create(input: CreateSessionInput): Promise<SessionInfo> {
@@ -183,6 +195,7 @@ export class SessionManager {
       createdAt: timestamp,
       updatedAt: timestamp,
       eventCount: 0,
+      pendingPermissions: 0,
     };
     if (resolved.model !== undefined) {
       info.model = resolved.model;
@@ -203,6 +216,8 @@ export class SessionManager {
       listeners: new Set(),
       done,
       settle,
+      pending: new Map(),
+      permissionTimeoutMs: this.permissionTimeoutMs,
     };
     this.sessions.set(info.id, record);
 
@@ -356,6 +371,7 @@ export class SessionManager {
         provider,
         permissionMode: permissionMode as PermissionMode,
         signal: record.controller.signal,
+        requestPermission: (request) => this.requestPermission(record, request),
       });
 
       for await (const event of events) {
@@ -418,6 +434,142 @@ export class SessionManager {
     record.version += 1;
     for (const listener of Array.from(record.listeners)) {
       listener();
+    }
+  }
+
+  private generateRequestId(): string {
+    return crypto.randomUUID();
+  }
+
+  private async requestPermission(
+    record: SessionRecord,
+    request: PermissionRequest,
+  ): Promise<PermissionDecision> {
+    const requestId = this.generateRequestId();
+
+    // Create a promise that resolves when the permission is granted or denied
+    const pending: Pending = {
+      resolve: () => {},
+      name: request.name,
+    };
+
+    const promise = new Promise<PermissionDecision>((resolve) => {
+      pending.resolve = resolve;
+      record.pending.set(requestId, pending);
+
+      // Update pendingPermissions count
+      record.info.pendingPermissions += 1;
+      record.info.updatedAt = this.now().toISOString();
+      this.notify(record);
+    });
+
+    // Add event to buffer
+    const permissionRequestEvent: AgentEvent = {
+      type: "permission_request",
+      id: requestId,
+      toolUseId: request.toolUseId,
+      name: request.name,
+      input: request.input,
+    };
+
+    this.append(record, permissionRequestEvent);
+
+    // Set up timeout
+    const timeoutId = setTimeout(() => {
+      if (record.pending.has(requestId)) {
+        const denyEvent: AgentEvent = {
+          type: "permission_resolved",
+          id: requestId,
+          decision: "deny",
+          message: "waktu izin habis",
+        };
+
+        record.pending.delete(requestId);
+        record.info.pendingPermissions -= 1;
+        record.info.updatedAt = this.now().toISOString();
+        this.notify(record);
+
+        this.append(record, denyEvent);
+
+        pending.resolve({ behavior: "deny", message: "waktu izin habis" });
+      }
+    }, record.permissionTimeoutMs);
+
+    // Set up abort handler
+    const abortHandler = (): void => {
+      if (record.pending.has(requestId)) {
+        const denyEvent: AgentEvent = {
+          type: "permission_resolved",
+          id: requestId,
+          decision: "deny",
+          message: "sesi dihentikan",
+        };
+
+        record.pending.delete(requestId);
+        record.info.pendingPermissions -= 1;
+        record.info.updatedAt = this.now().toISOString();
+        this.notify(record);
+
+        this.append(record, denyEvent);
+
+        pending.resolve({ behavior: "deny", message: "sesi dihentikan" });
+      }
+      clearTimeout(timeoutId);
+    };
+
+    record.controller.signal.addEventListener("abort", abortHandler, { once: true });
+
+    try {
+      return await promise;
+    } finally {
+      // Clean up abort handler
+      record.controller.signal.removeEventListener("abort", abortHandler);
+      clearTimeout(timeoutId);
+    }
+  }
+
+  resolvePermission(
+    sessionId: string,
+    requestId: string,
+    decision: "allow" | "deny",
+    message?: string,
+  ): void {
+    const record = this.sessions.get(sessionId);
+    if (record === undefined) {
+      throw new SessionError("sesi tidak ditemukan", "tidak-ditemukan");
+    }
+
+    const pending = record.pending.get(requestId);
+    if (pending === undefined) {
+      throw new SessionError("izin tidak ditemukan atau sudah diputuskan", "tidak-ditemukan");
+    }
+
+    // Remove from pending map
+    record.pending.delete(requestId);
+
+    // Update pendingPermissions count
+    record.info.pendingPermissions -= 1;
+    record.info.updatedAt = this.now().toISOString();
+    this.notify(record);
+
+    // Create resolved event
+    const resolvedEvent: AgentEvent = {
+      type: "permission_resolved",
+      id: requestId,
+      decision,
+      message: message ? collapseWhitespace(message).substring(0, 200) : undefined,
+    };
+
+    this.append(record, resolvedEvent);
+
+    // Resolve the pending promise
+    if (decision === "allow") {
+      pending.resolve({ behavior: "allow" });
+    } else {
+      pending.resolve({
+        behavior: "deny",
+        message: message ? collapseWhitespace(message).substring(0, 200) : "ditolak pengguna",
+      });
     }
   }
 }

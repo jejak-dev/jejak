@@ -53,6 +53,25 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
       const signal = input.signal;
       let hasResult = false;
 
+      if (input.requestPermission !== undefined && input.prompt.includes("[izin]")) {
+        let allowed = false;
+        try {
+          const decision = await input.requestPermission(
+            { name: "Write", input: { file_path: "contoh.txt", content: "halo" } },
+            signal ?? new AbortController().signal,
+          );
+          allowed = decision.behavior === "allow";
+        } catch {
+          allowed = false;
+        }
+        if (!allowed) {
+          yield { type: "text", text: "Izin ditolak, aksi dibatalkan." };
+          yield { type: "result", ok: true };
+          return;
+        }
+      }
+
+      // Normal mock behavior without [izin]
       for (let index = 0; index < script.length; index += 1) {
         if (signal?.aborted) {
           if (!hasResult) {

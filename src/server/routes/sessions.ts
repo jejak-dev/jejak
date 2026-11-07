@@ -198,7 +198,37 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
           connection: "keep-alive",
         },
       });
-    });
+    })
+    .post(
+      "/api/sessions/:id/permissions/:requestId",
+      async ({ params, body }) => {
+        try {
+          const parsed = parseJsonBody(body);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            throw invalid("Body permintaan harus berupa objek.");
+          }
+
+          const record = parsed as Record<string, unknown>;
+          const decision = record.decision as string;
+
+          if (decision !== "allow" && decision !== "deny") {
+            throw invalid("Field decision harus berupa 'allow' atau 'deny'.");
+          }
+
+          const message = typeof record.message === "string" ? record.message : undefined;
+
+          manager.resolvePermission(params.id, params.requestId, decision as "allow" | "deny", message);
+
+          return jsonResponse(200, { ok: true });
+        } catch (error) {
+          if (error instanceof SessionError && error.code === "tidak-ditemukan") {
+            return jsonResponse(404, { error: error.message });
+          }
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    );
 
   return plugin as unknown as Elysia;
 }
