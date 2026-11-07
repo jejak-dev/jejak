@@ -28,6 +28,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 const SESSION: SessionInfo = {
   id: "s1",
   title: "Judul",
+  prompt: "Halo",
   cwd: "/tmp",
   profileId: "lokal",
   permissionMode: "default",

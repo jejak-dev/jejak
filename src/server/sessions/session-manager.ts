@@ -10,6 +10,7 @@ export type SessionPermissionMode = "default" | "acceptEdits" | "plan";
 export interface SessionInfo {
   id: string;
   title: string;
+  prompt: string;
   cwd: string;
   profileId: string;
   model?: string;
@@ -174,6 +175,7 @@ export class SessionManager {
     const info: SessionInfo = {
       id: `s_${crypto.randomUUID().slice(0, 8)}`,
       title: validated.title,
+      prompt: validated.prompt,
       cwd: validated.cwd,
       profileId: resolved.profileId,
       permissionMode: validated.permissionMode,

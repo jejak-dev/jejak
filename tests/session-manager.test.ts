@@ -92,6 +92,19 @@ describe("SessionManager.create", () => {
     expect(mgr.list().map((item) => item.id)).toEqual([info.id]);
   });
 
+  test("prompt ter-trim tersimpan pada create, get, dan list", async () => {
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+    });
+    const info = await createOk(mgr, { prompt: "  Halo\n\tdunia  " });
+
+    expect(info.prompt).toBe("Halo\n\tdunia");
+    expect(mgr.get(info.id)?.prompt).toBe("Halo\n\tdunia");
+    expect(mgr.list()[0]?.prompt).toBe("Halo\n\tdunia");
+
+    await mgr.done(info.id);
+  });
+
   test("prompt kosong dan terlalu panjang ditolak", async () => {
     const mgr = manager({ runner: scriptedRunner([]), maxPromptLength: 10 });
 

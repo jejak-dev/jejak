@@ -103,13 +103,13 @@ async function readStream(response: Response): Promise<{ frames: Frame[]; raw: s
 async function createSession(
   server: App,
   body: Record<string, unknown> = {},
-): Promise<{ id: string; status: string; title: string; profileId: string }> {
+): Promise<{ id: string; status: string; title: string; prompt: string; profileId: string }> {
   const res = await req(server, "POST", "/api/sessions", {
     body: { prompt: "Halo dunia", cwd: dir, ...body },
   });
   expect(res.status).toBe(201);
   const data = (await res.json()) as {
-    session: { id: string; status: string; title: string; profileId: string };
+    session: { id: string; status: string; title: string; prompt: string; profileId: string };
   };
   return data.session;
 }
@@ -155,6 +155,21 @@ describe("POST /api/sessions", () => {
     const after = await req(server, "GET", "/api/sessions");
     const afterData = (await after.json()) as { sessions: Array<{ status: string }> };
     expect(afterData.sessions[0]?.status).toBe("selesai");
+  });
+
+  test("prompt ter-trim dikembalikan pada create, detail, dan list", async () => {
+    const server = makeApp();
+    const session = await createSession(server, { prompt: "  Halo   dunia  " });
+
+    expect(session.prompt).toBe("Halo   dunia");
+
+    const detail = await req(server, "GET", `/api/sessions/${session.id}`);
+    const detailData = (await detail.json()) as { session: { prompt: string } };
+    expect(detailData.session.prompt).toBe("Halo   dunia");
+
+    const list = await req(server, "GET", "/api/sessions");
+    const listData = (await list.json()) as { sessions: Array<{ prompt: string }> };
+    expect(listData.sessions[0]?.prompt).toBe("Halo   dunia");
   });
 
   test("validasi ditolak 400", async () => {
