@@ -726,4 +726,65 @@ describe("createApiClient: memory", () => {
 
     await expect(api.acceptMemory("id-1")).rejects.toBeInstanceOf(ApiError);
   });
+
+  test("importMemory POST /api/memory/import body projectKey", async () => {
+    const payload = {
+      created: [MEMORY],
+      skipped: [
+        { file: "AGENTS.md", title: "Perintah", reason: "sudah-ada" as const },
+      ],
+      files: [
+        { file: "AGENTS.md", found: true },
+        { file: "CLAUDE.md", found: false },
+      ],
+    };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch, baseUrl: "http://localhost:9" });
+
+    const result = await api.importMemory("/tmp/proyek");
+
+    expect(result).toEqual(payload);
+    expect(calls[0]?.url).toBe("http://localhost:9/api/memory/import");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ projectKey: "/tmp/proyek" });
+  });
+
+  test("importMemory menolak bentuk respons yang salah", async () => {
+    const invalidPayloads: unknown[] = [
+      {},
+      { created: [], skipped: [] },
+      { created: "x", skipped: [], files: [] },
+      { created: [], skipped: [{}], files: [] },
+      { created: [], skipped: [], files: [{ file: "AGENTS.md" }] },
+      null,
+    ];
+
+    for (const payload of invalidPayloads) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+      await expect(api.importMemory("/tmp/x")).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  test("importMemory 400 dan 503 memakai pesan server", async () => {
+    for (const [status, message] of [
+      [400, "Folder proyek tidak ditemukan."],
+      [503, "Memory dimatikan."],
+    ] as const) {
+      const { fetch } = fakeFetch(() => jsonResponse({ error: message }, status));
+      const api = createApiClient({ fetch });
+
+      let caught: unknown;
+      try {
+        await api.importMemory("/tmp/x");
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(ApiError);
+      expect((caught as ApiError).status).toBe(status);
+      expect((caught as ApiError).message).toBe(message);
+    }
+  });
 });

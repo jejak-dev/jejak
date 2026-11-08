@@ -1,4 +1,6 @@
 import type {
+  ImportResult,
+  ImportSkipReason,
   MemoryItem,
   MemoryLayer,
   MemoryOrigin,
@@ -125,4 +127,70 @@ export function filterByLayer(
 ): MemoryItem[] {
   if (layer === "semua") return [...items];
   return items.filter((item) => item.layer === layer);
+}
+
+const SKIP_REASONS: ImportSkipReason[] = [
+  "sudah-ada",
+  "rahasia",
+  "terlalu-panjang",
+  "kosong",
+  "batas",
+];
+
+/** Label alasan bagian dokumen dilewati saat impor. */
+export function skippedReasonLabel(reason: ImportSkipReason): string {
+  switch (reason) {
+    case "sudah-ada":
+      return "Sudah ada";
+    case "rahasia":
+      return "Memuat rahasia";
+    case "terlalu-panjang":
+      return "Terlalu panjang";
+    case "kosong":
+      return "Kosong";
+    default:
+      return "Batas usulan tercapai";
+  }
+}
+
+export interface SkippedGroup {
+  reason: ImportSkipReason;
+  label: string;
+  count: number;
+}
+
+/** Hitungan bagian yang dilewati per alasan, urut tetap tanpa alasan kosong. */
+export function groupSkipped(
+  skipped: readonly ImportResult["skipped"][number][],
+): SkippedGroup[] {
+  return SKIP_REASONS.map((reason) => ({
+    reason,
+    label: skippedReasonLabel(reason),
+    count: skipped.filter((entry) => entry.reason === reason).length,
+  })).filter((group) => group.count > 0);
+}
+
+function foundFileNames(files: readonly ImportResult["files"][number][]): string[] {
+  return files.filter((entry) => entry.found).map((entry) => entry.file);
+}
+
+/** Ringkasan satu kalimat hasil impor dokumen proyek. */
+export function importSummary(result: ImportResult): string {
+  const names = foundFileNames(result.files);
+  if (names.length === 0) {
+    return "AGENTS.md dan CLAUDE.md tidak ditemukan di folder ini.";
+  }
+  const source = names.join(" dan ");
+  if (result.created.length > 0) {
+    return `${result.created.length} usulan baru dari ${source}.`;
+  }
+  const skipped = result.skipped.length;
+  if (skipped === 0) {
+    return `Tidak ada bagian baru di ${source}.`;
+  }
+  const allExisting = result.skipped.every((entry) => entry.reason === "sudah-ada");
+  if (allExisting) {
+    return `Tidak ada usulan baru (${skipped} sudah ada).`;
+  }
+  return `Tidak ada usulan baru (${skipped} dilewati).`;
 }

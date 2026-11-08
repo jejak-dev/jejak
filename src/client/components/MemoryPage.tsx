@@ -3,12 +3,15 @@ import {
   ApiError,
   type ApiClient,
   type MemoryItem,
+  type MemoryImportResult,
   type MemoryLayer,
   type MemoryQuery,
   type MemoryStatus,
 } from "../lib/api";
 import {
   filterByLayer,
+  importSummary,
+  skippedReasonLabel,
   type MemoryDraft,
   type MemoryLayerFilter,
 } from "../lib/memory";
@@ -66,6 +69,11 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
   const [adding, setAdding] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | undefined>(undefined);
+  const [importing, setImporting] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importProject, setImportProject] = useState("");
+  const [importError, setImportError] = useState<string | undefined>(undefined);
+  const [importResult, setImportResult] = useState<MemoryImportResult | undefined>(undefined);
   const [openIds, setOpenIds] = useState<Set<string>>(() => new Set());
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
   const [confirmRejectId, setConfirmRejectId] = useState<string | undefined>(undefined);
@@ -169,6 +177,29 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
     );
   };
 
+  const submitImport = async (): Promise<void> => {
+    if (importBusy) return;
+    const projectKey = importProject.trim();
+    if (projectKey === "") {
+      setImportError("Pilih folder proyek dulu.");
+      return;
+    }
+    setImportBusy(true);
+    setImportError(undefined);
+    try {
+      const result = await api.importMemory(projectKey);
+      setImportResult(result);
+      if (tab === "proposed") await load();
+      else setTab("proposed");
+      onChanged?.();
+    } catch (caught) {
+      setImportError(errorMessage(caught));
+      setDisabled(isDisabled(caught));
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   const onTabKeyDown = (event: KeyboardEvent, index: number): void => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -244,19 +275,125 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
           ))}
         </div>
 
-        <button
-          type="button"
-          class="jk-button jk-memory-add"
-          aria-expanded={adding}
-          disabled={disabled}
-          onClick={() => {
-            setAdding((value) => !value);
-            setAddError(undefined);
-          }}
-        >
-          Tambah
-        </button>
+        <div class="jk-memory-head-actions">
+          <button
+            type="button"
+            class="jk-button jk-memory-add"
+            aria-expanded={importing}
+            disabled={disabled}
+            onClick={() => {
+              setImporting((value) => !value);
+              setImportError(undefined);
+              setImportProject(projects[0] ?? "");
+            }}
+          >
+            Impor
+          </button>
+          <button
+            type="button"
+            class="jk-button jk-memory-add"
+            aria-expanded={adding}
+            disabled={disabled}
+            onClick={() => {
+              setAdding((value) => !value);
+              setAddError(undefined);
+            }}
+          >
+            Tambah
+          </button>
+        </div>
       </div>
+
+      {importing && !disabled && (
+        <div class="jk-memory-import-wrap">
+          {projects.length === 0 ? (
+            <div class="jk-memory-import-row">
+              <p class="jk-note">
+                Belum ada folder kerja yang dikenal. Mulai sesi dulu.
+              </p>
+              <button
+                type="button"
+                class="jk-button"
+                onClick={() => {
+                  setImporting(false);
+                  setImportError(undefined);
+                  setImportResult(undefined);
+                }}
+              >
+                Batal
+              </button>
+            </div>
+          ) : (
+            <div class="jk-memory-import-row">
+              <select
+                class="jk-select jk-memory-import-select"
+                aria-label="Folder proyek"
+                value={importProject}
+                disabled={importBusy}
+                onChange={(event) =>
+                  setImportProject((event.currentTarget as HTMLSelectElement).value)
+                }
+              >
+                {projects.map((project) => (
+                  <option key={project} value={project}>
+                    {project}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                class="jk-button jk-button-primary"
+                disabled={importBusy || importProject.trim() === ""}
+                onClick={() => void submitImport()}
+              >
+                {importBusy ? "Mengimpor…" : "Impor dari AGENTS.md / CLAUDE.md"}
+              </button>
+              <button
+                type="button"
+                class="jk-button"
+                disabled={importBusy}
+                onClick={() => {
+                  setImporting(false);
+                  setImportError(undefined);
+                  setImportResult(undefined);
+                }}
+              >
+                Batal
+              </button>
+            </div>
+          )}
+
+          {importError !== undefined && (
+            <p class="jk-error-line" role="alert">
+              {importError}
+            </p>
+          )}
+
+          {importResult !== undefined && (
+            <div class="jk-memory-import-result">
+              <p class="jk-note" role="status">
+                {importSummary(importResult)}
+              </p>
+              {importResult.skipped.length > 0 && (
+                <details class="jk-memory-problems">
+                  <summary class="jk-note">
+                    {importResult.skipped.length} dilewati
+                  </summary>
+                  <ul class="jk-memory-problem-list">
+                    {importResult.skipped.map((entry, index) => (
+                      <li key={`${entry.file}\0${entry.title}\0${index}`}>
+                        {entry.title === "" ? entry.file : entry.title}
+                        {" — "}
+                        {skippedReasonLabel(entry.reason)}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {adding && !disabled && (
         <div class="jk-memory-form-wrap">

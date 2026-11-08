@@ -7,6 +7,7 @@ import type {
   MemoryLayer,
   MemoryStatus,
 } from "../../server/memory/memory-files";
+import type { ImportResult } from "../../server/memory/memory-service";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 
 export type {
@@ -26,8 +27,13 @@ export type {
   MemoryStatus,
 } from "../../server/memory/memory-files";
 export type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
+export type {
+  ImportResult,
+  ImportSkipReason,
+} from "../../server/memory/memory-service";
 
 export type MemoryItem = Memory;
+export type MemoryImportResult = ImportResult;
 
 export interface MemoryList {
   items: MemoryItem[];
@@ -126,6 +132,7 @@ export interface ApiClient {
   rejectMemory(id: string): Promise<MemoryItem>;
   archiveMemory(id: string): Promise<MemoryItem>;
   deleteMemory(id: string): Promise<void>;
+  importMemory(projectKey: string): Promise<MemoryImportResult>;
 }
 
 export interface ApiClientOptions {
@@ -155,6 +162,32 @@ function memoryFrom(payload: unknown): MemoryItem {
     throw new ApiError("respons server tidak valid", 200);
   }
   return item as unknown as MemoryItem;
+}
+
+function memoryImportFrom(payload: unknown): MemoryImportResult {
+  if (!isRecord(payload)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  const { created, skipped, files } = payload;
+  if (!Array.isArray(created) || !Array.isArray(skipped) || !Array.isArray(files)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  for (const entry of skipped) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.file !== "string" ||
+      typeof entry.title !== "string" ||
+      typeof entry.reason !== "string"
+    ) {
+      throw new ApiError("respons server tidak valid", 200);
+    }
+  }
+  for (const entry of files) {
+    if (!isRecord(entry) || typeof entry.file !== "string" || typeof entry.found !== "boolean") {
+      throw new ApiError("respons server tidak valid", 200);
+    }
+  }
+  return payload as unknown as MemoryImportResult;
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {
@@ -413,6 +446,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async deleteMemory(id) {
       await request("DELETE", `/api/memory/${encodeURIComponent(id)}`, {});
+    },
+
+    async importMemory(projectKey) {
+      return memoryImportFrom(await request("POST", "/api/memory/import", { projectKey }));
     },
   };
 }

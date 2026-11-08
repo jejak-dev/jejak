@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { MemoryItem } from "../src/client/lib/api";
+import type { MemoryImportResult, MemoryItem } from "../src/client/lib/api";
 import {
   MEMORY_BODY_MAX,
   MEMORY_TITLE_MAX,
@@ -9,10 +9,13 @@ import {
   canReject,
   confidenceLabel,
   filterByLayer,
+  groupSkipped,
+  importSummary,
   layerLabel,
   memoryDateLabel,
   originLabel,
   projectLabel,
+  skippedReasonLabel,
   staleLabel,
   statusLabel,
   validateDraft,
@@ -191,5 +194,116 @@ describe("filterByLayer", () => {
 
   test("daftar kosong", () => {
     expect(filterByLayer([], "profile")).toEqual([]);
+  });
+});
+
+describe("skippedReasonLabel", () => {
+  test("label tiap alasan", () => {
+    expect(skippedReasonLabel("sudah-ada")).toBe("Sudah ada");
+    expect(skippedReasonLabel("rahasia")).toBe("Memuat rahasia");
+    expect(skippedReasonLabel("terlalu-panjang")).toBe("Terlalu panjang");
+    expect(skippedReasonLabel("kosong")).toBe("Kosong");
+    expect(skippedReasonLabel("batas")).toBe("Batas usulan tercapai");
+  });
+});
+
+describe("groupSkipped", () => {
+  test("menghitung per alasan tanpa alasan kosong, urut tetap", () => {
+    const groups = groupSkipped([
+      { file: "AGENTS.md", title: "A", reason: "sudah-ada" },
+      { file: "AGENTS.md", title: "B", reason: "rahasia" },
+      { file: "CLAUDE.md", title: "C", reason: "sudah-ada" },
+      { file: "CLAUDE.md", title: "D", reason: "sudah-ada" },
+    ]);
+
+    expect(groups).toEqual([
+      { reason: "sudah-ada", label: "Sudah ada", count: 3 },
+      { reason: "rahasia", label: "Memuat rahasia", count: 1 },
+    ]);
+  });
+
+  test("tanpa bagian yang dilewati menghasilkan daftar kosong", () => {
+    expect(groupSkipped([])).toEqual([]);
+  });
+});
+
+describe("importSummary", () => {
+  const created = make({ title: "Baru" }) as MemoryImportResult["created"][number];
+
+  function result(overrides: Partial<MemoryImportResult> = {}): MemoryImportResult {
+    return {
+      created: [],
+      skipped: [],
+      files: [
+        { file: "AGENTS.md", found: true },
+        { file: "CLAUDE.md", found: false },
+      ],
+      ...overrides,
+    };
+  }
+
+  test("usulan baru menyebut berkas yang ditemukan", () => {
+    expect(importSummary(result({ created: [created] }))).toBe(
+      "1 usulan baru dari AGENTS.md.",
+    );
+  });
+
+  test("beberapa berkas ditemukan disebut dengan dan", () => {
+    expect(
+      importSummary(
+        result({
+          created: [created],
+          files: [
+            { file: "AGENTS.md", found: true },
+            { file: "CLAUDE.md", found: true },
+          ],
+        }),
+      ),
+    ).toBe("1 usulan baru dari AGENTS.md dan CLAUDE.md.");
+  });
+
+  test("semua sudah ada (0 baru)", () => {
+    expect(
+      importSummary(
+        result({
+          skipped: [
+            { file: "AGENTS.md", title: "A", reason: "sudah-ada" },
+            { file: "AGENTS.md", title: "B", reason: "sudah-ada" },
+          ],
+        }),
+      ),
+    ).toBe("Tidak ada usulan baru (2 sudah ada).");
+  });
+
+  test("hanya skipped karena alasan lain", () => {
+    expect(
+      importSummary(
+        result({ skipped: [{ file: "AGENTS.md", title: "A", reason: "rahasia" }] }),
+      ),
+    ).toBe("Tidak ada usulan baru (1 dilewati).");
+  });
+
+  test("berkas tidak ditemukan", () => {
+    expect(
+      importSummary(
+        result({
+          files: [
+            { file: "AGENTS.md", found: false },
+            { file: "CLAUDE.md", found: false },
+          ],
+        }),
+      ),
+    ).toBe("AGENTS.md dan CLAUDE.md tidak ditemukan di folder ini.");
+  });
+
+  test("berkas ada tanpa bagian sama sekali", () => {
+    expect(importSummary(result())).toBe("Tidak ada bagian baru di AGENTS.md.");
+  });
+
+  test("jumlah tidak diubah bentuknya (tanpa pluralisasi)", () => {
+    const many = Array.from({ length: 4 }, () => created);
+    expect(importSummary(result({ created: many }))).toBe(
+      "4 usulan baru dari AGENTS.md.",
+    );
   });
 });

@@ -2124,6 +2124,44 @@ h2.jk-md-heading {
   font-size: 12px;
 }
 
+.jk-memory-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.jk-memory-head-actions > .jk-memory-add {
+  margin-left: 0;
+}
+
+.jk-memory-import-wrap {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.jk-memory-import-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.jk-memory-import-select {
+  width: auto;
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.jk-memory-import-result {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
 .jk-memory-form-wrap {
   margin-top: 14px;
   padding: 14px;
@@ -2285,6 +2323,10 @@ h2.jk-md-heading {
 
 @media (max-width: 760px) {
   .jk-memory-add {
+    margin-left: 0;
+  }
+
+  .jk-memory-head-actions {
     margin-left: 0;
   }
 }
