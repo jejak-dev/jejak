@@ -81,6 +81,17 @@ describe("createApiClient", () => {
     expect(calls[0]?.init.method).toBe("GET");
   });
 
+  test("getSession meneruskan workspaceRepos dari server", async () => {
+    const workspaceRepos = [
+      { name: "api", primary: true, missing: false },
+      { name: "web", primary: false, missing: true },
+    ];
+    const { fetch } = fakeFetch(() => jsonResponse({ session: { ...SESSION, workspaceRepos } }));
+    const api = createApiClient({ fetch });
+
+    expect((await api.getSession("s1")).workspaceRepos).toEqual(workspaceRepos);
+  });
+
   test("getSession 404 memakai pesan server", async () => {
     const { fetch } = fakeFetch(() => jsonResponse({ error: "tidak ada" }, 404));
     const api = createApiClient({ fetch });
@@ -212,6 +223,20 @@ describe("createApiClient", () => {
     expect(calls[0]?.url).toBe("/api/sessions/s1/files");
   });
 
+  test("getFiles dengan repo menambahkan query repo ter-encode", async () => {
+    const payload = { path: "", entries: [], truncated: false };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    await api.getFiles("s1", undefined, "api utama");
+    expect(calls[0]?.url).toBe("/api/sessions/s1/files?repo=api%20utama");
+
+    await api.getFiles("s1", "src/isi folder", "api/utama");
+    expect(calls[1]?.url).toBe(
+      "/api/sessions/s1/files?path=src%2Fisi%20folder&repo=api%2Futama",
+    );
+  });
+
   test("getFiles 404 memakai pesan server sebagai ApiError", async () => {
     const { fetch } = fakeFetch(() => jsonResponse({ error: "Path tidak ditemukan." }, 404));
     const api = createApiClient({ fetch });
@@ -236,6 +261,15 @@ describe("createApiClient", () => {
     expect(await api.getFile("s1", "a b.txt")).toEqual(payload);
     expect(calls[0]?.url).toBe("/api/sessions/s1/file?path=a%20b.txt");
     expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("getFile dengan repo menambahkan query repo ter-encode", async () => {
+    const payload = { path: "a b.txt", size: 5, binary: false, truncated: false, content: "halo\n" };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getFile("s1", "a b.txt", "api utama")).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/sessions/s1/file?path=a%20b.txt&repo=api%20utama");
   });
 
   test("getFile 400 memakai pesan server", async () => {
@@ -276,6 +310,15 @@ describe("createApiClient", () => {
     expect(await api.getChanges("s 1")).toEqual(payload);
     expect(calls[0]?.url).toBe("http://localhost:9/api/sessions/s%201/changes");
     expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("getChanges dengan repo menambahkan query repo ter-encode", async () => {
+    const payload = { isRepo: true, files: [], truncated: false };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getChanges("s 1", "api utama")).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/changes?repo=api%20utama");
   });
 
   test("rejectChange POST body path, scope, hunkId, diffId", async () => {
@@ -319,6 +362,18 @@ describe("createApiClient", () => {
     });
   });
 
+  test("rejectChange mengirim repo di body hanya bila diberikan", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ ok: true, undoId: "undo-3", path: "a.txt", scope: "file" }),
+    );
+    const api = createApiClient({ fetch });
+    const input = { path: "a.txt", scope: "file" as const, diffId: "e".repeat(64) };
+
+    await api.rejectChange("s1", { ...input, repo: "api utama" });
+
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ ...input, repo: "api utama" });
+  });
+
   test("rejectChange 409 menjadi ApiError dengan status dan pesan server", async () => {
     const pesan = "Berkas berubah sejak diff ditampilkan. Muat ulang perubahan.";
     const { fetch } = fakeFetch(() => jsonResponse({ error: pesan }, 409));
@@ -344,6 +399,17 @@ describe("createApiClient", () => {
     expect(calls[0]?.url).toBe("/api/sessions/s%201/changes/undo");
     expect(calls[0]?.init.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ undoId: "undo-1" });
+  });
+
+  test("undoChange mengirim repo di body hanya bila diberikan", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, path: "a.txt" }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.undoChange("s1", "undo-9", "api/utama")).toEqual({ path: "a.txt" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      undoId: "undo-9",
+      repo: "api/utama",
+    });
   });
 
   test("undoChange galat memakai pesan server", async () => {

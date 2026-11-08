@@ -2,6 +2,13 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { ApiClient } from "../lib/api";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "../lib/panel-prefs";
 import { formatCount } from "../lib/format";
+import {
+  effectivePanelRepo,
+  checkpointRepoNote,
+  panelRepoOptions,
+  repoForRequest,
+} from "../lib/workspace";
+import { useSessionRepos } from "../hooks";
 import { ChangesTab } from "./ChangesTab";
 import { CheckpointsTab } from "./CheckpointsTab";
 import { FilesTab } from "./FilesTab";
@@ -27,8 +34,18 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
   const [fileCount, setFileCount] = useState<number | undefined>(undefined);
   const [checkpointCount, setCheckpointCount] = useState<number | undefined>(undefined);
   const [refreshToken, setRefreshToken] = useState(0);
+  // Pilihan repo hanya disimpan di state; panel dipasang ulang per sesi, jadi
+  // pindah sesi kembali ke repo utama.
+  const [repoChoice, setRepoChoice] = useState<string | undefined>(undefined);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+  const repos = useSessionRepos(api, sessionId, status).repos;
+  const multiRepo = repos !== undefined && repos.length > 1;
+  const effective = multiRepo ? effectivePanelRepo(repos, repoChoice) : undefined;
+  const repo = multiRepo ? repoForRequest(repos, repoChoice) : undefined;
+  const repoOptions = multiRepo ? panelRepoOptions(repos) : [];
+  const checkpointNote = checkpointRepoNote(repos);
 
   useEffect(() => {
     writePanelPrefs({ tab });
@@ -79,6 +96,26 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
             </button>
           ))}
         </div>
+        {multiRepo && (
+          <label class="jk-chip" title="Repo">
+            <Icon name="folder" />
+            <span>{effective}</span>
+            <select
+              class="jk-chip-select"
+              aria-label="Repo"
+              value={effective ?? ""}
+              onChange={(event) =>
+                setRepoChoice((event.currentTarget as HTMLSelectElement).value)
+              }
+            >
+              {repoOptions.map((option) => (
+                <option key={option.value} value={option.value} disabled={option.missing}>
+                  {option.missing ? `${option.label} (hilang)` : option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button
           type="button"
           class="jk-icon-btn jk-panel-refresh"
@@ -112,6 +149,7 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
             eventCount={eventCount}
             status={status}
             refreshToken={refreshToken}
+            repo={repo}
             onFileCount={setFileCount}
           />
         ) : tab === "checkpoints" ? (
@@ -122,11 +160,18 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
             eventCount={eventCount}
             status={status}
             refreshToken={refreshToken}
+            repoNote={checkpointNote}
             onCount={setCheckpointCount}
             onChanged={() => setRefreshToken((value) => value + 1)}
           />
         ) : (
-          <FilesTab api={api} sessionId={sessionId} open={open} refreshToken={refreshToken} />
+          <FilesTab
+            api={api}
+            sessionId={sessionId}
+            open={open}
+            refreshToken={refreshToken}
+            repo={repo}
+          />
         )}
       </div>
     </aside>

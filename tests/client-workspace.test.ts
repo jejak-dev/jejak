@@ -18,6 +18,11 @@ import {
   validateCardDraft,
   validateWorkspaceDraft,
   workspaceRepoOptions,
+  checkpointRepoNote,
+  effectivePanelRepo,
+  panelRepoOptions,
+  repoForRequest,
+  type SessionRepo,
 } from "../src/client/lib/workspace";
 
 describe("kindLabel", () => {
@@ -260,5 +265,79 @@ describe("sessionContextLabel", () => {
 
   test("workspace tanpa cwd hanya nama workspace", () => {
     expect(sessionContextLabel({ workspaceName: "Kantor" })).toBe("Kantor");
+  });
+});
+
+const SESSION_REPOS: SessionRepo[] = [
+  { name: "api", primary: true, missing: false },
+  { name: "web", primary: false, missing: false },
+  { name: "lama", primary: false, missing: true },
+];
+
+describe("panelRepoOptions", () => {
+  test("urutan tetap dan repo utama berlabel (utama)", () => {
+    expect(panelRepoOptions(SESSION_REPOS)).toEqual([
+      { value: "api", label: "api (utama)", missing: false },
+      { value: "web", label: "web", missing: false },
+      { value: "lama", label: "lama", missing: true },
+    ]);
+  });
+
+  test("daftar kosong menghasilkan opsi kosong", () => {
+    expect(panelRepoOptions([])).toEqual([]);
+  });
+});
+
+describe("effectivePanelRepo", () => {
+  test("pilihan yang masih ada dipakai apa adanya", () => {
+    expect(effectivePanelRepo(SESSION_REPOS, "web")).toBe("web");
+  });
+
+  test("tanpa pilihan kembali ke repo utama", () => {
+    expect(effectivePanelRepo(SESSION_REPOS, undefined)).toBe("api");
+  });
+
+  test("pilihan hilang atau tidak dikenal kembali ke repo utama", () => {
+    expect(effectivePanelRepo(SESSION_REPOS, "lama")).toBe("api");
+    expect(effectivePanelRepo(SESSION_REPOS, "tidak-ada")).toBe("api");
+  });
+
+  test("tanpa repo utama menghasilkan undefined", () => {
+    expect(effectivePanelRepo([{ name: "web", primary: false, missing: false }], "web")).toBe(
+      "web",
+    );
+    expect(effectivePanelRepo([{ name: "web", primary: false, missing: false }], undefined))
+      .toBeUndefined();
+    expect(effectivePanelRepo([], "api")).toBeUndefined();
+  });
+});
+
+describe("repoForRequest", () => {
+  test("undefined untuk repo utama agar permintaan identik dengan perilaku lama", () => {
+    expect(repoForRequest(SESSION_REPOS, undefined)).toBeUndefined();
+    expect(repoForRequest(SESSION_REPOS, "api")).toBeUndefined();
+  });
+
+  test("nama repo untuk pilihan non-utama, termasuk saat utama hilang", () => {
+    expect(repoForRequest(SESSION_REPOS, "web")).toBe("web");
+    expect(
+      repoForRequest([{ name: "api", primary: true, missing: true }], undefined),
+    ).toBeUndefined();
+  });
+});
+
+describe("checkpointRepoNote", () => {
+  test("catatan memuat nama repo utama untuk sesi ber-workspace", () => {
+    expect(checkpointRepoNote(SESSION_REPOS)).toBe("Titik hanya untuk repo utama sesi (api).");
+  });
+
+  test("tanpa workspace tidak ada catatan", () => {
+    expect(checkpointRepoNote(undefined)).toBeUndefined();
+  });
+
+  test("workspace tanpa repo utama tetap memberi catatan umum", () => {
+    expect(checkpointRepoNote([{ name: "web", primary: false, missing: false }])).toBe(
+      "Titik hanya untuk repo utama sesi.",
+    );
   });
 });

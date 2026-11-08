@@ -401,3 +401,42 @@ export function useWorkspaces(api: ApiClient): WorkspacesState {
 
   return useMemo(() => ({ items }), [items]);
 }
+
+export interface SessionReposState {
+  repos?: Array<{ name: string; primary: boolean; missing: boolean }>;
+}
+
+const DONE_STATUSES: readonly string[] = ["selesai", "gagal", "dibatalkan"];
+
+/**
+ * Daftar repo workspace sesi dari `GET /api/sessions/:id`. Dimuat ulang saat
+ * sesi berganti dan saat sesi selesai/gagal/dibatalkan. Galat apa pun
+ * menghasilkan `undefined` tanpa pesan.
+ */
+export function useSessionRepos(
+  api: ApiClient,
+  sessionId: string,
+  status: string,
+): SessionReposState {
+  const [repos, setRepos] = useState<SessionReposState["repos"]>(undefined);
+  const requestRef = useRef(0);
+  // Hanya perubahan ke status akhir yang memicu muat ulang, bukan tiap detak status.
+  const doneKey = DONE_STATUSES.includes(status) ? status : "";
+
+  useEffect(() => {
+    requestRef.current += 1;
+    const ticket = requestRef.current;
+    void api
+      .getSession(sessionId)
+      .then((session) => {
+        if (ticket !== requestRef.current) return;
+        setRepos(session.workspaceRepos);
+      })
+      .catch(() => {
+        if (ticket !== requestRef.current) return;
+        setRepos(undefined);
+      });
+  }, [api, sessionId, doneKey]);
+
+  return useMemo(() => ({ repos }), [repos]);
+}

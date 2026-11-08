@@ -153,6 +153,8 @@ export interface RejectChangeInput {
   scope: RejectScope;
   hunkId?: string;
   diffId: string;
+  /** Nama repo workspace; hanya diisi bila bukan repo utama (cwd sesi). */
+  repo?: string;
 }
 
 export interface RejectChangeResult {
@@ -177,11 +179,11 @@ export interface ApiClient {
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
-  getFiles(id: string, path?: string): Promise<DirectoryListing>;
-  getFile(id: string, path: string): Promise<FileContent>;
-  getChanges(id: string): Promise<Changes>;
+  getFiles(id: string, path?: string, repo?: string): Promise<DirectoryListing>;
+  getFile(id: string, path: string, repo?: string): Promise<FileContent>;
+  getChanges(id: string, repo?: string): Promise<Changes>;
   rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
-  undoChange(id: string, undoId: string): Promise<{ path: string }>;
+  undoChange(id: string, undoId: string, repo?: string): Promise<{ path: string }>;
   getCheckpoints(id: string): Promise<CheckpointList>;
   createCheckpoint(id: string, label?: string): Promise<CheckpointItem>;
   previewCheckpoint(id: string, cid: string): Promise<CheckpointPreview>;
@@ -302,6 +304,15 @@ function memoryQuery(params: MemoryQuery | undefined): string {
   push("q", params.q);
   push("limit", params.limit);
   return parts.length === 0 ? "" : `?${parts.join("&")}`;
+}
+
+/** Query string dari pasangan yang diberikan; nilai undefined dilewati. */
+function queryString(parts: Array<[string, string | undefined]>): string {
+  const pairs: string[] = [];
+  for (const [key, value] of parts) {
+    if (value !== undefined) pairs.push(`${key}=${encodeURIComponent(value)}`);
+  }
+  return pairs.length === 0 ? "" : `?${pairs.join("&")}`;
 }
 
 const TOOL_CALLING_VALUES = new Set(["ok", "tidak-dipanggil", "tidak-diuji"]);
@@ -484,33 +495,43 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return { queued: field(data, "queued") === true };
     },
 
-    async getFiles(id, path) {
-      const query = path === undefined ? "" : `?path=${encodeURIComponent(path)}`;
+    async getFiles(id, path, repo) {
+      const query = queryString([
+        ["path", path],
+        ["repo", repo],
+      ]);
       return (await request(
         "GET",
         `/api/sessions/${encodeURIComponent(id)}/files${query}`,
       )) as DirectoryListing;
     },
 
-    async getFile(id, path) {
+    async getFile(id, path, repo) {
+      const query = queryString([
+        ["path", path],
+        ["repo", repo],
+      ]);
       return (await request(
         "GET",
-        `/api/sessions/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`,
+        `/api/sessions/${encodeURIComponent(id)}/file${query}`,
       )) as FileContent;
     },
 
-    async getChanges(id) {
+    async getChanges(id, repo) {
+      const query = queryString([["repo", repo]]);
       return (await request(
         "GET",
-        `/api/sessions/${encodeURIComponent(id)}/changes`,
+        `/api/sessions/${encodeURIComponent(id)}/changes${query}`,
       )) as Changes;
     },
 
     async rejectChange(id, input) {
+      const body: RejectChangeInput = { ...input };
+      if (body.repo === undefined) delete body.repo;
       const data = await request(
         "POST",
         `/api/sessions/${encodeURIComponent(id)}/changes/reject`,
-        input,
+        body,
       );
       const undoId = field(data, "undoId");
       const path = field(data, "path");
@@ -521,11 +542,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return { undoId, path, scope: scope === "file" ? "file" : "hunk" };
     },
 
-    async undoChange(id, undoId) {
+    async undoChange(id, undoId, repo) {
+      const body: { undoId: string; repo?: string } = { undoId };
+      if (repo !== undefined) body.repo = repo;
       const data = await request(
         "POST",
         `/api/sessions/${encodeURIComponent(id)}/changes/undo`,
-        { undoId },
+        body,
       );
       const path = field(data, "path");
       if (typeof path !== "string") {

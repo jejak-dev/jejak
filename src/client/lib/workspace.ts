@@ -163,6 +163,65 @@ export function defaultRepoPath(workspace: WorkspaceItem): string | undefined {
   return primary.value;
 }
 
+export interface SessionRepo {
+  name: string;
+  primary: boolean;
+  missing: boolean;
+}
+
+export interface PanelRepoOption {
+  value: string;
+  label: string;
+  missing: boolean;
+}
+
+/** Daftar repo untuk pilihan; repo utama diberi label "(utama)". */
+export function panelRepoOptions(repos: readonly SessionRepo[]): PanelRepoOption[] {
+  return repos.map((repo) => ({
+    value: repo.name,
+    label: repo.primary ? `${repo.name} (utama)` : repo.name,
+    missing: repo.missing,
+  }));
+}
+
+/** Nama repo yang efektif dipakai: pilihan bila masih ada dan tidak hilang, selain itu repo utama. */
+export function effectivePanelRepo(
+  repos: readonly SessionRepo[],
+  selected: string | undefined,
+): string | undefined {
+  const chosen = repos.find((repo) => repo.name === selected && !repo.missing);
+  if (chosen !== undefined) return chosen.name;
+  return repos.find((repo) => repo.primary)?.name;
+}
+
+/**
+ * Nilai `repo` untuk permintaan API: undefined bila efektifnya repo utama
+ * (perilaku lama), selain itu nama repo.
+ */
+export function repoForRequest(
+  repos: readonly SessionRepo[],
+  selected: string | undefined,
+): string | undefined {
+  const effective = effectivePanelRepo(repos, selected);
+  if (effective === undefined) return undefined;
+  const repo = repos.find((item) => item.name === effective);
+  return repo?.primary ? undefined : effective;
+}
+
+/**
+ * Catatan tab Titik untuk sesi ber-workspace; undefined bila tanpa workspace.
+ * Titik tidak ikut pemilih repo pada irisan ini.
+ */
+export function checkpointRepoNote(
+  repos: readonly SessionRepo[] | undefined,
+): string | undefined {
+  if (repos === undefined) return undefined;
+  const primary = repos.find((repo) => repo.primary);
+  return primary === undefined
+    ? "Titik hanya untuk repo utama sesi."
+    : `Titik hanya untuk repo utama sesi (${primary.name}).`;
+}
+
 /** "<nama workspace> · <folder terakhir cwd>", atau path cwd seperti biasa tanpa workspace. */
 export function sessionContextLabel(input: {
   workspaceName?: string;

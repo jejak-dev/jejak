@@ -27,6 +27,8 @@ export interface CheckpointsTabProps {
   eventCount: number;
   status: string;
   refreshToken: number;
+  /** Catatan satu baris di atas daftar bila sesi ber-workspace; undefined tanpa workspace. */
+  repoNote?: string;
   /** Jumlah titik untuk lencana angka di tab; undefined saat belum diketahui. */
   onCount?: (count: number | undefined) => void;
   /** Dipanggil setelah folder kerja berubah agar tab lain menyegar. */
@@ -232,6 +234,7 @@ export function CheckpointsTab({
   eventCount,
   status,
   refreshToken,
+  repoNote,
   onCount,
   onChanged,
 }: CheckpointsTabProps) {
@@ -448,6 +451,8 @@ export function CheckpointsTab({
 
   return (
     <div class="jk-panel-body">
+      {repoNote !== undefined && <p class="jk-panel-note">{repoNote}</p>}
+
       {disabled !== undefined && <p class="jk-panel-note">{disabled}</p>}
 
       {disabled === undefined && (

@@ -26,6 +26,8 @@ export interface ChangesTabProps {
   eventCount: number;
   status: string;
   refreshToken: number;
+  /** Nama repo workspace; undefined berarti repo utama (cwd sesi). */
+  repo?: string;
   /** Jumlah berkas untuk lencana angka di tab; undefined saat belum diketahui. */
   onFileCount?: (count: number | undefined) => void;
 }
@@ -300,6 +302,7 @@ export function ChangesTab({
   eventCount,
   status,
   refreshToken,
+  repo,
   onFileCount,
 }: ChangesTabProps) {
   const [data, setData] = useState<Changes | undefined>(undefined);
@@ -315,6 +318,9 @@ export function ChangesTab({
   const requestRef = useRef(0);
   const markerRef = useRef<ChangesMarker | undefined>(undefined);
   const tokenRef = useRef(0);
+  /** Repo milik daftar yang sedang ditampilkan; tolak/urungkan memakai nilai ini. */
+  const dataRepoRef = useRef<string | undefined>(undefined);
+  const repoRef = useRef(repo);
   const summaryRef = useRef<HTMLParagraphElement | null>(null);
   const emptyRef = useRef<HTMLParagraphElement | null>(null);
   const undoRefs = useRef<Record<string, HTMLLIElement | null>>({});
@@ -322,15 +328,16 @@ export function ChangesTab({
   const pendingFocusRef = useRef<{ undoId?: string } | undefined>(undefined);
   const pendingTriggerFocusRef = useRef<string | undefined>(undefined);
 
-  const load = async (): Promise<void> => {
+  const load = async (requestRepo: string | undefined = repo): Promise<void> => {
     requestRef.current += 1;
     const ticket = requestRef.current;
     setLoading(true);
     setError(undefined);
     setFailures({});
     try {
-      const payload = await api.getChanges(sessionId);
+      const payload = await api.getChanges(sessionId, requestRepo);
       if (ticket !== requestRef.current) return;
+      dataRepoRef.current = requestRepo;
       setData(payload);
       onFileCount?.(payload.isRepo ? payload.files.length : undefined);
     } catch (caught) {
@@ -342,9 +349,22 @@ export function ChangesTab({
   };
 
   // Muat saat tab dibuka, saat refresh ditekan, dan saat sesi berubah (debounce 600 ms).
+  // Repo berganti: kosongkan konfirmasi tolak/urungkan dan muat ulang segera.
   useEffect(() => {
     if (!open) return;
     const forced = refreshToken !== tokenRef.current;
+    const repoChanged = repoRef.current !== repo;
+    repoRef.current = repo;
+    if (repoChanged) {
+      setConfirmTarget(undefined);
+      setUndoLines([]);
+      setOpenPaths(new Set());
+      setData(undefined);
+      tokenRef.current = refreshToken;
+      markerRef.current = { status, eventCount };
+      void load();
+      return;
+    }
     if (
       !forced &&
       !shouldRefreshChanges({ open, tab: "changes", status, eventCount }, markerRef.current)
@@ -364,7 +384,7 @@ export function ChangesTab({
     return () => clearTimeout(timer);
     // load stabil secara perilaku; deps sengaja dibatasi pemicu perubahan.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sessionId, status, eventCount, refreshToken]);
+  }, [open, sessionId, status, eventCount, refreshToken, repo]);
 
   // Kembalikan fokus setelah muat ulang: ke baris urung baru atau ke ringkasan.
   useEffect(() => {
@@ -410,17 +430,21 @@ export function ChangesTab({
     if (target.scope === "hunk" && target.hunkId === undefined) return;
 
     setBusyKey(key);
+    const activeRepo = dataRepoRef.current;
     try {
       const result = await api.rejectChange(sessionId, {
         path: target.path,
         scope: target.scope,
         ...(target.hunkId !== undefined ? { hunkId: target.hunkId } : {}),
         diffId: file.diffId,
+        ...(activeRepo !== undefined ? { repo: activeRepo } : {}),
       });
       setConfirmTarget(undefined);
-      setUndoLines((lines) => pushUndoLine(lines, { undoId: result.undoId, path: result.path }));
-      pendingFocusRef.current = { undoId: result.undoId };
-      await load();
+      if (repoRef.current === activeRepo) {
+        setUndoLines((lines) => pushUndoLine(lines, { undoId: result.undoId, path: result.path }));
+        pendingFocusRef.current = { undoId: result.undoId };
+        await load(activeRepo);
+      }
     } catch (caught) {
       pendingTriggerFocusRef.current = key;
       setConfirmTarget(undefined);
@@ -433,12 +457,13 @@ export function ChangesTab({
 
   const submitUndo = async (line: UndoLine): Promise<void> => {
     if (undoBusy !== undefined) return;
+    const activeRepo = dataRepoRef.current;
     setUndoBusy(line.undoId);
     try {
-      await api.undoChange(sessionId, line.undoId);
+      await api.undoChange(sessionId, line.undoId, activeRepo);
       setUndoLines((lines) => removeUndoLine(lines, line.undoId));
       pendingFocusRef.current = {};
-      await load();
+      if (repoRef.current === activeRepo) await load(activeRepo);
     } catch (caught) {
       const failure = failureOf(caught, "Gagal mengurungkan perubahan.");
       setUndoLines((lines) => updateUndoLine(lines, line.undoId, { error: failure.message }));

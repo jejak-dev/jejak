@@ -9,6 +9,8 @@ export interface FilesTabProps {
   sessionId: string;
   open: boolean;
   refreshToken: number;
+  /** Nama repo workspace; undefined berarti repo utama (cwd sesi). */
+  repo?: string;
 }
 
 interface Listing {
@@ -21,7 +23,7 @@ function errorMessage(caught: unknown): string {
   return caught instanceof ApiError ? caught.message : "isi folder tidak dapat dimuat";
 }
 
-export function FilesTab({ api, sessionId, open, refreshToken }: FilesTabProps) {
+export function FilesTab({ api, sessionId, open, refreshToken, repo }: FilesTabProps) {
   const [dir, setDir] = useState("");
   const [listing, setListing] = useState<Listing | undefined>(undefined);
   const [file, setFile] = useState<FileContent | undefined>(undefined);
@@ -31,6 +33,7 @@ export function FilesTab({ api, sessionId, open, refreshToken }: FilesTabProps) 
   const requestRef = useRef(0);
   const tokenRef = useRef(0);
   const loadedRef = useRef(false);
+  const repoRef = useRef(repo);
   const backRef = useRef<HTMLButtonElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
 
@@ -41,12 +44,12 @@ export function FilesTab({ api, sessionId, open, refreshToken }: FilesTabProps) 
     setError(undefined);
     try {
       if (kind === "list") {
-        const payload = await api.getFiles(sessionId, path === "" ? undefined : path);
+        const payload = await api.getFiles(sessionId, path === "" ? undefined : path, repo);
         if (ticket !== requestRef.current) return;
         setListing(payload);
         setFile(undefined);
       } else {
-        const payload = await api.getFile(sessionId, path);
+        const payload = await api.getFile(sessionId, path, repo);
         if (ticket !== requestRef.current) return;
         setFile(payload);
       }
@@ -59,15 +62,25 @@ export function FilesTab({ api, sessionId, open, refreshToken }: FilesTabProps) 
   };
 
   // Muat saat tab dibuka; refresh hanya berlaku untuk tampilan yang sedang aktif.
+  // Repo berganti: kembali ke akar pohon dan muat ulang dari awal.
   useEffect(() => {
     if (!open) return;
     const forced = refreshToken !== tokenRef.current;
-    if (!forced && loadedRef.current) return;
+    const repoChanged = repoRef.current !== repo;
+    repoRef.current = repo;
+    if (!forced && !repoChanged && loadedRef.current) return;
     loadedRef.current = true;
     tokenRef.current = refreshToken;
+    if (repoChanged) {
+      setDir("");
+      setFile(undefined);
+      setListing(undefined);
+      void run("", "list");
+      return;
+    }
     void run(file === undefined ? dir : file.path, file === undefined ? "list" : "file");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sessionId, refreshToken]);
+  }, [open, sessionId, refreshToken, repo]);
 
   // Kembali dari penampil: fokus ke daftar; saat membuka berkas: fokus ke "Kembali".
   useEffect(() => {
