@@ -2,17 +2,38 @@ import { createHash, randomBytes } from "node:crypto";
 import { Elysia } from "elysia";
 import { VERSION } from "../../shared/version";
 import { DEFAULT_ALLOWED_HOSTS, hostnameOf } from "../guard";
-import type { MemoryToolContext, MemoryTools } from "./memory-tools";
 
 export const MCP_PATH = "/mcp";
 export const MCP_BODY_MAX_BYTES = 64 * 1024;
 export const MCP_PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"] as const;
 export const MCP_DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 
-export interface McpTokenContext {
+export const TOOL_UNAVAILABLE = "Tool tidak tersedia.";
+
+export interface McpToolContext {
   sessionId: string;
   projectKey: string;
   cwd: string;
+  workspaceId?: string;
+}
+
+export type McpTokenContext = McpToolContext;
+
+export interface McpToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface McpToolOutcome {
+  text: string;
+  isError: boolean;
+}
+
+/** Kumpulan tool komposit: definisi dan panggilan dipilih per token. */
+export interface McpToolSet {
+  definitionsFor(ctx: McpToolContext): McpToolDefinition[];
+  call(ctx: McpToolContext, name: string, args: unknown): Promise<McpToolOutcome>;
 }
 
 export interface IssuedMcpToken {
@@ -36,6 +57,7 @@ export class McpTokenRegistry {
       projectKey: ctx.projectKey,
       cwd: ctx.cwd,
     };
+    if (ctx.workspaceId !== undefined) stored.workspaceId = ctx.workspaceId;
     this.tokens.set(key, stored);
     let revoked = false;
     return {
@@ -84,7 +106,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export interface McpRoutesOptions {
-  tools: MemoryTools;
+  tools: McpToolSet;
   registry: McpTokenRegistry;
   allowedHosts?: string[];
 }
@@ -168,7 +190,7 @@ export function mcpRoutes(options: McpRoutesOptions): Elysia {
     }
 
     if (method === "tools/list") {
-      return rpcResult(id, { tools: tools.definitions });
+      return rpcResult(id, { tools: tools.definitionsFor(ctx) });
     }
 
     if (method === "tools/call") {
@@ -177,12 +199,14 @@ export function mcpRoutes(options: McpRoutesOptions): Elysia {
       if (typeof name !== "string") {
         return rpcError(id, -32602, "Parameter name wajib berupa teks");
       }
-      const callCtx: MemoryToolContext = {
-        sessionId: ctx.sessionId,
-        projectKey: ctx.projectKey,
-        cwd: ctx.cwd,
-      };
-      const outcome = await tools.call(callCtx, name, params.arguments);
+      const available = tools.definitionsFor(ctx).some((tool) => tool.name === name);
+      if (!available) {
+        return rpcResult(id, {
+          content: [{ type: "text", text: TOOL_UNAVAILABLE }],
+          isError: true,
+        });
+      }
+      const outcome = await tools.call(ctx, name, params.arguments);
       return rpcResult(id, {
         content: [{ type: "text", text: outcome.text }],
         isError: outcome.isError,

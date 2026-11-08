@@ -54,9 +54,13 @@ export function createApp(options: CreateAppOptions = {}) {
   const path = options.providersPath ?? providersPath(env);
 
   const memoryBridge =
-    options.memory === undefined
+    options.memory === undefined && options.workspaces === undefined
       ? undefined
-      : createMemoryBridge({ service: options.memory, mcpUrl: options.mcpUrl });
+      : createMemoryBridge({
+          ...(options.memory === undefined ? {} : { service: options.memory }),
+          ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
+          mcpUrl: options.mcpUrl,
+        });
 
   const checkpoints =
     options.checkpoints ??

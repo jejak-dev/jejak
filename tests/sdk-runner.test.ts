@@ -598,3 +598,130 @@ test("tanpa workspace opsi SDK tidak berubah dan append tanpa kalimat workspace"
   expect(append).not.toContain("workspace");
   expect(append).not.toContain("Kartu service");
 });
+
+function workspaceInput(overrides: Partial<RunInput> = {}): RunInput {
+  return memoryInput({
+    workspace: {
+      name: "Kantor",
+      repos: [
+        { name: "api", path: "/tmp/kantor/api", kind: "backend" },
+        { name: "web", path: "/tmp/kantor/web", kind: "frontend" },
+      ],
+      additionalDirectories: ["/tmp/kantor/web"],
+    },
+    ...overrides,
+  });
+}
+
+test("allowedTools berisi tool workspace hanya bila input.workspace ada", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(workspaceInput()),
+  );
+
+  expect(received?.allowedTools).toEqual([
+    "mcp__jejak-memory__memory_search",
+    "mcp__jejak-memory__memory_propose",
+    "mcp__jejak-memory__workspace_overview",
+    "mcp__jejak-memory__workspace_service",
+  ]);
+  expect(received?.mcpServers).toEqual({
+    "jejak-memory": {
+      type: "http",
+      url: "http://127.0.0.1:3000/mcp",
+      headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+    },
+  });
+});
+
+test("RunMemory.tools dipakai apa adanya dan tool workspace diabaikan tanpa input.workspace", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({
+        memory: {
+          url: "http://127.0.0.1:3000/mcp",
+          token: MEMORY_TOKEN,
+          indexLine: "Indeks.",
+          tools: ["memory_search", "memory_propose", "workspace_overview"],
+          call: async () => ({ text: "", isError: false }),
+        },
+      }),
+    ),
+  );
+
+  expect(received?.allowedTools).toEqual([
+    "mcp__jejak-memory__memory_search",
+    "mcp__jejak-memory__memory_propose",
+  ]);
+
+  let withWorkspace: Record<string, unknown> | undefined;
+  const sdkWs = fakeSdk({
+    messages: [RESULT_OK],
+    onOptions: (options) => (withWorkspace = options),
+  });
+  await collect(
+    createSdkRunner({ load: async () => sdkWs.module, baseEnv: {} }).run(
+      workspaceInput({
+        memory: {
+          url: "http://127.0.0.1:3000/mcp",
+          token: MEMORY_TOKEN,
+          indexLine: "Indeks.",
+          tools: ["memory_search", "workspace_overview", "workspace_service"],
+          call: async () => ({ text: "", isError: false }),
+        },
+      }),
+    ),
+  );
+
+  expect(withWorkspace?.allowedTools).toEqual([
+    "mcp__jejak-memory__memory_search",
+    "mcp__jejak-memory__workspace_overview",
+    "mcp__jejak-memory__workspace_service",
+  ]);
+});
+
+test("daftar tool kosong tidak memasang mcpServers maupun allowedTools", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({
+        memory: {
+          url: "http://127.0.0.1:3000/mcp",
+          token: MEMORY_TOKEN,
+          indexLine: "Indeks.",
+          tools: [],
+          call: async () => ({ text: "", isError: false }),
+        },
+      }),
+    ),
+  );
+
+  expect("mcpServers" in (received ?? {})).toBe(false);
+  expect("allowedTools" in (received ?? {})).toBe(false);
+});
+
+test("token tidak bocor saat workspace aktif", async () => {
+  const sdk = fakeSdk({
+    messages: [INIT],
+    throwAfter: 1,
+    error: new Error(`gagal menghubungi ${MEMORY_TOKEN} di /tmp/kantor/api`),
+  });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(workspaceInput()),
+  );
+
+  expect(JSON.stringify(events)).not.toContain(MEMORY_TOKEN);
+  const error = events.find((event) => event.type === "error");
+  expect(error?.type).toBe("error");
+  if (error?.type === "error") {
+    expect(error.message).toContain("***");
+  }
+});

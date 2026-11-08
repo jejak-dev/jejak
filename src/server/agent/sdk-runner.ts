@@ -68,6 +68,33 @@ const MEMORY_TOOL_ALLOWLIST = [
   "mcp__jejak-memory__memory_propose",
 ];
 
+const WORKSPACE_TOOL_ALLOWLIST = [
+  "mcp__jejak-memory__workspace_overview",
+  "mcp__jejak-memory__workspace_service",
+];
+
+const MCP_SERVER_NAME = "mcp__jejak-memory__";
+
+/** Daftar tool yang diizinkan dari nama tool mentah pada RunMemory. */
+function allowedToolsFor(input: RunInput): string[] {
+  const memory = input.memory;
+  const hasWorkspace = input.workspace !== undefined;
+  if (memory?.tools !== undefined) {
+    const allowed: string[] = [];
+    for (const tool of memory.tools) {
+      if (tool === "memory_search" || tool === "memory_propose") {
+        allowed.push(`${MCP_SERVER_NAME}${tool}`);
+      } else if (hasWorkspace && (tool === "workspace_overview" || tool === "workspace_service")) {
+        allowed.push(`${MCP_SERVER_NAME}${tool}`);
+      }
+    }
+    return allowed;
+  }
+  const allowed = [...MEMORY_TOOL_ALLOWLIST];
+  if (hasWorkspace) allowed.push(...WORKSPACE_TOOL_ALLOWLIST);
+  return allowed;
+}
+
 export function buildSdkEnv(
   base: Record<string, string | undefined>,
   resolved: ResolvedProvider,
@@ -133,7 +160,13 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           append,
         },
       };
-      if (memory !== undefined && memory.url !== undefined && memory.token !== undefined) {
+      const allowedTools = allowedToolsFor(input);
+      if (
+        memory !== undefined &&
+        memory.url !== undefined &&
+        memory.token !== undefined &&
+        allowedTools.length > 0
+      ) {
         sdkOptions.mcpServers = {
           "jejak-memory": {
             type: "http",
@@ -141,7 +174,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
             headers: { Authorization: `Bearer ${memory.token}` },
           },
         };
-        sdkOptions.allowedTools = [...MEMORY_TOOL_ALLOWLIST];
+        sdkOptions.allowedTools = allowedTools;
       }
       if (input.provider.model !== undefined) {
         sdkOptions.model = input.provider.model;

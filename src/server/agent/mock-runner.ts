@@ -42,6 +42,8 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
 
 const MEMORY_SEARCH_TOOL = "mcp__jejak-memory__memory_search";
 const MEMORY_PROPOSE_TOOL = "mcp__jejak-memory__memory_propose";
+const WORKSPACE_OVERVIEW_TOOL = "mcp__jejak-memory__workspace_overview";
+const WORKSPACE_SERVICE_TOOL = "mcp__jejak-memory__workspace_service";
 
 function markerText(prompt: string, marker: string): string | undefined {
   const index = prompt.indexOf(marker);
@@ -122,6 +124,45 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
         }
         yield { type: "tool_result", id, output: outcome.text, isError: outcome.isError };
         yield { type: "result", ok: true, summary: "Usulan memory dicatat." };
+        return;
+      }
+
+      if (memory !== undefined && input.prompt.includes("[ws]")) {
+        const overviewId = `workspace-overview-${crypto.randomUUID()}`;
+        yield { type: "tool_call", id: overviewId, name: WORKSPACE_OVERVIEW_TOOL, input: {} };
+        let overview: { text: string; isError: boolean };
+        try {
+          overview = await memory.call("workspace_overview", {});
+        } catch {
+          overview = { text: "Data workspace gagal dibaca.", isError: true };
+        }
+        yield {
+          type: "tool_result",
+          id: overviewId,
+          output: overview.text,
+          isError: overview.isError,
+        };
+
+        const firstRepo = input.workspace?.repos[0];
+        if (input.workspace !== undefined && firstRepo !== undefined) {
+          const serviceId = `workspace-service-${crypto.randomUUID()}`;
+          const args = { name: firstRepo.name };
+          yield { type: "tool_call", id: serviceId, name: WORKSPACE_SERVICE_TOOL, input: args };
+          let service: { text: string; isError: boolean };
+          try {
+            service = await memory.call("workspace_service", args);
+          } catch {
+            service = { text: "Kartu service gagal dibaca.", isError: true };
+          }
+          yield {
+            type: "tool_result",
+            id: serviceId,
+            output: service.text,
+            isError: service.isError,
+          };
+        }
+
+        yield { type: "result", ok: true, summary: "Data workspace dibaca." };
         return;
       }
 

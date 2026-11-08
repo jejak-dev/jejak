@@ -45,6 +45,8 @@ export interface RunMemory {
   url?: string;
   token?: string;
   indexLine: string;
+  /** Nama tool yang tersedia untuk sesi ini (tanpa awalan `mcp__`). */
+  tools?: string[];
   call(name: string, args: unknown): Promise<{ text: string; isError: boolean }>;
 }
 

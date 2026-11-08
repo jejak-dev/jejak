@@ -879,6 +879,9 @@ export class SessionManager {
         const opened = await bridge.open({
           sessionId: record.info.id,
           cwd: record.info.cwd,
+          ...(record.info.workspaceId === undefined
+            ? {}
+            : { workspaceId: record.info.workspaceId }),
         });
         input.memory = opened.memory;
         closeMemory = opened.close;

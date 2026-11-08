@@ -8,6 +8,7 @@ import { MemoryService } from "../src/server/memory/memory-service";
 import { FileMemoryStore } from "../src/server/memory/memory-store";
 import type { ProviderSelection, ResolvedProvider } from "../src/server/provider";
 import { SessionManager } from "../src/server/sessions/session-manager";
+import type { WorkspaceToolView } from "../src/server/workspaces/workspace-tools";
 
 let dir: string;
 let store: FileMemoryStore;
@@ -220,5 +221,157 @@ describe("SessionManager + memoryBridge", () => {
     expect(warn.mock.calls.length).toBe(1);
     expect(String(warn.mock.calls[0]?.[0])).not.toContain("indeks memory rusak");
     warn.mockRestore();
+  });
+});
+
+describe("createMemoryBridge + workspace", () => {
+  const WORKSPACE_LINE =
+    "Sesi ini punya workspace: gunakan workspace_overview untuk melihat repo dan workspace_service untuk kartu satu repo (hanya baca).";
+
+  function workspaceSource(): {
+    source: { get: (id: string) => Promise<WorkspaceToolView | undefined> };
+    view: WorkspaceToolView;
+    calls: string[];
+  } {
+    const calls: string[] = [];
+    const view: WorkspaceToolView = {
+      id: "ws-1",
+      name: "Kantor",
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00Z",
+      repos: [
+        {
+          name: "api",
+          path: "/tmp/kantor/api",
+          card: {
+            description: "Layanan pesanan.",
+            kind: "backend",
+            tables: ["pesanan"],
+            queues: [],
+            calls: [],
+            updatedAt: null,
+          },
+        },
+      ],
+    };
+    return {
+      view,
+      calls,
+      source: {
+        get: async (id: string) => {
+          calls.push(id);
+          return id === view.id ? view : undefined;
+        },
+      },
+    };
+  }
+
+  test("open menerima workspaceId dan indexLine memuat kalimat workspace", async () => {
+    const { source } = workspaceSource();
+    const { bridge } = createMemoryBridge({ service, workspaces: source });
+    const opened = await bridge.open({ sessionId: "s_ws", cwd: dir, workspaceId: "ws-1" });
+    try {
+      expect(opened.memory.indexLine).toContain("Jejak menyimpan memory lintas sesi.");
+      expect(opened.memory.indexLine).toContain(WORKSPACE_LINE);
+      expect(opened.memory.tools).toEqual([
+        "memory_search",
+        "memory_propose",
+        "workspace_overview",
+        "workspace_service",
+      ]);
+
+      const overview = await opened.memory.call("workspace_overview", {});
+      expect(overview.isError).toBe(false);
+      expect(overview.text).toContain("- api (backend): Layanan pesanan.");
+
+      const card = await opened.memory.call("workspace_service", { name: "api" });
+      expect(card.isError).toBe(false);
+      expect(card.text).toContain("Tabel:\n- pesanan");
+
+      const unknown = await opened.memory.call("workspace_hapus", {});
+      expect(unknown.isError).toBe(true);
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("tanpa workspaceId indexLine tetap seperti sebelumnya", async () => {
+    const { source, calls } = workspaceSource();
+    const { bridge } = createMemoryBridge({ service, workspaces: source });
+    const opened = await bridge.open({ sessionId: "s_no_ws", cwd: dir });
+    try {
+      expect(opened.memory.indexLine).not.toContain("punya workspace");
+      expect(opened.memory.tools).toEqual(["memory_search", "memory_propose"]);
+      const overview = await opened.memory.call("workspace_overview", {});
+      expect(overview.isError).toBe(true);
+      expect(overview.text).toBe("Sesi ini tidak punya workspace.");
+      expect(calls).toEqual([]);
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("hanya workspace (tanpa service) tetap membuka bridge dengan tool workspace", async () => {
+    const { source } = workspaceSource();
+    const { bridge, routes } = createMemoryBridge({ workspaces: source });
+    expect(routes).toBeDefined();
+    const opened = await bridge.open({ sessionId: "s_only", cwd: dir, workspaceId: "ws-1" });
+    try {
+      expect(opened.memory.indexLine).toContain(WORKSPACE_LINE);
+      expect(opened.memory.indexLine.startsWith(" Sesi ini")).toBe(false);
+      expect(opened.memory.tools).toEqual(["workspace_overview", "workspace_service"]);
+      const overview = await opened.memory.call("workspace_overview", {});
+      expect(overview.isError).toBe(false);
+      expect(overview.text).toContain('Workspace "Kantor"');
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("manager meneruskan workspaceId sesi ke bridge", async () => {
+    const { source } = workspaceSource();
+    const { bridge } = createMemoryBridge({ service, workspaces: source });
+    const opened: Array<{ sessionId: string; cwd: string; workspaceId?: string }> = [];
+    const spyBridge: MemoryBridge = {
+      open: async (input) => {
+        opened.push(input);
+        return bridge.open(input);
+      },
+    };
+    const capture = captureRunner();
+    const wsManager = new SessionManager({
+      runner: capture.runner,
+      resolveProvider: async (selection: ProviderSelection) => provider(selection),
+      memoryBridge: spyBridge,
+      workspaces: {
+        get: async (id: string) => ({
+          id,
+          name: "Kantor",
+          repos: [{ name: "api", path: dir, kind: "backend", missing: false }],
+        }),
+      },
+    });
+
+    const info = await wsManager.create({ prompt: "halo", cwd: dir, workspaceId: "ws-1" });
+    await wsManager.done(info.id);
+
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.workspaceId).toBe("ws-1");
+    expect(capture.inputs[0]?.memory?.tools).toContain("workspace_overview");
+    expect(capture.inputs[0]?.memory?.indexLine).toContain(WORKSPACE_LINE);
+  });
+
+  test("sesi tanpa workspace tetap seperti sebelumnya di manager", async () => {
+    const { source, calls } = workspaceSource();
+    const { bridge } = createMemoryBridge({ service, workspaces: source });
+    const capture = captureRunner();
+    const mgr = manager(capture.runner, bridge);
+
+    const info = await mgr.create({ prompt: "halo", cwd: dir });
+    await mgr.done(info.id);
+
+    expect(capture.inputs[0]?.memory?.indexLine).not.toContain("punya workspace");
+    expect(capture.inputs[0]?.memory?.tools).toEqual(["memory_search", "memory_propose"]);
+    expect(calls).toEqual([]);
   });
 });

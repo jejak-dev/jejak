@@ -1541,3 +1541,75 @@ describe("SessionManager + memory", () => {
     expect(fake.closed).toEqual(["token-1"]);
   });
 });
+
+describe("SessionManager + memory + workspace", () => {
+  test("bridge.open menerima workspaceId sesi", async () => {
+    const root = await mkdtemp(join(tmpdir(), "jejak-ws-memori-"));
+    const api = join(root, "api");
+    await mkdir(api, { recursive: true });
+    const opened: Array<{ sessionId: string; cwd: string; workspaceId?: string }> = [];
+    const bridge: import("../src/server/memory/memory-bridge").MemoryBridge = {
+      async open(input) {
+        opened.push(input);
+        return {
+          memory: {
+            token: "token-1",
+            indexLine: "Indeks memory.",
+            call: async () => ({ text: "", isError: false }),
+          },
+          close: () => {},
+        };
+      },
+    };
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      memoryBridge: bridge,
+      workspaces: {
+        get: async (id: string) => ({
+          id,
+          name: "Kantor",
+          repos: [{ name: "api", path: api, kind: "backend", missing: false }],
+        }),
+      },
+    });
+
+    const info = await mgr.create({ prompt: "halo", workspaceId: "ws-1" });
+    await mgr.done(info.id);
+
+    expect(opened).toHaveLength(1);
+    expect(opened[0]?.workspaceId).toBe("ws-1");
+    expect(opened[0]?.sessionId).toBe(info.id);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("sesi tanpa workspace tidak mengirim workspaceId ke bridge", async () => {
+    const opened: Array<{ sessionId: string; cwd: string; workspaceId?: string }> = [];
+    const bridge: import("../src/server/memory/memory-bridge").MemoryBridge = {
+      async open(input) {
+        opened.push(input);
+        return {
+          memory: {
+            token: "token-1",
+            indexLine: "Indeks memory.",
+            call: async () => ({ text: "", isError: false }),
+          },
+          close: () => {},
+        };
+      },
+    };
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      memoryBridge: bridge,
+      workspaces: {
+        get: async (id: string) => ({ id, name: "Kantor", repos: [] }),
+      },
+    });
+
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(opened).toHaveLength(1);
+    expect("workspaceId" in (opened[0] ?? {})).toBe(false);
+  });
+});

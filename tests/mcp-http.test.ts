@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../src/server";
+import { createMockRunner, type AgentRunner } from "../src/server/agent";
 import { MemoryService } from "../src/server/memory/memory-service";
 import { FileMemoryStore } from "../src/server/memory/memory-store";
 import type { MemoryBridge } from "../src/server/memory/memory-bridge";
+import { WorkspaceService } from "../src/server/workspaces/workspace-service";
 
 let dir: string;
 let store: FileMemoryStore;
@@ -201,7 +203,7 @@ describe("alur JSON-RPC", () => {
     expect(body.result.content[0]?.text).toContain("query");
   });
 
-  test("tanpa opsi memory rute /mcp 404", async () => {
+  test("tanpa opsi memory dan workspace rute /mcp 404", async () => {
     const noMemory = createApp({
       providersPath: providersFile,
       env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
@@ -214,5 +216,291 @@ describe("alur JSON-RPC", () => {
       }),
     );
     expect(res.status).toBe(404);
+  });
+});
+
+interface McpBody {
+  result: { tools?: { name: string }[]; isError?: boolean; content?: { text: string }[] };
+  error?: { code: number };
+}
+
+async function listTools(
+  target: App,
+  bearer: string,
+): Promise<string[]> {
+  const res = await target.handle(
+    new Request("http://127.0.0.1:3000/mcp", {
+      method: "POST",
+      headers: {
+        host: "127.0.0.1:3000",
+        "content-type": "application/json",
+        authorization: `Bearer ${bearer}`,
+      },
+      body: JSON.stringify(rpc(10, "tools/list")),
+    }),
+  );
+  const body = (await res.json()) as McpBody;
+  return (body.result.tools ?? []).map((tool) => tool.name).sort();
+}
+
+async function callTool(
+  target: App,
+  bearer: string,
+  name: string,
+  args: unknown,
+): Promise<{ isError: boolean; text: string }> {
+  const res = await target.handle(
+    new Request("http://127.0.0.1:3000/mcp", {
+      method: "POST",
+      headers: {
+        host: "127.0.0.1:3000",
+        "content-type": "application/json",
+        authorization: `Bearer ${bearer}`,
+      },
+      body: JSON.stringify(rpc(11, "tools/call", { name, arguments: args })),
+    }),
+  );
+  const body = (await res.json()) as McpBody;
+  return {
+    isError: body.result.isError === true,
+    text: body.result.content?.[0]?.text ?? "",
+  };
+}
+
+describe("/mcp dengan workspace", () => {
+  let workspaces: WorkspaceService;
+  let wsId: string;
+  let wsToken: string;
+  let revokeWs: () => void;
+  let wsApp: App;
+
+  beforeEach(async () => {
+    const api = join(dir, "api");
+    const web = join(dir, "web");
+    await mkdir(api, { recursive: true });
+    await mkdir(web, { recursive: true });
+    workspaces = new WorkspaceService({ dir: join(dir, "workspaces") });
+    const created = await workspaces.create({
+      name: "Kantor",
+      repos: [
+        { name: "api", path: api },
+        { name: "web", path: web },
+      ],
+    });
+    wsId = created.id;
+    await workspaces.setCard(wsId, "api", {
+      description: "Layanan pesanan.",
+      kind: "backend",
+      tables: ["pesanan"],
+    });
+
+    wsApp = createApp({
+      providersPath: providersFile,
+      env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
+      memory: service,
+      workspaces,
+    });
+    const wsBridge = (wsApp as unknown as { memoryBridge: MemoryBridge }).memoryBridge;
+    const opened = await wsBridge.open({ sessionId: "s_ws", cwd: dir, workspaceId: wsId });
+    wsToken = opened.memory.token!;
+    revokeWs = opened.close;
+  });
+
+  test("sesi tanpa workspace tidak melihat tool workspace dan panggilannya isError", async () => {
+    const noWs = createApp({
+      providersPath: providersFile,
+      env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
+      memory: service,
+      workspaces,
+    });
+    const noWsBridge = (noWs as unknown as { memoryBridge: MemoryBridge }).memoryBridge;
+    const opened = await noWsBridge.open({ sessionId: "s_no_ws", cwd: dir });
+    const noWsToken = opened.memory.token!;
+    try {
+      expect(await listTools(noWs, noWsToken)).toEqual(["memory_propose", "memory_search"]);
+
+      const result = await callTool(noWs, noWsToken, "workspace_overview", {});
+      expect(result.isError).toBe(true);
+      expect(result.text).toBe("Tool tidak tersedia.");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("sesi ber-workspace melihat tool memory dan workspace", async () => {
+    expect(await listTools(wsApp, wsToken)).toEqual([
+      "memory_propose",
+      "memory_search",
+      "workspace_overview",
+      "workspace_service",
+    ]);
+
+    const overview = await callTool(wsApp, wsToken, "workspace_overview", {});
+    expect(overview.isError).toBe(false);
+    expect(overview.text).toContain('Workspace "Kantor"');
+    expect(overview.text).toContain("- api (backend): Layanan pesanan.");
+
+    const card = await callTool(wsApp, wsToken, "workspace_service", { name: "api" });
+    expect(card.isError).toBe(false);
+    expect(card.text).toContain("Tabel:\n- pesanan");
+  });
+
+  test("token sesi ber-workspace dicabut tetap 401", async () => {
+    revokeWs();
+    const res = await wsApp.handle(
+      new Request("http://127.0.0.1:3000/mcp", {
+        method: "POST",
+        headers: {
+          host: "127.0.0.1:3000",
+          "content-type": "application/json",
+          authorization: `Bearer ${wsToken}`,
+        },
+        body: JSON.stringify(rpc(1, "ping")),
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("tanpa layanan memory hanya tool workspace yang tampil", async () => {
+    const onlyWs = createApp({
+      providersPath: providersFile,
+      env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
+      workspaces,
+    });
+    const bridgeOnlyWs = (onlyWs as unknown as { memoryBridge: MemoryBridge }).memoryBridge;
+    const opened = await bridgeOnlyWs.open({ sessionId: "s_only", cwd: dir, workspaceId: wsId });
+    const onlyToken = opened.memory.token!;
+    try {
+      expect(await listTools(onlyWs, onlyToken)).toEqual([
+        "workspace_overview",
+        "workspace_service",
+      ]);
+      const memoryCall = await callTool(onlyWs, onlyToken, "memory_search", { query: "x" });
+      expect(memoryCall.isError).toBe(true);
+      expect(memoryCall.text).toBe("Tool tidak tersedia.");
+      const overview = await callTool(onlyWs, onlyToken, "workspace_overview", {});
+      expect(overview.isError).toBe(false);
+      expect(overview.text).toContain('Workspace "Kantor"');
+    } finally {
+      opened.close();
+    }
+  });
+});
+
+describe("end-to-end sesi [ws] lewat createApp", () => {
+  interface Frame {
+    event?: string;
+    data?: string;
+  }
+
+  function parseFrames(raw: string): Frame[] {
+    return raw
+      .split("\n\n")
+      .map((chunk) => chunk.trim())
+      .filter((chunk) => chunk !== "" && !chunk.startsWith(":"))
+      .map((chunk) => {
+        const frame: Frame = {};
+        for (const line of chunk.split("\n")) {
+          if (line === "event: end") frame.event = "end";
+          else if (line.startsWith("data: ")) frame.data = line.slice(6);
+        }
+        return frame;
+      });
+  }
+
+  async function readEvents(target: App, id: string): Promise<unknown[]> {
+    const res = await target.handle(
+      new Request(`http://127.0.0.1:3000/api/sessions/${id}/events`, {
+        method: "GET",
+        headers: { host: "127.0.0.1:3000" },
+      }),
+    );
+    const raw = await res.text();
+    return parseFrames(raw)
+      .filter((frame) => frame.data !== undefined)
+      .map((frame) => JSON.parse(frame.data ?? "{}") as unknown);
+  }
+
+  function e2eApp(workspaces: WorkspaceService, runner: AgentRunner) {
+    return createApp({
+      providersPath: providersFile,
+      env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
+      runner,
+      memory: service,
+      workspaces,
+    });
+  }
+
+  let e2eWorkspaces: WorkspaceService;
+  let repoDir: string;
+
+  beforeEach(async () => {
+    repoDir = join(dir, "api");
+    await mkdir(repoDir, { recursive: true });
+    e2eWorkspaces = new WorkspaceService({ dir: join(dir, "e2e-workspaces") });
+  });
+
+  test("sesi [ws] ber-workspace menampilkan isi kartu di timeline", async () => {
+    const created = await e2eWorkspaces.create({
+      name: "Kantor",
+      repos: [{ name: "api", path: repoDir }],
+    });
+    await e2eWorkspaces.setCard(created.id, "api", {
+      description: "Layanan pesanan.",
+      kind: "backend",
+      tables: ["pesanan"],
+      calls: ["web"],
+    });
+
+    const target = e2eApp(e2eWorkspaces, createMockRunner());
+    const res = await target.handle(
+      new Request("http://127.0.0.1:3000/api/sessions", {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+        body: JSON.stringify({
+          prompt: "[ws] lihat repo",
+          workspaceId: created.id,
+          cwd: repoDir,
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { session: { id: string } };
+
+    const events = await readEvents(target, body.session.id);
+    const toolResults = events.filter(
+      (event): event is { type: string; output: string; isError: boolean } =>
+        typeof event === "object" && event !== null && (event as { type?: string }).type === "tool_result",
+    );
+    expect(toolResults).toHaveLength(2);
+    expect(toolResults[0]?.output).toContain("Layanan pesanan.");
+    expect(toolResults[1]?.output).toContain("Tabel:\n- pesanan");
+    expect(toolResults[1]?.isError).toBe(false);
+    expect(events.some((event) => (event as { type?: string }).type === "result")).toBe(true);
+  });
+
+  test("sesi [ws] tanpa workspace tidak menampilkan data workspace", async () => {
+    const target = e2eApp(e2eWorkspaces, createMockRunner());
+    const res = await target.handle(
+      new Request("http://127.0.0.1:3000/api/sessions", {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+        body: JSON.stringify({ prompt: "[ws] lihat repo", cwd: repoDir }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { session: { id: string } };
+
+    const events = await readEvents(target, body.session.id);
+    const toolResults = events.filter(
+      (event): event is { type: string; output: string; isError: boolean } =>
+        typeof event === "object" && event !== null && (event as { type?: string }).type === "tool_result",
+    );
+    expect(toolResults).toHaveLength(1);
+    expect(toolResults[0]?.isError).toBe(true);
+    expect(toolResults[0]?.output).toBe("Sesi ini tidak punya workspace.");
+    const outputs = toolResults.map((item) => item.output).join("\n");
+    expect(outputs).not.toContain("Data workspace");
+    expect(outputs).not.toContain("Layanan pesanan.");
   });
 });
