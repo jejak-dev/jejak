@@ -475,6 +475,30 @@ describe("lingkup dan limit baca", () => {
     ]);
   });
 
+  test("match any menemukan kueri multi-kata yang sebagian tidak cocok", async () => {
+    const svc = service();
+    await svc.create({
+      layer: "profile",
+      title: "Perintah tes",
+      body: "Perintah tes proyek ini adalah bun test --bail.",
+    });
+
+    const query = "perintah tes proyek test command";
+    expect((await svc.list({ q: query })).items).toEqual([]);
+    expect((await svc.list({ q: query, match: "all" })).items).toEqual([]);
+    expect((await svc.list({ q: query, match: "any" })).items.map((i) => i.title)).toEqual([
+      "Perintah tes",
+    ]);
+  });
+
+  test("match tidak sah ditolak", async () => {
+    const svc = service();
+    for (const match of ["kadang", 5, true]) {
+      const error = await svc.list({ match }).catch((caught: unknown) => caught);
+      expect((error as MemoryError).code).toBe("tidak-valid");
+    }
+  });
+
   test("counts global dan problems tersedia", async () => {
     const svc = service();
     await svc.create({ layer: "profile", title: "A", body: "a" });

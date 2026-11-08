@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { Database } from "bun:sqlite";
 import {
   MemoryIndex,
+  toFtsAnyQuery,
   toFtsQuery,
 } from "../src/server/memory/memory-index";
 import {
@@ -163,6 +164,126 @@ describe("kueri FTS", () => {
   });
 });
 
+describe("pencocokan mode any", () => {
+  const commandQuery = "perintah tes proyek test command";
+
+  async function seedCommand(index: MemoryIndex): Promise<void> {
+    await writeMemoryFile(
+      dir,
+      memory({ title: "Perintah tes", body: "Perintah tes proyek ini adalah bun test --bail." }),
+    );
+    await writeMemoryFile(
+      dir,
+      memory({ title: "Gaya jawaban", body: "Jawab dalam bahasa Indonesia yang ringkas." }),
+    );
+    await index.sync(dir);
+  }
+
+  test("mode any menemukan kueri multi-kata yang sebagian tidak cocok", async () => {
+    const index = new MemoryIndex();
+    await seedCommand(index);
+
+    expect(index.list({ q: commandQuery, match: "all" })).toEqual([]);
+    expect(index.list({ q: commandQuery, match: "any" }).map((item) => item.title)).toEqual([
+      "Perintah tes",
+    ]);
+    // Bawaan tetap AND.
+    expect(index.list({ q: commandQuery })).toEqual([]);
+    index.close();
+  });
+
+  test("urutan bm25: cocok lebih banyak token muncul lebih dulu", async () => {
+    const index = new MemoryIndex();
+    await writeMemoryFile(
+      dir,
+      memory({ title: "Sedikit", body: "ada kata alpha saja di sini" }),
+    );
+    await writeMemoryFile(
+      dir,
+      memory({ title: "Banyak", body: "alpha beta gamma delta semuanya ada" }),
+    );
+    await index.sync(dir);
+
+    const order = index.list({ q: "alpha beta gamma delta", match: "any" });
+    expect(order.map((item) => item.title)).toEqual(["Banyak", "Sedikit"]);
+    index.close();
+  });
+
+  test("token hostile tidak melempar dan tidak menginjeksi di mode any", async () => {
+    const index = new MemoryIndex();
+    await seedCommand(index);
+
+    const hostile = [
+      '"perintah"',
+      'perintah OR *',
+      'perintah OR "tes"',
+      "NEAR(perintah tes)",
+      "-perintah",
+      'perintah" OR 1=1 --',
+      "OR NEAR( *",
+    ];
+    for (const q of hostile) {
+      expect(() => index.list({ q, match: "any" })).not.toThrow();
+    }
+    // Hanya token yang cocok yang dipakai; tidak ada hasil dari sintaks injeksi.
+    const injected = index.list({ q: '"perintah" OR 1=1 --', match: "any" });
+    expect(injected.map((item) => item.title)).toEqual(["Perintah tes"]);
+    index.close();
+  });
+
+  test("filter status, layer, dan project tetap berlaku di mode any", async () => {
+    const index = new MemoryIndex();
+    await writeMemoryFile(dir, memory({ title: "Profil", body: "bun test perintah" }));
+    await writeMemoryFile(
+      dir,
+      memory({
+        layer: "project",
+        projectKey: "/tmp/p1",
+        title: "P1",
+        body: "bun test perintah",
+      }),
+    );
+    await writeMemoryFile(
+      dir,
+      memory({
+        layer: "project",
+        projectKey: "/tmp/p2",
+        title: "P2",
+        body: "bun test perintah",
+        status: "proposed",
+      }),
+    );
+    await index.sync(dir);
+
+    const scoped = index.list({ q: "bun command", match: "any", project: "/tmp/p1" });
+    expect(scoped.map((item) => item.title).sort()).toEqual(["P1", "Profil"]);
+    expect(scoped.map((item) => item.title)).not.toContain("P2");
+
+    expect(
+      index
+        .list({ q: "bun command", match: "any", status: "proposed" })
+        .map((item) => item.title),
+    ).toEqual(["P2"]);
+    expect(
+      index
+        .list({ q: "bun command", match: "any", status: "active" })
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["P1", "Profil"]);
+    expect(
+      index
+        .list({ q: "bun command", match: "any", project: "/tmp/p2", status: "proposed" })
+        .map((item) => item.title),
+    ).toEqual(["P2"]);
+    expect(
+      index
+        .list({ q: "bun command", match: "any", layer: "profile" })
+        .map((item) => item.title),
+    ).toEqual(["Profil"]);
+    index.close();
+  });
+});
+
 describe("toFtsQuery", () => {
   test("membungkus token dan membuang kutip", () => {
     expect(toFtsQuery("halo dunia")).toBe('"halo" "dunia"');
@@ -170,6 +291,20 @@ describe("toFtsQuery", () => {
     expect(toFtsQuery("   ")).toBe("");
     expect(toFtsQuery('"""')).toBe("");
     expect(toFtsQuery("OR AND NEAR(")).toBe('"OR" "AND" "NEAR("');
+  });
+
+  test("any: OR antar token, membuang kutip dan stopword", () => {
+    expect(toFtsAnyQuery("halo dunia")).toBe('"halo" OR "dunia"');
+    expect(toFtsAnyQuery('a"b c')).toBe('"ab"');
+    expect(toFtsAnyQuery("   ")).toBe("");
+    expect(toFtsAnyQuery('"""')).toBe("");
+    expect(toFtsAnyQuery("perintah tes proyek test command")).toBe(
+      '"perintah" OR "tes" OR "proyek" OR "test" OR "command"',
+    );
+    // Stopword dan token 1 karakter dibuang bila masih ada token lain.
+    expect(toFtsAnyQuery("apa itu yang dan di ke untuk the is")).toBe('"apa"');
+    // Bila semua terbuang, token asli dipakai.
+    expect(toFtsAnyQuery("the a is")).toBe('"the" OR "a" OR "is"');
   });
 });
 

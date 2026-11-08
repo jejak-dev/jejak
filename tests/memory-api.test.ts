@@ -157,6 +157,23 @@ describe("rute memory aktif", () => {
     expect(byLayer.items.map((item) => item.title)).toEqual(["Profil"]);
   });
 
+  test("GET q tetap AND (mode any hanya untuk tool agent)", async () => {
+    const app = makeMemoryApp();
+    await req(app, "POST", "/api/memory", {
+      layer: "project",
+      projectKey: dir,
+      title: "Perintah tes",
+      body: "Perintah tes proyek ini adalah bun test --bail.",
+    });
+
+    const query = encodeURIComponent("perintah tes proyek test command");
+    const andBody = (await (await req(app, "GET", `/api/memory?q=${query}`)).json()) as ListBody;
+    expect(andBody.items).toEqual([]);
+
+    const unknown = await req(app, "GET", `/api/memory?q=bun&match=any`);
+    expect(unknown.status).toBe(400);
+  });
+
   test("GET dengan status pending kosong karena belum ada usulan", async () => {
     const app = makeMemoryApp();
     await req(app, "POST", "/api/memory", { layer: "profile", title: "A", body: "a" });

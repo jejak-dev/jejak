@@ -18,11 +18,15 @@ export interface MemoryProblem {
   reason: string;
 }
 
+export type MemoryMatch = "all" | "any";
+
 export interface MemoryListQuery {
   status?: MemoryStatus;
   layer?: MemoryLayer;
   project?: string;
   q?: string;
+  /** `all` = AND antar token (bawaan); `any` = OR, diurutkan bm25. */
+  match?: MemoryMatch;
   limit?: number;
   /** Bila true, `q` kosong berarti tanpa filter (bawaan). */
 }
@@ -71,19 +75,59 @@ function rowToMemory(row: MemoryRow): Memory {
 }
 
 /**
+ * Stopword dan token 1 karakter yang dibuang hanya pada mode `any` supaya
+ * kueri alami model tidak menambah noise. Bila semuanya terbuang, token asli dipakai.
+ */
+const ANY_MODE_STOPWORDS = new Set([
+  "yang",
+  "dan",
+  "di",
+  "ke",
+  "dari",
+  "ini",
+  "itu",
+  "untuk",
+  "the",
+  "a",
+  "an",
+  "of",
+  "to",
+  "is",
+]);
+
+function ftsTokens(input: string): string[] {
+  const tokens: string[] = [];
+  for (const token of input.split(/\s+/)) {
+    const cleaned = token.replace(/["]/g, "");
+    if (cleaned === "") continue;
+    tokens.push(cleaned);
+  }
+  return tokens;
+}
+
+/**
  * Mengubah input pengguna menjadi kueri FTS5 yang aman: setiap token dibungkus
  * tanda kutip ganda, kutip ganda di dalam token dibuang, token kosong dilewati.
  * Token yang hanya berisi kutip ganda dibuang supaya `MATCH ""` tidak melempar.
  * Kueri kosong berarti tanpa filter.
  */
 export function toFtsQuery(input: string): string {
-  const parts: string[] = [];
-  for (const token of input.split(/\s+/)) {
-    const cleaned = token.replace(/["]/g, "");
-    if (cleaned === "") continue;
-    parts.push(`"${cleaned}"`);
-  }
-  return parts.join(" ");
+  return ftsTokens(input)
+    .map((token) => `"${token}"`)
+    .join(" ");
+}
+
+/**
+ * Kueri FTS5 mode `any` (OR antar token), tetap dengan token yang dibungkus dan
+ * disanitasi. Stopword dan token 1 karakter dibuang bila masih ada token lain.
+ */
+export function toFtsAnyQuery(input: string): string {
+  const tokens = ftsTokens(input);
+  const filtered = tokens.filter(
+    (token) => token.length > 1 && !ANY_MODE_STOPWORDS.has(token.toLowerCase()),
+  );
+  const chosen = filtered.length > 0 ? filtered : tokens;
+  return chosen.map((token) => `"${token}"`).join(" OR ");
 }
 
 export class MemoryIndex {
@@ -346,38 +390,52 @@ export class MemoryIndex {
   }
 
   list(query: MemoryListQuery = {}): Memory[] {
+    const match: MemoryMatch = query.match ?? "all";
+    const q = query.q?.trim() ?? "";
+    const fts =
+      q === ""
+        ? ""
+        : match === "any"
+          ? toFtsAnyQuery(q)
+          : toFtsQuery(q);
+    if (q !== "" && fts === "") return [];
+
+    const byAny = match === "any" && fts !== "";
+    const prefix = byAny ? "m." : "";
     const clauses: string[] = [];
     const params: (string | number)[] = [];
 
     if (query.status !== undefined) {
-      clauses.push("status = ?");
+      clauses.push(`${prefix}status = ?`);
       params.push(query.status);
     }
     if (query.layer !== undefined) {
-      clauses.push("layer = ?");
+      clauses.push(`${prefix}layer = ?`);
       params.push(query.layer);
     }
     if (query.project !== undefined) {
-      clauses.push("(layer = 'profile' OR project_key = ?)");
+      clauses.push(`(${prefix}layer = 'profile' OR ${prefix}project_key = ?)`);
       params.push(query.project);
     }
 
-    const q = query.q?.trim() ?? "";
-    if (q !== "") {
-      const fts = toFtsQuery(q);
-      if (fts !== "") {
+    if (fts !== "") {
+      if (byAny) {
+        clauses.push("memories_fts MATCH ?");
+      } else {
         clauses.push(
           "rowid IN (SELECT rowid FROM memories_fts WHERE memories_fts MATCH ?)",
         );
-        params.push(fts);
-      } else {
-        return [];
       }
+      params.push(fts);
     }
 
     const limit = query.limit ?? 100;
     const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
-    const sql = `SELECT * FROM memories${where} ORDER BY updated_at DESC, id ASC LIMIT ?`;
+    const sql = byAny
+      ? `SELECT m.* FROM memories m
+         JOIN memories_fts ON memories_fts.rowid = m.rowid${where}
+         ORDER BY bm25(memories_fts) ASC, m.updated_at DESC, m.id ASC LIMIT ?`
+      : `SELECT * FROM memories${where} ORDER BY updated_at DESC, id ASC LIMIT ?`;
     params.push(limit);
     const rows = this.db.query(sql).all(...params) as MemoryRow[];
     return rows.map(rowToMemory);

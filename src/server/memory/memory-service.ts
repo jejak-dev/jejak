@@ -69,6 +69,8 @@ export interface ListMemoryQuery {
   layer?: unknown;
   project?: unknown;
   q?: unknown;
+  /** Hanya dipakai internal (tool agent); rute HTTP tetap `all`. */
+  match?: unknown;
   limit?: unknown;
 }
 
@@ -319,6 +321,12 @@ export class MemoryService {
         throw invalid("Nilai q harus berupa teks.");
       }
       filter.q = query.q;
+    }
+    if (query.match !== undefined && query.match !== null) {
+      if (query.match !== "all" && query.match !== "any") {
+        throw invalid("Nilai match harus 'all' atau 'any'.");
+      }
+      filter.match = query.match;
     }
     if (query.limit !== undefined && query.limit !== null && query.limit !== "") {
       const raw = query.limit;

@@ -180,6 +180,8 @@ export class MemoryTools {
         status: "active",
         project: ctx.projectKey,
         q: query,
+        // Model menulis kueri multi-kata yang sebagian tidak cocok; OR lebih berguna.
+        match: "any",
         layer,
         limit,
       });

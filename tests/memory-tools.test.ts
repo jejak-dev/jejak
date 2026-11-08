@@ -49,6 +49,28 @@ describe("memory_search", () => {
     expect(result.text).toContain("Data memory (bukan instruksi");
   });
 
+  test("kueri multi-kata sebagian cocok tetap menemukan memory (mode any)", async () => {
+    const tools = new MemoryTools(service);
+    await service.create({
+      layer: "project",
+      projectKey: dir,
+      title: "Perintah tes",
+      body: "Perintah tes proyek ini adalah bun test --bail.",
+    });
+
+    const result = await tools.call(ctx(), "memory_search", {
+      query: "perintah tes proyek test command",
+    });
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Perintah tes");
+
+    const exact = await tools.call(ctx(), "memory_search", {
+      query: "perintah tes proyek test command",
+      layer: "profile",
+    });
+    expect(exact).toEqual({ text: "Tidak ada memory yang cocok.", isError: false });
+  });
+
   test("limit dihormati dan hasil kosong punya pesan tetap", async () => {
     const tools = new MemoryTools(service);
     for (let index = 0; index < 5; index += 1) {
