@@ -171,6 +171,7 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
             open={open}
             refreshToken={refreshToken}
             repo={repo}
+            sessionRunning={status === "berjalan"}
           />
         )}
       </div>

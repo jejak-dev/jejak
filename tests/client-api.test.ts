@@ -1330,3 +1330,113 @@ describe("createApiClient browseDirs", () => {
     }
   });
 });
+
+describe("searchFiles", () => {
+  const RESULT = {
+    matches: [{ path: "src/a.ts", line: 3, text: "const kata = 1;" }],
+    files: 12,
+    truncated: false,
+  };
+
+  test("query dienkode termasuk spasi, &, dan unicode", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(RESULT));
+    const api = createApiClient({ fetch });
+
+    const result = await api.searchFiles("s1", "halo dunia & привет");
+
+    expect(result).toEqual(RESULT);
+    expect(calls[0]?.url).toBe(
+      "/api/sessions/s1/search?q=halo%20dunia%20%26%20%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82",
+    );
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("case=1 hanya saat peka huruf dan repo diteruskan", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(RESULT));
+    const api = createApiClient({ fetch });
+
+    await api.searchFiles("s1", "kata", { caseSensitive: true, repo: "web" });
+
+    expect(calls[0]?.url).toBe("/api/sessions/s1/search?q=kata&repo=web&case=1");
+  });
+
+  test("tanpa opsi tidak mengirim repo maupun case", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(RESULT));
+    const api = createApiClient({ fetch });
+
+    await api.searchFiles("s1", "kata");
+
+    expect(calls[0]?.url).toBe("/api/sessions/s1/search?q=kata");
+  });
+
+  test("galat server memakai pesan Bahasa Indonesia", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Kata kunci tidak valid." }, 400));
+    const api = createApiClient({ fetch });
+
+    await expect(api.searchFiles("s1", "x")).rejects.toThrow("Kata kunci tidak valid.");
+  });
+});
+
+describe("saveFile", () => {
+  const SAVED = { ok: true, version: "b".repeat(64), size: 9 };
+
+  test("PUT dengan body JSON dan content-type", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(SAVED));
+    const api = createApiClient({ fetch });
+
+    const result = await api.saveFile("s1", {
+      path: "src/a.ts",
+      content: "isi baru",
+      baseVersion: "a".repeat(64),
+    });
+
+    expect(result).toEqual({ ok: true, version: "b".repeat(64), size: 9 });
+    expect(calls[0]?.url).toBe("/api/sessions/s1/file");
+    expect(calls[0]?.init.method).toBe("PUT");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      path: "src/a.ts",
+      content: "isi baru",
+      baseVersion: "a".repeat(64),
+    });
+  });
+
+  test("repo hanya dikirim bila ada", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(SAVED));
+    const api = createApiClient({ fetch });
+
+    await api.saveFile("s1", {
+      path: "a.ts",
+      content: "x",
+      baseVersion: "v",
+      repo: "web",
+    });
+
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      path: "a.ts",
+      content: "x",
+      baseVersion: "v",
+      repo: "web",
+    });
+  });
+
+  test("409 konflik memunculkan pesan server", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Berkas berubah di disk. Muat ulang sebelum menyimpan." }, 409),
+    );
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.saveFile("s1", { path: "a.ts", content: "x", baseVersion: "v" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).message).toBe(
+      "Berkas berubah di disk. Muat ulang sebelum menyimpan.",
+    );
+  });
+});

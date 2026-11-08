@@ -11,6 +11,7 @@ import type { BrowseResult } from "../../server/files/browse";
 import type { Changes } from "../../server/files/changes";
 import type { DirectoryListing } from "../../server/files/list";
 import type { FileContent } from "../../server/files/read";
+import type { SearchResult } from "../../server/files/search";
 import type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
 import type {
   Memory,
@@ -41,6 +42,7 @@ export type { ChangedFile, ChangeStatus, Changes, DiffLine, Hunk } from "../../s
 export type { BrowseEntry, BrowseResult } from "../../server/files/browse";
 export type { DirEntry, DirectoryListing } from "../../server/files/list";
 export type { FileContent } from "../../server/files/read";
+export type { SearchMatch, SearchResult } from "../../server/files/search";
 export type {
   Memory,
   MemoryConfidence,
@@ -144,6 +146,21 @@ export interface ConnectionTestView {
 
 export type RejectScope = "hunk" | "file";
 
+export interface SaveFileInput {
+  path: string;
+  content: string;
+  /** sha256 isi yang dibaca terakhir; server menolak bila berubah. */
+  baseVersion: string;
+  /** Nama repo workspace; hanya diisi bila bukan repo utama (cwd sesi). */
+  repo?: string;
+}
+
+export interface SaveFileResult {
+  ok: true;
+  version: string;
+  size: number;
+}
+
 export interface RejectChangeInput {
   path: string;
   scope: RejectScope;
@@ -182,6 +199,12 @@ export interface ApiClient {
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
   getFiles(id: string, path?: string, repo?: string): Promise<DirectoryListing>;
   getFile(id: string, path: string, repo?: string): Promise<FileContent>;
+  searchFiles(
+    id: string,
+    query: string,
+    options?: { repo?: string; caseSensitive?: boolean },
+  ): Promise<SearchResult>;
+  saveFile(id: string, input: SaveFileInput): Promise<SaveFileResult>;
   getChanges(id: string, repo?: string): Promise<Changes>;
   browseDirs(path?: string): Promise<BrowseResult>;
   rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
@@ -535,6 +558,38 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         "GET",
         `/api/sessions/${encodeURIComponent(id)}/file${query}`,
       )) as FileContent;
+    },
+
+    async searchFiles(id, query, options) {
+      const search = queryString([
+        ["q", query],
+        ["repo", options?.repo],
+        ["case", options?.caseSensitive === true ? "1" : undefined],
+      ]);
+      return (await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/search${search}`,
+      )) as SearchResult;
+    },
+
+    async saveFile(id, input) {
+      const body: SaveFileInput = {
+        path: input.path,
+        content: input.content,
+        baseVersion: input.baseVersion,
+      };
+      if (input.repo !== undefined) body.repo = input.repo;
+      const data = await request(
+        "PUT",
+        `/api/sessions/${encodeURIComponent(id)}/file`,
+        body,
+      );
+      const version = field(data, "version");
+      const size = field(data, "size");
+      if (typeof version !== "string" || typeof size !== "number") {
+        throw new ApiError("respons server tidak valid", 200);
+      }
+      return { ok: true, version, size };
     },
 
     async getChanges(id, repo) {
