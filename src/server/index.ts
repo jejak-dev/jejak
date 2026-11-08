@@ -7,12 +7,14 @@ import { localGuard } from "./guard";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
+import type { McpServerService } from "./mcp/mcp-service";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
 import { jejakHome, loadRegistry, providersPath } from "./provider-store";
 import { checkpointRoutes } from "./routes/checkpoints";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { fileRoutes } from "./routes/files";
 import { infoRoutes } from "./routes/info";
+import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
@@ -47,6 +49,8 @@ export interface CreateAppOptions {
   checkpointDir?: string;
   /** Layanan workspace; tanpa opsi ini semua rute `/api/workspaces*` menjawab 503. */
   workspaces?: WorkspaceService;
+  /** Layanan server MCP; tanpa opsi ini semua rute `/api/mcp-servers*` menjawab 503. */
+  mcpServers?: McpServerService;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -98,6 +102,7 @@ export function createApp(options: CreateAppOptions = {}) {
       memoryBridge: memoryBridge?.bridge,
       checkpoints,
       workspaces: workspaceResolver,
+      mcpServers: options.mcpServers,
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
     });
 
@@ -116,6 +121,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(checkpointRoutes({ manager, service: checkpoints }))
     .use(memoryRoutes({ service: options.memory }))
     .use(workspaceRoutes({ service: options.workspaces }))
+    .use(mcpServerRoutes({ service: options.mcpServers, fetch: options.fetch }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({
@@ -155,12 +161,14 @@ export function startServer(options: ServeOptions = {}) {
     : new CheckpointService({ root: join(jejakHome(), "checkpoints") });
   const mcpUrl = mcpUrlFor(host, port);
   const workspaces = defaultWorkspaceService(process.env);
+  const mcpServers = defaultMcpServerService(process.env);
   const app = createApp({
     sessionStore: store,
     memory,
     mcpUrl,
     checkpoints,
     workspaces,
+    ...(mcpServers === undefined ? {} : { mcpServers }),
   }).listen({
     hostname: host,
     port,

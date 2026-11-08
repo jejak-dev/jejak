@@ -565,3 +565,95 @@ test("checkpoint: dimatikan lewat JEJAK_CHECKPOINTS=0 dan tetap exit 0", async (
   expect(code).toBe(0);
   expect(logged.some((line) => line.includes("PERINGATAN  Checkpoint"))).toBe(true);
 });
+
+test("server MCP: berkas belum ada", async () => {
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const mcp = find(checks, "Server MCP");
+  expect(mcp.status).toBe("ok");
+  expect(mcp.detail).toContain(join(homeDir, "mcp-servers.json"));
+  expect(mcp.detail).toContain("belum ada");
+});
+
+test("server MCP: jumlah server, aktif, dan izin 600", async () => {
+  const { McpServerService } = await import("../src/server/mcp/mcp-service");
+  const service = new McpServerService({ path: join(homeDir, "mcp-servers.json") });
+  await service.create({ name: "github", transport: "stdio", command: "npx" });
+  await service.create({
+    name: "remote",
+    transport: "http",
+    url: "https://mcp.test/sse",
+    headers: { Authorization: "Bearer rahasia-header-jangan-bocor" },
+  });
+  await service.update(
+    (await service.list()).items.find((item) => item.name === "remote")!.id,
+    { enabled: false },
+  );
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const mcp = find(checks, "Server MCP");
+  expect(mcp.status).toBe("ok");
+  expect(mcp.detail).toContain("2 server");
+  expect(mcp.detail).toContain("1 aktif");
+  expect(mcp.detail).toContain("izin 600");
+  expect(JSON.stringify(checks)).not.toContain("rahasia-header-jangan-bocor");
+});
+
+test("server MCP: izin longgar dan berkas rusak memberi peringatan", async () => {
+  const { McpServerService } = await import("../src/server/mcp/mcp-service");
+  const file = join(homeDir, "mcp-servers.json");
+  const service = new McpServerService({ path: file });
+  await service.create({ name: "github", transport: "stdio", command: "npx" });
+  await chmod(file, 0o644);
+
+  const loose = find(
+    await collectChecks({
+      env: { JEJAK_HOME: homeDir },
+      providersPath: providersFile,
+      resolveSdk: () => null,
+    }),
+    "Server MCP",
+  );
+  expect(loose.status).toBe("peringatan");
+  expect(loose.detail).toContain("chmod 600");
+
+  await writeFile(file, "{ rusak", { mode: 0o600 });
+  const broken = find(
+    await collectChecks({
+      env: { JEJAK_HOME: homeDir },
+      providersPath: providersFile,
+      resolveSdk: () => null,
+    }),
+    "Server MCP",
+  );
+  expect(broken.status).toBe("peringatan");
+  expect(broken.detail).toContain("rusak");
+});
+
+test("server MCP: dimatikan lewat JEJAK_MCP_SERVERS=0 dan tetap exit 0", async () => {
+  const logged: string[] = [];
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir, JEJAK_MCP_SERVERS: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const mcp = find(checks, "Server MCP");
+  expect(mcp.status).toBe("peringatan");
+  expect(mcp.detail).toContain("dimatikan");
+
+  const code = await runDoctor({
+    env: { JEJAK_HOME: homeDir, JEJAK_MCP_SERVERS: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    log: (line) => logged.push(line),
+  });
+  expect(code).toBe(0);
+  expect(logged.some((line) => line.includes("PERINGATAN  Server MCP"))).toBe(true);
+});

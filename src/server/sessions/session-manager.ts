@@ -8,6 +8,7 @@ import {
   type PermissionDecision,
   type PermissionMode,
   type PermissionRequest,
+  type ResolvedMcpServer,
   type RunWorkspace,
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
@@ -84,6 +85,11 @@ export interface SessionManagerCheckpoints {
   remove(sessionId: string): Promise<void> | void;
 }
 
+/** Antarmuka sempit ke layanan server MCP; `McpServerService` memenuhinya. */
+export interface McpServerResolver {
+  resolved(): Promise<ResolvedMcpServer[]>;
+}
+
 export interface SessionManagerOptions {
   runner: AgentRunner;
   resolveProvider: (selection: ProviderSelection) => Promise<ResolvedProvider>;
@@ -97,6 +103,8 @@ export interface SessionManagerOptions {
   memoryBridge?: MemoryBridge;
   checkpoints?: SessionManagerCheckpoints;
   workspaces?: WorkspaceResolver;
+  /** Server MCP eksternal; dibaca ulang tiap giliran. */
+  mcpServers?: McpServerResolver;
   /** Default `true`; `false` menolak semua sesi bermode bypass. */
   allowBypass?: boolean;
 }
@@ -233,10 +241,12 @@ export class SessionManager {
   private readonly memoryBridge: MemoryBridge | undefined;
   private readonly checkpoints: SessionManagerCheckpoints | undefined;
   private readonly workspaces: WorkspaceResolver | undefined;
+  private readonly mcpServers: McpServerResolver | undefined;
   private readonly allowBypass: boolean;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
+  private mcpServersWarned = false;
 
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
@@ -251,6 +261,7 @@ export class SessionManager {
     this.memoryBridge = options.memoryBridge;
     this.checkpoints = options.checkpoints;
     this.workspaces = options.workspaces;
+    this.mcpServers = options.mcpServers;
     this.allowBypass = options.allowBypass ?? true;
     if (this.store !== undefined) {
       this.restore();
@@ -872,6 +883,27 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Daftar server MCP eksternal per giliran; galat tidak menggagalkan sesi dan
+   * peringatan hanya sekali (tanpa isi berkas).
+   */
+  private async mcpServersForRun(): Promise<ResolvedMcpServer[] | undefined> {
+    const resolver = this.mcpServers;
+    if (resolver === undefined) {
+      return undefined;
+    }
+    try {
+      const servers = await resolver.resolved();
+      return servers.length === 0 ? undefined : servers;
+    } catch {
+      if (!this.mcpServersWarned) {
+        this.mcpServersWarned = true;
+        console.warn("Daftar server MCP tidak tersedia; sesi lanjut tanpa server eksternal.");
+      }
+      return undefined;
+    }
+  }
+
   private async execute(
     record: SessionRecord,
     prompt: string,
@@ -900,6 +932,13 @@ export class SessionManager {
       const workspace = await this.workspaceForRun(record);
       if (workspace !== undefined) {
         input.workspace = workspace;
+      }
+    }
+
+    if (this.mcpServers !== undefined) {
+      const mcpServers = await this.mcpServersForRun();
+      if (mcpServers !== undefined) {
+        input.mcpServers = mcpServers;
       }
     }
 

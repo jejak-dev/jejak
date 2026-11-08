@@ -1743,3 +1743,86 @@ describe("SessionManager mode bypass", () => {
     expect(scripted.modes).toEqual(["acceptEdits", "default"]);
   });
 });
+
+describe("SessionManager server MCP per giliran", () => {
+  function recordingMcpRunner(): {
+    runner: AgentRunner;
+    inputs: Array<import("../src/server/agent").ResolvedMcpServer[] | undefined>;
+  } {
+    const inputs: Array<import("../src/server/agent").ResolvedMcpServer[] | undefined> = [];
+    return {
+      inputs,
+      runner: {
+        async *run(input) {
+          inputs.push(input.mcpServers);
+          yield { type: "session", sessionId: "sdk-mcp" };
+          yield { type: "result", ok: true };
+        },
+      },
+    };
+  }
+
+  test("input.mcpServers terisi tiap giliran dan mengikuti perubahan", async () => {
+    const { runner, inputs } = recordingMcpRunner();
+    let current: import("../src/server/agent").ResolvedMcpServer[] = [
+      { name: "github", transport: "stdio", command: "npx", args: [], env: { A: "satu" } },
+    ];
+    const mgr = manager({ runner, mcpServers: { resolved: async () => current } });
+
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    await mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]?.[0]?.name).toBe("github");
+
+    current = [
+      { name: "github", transport: "stdio", command: "npx", args: [], env: { A: "dua" } },
+      { name: "remote", transport: "http", url: "https://mcp.test", headers: {} },
+    ];
+    await mgr.send(info.id, "lagi");
+    await mgr.done(info.id);
+    expect(inputs[2]?.map((server) => server.name)).toEqual(["github", "remote"]);
+  });
+
+  test("daftar kosong tidak mengisi input.mcpServers", async () => {
+    const { runner, inputs } = recordingMcpRunner();
+    const mgr = manager({ runner, mcpServers: { resolved: async () => [] } });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    expect(inputs[0]).toBeUndefined();
+  });
+
+  test("resolver melempar: sesi tetap jalan dan warn sekali tanpa isi", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const { runner, inputs } = recordingMcpRunner();
+    let calls = 0;
+    const mgr = manager({
+      runner,
+      mcpServers: {
+        resolved: async () => {
+          calls += 1;
+          throw new Error("berkas rusak berisi rahasia-jangan-bocor");
+        },
+      },
+    });
+
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(inputs[0]).toBeUndefined();
+
+    await mgr.send(info.id, "giliran dua");
+    await mgr.done(info.id);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(calls).toBe(2);
+
+    const mcpWarnings = warn.mock.calls.filter((call) =>
+      String(call[0]).includes("server MCP"),
+    );
+    expect(mcpWarnings).toHaveLength(1);
+    expect(String(mcpWarnings[0]![0])).not.toContain("rahasia-jangan-bocor");
+    warn.mockRestore();
+  });
+});

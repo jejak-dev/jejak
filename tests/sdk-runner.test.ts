@@ -760,3 +760,125 @@ test("mode lain tidak menyetel allowDangerouslySkipPermissions", async () => {
     expect(received !== undefined && "allowDangerouslySkipPermissions" in received).toBe(false);
   }
 });
+
+const STDIO_SECRET = "nilai-env-rahasia-server";
+const HTTP_SECRET = "nilai-header-rahasia-server";
+
+type ExternalServer = NonNullable<RunInput["mcpServers"]>[number];
+
+function externalStdio(): ExternalServer {
+  return {
+    name: "github",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "server"],
+    env: { GITHUB_TOKEN: STDIO_SECRET },
+  };
+}
+
+function externalHttp(): ExternalServer {
+  return {
+    name: "remote",
+    transport: "http",
+    url: "https://mcp.test/sse",
+    headers: { Authorization: `Bearer ${HTTP_SECRET}` },
+  };
+}
+
+test("server MCP eksternal digabung dengan jejak-memory tanpa menambah allowedTools", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({ mcpServers: [externalStdio(), externalHttp()] }),
+    ),
+  );
+
+  expect(received?.mcpServers).toEqual({
+    "jejak-memory": {
+      type: "http",
+      url: "http://127.0.0.1:3000/mcp",
+      headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+    },
+    "ext-github": {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "server"],
+      env: { GITHUB_TOKEN: STDIO_SECRET },
+    },
+    "ext-remote": {
+      type: "http",
+      url: "https://mcp.test/sse",
+      headers: { Authorization: `Bearer ${HTTP_SECRET}` },
+    },
+  });
+  expect(received?.allowedTools).toEqual([
+    "mcp__jejak-memory__memory_search",
+    "mcp__jejak-memory__memory_propose",
+  ]);
+});
+
+test("tanpa memory, mcpServers hanya berisi server eksternal dan tanpa allowedTools", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ mcpServers: [externalStdio()] }),
+    ),
+  );
+
+  expect(received?.mcpServers).toEqual({
+    "ext-github": {
+      type: "stdio",
+      command: "npx",
+      args: ["-y", "server"],
+      env: { GITHUB_TOKEN: STDIO_SECRET },
+    },
+  });
+  expect("allowedTools" in (received ?? {})).toBe(false);
+  expect(JSON.stringify(received?.allowedTools ?? null)).not.toContain("github");
+});
+
+test("tanpa server eksternal opsi persis seperti sebelumnya", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({ mcpServers: [] }),
+    ),
+  );
+
+  expect(received?.mcpServers).toEqual({
+    "jejak-memory": {
+      type: "http",
+      url: "http://127.0.0.1:3000/mcp",
+      headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+    },
+  });
+});
+
+test("pesan galat membersihkan sentinel env/header server eksternal", async () => {
+  const sdk = fakeSdk({
+    messages: [INIT],
+    throwAfter: 1,
+    error: new Error(`gagal ${STDIO_SECRET} dan ${HTTP_SECRET}`),
+  });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ mcpServers: [externalStdio(), externalHttp()] }),
+    ),
+  );
+
+  const serialized = JSON.stringify(events);
+  expect(serialized).not.toContain(STDIO_SECRET);
+  expect(serialized).not.toContain(HTTP_SECRET);
+  const error = events.find((event) => event.type === "error");
+  expect(error?.type).toBe("error");
+  if (error?.type === "error") {
+    expect(error.message).toContain("***");
+  }
+});

@@ -1,6 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { listSessionDirs } from "../server/checkpoints/checkpoint-service";
+import { readMcpConfig, mcpServersPath } from "../server/mcp/mcp-config";
 import { readMemoryFile, scanMemoryFiles } from "../server/memory/memory-files";
 import { memoryDir } from "../server/memory/memory-store";
 import { redactResolved, resolveProvider, type ProviderRegistry } from "../server/provider";
@@ -320,6 +321,40 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
       name: "Checkpoint",
       status: git === null ? "peringatan" : "ok",
       detail: `${dir}; ${sessions.length} sesi; ${sizeText}; ${gitText}`,
+    });
+  }
+
+  if (env.JEJAK_MCP_SERVERS?.trim() === "0") {
+    checks.push({
+      name: "Server MCP",
+      status: "peringatan",
+      detail: "dimatikan (JEJAK_MCP_SERVERS=0)",
+    });
+  } else {
+    const path = mcpServersPath(env);
+    const read = await readMcpConfig(path);
+    const issues = [
+      `${path}; ${read.config.servers.length} server; ${read.config.servers.filter((server) => server.enabled).length} aktif; ${read.problems.length} problems`,
+    ];
+    let loose = false;
+    if (read.missing) {
+      issues[0] = `${path} belum ada; dibuat saat server MCP pertama disimpan`;
+    } else {
+      try {
+        const info = await stat(path);
+        loose = info.isFile() && (info.mode & 0o077) !== 0;
+      } catch {
+        loose = false;
+      }
+      if (read.problems.some((problem) => problem.reason === "JSON tidak valid")) {
+        issues.push("berkas rusak; perbaiki atau hapus");
+      }
+      issues.push(loose ? "izin lebih longgar dari 600; sarankan chmod 600" : "izin 600");
+    }
+    checks.push({
+      name: "Server MCP",
+      status: loose || read.problems.length > 0 ? "peringatan" : "ok",
+      detail: issues.join("; "),
     });
   }
 

@@ -1,5 +1,11 @@
 import { toSdkEnv, type ResolvedProvider } from "../provider";
-import type { AgentEvent, AgentRunner, RunInput, PermissionRequest } from "./events";
+import type {
+  AgentEvent,
+  AgentRunner,
+  RunInput,
+  PermissionRequest,
+  ResolvedMcpServer,
+} from "./events";
 import { mapSdkMessage } from "./sdk-mapper";
 
 const SDK_MODULE: string = "@anthropic-ai/claude-agent-sdk";
@@ -52,11 +58,68 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function sanitize(text: string, apiKey: string | undefined): string {
-  if (apiKey === undefined || apiKey === "") {
-    return text;
+function sanitize(
+  text: string,
+  apiKey: string | undefined,
+  extraValues: readonly string[] = [],
+): string {
+  let cleaned = text;
+  if (apiKey !== undefined && apiKey !== "") {
+    cleaned = cleaned.split(apiKey).join("***");
   }
-  return text.split(apiKey).join("***");
+  const candidates: string[] = [];
+  for (const value of extraValues) {
+    candidates.push(value, ...value.split(/\s+/));
+  }
+  const secrets = Array.from(
+    new Set(candidates.filter((value) => value.length >= 4)),
+  ).sort((left, right) => right.length - left.length);
+  for (const secret of secrets) {
+    cleaned = cleaned.split(secret).join("***");
+  }
+  return cleaned;
+}
+
+/** Semua nilai env/header server eksternal; dipakai untuk membersihkan galat. */
+function mcpSecretValues(servers: readonly ResolvedMcpServer[] | undefined): string[] {
+  if (servers === undefined) return [];
+  const values: string[] = [];
+  for (const server of servers) {
+    if (server.transport === "stdio") {
+      values.push(...Object.values(server.env));
+    } else {
+      values.push(...Object.values(server.headers));
+    }
+  }
+  return values;
+}
+
+const EXTERNAL_MCP_PREFIX = "ext-";
+
+function externalMcpServers(
+  servers: readonly ResolvedMcpServer[] | undefined,
+): Record<string, unknown> | undefined {
+  if (servers === undefined || servers.length === 0) {
+    return undefined;
+  }
+  const result: Record<string, unknown> = {};
+  for (const server of servers) {
+    if (server.transport === "stdio") {
+      result[`${EXTERNAL_MCP_PREFIX}${server.name}`] = {
+        type: "stdio",
+        command: server.command,
+        args: [...server.args],
+        env: { ...server.env },
+      };
+    } else {
+      result[`${EXTERNAL_MCP_PREFIX}${server.name}`] = {
+        type: "http",
+        url: server.url,
+        headers: { ...server.headers },
+      };
+    }
+  }
+  return result;
 }
 
 function sanitizeCwd(cwd: string): string {
@@ -161,19 +224,26 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         },
       };
       const allowedTools = allowedToolsFor(input);
-      if (
+      const memoryServers: Record<string, unknown> = {};
+      const hasMemoryServer =
         memory !== undefined &&
         memory.url !== undefined &&
         memory.token !== undefined &&
-        allowedTools.length > 0
-      ) {
-        sdkOptions.mcpServers = {
-          "jejak-memory": {
-            type: "http",
-            url: memory.url,
-            headers: { Authorization: `Bearer ${memory.token}` },
-          },
+        allowedTools.length > 0;
+      if (hasMemoryServer) {
+        memoryServers["jejak-memory"] = {
+          type: "http",
+          url: memory.url,
+          headers: { Authorization: `Bearer ${memory.token}` },
         };
+      }
+      const external = externalMcpServers(input.mcpServers);
+      if (hasMemoryServer || external !== undefined) {
+        sdkOptions.mcpServers = external === undefined
+          ? memoryServers
+          : { ...memoryServers, ...external };
+      }
+      if (hasMemoryServer) {
         sdkOptions.allowedTools = allowedTools;
       }
       if (input.provider.model !== undefined) {
@@ -243,7 +313,11 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           if (!sawResult) yield { type: "result", ok: false, error: "dibatalkan" };
           return;
         }
-        let message = sanitize(errorMessage(error), input.provider.apiKey);
+        let message = sanitize(
+          errorMessage(error),
+          input.provider.apiKey,
+          mcpSecretValues(input.mcpServers),
+        );
         if (input.memory?.token !== undefined && input.memory.token !== "") {
           message = message.split(input.memory.token).join("***");
         }

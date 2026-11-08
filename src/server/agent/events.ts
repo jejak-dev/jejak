@@ -56,6 +56,11 @@ export interface RunWorkspace {
   additionalDirectories: string[];
 }
 
+/** Server MCP eksternal yang aktif, diselesaikan per giliran dari layanan. */
+export type ResolvedMcpServer =
+  | { name: string; transport: "stdio"; command: string; args: string[]; env: Record<string, string> }
+  | { name: string; transport: "http"; url: string; headers: Record<string, string> };
+
 export interface RunInput {
   prompt: string;
   cwd: string;
@@ -66,6 +71,8 @@ export interface RunInput {
   resumeSessionId?: string;
   memory?: RunMemory;
   workspace?: RunWorkspace;
+  /** Server MCP eksternal (nilai penuh); tidak pernah dikirim ke klien. */
+  mcpServers?: ResolvedMcpServer[];
 }
 
 export interface AgentRunner {
