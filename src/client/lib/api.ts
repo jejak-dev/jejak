@@ -167,6 +167,9 @@ export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
   getSession(id: string): Promise<SessionInfo>;
+  renameSession(id: string, title: string): Promise<SessionInfo>;
+  archiveSession(id: string, archived: boolean): Promise<SessionInfo>;
+  deleteSession(id: string): Promise<void>;
   createSession(input: {
     prompt: string;
     cwd?: string;
@@ -473,6 +476,22 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async getSession(id) {
       return sessionFrom(await request("GET", `/api/sessions/${encodeURIComponent(id)}`));
+    },
+
+    async renameSession(id, title) {
+      return sessionFrom(
+        await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, { title }),
+      );
+    },
+
+    async archiveSession(id, archived) {
+      return sessionFrom(
+        await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, { archived }),
+      );
+    },
+
+    async deleteSession(id) {
+      await request("DELETE", `/api/sessions/${encodeURIComponent(id)}`, {});
     },
 
     async createSession(input) {

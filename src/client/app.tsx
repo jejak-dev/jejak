@@ -103,6 +103,32 @@ export function App() {
     [navigate, refresh],
   );
 
+  const onRenameSession = useCallback(
+    async (id: string, title: string): Promise<void> => {
+      await api.renameSession(id, title);
+      await refresh();
+    },
+    [api, refresh],
+  );
+
+  const onArchiveSession = useCallback(
+    async (id: string, archived: boolean): Promise<void> => {
+      await api.archiveSession(id, archived);
+      await refresh();
+      if (archived && id === selectedId) navigate();
+    },
+    [api, navigate, refresh, selectedId],
+  );
+
+  const onDeleteSession = useCallback(
+    async (id: string): Promise<void> => {
+      await api.deleteSession(id);
+      await refresh();
+      if (id === selectedId) navigate();
+    },
+    [api, navigate, refresh, selectedId],
+  );
+
   const interruptId = selected?.id;
   const onInterrupt = useCallback((): void => {
     if (interruptId === undefined) return;
@@ -169,6 +195,9 @@ export function App() {
         memoryActive={showingMemory}
         workspacesActive={showingWorkspaces}
         memoryProposed={memoryProposed}
+        onRename={onRenameSession}
+        onArchive={onArchiveSession}
+        onDelete={onDeleteSession}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
 

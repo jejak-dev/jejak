@@ -1,6 +1,8 @@
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { formatAgo, groupSessions } from "../lib/format";
 import { showsBypassMarker } from "../lib/permission-mode";
+import { canMutate, filterSessions, splitArchived, validateTitle } from "../lib/sessions";
 import { Icon } from "./Icon";
 
 export interface SidebarProps {
@@ -16,6 +18,9 @@ export interface SidebarProps {
   workspacesActive?: boolean;
   /** Jumlah usulan memory terbuka; angka kecil ditampilkan bila > 0. */
   memoryProposed?: number;
+  onRename: (id: string, title: string) => Promise<void>;
+  onArchive: (id: string, archived: boolean) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
 }
 
 function dotClass(session: SessionInfo): string {
@@ -32,6 +37,13 @@ function dotLabel(session: SessionInfo): string | undefined {
   return undefined;
 }
 
+function errorMessage(caught: unknown): string {
+  if (caught instanceof Error && caught.message !== "") return caught.message;
+  return "terjadi kesalahan";
+}
+
+type RowMode = "menu" | "rename" | "delete";
+
 export function Sidebar({
   info,
   sessions,
@@ -44,9 +56,355 @@ export function Sidebar({
   memoryActive = false,
   workspacesActive = false,
   memoryProposed,
+  onRename,
+  onArchive,
+  onDelete,
 }: SidebarProps) {
   const now = new Date();
-  const groups = groupSessions(sessions);
+  const [query, setQuery] = useState("");
+  const [openRowId, setOpenRowId] = useState<string | undefined>(undefined);
+  const [mode, setMode] = useState<RowMode>("menu");
+  const [draft, setDraft] = useState("");
+  const [rowError, setRowError] = useState<string | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const renameRef = useRef<HTMLInputElement | null>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>());
+  /** `undefined` = tidak ada, `null` = kolom cari, id = baris sesi. */
+  const pendingFocusRef = useRef<string | null | undefined>(undefined);
+
+  const visible = filterSessions(sessions, query, false);
+  const archivedVisible = filterSessions(splitArchived(sessions).archived, query, true);
+  const groups = groupSessions(visible);
+  const orderedIds = [...visible.map((session) => session.id), ...archivedVisible.map((session) => session.id)];
+
+  const closeRow = useCallback((): void => {
+    setOpenRowId(undefined);
+    setMode("menu");
+    setRowError(undefined);
+  }, []);
+
+  // Fokus pindah ke baris berikutnya (atau kolom cari) setelah daftar dimuat ulang
+  // dan aksi baris ditutup. Ditunggu sampai baris kembali berbentuk tombol.
+  useEffect(() => {
+    if (openRowId !== undefined) return;
+    const pending = pendingFocusRef.current;
+    if (pending === undefined) return;
+    pendingFocusRef.current = undefined;
+    const target = pending === null ? undefined : rowRefs.current.get(pending);
+    (target ?? searchRef.current)?.focus();
+  }, [openRowId, sessions]);
+
+  useEffect(() => {
+    if (openRowId === undefined || mode !== "rename") return;
+    renameRef.current?.focus();
+    renameRef.current?.select();
+  }, [mode, openRowId]);
+
+  useEffect(() => {
+    if (openRowId === undefined || mode !== "delete") return;
+    deleteCancelRef.current?.focus();
+  }, [mode, openRowId]);
+
+  useEffect(() => {
+    if (openRowId === undefined) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || event.defaultPrevented || busy) return;
+      event.preventDefault();
+      closeRow();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busy, closeRow, openRowId]);
+
+  const nextFocusId = (id: string): string | null => {
+    const index = orderedIds.indexOf(id);
+    const remaining = orderedIds.filter((entry) => entry !== id);
+    if (remaining.length === 0) return null;
+    return remaining[Math.min(index < 0 ? 0 : index, remaining.length - 1)] ?? null;
+  };
+
+  const toggleRow = (session: SessionInfo): void => {
+    setRowError(undefined);
+    if (openRowId === session.id) {
+      closeRow();
+      return;
+    }
+    setOpenRowId(session.id);
+    setMode("menu");
+  };
+
+  const startRename = (session: SessionInfo): void => {
+    setOpenRowId(session.id);
+    setMode("rename");
+    setDraft(session.title);
+    setRowError(undefined);
+  };
+
+  const askDelete = (session: SessionInfo): void => {
+    setOpenRowId(session.id);
+    setMode("delete");
+    setRowError(undefined);
+  };
+
+  const submitRename = async (session: SessionInfo): Promise<void> => {
+    if (busy) return;
+    const message = validateTitle(draft);
+    if (message !== undefined) {
+      setRowError(message);
+      return;
+    }
+    setBusy(true);
+    setRowError(undefined);
+    pendingFocusRef.current = session.id;
+    try {
+      await onRename(session.id, draft.trim());
+      closeRow();
+    } catch (caught) {
+      pendingFocusRef.current = undefined;
+      setRowError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const archive = async (session: SessionInfo): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setRowError(undefined);
+    pendingFocusRef.current = nextFocusId(session.id);
+    try {
+      await onArchive(session.id, true);
+      closeRow();
+    } catch (caught) {
+      pendingFocusRef.current = undefined;
+      setRowError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const restore = async (session: SessionInfo): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setRowError(undefined);
+    pendingFocusRef.current = session.id;
+    try {
+      await onArchive(session.id, false);
+      closeRow();
+    } catch (caught) {
+      pendingFocusRef.current = undefined;
+      setRowError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmDelete = async (session: SessionInfo): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setRowError(undefined);
+    pendingFocusRef.current = nextFocusId(session.id);
+    try {
+      await onDelete(session.id);
+      closeRow();
+    } catch (caught) {
+      // Baris tetap terbuka; fokus kembali ke tombol Batal agar keputusan tetap terjangkau.
+      pendingFocusRef.current = undefined;
+      setRowError(errorMessage(caught));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const renderRow = (session: SessionInfo, archived: boolean) => {
+    const open = openRowId === session.id;
+    const renaming = open && mode === "rename";
+    const confirmingDelete = open && mode === "delete";
+    const error = open ? rowError : undefined;
+    const label = dotLabel(session);
+    const mutable = canMutate(session);
+    const errorId = `jk-session-rename-error-${session.id}`;
+
+    return (
+      <li class={`jk-session-item${open ? " jk-session-item-open" : ""}`} key={session.id}>
+        {renaming ? (
+          <form
+            class="jk-session-edit"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitRename(session);
+            }}
+          >
+            <label class="jk-visually-hidden" for={`jk-session-rename-${session.id}`}>
+              Judul sesi
+            </label>
+            <input
+              ref={renameRef}
+              id={`jk-session-rename-${session.id}`}
+              class="jk-input"
+              type="text"
+              value={draft}
+              aria-invalid={error !== undefined}
+              aria-describedby={error !== undefined ? errorId : undefined}
+              onInput={(event) => setDraft((event.currentTarget as HTMLInputElement).value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape" && !busy) {
+                  event.preventDefault();
+                  closeRow();
+                }
+              }}
+            />
+            <div class="jk-session-edit-actions">
+              <button type="submit" class="jk-link-btn" disabled={busy}>
+                {busy ? "Menyimpan…" : "Simpan"}
+              </button>
+              <button
+                type="button"
+                class="jk-link-btn"
+                disabled={busy}
+                onClick={() => closeRow()}
+              >
+                Batal
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div class="jk-session-line">
+            <button
+              ref={(element) => {
+                if (element === null) rowRefs.current.delete(session.id);
+                else rowRefs.current.set(session.id, element);
+              }}
+              type="button"
+              class={`jk-session-row${session.id === selectedId ? " jk-session-row-active" : ""}`}
+              onClick={() => onSelect(session.id)}
+              aria-current={session.id === selectedId ? "page" : undefined}
+            >
+              <span
+                class={dotClass(session)}
+                title={label}
+                role={label === undefined ? undefined : "img"}
+                aria-label={label}
+                aria-hidden={label === undefined ? "true" : undefined}
+              />
+              <span class="jk-session-title">{session.title}</span>
+              {showsBypassMarker(session.permissionMode) && (
+                <span class="jk-session-bypass">Tanpa izin</span>
+              )}
+              <time class="jk-session-time" dateTime={session.updatedAt}>
+                {formatAgo(session.updatedAt, now)}
+              </time>
+            </button>
+            {archived ? (
+              !confirmingDelete && (
+                <span class="jk-session-inline">
+                  <button
+                    type="button"
+                    class="jk-link-btn"
+                    disabled={busy}
+                    aria-label={`Pulihkan sesi ${session.title}`}
+                    onClick={() => void restore(session)}
+                  >
+                    Pulihkan
+                  </button>
+                  <button
+                    type="button"
+                    class="jk-link-btn jk-session-danger"
+                    disabled={busy}
+                    aria-label={`Hapus sesi ${session.title}`}
+                    onClick={() => askDelete(session)}
+                  >
+                    Hapus
+                  </button>
+                </span>
+              )
+            ) : (
+              <button
+                type="button"
+                class="jk-session-more"
+                aria-label={`Aksi sesi ${session.title}`}
+                aria-expanded={open}
+                onClick={() => toggleRow(session)}
+              >
+                ⋯
+              </button>
+            )}
+          </div>
+        )}
+
+        {open && !renaming && confirmingDelete && (
+          <div class="jk-session-actions">
+            <div class="jk-panel-confirm">
+              <p>Hapus sesi ini? Tidak bisa diurungkan.</p>
+              <div class="jk-panel-confirm-actions">
+                <button
+                  type="button"
+                  class="jk-button jk-button-caution"
+                  disabled={busy}
+                  aria-label={`Konfirmasi hapus sesi ${session.title}`}
+                  onClick={() => void confirmDelete(session)}
+                >
+                  {busy ? "Menghapus…" : "Hapus"}
+                </button>
+                <button
+                  ref={deleteCancelRef}
+                  type="button"
+                  class="jk-button"
+                  disabled={busy}
+                  onClick={() => closeRow()}
+                >
+                  Batal
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {open && mode === "menu" && !archived && (
+          <div class="jk-session-actions">
+            <button
+              type="button"
+              class="jk-link-btn"
+              disabled={busy}
+              aria-label={`Ganti nama sesi ${session.title}`}
+              onClick={() => startRename(session)}
+            >
+              Ganti nama
+            </button>
+            <button
+              type="button"
+              class="jk-link-btn"
+              disabled={busy || !mutable}
+              title={mutable ? undefined : "Hentikan sesi dulu."}
+              aria-label={`Arsipkan sesi ${session.title}`}
+              onClick={() => void archive(session)}
+            >
+              Arsipkan
+            </button>
+            <button
+              type="button"
+              class="jk-link-btn jk-session-danger"
+              disabled={busy || !mutable}
+              title={mutable ? undefined : "Hentikan sesi dulu."}
+              aria-label={`Hapus sesi ${session.title}`}
+              onClick={() => askDelete(session)}
+            >
+              Hapus
+            </button>
+          </div>
+        )}
+
+        {error !== undefined && (
+          <p class="jk-error-line jk-session-error" role="alert" id={renaming ? errorId : undefined}>
+            {error}
+          </p>
+        )}
+      </li>
+    );
+  };
 
   return (
     <aside class="jk-sidebar" aria-label="Navigasi">
@@ -64,8 +422,31 @@ export function Sidebar({
       </button>
 
       <nav class="jk-groups" aria-label="Daftar sesi">
-        {groups.length === 0 ? (
+        {sessions.length >= 1 && (
+          <div class="jk-session-search">
+            <input
+              ref={searchRef}
+              id="jk-session-search"
+              class="jk-input"
+              type="search"
+              placeholder="Cari sesi"
+              aria-label="Cari sesi"
+              value={query}
+              onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  setQuery("");
+                }
+              }}
+            />
+          </div>
+        )}
+
+        {sessions.length === 0 ? (
           <p class="jk-empty-line">Belum ada sesi.</p>
+        ) : groups.length === 0 ? (
+          archivedVisible.length === 0 && <p class="jk-empty-line">Tidak ada sesi yang cocok.</p>
         ) : (
           groups.map((group) => (
             <section class="jk-group" key={group.cwd}>
@@ -74,38 +455,17 @@ export function Sidebar({
                 <span>{group.label}</span>
               </h2>
               <ul class="jk-session-items">
-                {group.items.map((session) => {
-                  const selected = session.id === selectedId;
-                  const label = dotLabel(session);
-                  return (
-                    <li key={session.id}>
-                      <button
-                        type="button"
-                        class={`jk-session-row${selected ? " jk-session-row-active" : ""}`}
-                        onClick={() => onSelect(session.id)}
-                        aria-current={selected ? "page" : undefined}
-                      >
-                        <span
-                          class={dotClass(session)}
-                          title={label}
-                          role={label === undefined ? undefined : "img"}
-                          aria-label={label}
-                          aria-hidden={label === undefined ? "true" : undefined}
-                        />
-                        <span class="jk-session-title">{session.title}</span>
-                        {showsBypassMarker(session.permissionMode) && (
-                          <span class="jk-session-bypass">Tanpa izin</span>
-                        )}
-                        <time class="jk-session-time" dateTime={session.updatedAt}>
-                          {formatAgo(session.updatedAt, now)}
-                        </time>
-                      </button>
-                    </li>
-                  );
-                })}
+                {group.items.map((session) => renderRow(session, false))}
               </ul>
             </section>
           ))
+        )}
+
+        {archivedVisible.length > 0 && (
+          <details class="jk-archived">
+            <summary>Diarsipkan ({archivedVisible.length})</summary>
+            <ul class="jk-session-items">{archivedVisible.map((session) => renderRow(session, true))}</ul>
+          </details>
         )}
       </nav>
 

@@ -108,6 +108,77 @@ describe("createApiClient", () => {
     expect((caught as ApiError).message).toBe("tidak ada");
   });
 
+  test("renameSession PATCH path id ter-encode dengan body title", async () => {
+    const renamed = { ...SESSION, title: "Judul baru" };
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: renamed }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.renameSession("a/b c", "Judul baru")).toEqual(renamed);
+    expect(calls[0]?.url).toBe("/api/sessions/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("PATCH");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ title: "Judul baru" });
+  });
+
+  test("archiveSession PATCH body archived dan mengembalikan sesi", async () => {
+    const archived = { ...SESSION, archivedAt: "2026-02-01T00:00:00.000Z" };
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: archived }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.archiveSession("s 1", true)).toEqual(archived);
+    expect(await api.archiveSession("s 1", false)).toEqual(archived);
+
+    expect(calls.map((call) => call.url)).toEqual(["/api/sessions/s%201", "/api/sessions/s%201"]);
+    expect(calls.map((call) => call.init.method)).toEqual(["PATCH", "PATCH"]);
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ archived: true });
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({ archived: false });
+  });
+
+  test("deleteSession DELETE body JSON kosong", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.deleteSession("a/b c")).toBeUndefined();
+    expect(calls[0]?.url).toBe("/api/sessions/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("galat 400/404/409 siklus sesi menjadi ApiError dengan status dan pesan", async () => {
+    for (const [status, message] of [
+      [400, "Judul harus 1..120 karakter."],
+      [404, 'Sesi "x" tidak ditemukan.'],
+      [409, "Hentikan sesi dulu."],
+    ] as const) {
+      const calls: Array<"rename" | "archive" | "delete"> = ["rename", "archive", "delete"];
+      for (const method of calls) {
+        const { fetch } = fakeFetch(() => jsonResponse({ error: message }, status));
+        const api = createApiClient({ fetch });
+
+        let caught: unknown;
+        try {
+          if (method === "rename") await api.renameSession("x", "judul");
+          else if (method === "archive") await api.archiveSession("x", true);
+          else await api.deleteSession("x");
+        } catch (error) {
+          caught = error;
+        }
+
+        expect(caught).toBeInstanceOf(ApiError);
+        expect((caught as ApiError).status).toBe(status);
+        expect((caught as ApiError).message).toBe(message);
+      }
+    }
+  });
+
+  test("renameSession menolak respons tanpa session", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.renameSession("s1", "x")).rejects.toBeInstanceOf(ApiError);
+  });
+
   test("createSession POST JSON dengan seluruh field", async () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse({ session: SESSION }, 201));
     const api = createApiClient({ fetch });
