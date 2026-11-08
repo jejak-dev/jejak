@@ -964,3 +964,119 @@ describe("createApiClient: checkpoint", () => {
     expect((caught as ApiError).status).toBe(503);
   });
 });
+
+const WORKSPACE = {
+  id: "0f0e0d0c-0b0a-4f0e-8d0c-0b0a09080706",
+  name: "Kantor",
+  createdAt: "2026-11-08T10:00:00.000Z",
+  updatedAt: "2026-11-08T10:00:00.000Z",
+  repos: [
+    {
+      name: "api",
+      path: "/tmp/api",
+      missing: false,
+      card: {
+        description: "",
+        kind: "lainnya" as const,
+        tables: [],
+        queues: [],
+        calls: [],
+        updatedAt: null,
+      },
+    },
+  ],
+};
+
+describe("createApiClient: workspace", () => {
+  test("listWorkspaces GET /api/workspaces dengan items dan problems", async () => {
+    const payload = { items: [WORKSPACE], problems: [{ file: "x.json", reason: "rusak" }] };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch, baseUrl: "http://localhost:9" });
+
+    expect(await api.listWorkspaces()).toEqual(payload);
+    expect(calls[0]?.url).toBe("http://localhost:9/api/workspaces");
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("listWorkspaces menolak respons tanpa array items", async () => {
+    for (const payload of [{}, { items: "x" }, null]) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+      await expect(api.listWorkspaces()).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  test("createWorkspace POST body nama dan repos", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: WORKSPACE }, 201));
+    const api = createApiClient({ fetch });
+    const input = { name: "Kantor", repos: [{ name: "api", path: "/tmp/api" }] };
+
+    expect(await api.createWorkspace(input)).toEqual(WORKSPACE);
+    expect(calls[0]?.url).toBe("/api/workspaces");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual(input);
+  });
+
+  test("updateWorkspace PATCH path id ter-encode", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: WORKSPACE }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.updateWorkspace("a/b c", { name: "Baru" })).toEqual(WORKSPACE);
+    expect(calls[0]?.url).toBe("/api/workspaces/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ name: "Baru" });
+  });
+
+  test("setWorkspaceCard PUT path id dan nama repo ter-encode", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: WORKSPACE }));
+    const api = createApiClient({ fetch });
+    const card = {
+      description: "Layanan",
+      kind: "backend" as const,
+      tables: ["pesanan"],
+      queues: [],
+      calls: ["web"],
+    };
+
+    expect(await api.setWorkspaceCard("id 1", "api/v1", card)).toEqual(WORKSPACE);
+    expect(calls[0]?.url).toBe("/api/workspaces/id%201/repos/api%2Fv1/card");
+    expect(calls[0]?.init.method).toBe("PUT");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual(card);
+  });
+
+  test("deleteWorkspace DELETE path ter-encode body JSON kosong", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.deleteWorkspace("a/b c")).toBeUndefined();
+    expect(calls[0]?.url).toBe("/api/workspaces/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("galat 400/404/409/503 menjadi ApiError dengan status dan pesan", async () => {
+    for (const [status, message] of [
+      [400, "Field name harus berupa teks."],
+      [404, "Workspace tidak ditemukan."],
+      [409, "Batas 20 repo per workspace terlampaui."],
+      [503, "Workspace dimatikan."],
+    ] as const) {
+      const { fetch } = fakeFetch(() => jsonResponse({ error: message }, status));
+      const api = createApiClient({ fetch });
+
+      let caught: unknown;
+      try {
+        await api.createWorkspace({ name: "x" });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(ApiError);
+      expect((caught as ApiError).status).toBe(status);
+      expect((caught as ApiError).message).toBe(message);
+    }
+  });
+});

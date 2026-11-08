@@ -191,3 +191,13 @@ describe("groupSessions", () => {
     expect(groupSessions([])).toEqual([]);
   });
 });
+
+describe("rute workspace", () => {
+  test("hash dan parsing", async () => {
+    const { workspacesHash } = await import("../src/client/lib/format");
+    expect(workspacesHash()).toBe("#/workspaces");
+    expect(parseHashRoute(workspacesHash())).toEqual({ view: "workspaces" });
+    expect(parseHashRoute("#/workspaces/")).toEqual({});
+    expect(parseHashRoute("#/workspace")).toEqual({});
+  });
+});

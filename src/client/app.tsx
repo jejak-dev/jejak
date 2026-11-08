@@ -8,6 +8,7 @@ import { ReplyBar } from "./components/ReplyBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
+import { WorkspacePage } from "./components/WorkspacePage";
 import {
   useHashRoute,
   useInfo,
@@ -40,6 +41,7 @@ export function App() {
 
   const showingProviders = routeView === "providers";
   const showingMemory = routeView === "memory";
+  const showingWorkspaces = routeView === "workspaces";
 
   const waiting = sessions.reduce((total, session) => total + session.pendingPermissions, 0);
 
@@ -48,11 +50,13 @@ export function App() {
       ? "Provider · Jejak"
       : showingMemory
         ? "Memory · Jejak"
-        : selected !== undefined
-          ? `${selected.title} · Jejak`
-          : "Jejak";
+        : showingWorkspaces
+          ? "Workspace · Jejak"
+          : selected !== undefined
+            ? `${selected.title} · Jejak`
+            : "Jejak";
     document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
-  }, [selected, showingProviders, showingMemory, waiting]);
+  }, [selected, showingProviders, showingMemory, showingWorkspaces, waiting]);
 
   // Pindah halaman menutup laci sidebar (tampilan sempit).
   useEffect(() => {
@@ -145,7 +149,7 @@ export function App() {
   }, [refreshMemory]);
 
   const mainClass =
-    showingProviders || showingMemory || selected !== undefined
+    showingProviders || showingMemory || showingWorkspaces || selected !== undefined
       ? "jk-main"
       : "jk-main jk-main-home";
 
@@ -154,13 +158,14 @@ export function App() {
       <Sidebar
         info={info}
         sessions={sessions}
-        selectedId={showingProviders || showingMemory ? undefined : selectedId}
+        selectedId={showingProviders || showingMemory || showingWorkspaces ? undefined : selectedId}
         onSelect={onSelect}
         onNew={onNew}
         onClose={closeDrawer}
         activeProfileLabel={activeProfileLabel}
         providersActive={showingProviders}
         memoryActive={showingMemory}
+        workspacesActive={showingWorkspaces}
         memoryProposed={memoryProposed}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
@@ -178,6 +183,13 @@ export function App() {
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
               <MemoryPage api={api} projects={memoryProjects} onChanged={onMemoryChanged} />
+            </div>
+          </>
+        ) : showingWorkspaces ? (
+          <>
+            <Topbar onMenu={openDrawer} />
+            <div class="jk-page">
+              <WorkspacePage api={api} projects={memoryProjects} />
             </div>
           </>
         ) : selected !== undefined ? (

@@ -18,6 +18,13 @@ import type {
 } from "../../server/memory/memory-files";
 import type { ImportResult } from "../../server/memory/memory-service";
 import type { SessionInfo } from "../../server/sessions/session-manager";
+import type {
+  ServiceCard,
+  ServiceKind,
+  WorkspaceProblem,
+  WorkspaceRepo,
+} from "../../server/workspaces/workspace-files";
+import type { WorkspaceView } from "../../server/workspaces/workspace-service";
 
 export type {
   ChangeAction,
@@ -54,6 +61,8 @@ export type {
 export type MemoryItem = Memory;
 export type MemoryImportResult = ImportResult;
 
+export type { ServiceKind, WorkspaceProblem } from "../../server/workspaces/workspace-files";
+
 export interface MemoryList {
   items: MemoryItem[];
   counts: MemoryCounts;
@@ -66,6 +75,44 @@ export interface MemoryQuery {
   project?: string;
   q?: string;
   limit?: number;
+}
+
+export interface WorkspaceRepoItem extends WorkspaceRepo {
+  missing: boolean;
+}
+
+export type ServiceCardItem = ServiceCard;
+
+export type WorkspaceItem = Omit<WorkspaceView, "repos"> & {
+  repos: WorkspaceRepoItem[];
+};
+
+export interface WorkspaceList {
+  items: WorkspaceItem[];
+  problems: WorkspaceProblem[];
+}
+
+export interface WorkspaceRepoInput {
+  name: string;
+  path: string;
+}
+
+export interface WorkspaceCreateInput {
+  name: string;
+  repos?: WorkspaceRepoInput[];
+}
+
+export interface WorkspaceUpdateInput {
+  name?: string;
+  repos?: WorkspaceRepoInput[];
+}
+
+export interface ServiceCardInput {
+  description?: string;
+  kind?: ServiceKind;
+  tables?: string[];
+  queues?: string[];
+  calls?: string[];
 }
 
 export interface MemoryCreateInput {
@@ -156,6 +203,15 @@ export interface ApiClient {
   archiveMemory(id: string): Promise<MemoryItem>;
   deleteMemory(id: string): Promise<void>;
   importMemory(projectKey: string): Promise<MemoryImportResult>;
+  listWorkspaces(): Promise<WorkspaceList>;
+  createWorkspace(input: WorkspaceCreateInput): Promise<WorkspaceItem>;
+  updateWorkspace(id: string, input: WorkspaceUpdateInput): Promise<WorkspaceItem>;
+  setWorkspaceCard(
+    id: string,
+    repoName: string,
+    card: ServiceCardInput,
+  ): Promise<WorkspaceItem>;
+  deleteWorkspace(id: string): Promise<void>;
 }
 
 export interface ApiClientOptions {
@@ -211,6 +267,25 @@ function memoryImportFrom(payload: unknown): MemoryImportResult {
     }
   }
   return payload as unknown as MemoryImportResult;
+}
+
+function workspaceFrom(payload: unknown): WorkspaceItem {
+  const item = field(payload, "item");
+  if (!isRecord(item) || typeof item.id !== "string" || !Array.isArray(item.repos)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  return item as unknown as WorkspaceItem;
+}
+
+function workspaceListFrom(payload: unknown): WorkspaceList {
+  if (!isRecord(payload) || !Array.isArray(payload.items)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  const problems = payload.problems;
+  return {
+    items: payload.items as WorkspaceItem[],
+    problems: Array.isArray(problems) ? (problems as WorkspaceProblem[]) : [],
+  };
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {
@@ -564,6 +639,34 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async importMemory(projectKey) {
       return memoryImportFrom(await request("POST", "/api/memory/import", { projectKey }));
+    },
+
+    async listWorkspaces() {
+      return workspaceListFrom(await request("GET", "/api/workspaces"));
+    },
+
+    async createWorkspace(input) {
+      return workspaceFrom(await request("POST", "/api/workspaces", input));
+    },
+
+    async updateWorkspace(id, input) {
+      return workspaceFrom(
+        await request("PATCH", `/api/workspaces/${encodeURIComponent(id)}`, input),
+      );
+    },
+
+    async setWorkspaceCard(id, repoName, card) {
+      return workspaceFrom(
+        await request(
+          "PUT",
+          `/api/workspaces/${encodeURIComponent(id)}/repos/${encodeURIComponent(repoName)}/card`,
+          card,
+        ),
+      );
+    },
+
+    async deleteWorkspace(id) {
+      await request("DELETE", `/api/workspaces/${encodeURIComponent(id)}`, {});
     },
   };
 }

@@ -2461,6 +2461,261 @@ h2.jk-md-heading {
   }
 }
 
+/* Halaman Workspace */
+
+.jk-workspace {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px 80px;
+}
+
+.jk-workspace .jk-settings-head {
+  margin-bottom: 18px;
+}
+
+.jk-workspace-head {
+  display: flex;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-workspace-add {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.jk-workspace-form-wrap {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.jk-workspace-form {
+  display: grid;
+  gap: 14px;
+}
+
+.jk-workspace-repo-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.jk-workspace-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-workspace-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.jk-workspace-row {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-workspace-row > summary,
+.jk-workspace-repo > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 4px;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.jk-workspace-row > summary:hover,
+.jk-workspace-repo > summary:hover {
+  background: var(--hover);
+}
+
+.jk-workspace-row > summary::-webkit-details-marker,
+.jk-workspace-repo > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jk-workspace-row[open] > summary .jk-chev,
+.jk-workspace-repo[open] > summary .jk-chev {
+  transform: rotate(90deg);
+}
+
+.jk-workspace-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.jk-workspace-meta {
+  flex: none;
+  color: var(--t3);
+  font-size: 11.5px;
+}
+
+.jk-workspace-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 2px 0 14px 22px;
+}
+
+.jk-workspace-repos {
+  display: flex;
+  flex-direction: column;
+}
+
+.jk-workspace-repo {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  border-top: 1px solid var(--line);
+}
+
+.jk-workspace-repo > summary {
+  min-height: 30px;
+}
+
+.jk-workspace-repo-title {
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.jk-workspace-primary {
+  flex: none;
+  color: var(--t3);
+  font-size: 11.5px;
+}
+
+.jk-workspace-missing {
+  flex: none;
+  color: var(--warn);
+  font-size: 11.5px;
+}
+
+.jk-workspace-repo-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  color: var(--t3);
+  font-size: 11.5px;
+}
+
+.jk-workspace-repo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0 12px 22px;
+}
+
+.jk-workspace-path {
+  margin: 0;
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.jk-workspace-card-meta {
+  margin: 0;
+  color: var(--t3);
+  font-size: 11.5px;
+}
+
+.jk-workspace-description {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12.5px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jk-workspace-card-line {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.jk-workspace-card-label {
+  margin-right: 8px;
+  color: var(--t3);
+}
+
+.jk-workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.jk-workspace-danger {
+  color: var(--t3);
+}
+
+.jk-workspace-danger:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+.jk-workspace-problems {
+  margin-top: 14px;
+  border: 0;
+}
+
+.jk-workspace-problems > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+}
+
+.jk-workspace-problems > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jk-workspace-warn {
+  color: var(--warn);
+}
+
+.jk-workspace-problem-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--t3);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+@media (max-width: 760px) {
+  .jk-workspace-add {
+    margin-left: 0;
+  }
+
+  .jk-workspace-repo-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
 /* Sempit: sidebar menjadi laci */
 
 @media (max-width: 760px) {

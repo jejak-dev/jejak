@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "./lib/api";
-import { memoryHash, parseHashRoute, providersHash, sessionHash, type AppView } from "./lib/format";
+import {
+  memoryHash,
+  parseHashRoute,
+  providersHash,
+  sessionHash,
+  workspacesHash,
+  type AppView,
+} from "./lib/format";
 import { parseRegistryView, type RegistryView } from "./lib/registry-view";
 import { followSession } from "./lib/sse";
 import { reduceTimeline, startTimeline, type TimelineItem } from "./lib/timeline";
@@ -28,6 +35,7 @@ export interface HashRouteState {
   navigateToSession: (id?: string) => void;
   navigateToProviders: () => void;
   navigateToMemory: () => void;
+  navigateToWorkspaces: () => void;
 }
 
 export function useHashRoute(): HashRouteState {
@@ -67,6 +75,10 @@ export function useHashRoute(): HashRouteState {
     applyHash(memoryHash());
   }, [applyHash]);
 
+  const navigateToWorkspaces = useCallback(() => {
+    applyHash(workspacesHash());
+  }, [applyHash]);
+
   return useMemo(
     () => ({
       sessionId: route.sessionId,
@@ -74,8 +86,9 @@ export function useHashRoute(): HashRouteState {
       navigateToSession,
       navigateToProviders,
       navigateToMemory,
+      navigateToWorkspaces,
     }),
-    [route, navigateToSession, navigateToProviders, navigateToMemory],
+    [route, navigateToSession, navigateToProviders, navigateToMemory, navigateToWorkspaces],
   );
 }
 

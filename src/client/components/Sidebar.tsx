@@ -12,6 +12,7 @@ export interface SidebarProps {
   activeProfileLabel?: string;
   providersActive?: boolean;
   memoryActive?: boolean;
+  workspacesActive?: boolean;
   /** Jumlah usulan memory terbuka; angka kecil ditampilkan bila > 0. */
   memoryProposed?: number;
 }
@@ -40,6 +41,7 @@ export function Sidebar({
   activeProfileLabel,
   providersActive = false,
   memoryActive = false,
+  workspacesActive = false,
   memoryProposed,
 }: SidebarProps) {
   const now = new Date();
@@ -104,6 +106,14 @@ export function Sidebar({
       </nav>
 
       <footer class="jk-sidebar-foot">
+        <a
+          class={`jk-foot-link${workspacesActive ? " jk-foot-link-active" : ""}`}
+          href="#/workspaces"
+          aria-current={workspacesActive ? "page" : undefined}
+        >
+          <Icon name="workspace" />
+          <span class="jk-foot-text">Workspace</span>
+        </a>
         <a
           class={`jk-foot-link${memoryActive ? " jk-foot-link-active" : ""}`}
           href="#/memory"
