@@ -16,8 +16,10 @@ import { infoRoutes } from "./routes/info";
 import { memoryRoutes } from "./routes/memory";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
+import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import { SessionManager } from "./sessions/session-manager";
 import { defaultSessionStore, type SessionStore } from "./sessions/session-store";
+import type { WorkspaceService } from "./workspaces/workspace-service";
 
 export interface ServeOptions {
   host?: string;
@@ -43,6 +45,8 @@ export interface CreateAppOptions {
   checkpoints?: CheckpointService;
   /** Direktori checkpoint; default `<jejakHome(env)>/checkpoints`. */
   checkpointDir?: string;
+  /** Layanan workspace; tanpa opsi ini semua rute `/api/workspaces*` menjawab 503. */
+  workspaces?: WorkspaceService;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -78,6 +82,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(fileRoutes({ manager, env: options.env, undoDir: options.undoDir }))
     .use(checkpointRoutes({ manager, service: checkpoints }))
     .use(memoryRoutes({ service: options.memory }))
+    .use(workspaceRoutes({ service: options.workspaces }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({
@@ -116,7 +121,14 @@ export function startServer(options: ServeOptions = {}) {
     ? undefined
     : new CheckpointService({ root: join(jejakHome(), "checkpoints") });
   const mcpUrl = mcpUrlFor(host, port);
-  const app = createApp({ sessionStore: store, memory, mcpUrl, checkpoints }).listen({
+  const workspaces = defaultWorkspaceService(process.env);
+  const app = createApp({
+    sessionStore: store,
+    memory,
+    mcpUrl,
+    checkpoints,
+    workspaces,
+  }).listen({
     hostname: host,
     port,
   });

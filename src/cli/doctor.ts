@@ -6,6 +6,7 @@ import { memoryDir } from "../server/memory/memory-store";
 import { redactResolved, resolveProvider, type ProviderRegistry } from "../server/provider";
 import { jejakHome, loadRegistry, providersPath } from "../server/provider-store";
 import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
+import { scanWorkspaceFiles, workspacesDir } from "../server/workspaces/workspace-files";
 import { VERSION } from "../shared/version";
 
 export type CheckStatus = "ok" | "peringatan" | "gagal";
@@ -256,6 +257,42 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
       if (loose) issues.push("izin lebih longgar dari 700; sarankan chmod 700");
       checks.push({
         name: "Memory",
+        status: loose ? "peringatan" : "ok",
+        detail: issues.join("; "),
+      });
+    }
+  }
+
+  if (env.JEJAK_WORKSPACES?.trim() === "0") {
+    checks.push({
+      name: "Workspace",
+      status: "peringatan",
+      detail: "dimatikan (JEJAK_WORKSPACES=0)",
+    });
+  } else {
+    const dir = workspacesDir(env);
+    let dirInfo: Awaited<ReturnType<typeof stat>> | null = null;
+    try {
+      dirInfo = await stat(dir);
+      if (!dirInfo.isDirectory()) dirInfo = null;
+    } catch {
+      dirInfo = null;
+    }
+
+    if (dirInfo === null) {
+      checks.push({
+        name: "Workspace",
+        status: "ok",
+        detail: `${dir} belum ada; dibuat saat workspace pertama disimpan`,
+      });
+    } else {
+      const scanned = await scanWorkspaceFiles(dir);
+      const loose = (dirInfo.mode & 0o077) !== 0;
+      const issues = [
+        `${dir}; ${scanned.items.length} workspace; ${scanned.problems.length} problems; ${loose ? "izin lebih longgar dari 700; sarankan chmod 700" : "izin 700"}`,
+      ];
+      checks.push({
+        name: "Workspace",
         status: loose ? "peringatan" : "ok",
         detail: issues.join("; "),
       });

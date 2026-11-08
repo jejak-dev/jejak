@@ -448,6 +448,73 @@ test("memory: dimatikan lewat JEJAK_MEMORY=0 dan tetap exit 0", async () => {
   expect(logged.some((line) => line.includes("PERINGATAN  Memory"))).toBe(true);
 });
 
+test("workspace: folder belum ada", async () => {
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const workspace = find(checks, "Workspace");
+  expect(workspace.status).toBe("ok");
+  expect(workspace.detail).toContain(join(homeDir, "workspaces"));
+  expect(workspace.detail).toContain("belum ada");
+});
+
+test("workspace: ada berkas dan berkas rusak dihitung problems", async () => {
+  const { WorkspaceService } = await import("../src/server/workspaces/workspace-service");
+  const service = new WorkspaceService({ dir: join(homeDir, "workspaces") });
+  await service.create({ name: "Kantor" });
+  await writeFile(join(homeDir, "workspaces", `${crypto.randomUUID()}.json`), "rusak", {
+    mode: 0o600,
+  });
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const workspace = find(checks, "Workspace");
+  expect(workspace.status).toBe("ok");
+  expect(workspace.detail).toContain("1 workspace");
+  expect(workspace.detail).toContain("1 problems");
+  expect(workspace.detail).toContain("izin 700");
+});
+
+test("workspace: izin folder longgar memberi peringatan", async () => {
+  await mkdir(join(homeDir, "workspaces"), { recursive: true, mode: 0o755 });
+  await chmod(join(homeDir, "workspaces"), 0o755);
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const workspace = find(checks, "Workspace");
+  expect(workspace.status).toBe("peringatan");
+  expect(workspace.detail).toContain("chmod 700");
+});
+
+test("workspace: dimatikan lewat JEJAK_WORKSPACES=0 dan tetap exit 0", async () => {
+  const logged: string[] = [];
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir, JEJAK_WORKSPACES: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const workspace = find(checks, "Workspace");
+  expect(workspace.status).toBe("peringatan");
+  expect(workspace.detail).toContain("dimatikan");
+
+  const code = await runDoctor({
+    env: { JEJAK_HOME: homeDir, JEJAK_WORKSPACES: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    log: (line) => logged.push(line),
+  });
+  expect(code).toBe(0);
+  expect(logged.some((line) => line.includes("PERINGATAN  Workspace"))).toBe(true);
+});
+
 test("checkpoint: folder ada berisi sesi", async () => {
   await mkdir(join(homeDir, "checkpoints", "s_abcdef12"), { recursive: true, mode: 0o700 });
   await writeFile(join(homeDir, "checkpoints", "s_abcdef12", "index.json"), "[]\n", {
