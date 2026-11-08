@@ -109,6 +109,29 @@ describe("SqliteSessionStore", () => {
     store.close();
   });
 
+  test("workspaceId dan workspaceName bertahan lewat penyimpanan ulang", () => {
+    const store = new SqliteSessionStore(":memory:");
+    store.saveSession(info("s_1", { workspaceId: "ws-1", workspaceName: "Kantor" }), undefined);
+    store.saveSession(info("s_1", { workspaceId: "ws-1", workspaceName: "Kantor", title: "Ubah" }), undefined);
+
+    const sessions = store.loadSessions();
+    expect(sessions[0]?.info.workspaceId).toBe("ws-1");
+    expect(sessions[0]?.info.workspaceName).toBe("Kantor");
+    expect(sessions[0]?.info.title).toBe("Ubah");
+    store.close();
+  });
+
+  test("sesi lama tanpa field workspace tetap termuat", () => {
+    const store = new SqliteSessionStore(":memory:");
+    store.saveSession(info("s_lama"), undefined);
+
+    const sessions = store.loadSessions();
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]?.info.workspaceId).toBeUndefined();
+    expect(sessions[0]?.info.workspaceName).toBeUndefined();
+    store.close();
+  });
+
   test("baris JSON rusak dilewati tanpa menggagalkan seluruhnya", async () => {
     const path = join(dir, "sessions.db");
     const store = new SqliteSessionStore(path);

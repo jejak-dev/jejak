@@ -73,6 +73,25 @@ export function createApp(options: CreateAppOptions = {}) {
       store: options.sessionStore,
       memoryBridge: memoryBridge?.bridge,
       checkpoints,
+      workspaces:
+        options.workspaces === undefined
+          ? undefined
+          : {
+              get: async (id) => {
+                const view = await options.workspaces!.get(id);
+                if (view === undefined || view === null) return undefined;
+                return {
+                  id: view.id,
+                  name: view.name,
+                  repos: view.repos.map((repo) => ({
+                    name: repo.name,
+                    path: repo.path,
+                    kind: repo.card.kind,
+                    missing: repo.missing,
+                  })),
+                };
+              },
+            },
     });
 
   let app = new Elysia()

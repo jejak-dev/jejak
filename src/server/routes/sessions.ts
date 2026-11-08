@@ -76,6 +76,10 @@ function parseCreateBody(body: unknown): CreateSessionInput {
     }
     input.permissionMode = record.permissionMode;
   }
+  if (record.workspaceId !== undefined) {
+    // Tipe tetap divalidasi di manager agar galatnya seragam.
+    input.workspaceId = record.workspaceId as string;
+  }
   return input;
 }
 

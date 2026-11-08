@@ -215,3 +215,27 @@ test("penanda tanpa memory memakai perilaku lama", async () => {
     "result",
   ]);
 });
+
+test("workspace menambahkan satu event teks di awal", async () => {
+  const events = await collect(
+    createMockRunner().run({
+      ...baseInput(),
+      workspace: {
+        name: "Kantor",
+        repos: [
+          { name: "api", path: "/tmp/api", kind: "backend" },
+          { name: "web", path: "/tmp/web", kind: "frontend" },
+        ],
+        additionalDirectories: ["/tmp/web"],
+      },
+    }),
+  );
+
+  expect(events[0]).toEqual({ type: "text", text: "Workspace Kantor: 2 repo." });
+  expect(events[events.length - 1]?.type).toBe("result");
+});
+
+test("tanpa workspace tidak ada event teks workspace", async () => {
+  const events = await collect(createMockRunner().run(baseInput()));
+  expect(events[0]?.type).toBe("session");
+});

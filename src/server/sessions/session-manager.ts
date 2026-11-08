@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import {
   PERMISSION_EXPIRED_MESSAGE,
@@ -8,6 +8,7 @@ import {
   type PermissionDecision,
   type PermissionMode,
   type PermissionRequest,
+  type RunWorkspace,
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
 import type { MemoryBridge } from "../memory/memory-bridge";
@@ -32,6 +33,8 @@ export interface SessionInfo {
   eventCount: number;
   pendingPermissions: number;
   queued: number;
+  workspaceId?: string;
+  workspaceName?: string;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
 }
 
@@ -42,10 +45,30 @@ export interface SequencedEvent {
 
 export interface CreateSessionInput {
   prompt: string;
-  cwd: string;
+  /** Wajib kecuali `workspaceId` diberikan; saat itu default-nya repo utama. */
+  cwd?: string;
   title?: string;
   selection?: ProviderSelection;
   permissionMode?: string;
+  workspaceId?: string;
+}
+
+export interface WorkspaceResolverRepo {
+  name: string;
+  path: string;
+  kind: string;
+  missing: boolean;
+}
+
+export interface WorkspaceResolverView {
+  id: string;
+  name: string;
+  repos: WorkspaceResolverRepo[];
+}
+
+/** Antarmuka sempit ke layanan workspace; implementasi boleh adaptor di `index.ts`. */
+export interface WorkspaceResolver {
+  get(id: string): Promise<WorkspaceResolverView | undefined>;
 }
 
 export interface SessionManagerCheckpoints {
@@ -69,6 +92,7 @@ export interface SessionManagerOptions {
   store?: SessionStore;
   memoryBridge?: MemoryBridge;
   checkpoints?: SessionManagerCheckpoints;
+  workspaces?: WorkspaceResolver;
 }
 
 export class SessionError extends Error {
@@ -104,6 +128,8 @@ interface SessionRecord {
   queue: string[];
   /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
   turns: number;
+  /** Peringatan workspace tak tersedia hanya sekali per sesi. */
+  workspaceWarned?: boolean;
 }
 
 const CHECKPOINT_TIMEOUT_MS = 30_000;
@@ -195,6 +221,7 @@ export class SessionManager {
   private readonly store: SessionStore | undefined;
   private readonly memoryBridge: MemoryBridge | undefined;
   private readonly checkpoints: SessionManagerCheckpoints | undefined;
+  private readonly workspaces: WorkspaceResolver | undefined;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
@@ -211,6 +238,7 @@ export class SessionManager {
     this.store = options.store;
     this.memoryBridge = options.memoryBridge;
     this.checkpoints = options.checkpoints;
+    this.workspaces = options.workspaces;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -358,6 +386,10 @@ export class SessionManager {
     if (resolved.model !== undefined) {
       info.model = resolved.model;
     }
+    if (validated.workspaceId !== undefined) {
+      info.workspaceId = validated.workspaceId;
+      info.workspaceName = validated.workspaceName;
+    }
 
     let settle: () => void = () => {};
     const done = new Promise<void>((resolve) => {
@@ -498,6 +530,8 @@ export class SessionManager {
     cwd: string;
     title: string;
     permissionMode: SessionPermissionMode;
+    workspaceId?: string;
+    workspaceName?: string;
   }> {
     if (typeof input.prompt !== "string") {
       throw new SessionError("Prompt harus berupa teks.", "tidak-valid");
@@ -513,21 +547,40 @@ export class SessionManager {
       );
     }
 
-    if (typeof input.cwd !== "string" || input.cwd.trim() === "") {
-      throw new SessionError("cwd harus berupa path absolut yang ada.", "tidak-valid");
+    const workspace = await this.resolveWorkspaceForCreate(input.workspaceId);
+
+    const rawCwd = input.cwd;
+    const cwdMissing = typeof rawCwd !== "string" || rawCwd.trim() === "";
+    let cwd: string;
+    if (cwdMissing) {
+      if (workspace === undefined) {
+        throw new SessionError("cwd harus berupa path absolut yang ada.", "tidak-valid");
+      }
+      cwd = workspace.primary.path;
+    } else {
+      cwd = (rawCwd as string).trim();
+      if (!isAbsolute(cwd)) {
+        throw new SessionError("cwd harus berupa path absolut.", "tidak-valid");
+      }
+      let cwdIsDirectory = false;
+      try {
+        cwdIsDirectory = (await stat(cwd)).isDirectory();
+      } catch {
+        cwdIsDirectory = false;
+      }
+      if (!cwdIsDirectory) {
+        throw new SessionError(
+          `cwd "${cwd}" tidak ditemukan atau bukan direktori.`,
+          "tidak-valid",
+        );
+      }
     }
-    const cwd = input.cwd.trim();
-    if (!isAbsolute(cwd)) {
-      throw new SessionError("cwd harus berupa path absolut.", "tidak-valid");
-    }
-    let cwdIsDirectory = false;
-    try {
-      cwdIsDirectory = (await stat(cwd)).isDirectory();
-    } catch {
-      cwdIsDirectory = false;
-    }
-    if (!cwdIsDirectory) {
-      throw new SessionError(`cwd "${cwd}" tidak ditemukan atau bukan direktori.`, "tidak-valid");
+
+    if (workspace !== undefined && !cwdMissing) {
+      const matches = await this.cwdMatchesWorkspace(cwd, workspace.view);
+      if (!matches) {
+        throw new SessionError("cwd bukan salah satu repo workspace.", "tidak-valid");
+      }
     }
 
     let permissionMode: SessionPermissionMode = "default";
@@ -547,7 +600,85 @@ export class SessionManager {
       title = collapseWhitespace(prompt).slice(0, 60).trimEnd();
     }
 
-    return { prompt, cwd, title, permissionMode };
+    const result: {
+      prompt: string;
+      cwd: string;
+      title: string;
+      permissionMode: SessionPermissionMode;
+      workspaceId?: string;
+      workspaceName?: string;
+    } = { prompt, cwd, title, permissionMode };
+    if (workspace !== undefined) {
+      result.workspaceId = workspace.view.id;
+      result.workspaceName = workspace.view.name;
+    }
+    return result;
+  }
+
+  private async resolveWorkspaceForCreate(
+    workspaceId: unknown,
+  ): Promise<
+    | {
+        view: WorkspaceResolverView;
+        primary: WorkspaceResolverRepo;
+      }
+    | undefined
+  > {
+    if (workspaceId === undefined) {
+      return undefined;
+    }
+    if (typeof workspaceId !== "string" || this.workspaces === undefined) {
+      throw new SessionError("Workspace tidak ditemukan.", "tidak-valid");
+    }
+    const id = workspaceId.trim();
+    if (id === "") {
+      throw new SessionError("Workspace tidak ditemukan.", "tidak-valid");
+    }
+
+    let view: WorkspaceResolverView | undefined;
+    try {
+      view = await this.workspaces.get(id);
+    } catch {
+      view = undefined;
+    }
+    if (view === undefined) {
+      throw new SessionError("Workspace tidak ditemukan.", "tidak-valid");
+    }
+
+    const primary = view.repos[0];
+    if (primary === undefined) {
+      throw new SessionError(
+        `Workspace "${view.name}" tidak punya repo utama; tentukan cwd secara eksplisit.`,
+        "tidak-valid",
+      );
+    }
+    if (primary.missing) {
+      throw new SessionError(
+        `Repo utama "${primary.name}" pada workspace "${view.name}" tidak ditemukan.`,
+        "tidak-valid",
+      );
+    }
+    return { view, primary };
+  }
+
+  private async cwdMatchesWorkspace(cwd: string, view: WorkspaceResolverView): Promise<boolean> {
+    let cwdReal: string;
+    try {
+      cwdReal = await realpath(cwd);
+    } catch {
+      return false;
+    }
+    for (const repo of view.repos) {
+      if (repo.missing) continue;
+      try {
+        if ((await realpath(repo.path)) === cwdReal) {
+          return true;
+        }
+      } catch {
+        // Repo yang menghilang dianggap tidak cocok.
+      }
+    }
+    return false;
   }
 
   private validateMessage(text: string): string {
@@ -666,6 +797,54 @@ export class SessionManager {
     }
   }
 
+  private async workspaceForRun(record: SessionRecord): Promise<RunWorkspace | undefined> {
+    const id = record.info.workspaceId;
+    const resolver = this.workspaces;
+    if (id === undefined || resolver === undefined) {
+      return undefined;
+    }
+
+    let view: WorkspaceResolverView | undefined;
+    try {
+      view = await resolver.get(id);
+    } catch {
+      view = undefined;
+    }
+    if (view === undefined) {
+      if (record.workspaceWarned !== true) {
+        record.workspaceWarned = true;
+        console.warn("Workspace sesi tidak tersedia; sesi lanjut tanpa konteks workspace.");
+      }
+      return undefined;
+    }
+
+    const cwdReal = await this.realpathOrSelf(record.info.cwd);
+    const additionalDirectories: string[] = [];
+    for (const repo of view.repos) {
+      if (repo.missing || additionalDirectories.length >= 20) continue;
+      if ((await this.realpathOrSelf(repo.path)) === cwdReal) continue;
+      additionalDirectories.push(repo.path);
+    }
+
+    return {
+      name: view.name,
+      repos: view.repos.map((repo) => ({
+        name: repo.name,
+        path: repo.path,
+        kind: repo.kind,
+      })),
+      additionalDirectories,
+    };
+  }
+
+  private async realpathOrSelf(path: string): Promise<string> {
+    try {
+      return await realpath(path);
+    } catch {
+      return path;
+    }
+  }
+
   private async execute(
     record: SessionRecord,
     prompt: string,
@@ -685,6 +864,12 @@ export class SessionManager {
     };
     if (resumeSessionId !== undefined) {
       input.resumeSessionId = resumeSessionId;
+    }
+    if (record.info.workspaceId !== undefined && this.workspaces !== undefined) {
+      const workspace = await this.workspaceForRun(record);
+      if (workspace !== undefined) {
+        input.workspace = workspace;
+      }
     }
 
     let closeMemory: (() => void) | undefined;

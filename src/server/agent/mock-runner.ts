@@ -65,6 +65,13 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
       const signal = input.signal;
       let hasResult = false;
 
+      if (input.workspace !== undefined) {
+        yield {
+          type: "text",
+          text: `Workspace ${input.workspace.name}: ${input.workspace.repos.length} repo.`,
+        };
+      }
+
       if (input.requestPermission !== undefined && input.prompt.includes("[izin]")) {
         let allowed = false;
         try {

@@ -515,3 +515,86 @@ test("token memory tidak muncul di event atau pesan galat", async () => {
     expect(error.message).toContain("***");
   }
 });
+
+test("workspace menambahkan additionalDirectories dan satu kalimat di systemPrompt", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({
+        cwd: "/tmp/kantor/api",
+        workspace: {
+          name: "Kantor",
+          repos: [
+            { name: "api", path: "/tmp/kantor/api", kind: "backend" },
+            { name: "web", path: "/tmp/kantor/web", kind: "frontend" },
+          ],
+          additionalDirectories: ["/tmp/kantor/web"],
+        },
+      }),
+    ),
+  );
+
+  expect(received?.additionalDirectories).toEqual(["/tmp/kantor/web"]);
+  const append = (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(append).toContain('workspace "Kantor"');
+  expect(append).toContain("api (backend) di /tmp/kantor/api");
+  expect(append).toContain("web (frontend) di /tmp/kantor/web");
+  expect(append).toContain("Kartu service tidak disertakan di sini.");
+});
+
+test("workspace kosong tidak menambah additionalDirectories", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({
+        workspace: { name: "Solo", repos: [], additionalDirectories: [] },
+      }),
+    ),
+  );
+
+  expect("additionalDirectories" in (received ?? {})).toBe(false);
+  const append = (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(append).toContain('workspace "Solo"');
+});
+
+test("nama workspace/repo dengan karakter kontrol disanitasi di append", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({
+        workspace: {
+          name: "Kantor\nBaru",
+          repos: [{ name: "api\rx", path: "/tmp/api\x00", kind: "back\nend" }],
+          additionalDirectories: [],
+        },
+      }),
+    ),
+  );
+
+  const append = (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(append).not.toContain("\n");
+  expect(append).not.toContain("\r");
+  expect(append).not.toContain("\x00");
+  expect(append).toContain("Kantor Baru");
+  expect(append).toContain("api x");
+});
+
+test("tanpa workspace opsi SDK tidak berubah dan append tanpa kalimat workspace", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+
+  expect("additionalDirectories" in (received ?? {})).toBe(false);
+  const append = (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(append).not.toContain("workspace");
+  expect(append).not.toContain("Kartu service");
+});

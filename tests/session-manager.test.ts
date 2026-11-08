@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRunner } from "../src/server/agent";
@@ -926,6 +926,229 @@ describe("SessionManager.send", () => {
     });
     const events = await collect(mgr.events(info.id));
     expect(events.filter((item) => item.event.type === "result")).toHaveLength(2);
+  });
+});
+
+describe("SessionManager + workspace", () => {
+  interface RepoSpec {
+    name: string;
+    path: string;
+    kind: string;
+    missing?: boolean;
+  }
+
+  interface WorkspaceSpec {
+    id: string;
+    name: string;
+    repos: RepoSpec[];
+  }
+
+  function fakeResolver(initial: WorkspaceSpec[]): {
+    resolver: import("../src/server/sessions/session-manager").WorkspaceResolver;
+    list: WorkspaceSpec[];
+  } {
+    const list = initial;
+    return {
+      list,
+      resolver: {
+        get: async (id) => {
+          const found = list.find((item) => item.id === id);
+          return found === undefined
+            ? undefined
+            : {
+                ...found,
+                repos: found.repos.map((repo) => ({ ...repo, missing: repo.missing ?? false })),
+              };
+        },
+      },
+    };
+  }
+
+  async function makeRepos(): Promise<{ root: string; repos: RepoSpec[] }> {
+    const root = await mkdtemp(join(tmpdir(), "jejak-ws-sesi-"));
+    const api = join(root, "api");
+    const web = join(root, "web");
+    await mkdir(api, { recursive: true });
+    await mkdir(web, { recursive: true });
+    return {
+      root,
+      repos: [
+        { name: "api", path: api, kind: "backend" },
+        { name: "web", path: web, kind: "frontend" },
+      ],
+    };
+  }
+
+  function recordingWorkspaceRunner(): {
+    runner: AgentRunner;
+    inputs: Array<{ workspace?: import("../src/server/agent").RunWorkspace }>;
+  } {
+    const inputs: Array<{ workspace?: import("../src/server/agent").RunWorkspace }> = [];
+    return {
+      inputs,
+      runner: {
+        async *run(input) {
+          inputs.push({ workspace: input.workspace });
+          yield { type: "session", sessionId: "sdk-ws" };
+          yield { type: "result", ok: true };
+        },
+      },
+    };
+  }
+
+  test("workspace valid tanpa cwd memakai repo utama", async () => {
+    const { root, repos } = await makeRepos();
+    const { resolver } = fakeResolver([{ id: "ws-1", name: "Kantor", repos }]);
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]), workspaces: resolver });
+
+    const info = await mgr.create({ prompt: "halo", cwd: "", workspaceId: "ws-1" });
+    expect(info.cwd).toBe(repos[0]!.path);
+    expect(info.workspaceId).toBe("ws-1");
+    expect(info.workspaceName).toBe("Kantor");
+    await mgr.done(info.id);
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("cwd repo kedua diterima, cwd di luar workspace ditolak", async () => {
+    const { root, repos } = await makeRepos();
+    const { resolver } = fakeResolver([{ id: "ws-1", name: "Kantor", repos }]);
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]), workspaces: resolver });
+
+    const second = await createOk(mgr, { cwd: repos[1]!.path, workspaceId: "ws-1" });
+    expect(second.cwd).toBe(repos[1]!.path);
+    await mgr.done(second.id);
+
+    const outside = await mkdtemp(join(tmpdir(), "jejak-ws-luar-"));
+    await expect(
+      createOk(mgr, { cwd: outside, workspaceId: "ws-1" }),
+    ).rejects.toMatchObject({ code: "tidak-valid", message: "cwd bukan salah satu repo workspace." });
+
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  test("workspaceId tak ada, tipe salah, atau tanpa resolver ditolak", async () => {
+    const { root, repos } = await makeRepos();
+    const { resolver } = fakeResolver([{ id: "ws-1", name: "Kantor", repos }]);
+    const withResolver = manager({ runner: scriptedRunner([]), workspaces: resolver });
+    const without = manager({ runner: scriptedRunner([]) });
+
+    for (const workspaceId of ["tidak-ada", 42, ""]) {
+      await expect(createOk(withResolver, { workspaceId })).rejects.toMatchObject({
+        code: "tidak-valid",
+        message: "Workspace tidak ditemukan.",
+      });
+    }
+    await expect(createOk(without, { workspaceId: "ws-1" })).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "Workspace tidak ditemukan.",
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("repo utama missing ditolak", async () => {
+    const { root, repos } = await makeRepos();
+    const { resolver } = fakeResolver([
+      { id: "ws-1", name: "Kantor", repos: [{ ...repos[0]!, missing: true }, repos[1]!] },
+    ]);
+    const mgr = manager({ runner: scriptedRunner([]), workspaces: resolver });
+
+    await expect(mgr.create({ prompt: "halo", cwd: "", workspaceId: "ws-1" })).rejects.toMatchObject({
+      code: "tidak-valid",
+    });
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("tanpa workspaceId cwd tetap wajib", async () => {
+    const mgr = manager({ runner: scriptedRunner([]) });
+    await expect(mgr.create({ prompt: "halo", cwd: "" })).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "cwd harus berupa path absolut yang ada.",
+    });
+  });
+
+  test("RunInput.workspace di giliran pertama dan lanjutan, workspace dihapus di antaranya", async () => {
+    const { root, repos } = await makeRepos();
+    const fake = fakeResolver([{ id: "ws-1", name: "Kantor", repos }]);
+    const recorded = recordingWorkspaceRunner();
+    const mgr = manager({ runner: recorded.runner, workspaces: fake.resolver });
+
+    const info = await createOk(mgr, { cwd: repos[0]!.path, workspaceId: "ws-1" });
+    await mgr.done(info.id);
+
+    expect(recorded.inputs[0]?.workspace).toEqual({
+      name: "Kantor",
+      repos: [
+        { name: "api", path: repos[0]!.path, kind: "backend" },
+        { name: "web", path: repos[1]!.path, kind: "frontend" },
+      ],
+      additionalDirectories: [repos[1]!.path],
+    });
+
+    await mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+    expect(recorded.inputs[1]?.workspace?.additionalDirectories).toEqual([repos[1]!.path]);
+
+    fake.list.length = 0;
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    await mgr.send(info.id, "lagi");
+    await mgr.done(info.id);
+    expect(recorded.inputs[2]).toEqual({ workspace: undefined });
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(warn.mock.calls).toHaveLength(1);
+    warn.mockRestore();
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("additionalDirectories tanpa cwd, tanpa repo missing, dan maksimal 20", async () => {
+    const root = await mkdtemp(join(tmpdir(), "jejak-ws-banyak-"));
+    const repos: RepoSpec[] = [];
+    for (let index = 0; index < 25; index += 1) {
+      const path = join(root, `repo-${index}`);
+      await mkdir(path, { recursive: true });
+      repos.push({ name: `repo-${index}`, path, kind: "lainnya" });
+    }
+    const hidden = join(root, "hilang");
+    repos.splice(10, 0, { name: "hilang", path: hidden, kind: "lainnya", missing: true });
+
+    const fake = fakeResolver([{ id: "ws-1", name: "Besar", repos }]);
+    const recorded = recordingWorkspaceRunner();
+    const mgr = manager({ runner: recorded.runner, workspaces: fake.resolver });
+
+    const info = await createOk(mgr, { cwd: repos[0]!.path, workspaceId: "ws-1" });
+    await mgr.done(info.id);
+
+    const workspace = recorded.inputs[0]!.workspace!;
+    expect(workspace.additionalDirectories).toHaveLength(20);
+    expect(new Set(workspace.additionalDirectories).size).toBe(20);
+    expect(workspace.additionalDirectories).not.toContain(repos[0]!.path);
+    expect(workspace.additionalDirectories).not.toContain(hidden);
+    expect(workspace.repos).toHaveLength(26);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("info workspace bertahan lewat store", async () => {
+    const path = join(dir, "sessions.db");
+    const store = new SqliteSessionStore(path);
+    const fake = fakeResolver([
+      { id: "ws-1", name: "Kantor", repos: [{ name: "api", path: dir, kind: "backend" }] },
+    ]);
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]), store, workspaces: fake.resolver });
+    const info = await createOk(mgr, { workspaceId: "ws-1" });
+    await mgr.done(info.id);
+    store.close();
+
+    const reopened = new SqliteSessionStore(path);
+    const listed = reopened.loadSessions()[0]!;
+    expect(listed.info.workspaceId).toBe("ws-1");
+    expect(listed.info.workspaceName).toBe("Kantor");
+
+    const restored = manager({ runner: scriptedRunner([]), store: reopened });
+    expect(restored.get(info.id)?.workspaceId).toBe("ws-1");
+    expect(restored.get(info.id)?.workspaceName).toBe("Kantor");
+    reopened.close();
   });
 });
 

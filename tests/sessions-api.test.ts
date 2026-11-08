@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../src/server";
 import { createMockRunner, type AgentRunner } from "../src/server/agent";
 import { SessionManager } from "../src/server/sessions/session-manager";
+import { WorkspaceService } from "../src/server/workspaces/workspace-service";
 
 const ENV = { MOCK: "true" };
 const KEY = "sk-rahasia-123";
@@ -40,12 +41,19 @@ afterEach(async () => {
 
 type App = ReturnType<typeof createApp>;
 
-function makeApp(options: { runner?: AgentRunner; sessions?: SessionManager } = {}): App {
+function makeApp(
+  options: {
+    runner?: AgentRunner;
+    sessions?: SessionManager;
+    workspaces?: WorkspaceService;
+  } = {},
+): App {
   return createApp({
     providersPath: providersFile,
     env: ENV,
     runner: options.runner ?? createMockRunner(),
     ...(options.sessions === undefined ? {} : { sessions: options.sessions }),
+    ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
   });
 }
 
@@ -319,6 +327,97 @@ describe("GET /api/sessions/:id/events (SSE)", () => {
     const { raw } = await readStream(await req(server, "GET", `/api/sessions/${id}/events`));
     expect(raw).not.toContain(KEY);
     expect(raw).toContain("***");
+  });
+});
+
+describe("POST /api/sessions dengan workspace", () => {
+  async function workspaceApp(): Promise<{ server: App; workspaceId: string; root: string }> {
+    const root = await mkdtemp(join(tmpdir(), "jejak-sessions-ws-"));
+    const api = join(root, "api");
+    const web = join(root, "web");
+    await mkdir(api, { recursive: true });
+    await mkdir(web, { recursive: true });
+    const service = new WorkspaceService({ dir: join(root, "workspaces") });
+    const ws = await service.create({
+      name: "Kantor",
+      repos: [
+        { name: "api", path: api },
+        { name: "web", path: web },
+      ],
+    });
+    return { server: makeApp({ workspaces: service }), workspaceId: ws.id, root };
+  }
+
+  test("tanpa cwd memakai repo utama dan event memuat nama workspace", async () => {
+    const { server, workspaceId, root } = await workspaceApp();
+
+    const res = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo workspace", workspaceId },
+    });
+    expect(res.status).toBe(201);
+    const data = (await res.json()) as {
+      session: { id: string; cwd: string; workspaceId?: string; workspaceName?: string };
+    };
+    expect(data.session.workspaceId).toBe(workspaceId);
+    expect(data.session.workspaceName).toBe("Kantor");
+    expect(data.session.cwd).toBe(await realpath(join(root, "api")));
+
+    const detail = await req(server, "GET", `/api/sessions/${data.session.id}`);
+    const detailData = (await detail.json()) as {
+      session: { workspaceId?: string; workspaceName?: string };
+    };
+    expect(detailData.session.workspaceId).toBe(workspaceId);
+    expect(detailData.session.workspaceName).toBe("Kantor");
+
+    const { frames } = await readStream(
+      await req(server, "GET", `/api/sessions/${data.session.id}/events`),
+    );
+    const events = frames
+      .filter((frame) => frame.event === "agent")
+      .map((frame) => JSON.parse(frame.data ?? "{}") as { type: string; text?: string });
+    const first = events.find((event) => event.type === "text");
+    expect(first?.text).toBe("Workspace Kantor: 2 repo.");
+    expect(events.some((event) => event.type === "result")).toBe(true);
+
+    await rm(root, { recursive: true, force: true });
+  });
+
+  test("cwd di luar workspace dan workspaceId tak dikenal ditolak 400", async () => {
+    const { server, workspaceId, root } = await workspaceApp();
+
+    const outside = await mkdtemp(join(tmpdir(), "jejak-sessions-luar-"));
+    const outsideRes = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo", cwd: outside, workspaceId },
+    });
+    expect(outsideRes.status).toBe(400);
+    const outsideData = (await outsideRes.json()) as { error: string };
+    expect(outsideData.error).toBe("cwd bukan salah satu repo workspace.");
+
+    const unknownRes = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo", workspaceId: "00000000-0000-4000-8000-000000000000" },
+    });
+    expect(unknownRes.status).toBe(400);
+    const unknownData = (await unknownRes.json()) as { error: string };
+    expect(unknownData.error).toBe("Workspace tidak ditemukan.");
+
+    const typedRes = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo", workspaceId: 42 },
+    });
+    expect(typedRes.status).toBe(400);
+
+    await rm(root, { recursive: true, force: true });
+    await rm(outside, { recursive: true, force: true });
+  });
+
+  test("cwd repo kedua diterima", async () => {
+    const { server, workspaceId, root } = await workspaceApp();
+    const res = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo", cwd: join(root, "web"), workspaceId },
+    });
+    expect(res.status).toBe(201);
+    const data = (await res.json()) as { session: { cwd: string } };
+    expect(data.session.cwd).toBe(join(root, "web"));
+    await rm(root, { recursive: true, force: true });
   });
 });
 

@@ -48,6 +48,12 @@ export interface RunMemory {
   call(name: string, args: unknown): Promise<{ text: string; isError: boolean }>;
 }
 
+export interface RunWorkspace {
+  name: string;
+  repos: { name: string; path: string; kind: string }[];
+  additionalDirectories: string[];
+}
+
 export interface RunInput {
   prompt: string;
   cwd: string;
@@ -57,6 +63,7 @@ export interface RunInput {
   requestPermission?: PermissionHandler;
   resumeSessionId?: string;
   memory?: RunMemory;
+  workspace?: RunWorkspace;
 }
 
 export interface AgentRunner {

@@ -110,6 +110,16 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       if (memory !== undefined) {
         append = `${append} ${sanitizeCwd(memory.indexLine)}`;
       }
+      const workspace = input.workspace;
+      if (workspace !== undefined) {
+        const repos = workspace.repos
+          .map(
+            (repo) =>
+              `${sanitizeCwd(repo.name)} (${sanitizeCwd(repo.kind)}) di ${sanitizeCwd(repo.path)}`,
+          )
+          .join(", ");
+        append = `${append} Sesi ini bagian dari workspace "${sanitizeCwd(workspace.name)}" dengan repo: ${repos}; folder kerja utama tetap ${sanitizeCwd(input.cwd)}. Kartu service tidak disertakan di sini.`;
+      }
 
       const sdkOptions: Record<string, unknown> = {
         cwd: input.cwd,
@@ -138,6 +148,9 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       }
       if (input.resumeSessionId !== undefined) {
         sdkOptions.resume = input.resumeSessionId;
+      }
+      if (workspace !== undefined && workspace.additionalDirectories.length > 0) {
+        sdkOptions.additionalDirectories = workspace.additionalDirectories;
       }
 
       // Add canUseTool handler if requestPermission is provided
