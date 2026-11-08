@@ -13,25 +13,42 @@ import {
   useHashRoute,
   useInfo,
   useMemoryCounts,
+  useNotifications,
   useRegistry,
   useSessions,
   useTimeline,
   useWorkspaces,
 } from "./hooks";
 import { createApiClient } from "./lib/api";
+import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs } from "./lib/panel-prefs";
 
 export function App() {
   const api = useMemo(() => createApiClient(), []);
   const { sessionId: selectedId, view: routeView, navigateToSession: navigate } = useHashRoute();
   const { info } = useInfo(api);
-  const { sessions, refresh } = useSessions(api);
+  const [notifyPrefs, setNotifyPrefs] = useState<NotifyPrefs>(() => readNotifyPrefs());
+  const { sessions, refresh } = useSessions(api, undefined, notifyPrefs.enabled);
   const { view, reload } = useRegistry(api);
   const { proposed: memoryProposed, refresh: refreshMemory } = useMemoryCounts(api, routeView);
   const { items: workspaces } = useWorkspaces(api);
 
   const selected = sessions.find((session) => session.id === selectedId);
   const timeline = useTimeline(api, selected);
+
+  const onOpenSession = useCallback(
+    (id: string): void => {
+      navigate(id);
+    },
+    [navigate],
+  );
+
+  useNotifications(sessions, notifyPrefs, onOpenSession);
+
+  const onNotifyPrefsChange = useCallback((prefs: NotifyPrefs): void => {
+    setNotifyPrefs(prefs);
+    writeNotifyPrefs(prefs);
+  }, []);
 
   const [interruptError, setInterruptError] = useState<string | undefined>(undefined);
   const [interrupting, setInterrupting] = useState(false);
@@ -198,6 +215,8 @@ export function App() {
         onRename={onRenameSession}
         onArchive={onArchiveSession}
         onDelete={onDeleteSession}
+        notifyPrefs={notifyPrefs}
+        onNotifyPrefsChange={onNotifyPrefsChange}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
 

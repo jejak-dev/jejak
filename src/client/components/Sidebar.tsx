@@ -3,6 +3,7 @@ import type { SessionInfo } from "../../server/sessions/session-manager";
 import { formatAgo, groupSessions } from "../lib/format";
 import { showsBypassMarker } from "../lib/permission-mode";
 import { canMutate, filterSessions, splitArchived, validateTitle } from "../lib/sessions";
+import { notificationSupport, type NotifyPrefs } from "../lib/notify";
 import { Icon } from "./Icon";
 
 export interface SidebarProps {
@@ -21,6 +22,8 @@ export interface SidebarProps {
   onRename: (id: string, title: string) => Promise<void>;
   onArchive: (id: string, archived: boolean) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  notifyPrefs: NotifyPrefs;
+  onNotifyPrefsChange: (prefs: NotifyPrefs) => void;
 }
 
 function dotClass(session: SessionInfo): string {
@@ -59,6 +62,8 @@ export function Sidebar({
   onRename,
   onArchive,
   onDelete,
+  notifyPrefs,
+  onNotifyPrefsChange,
 }: SidebarProps) {
   const now = new Date();
   const [query, setQuery] = useState("");
@@ -67,6 +72,8 @@ export function Sidebar({
   const [draft, setDraft] = useState("");
   const [rowError, setRowError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notifyError, setNotifyError] = useState<string | undefined>(undefined);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const renameRef = useRef<HTMLInputElement | null>(null);
@@ -406,6 +413,38 @@ export function Sidebar({
     );
   };
 
+  const toggleNotify = async (): Promise<void> => {
+    setNotifyError(undefined);
+    if (notifyPrefs.enabled) {
+      onNotifyPrefsChange({ enabled: false, sound: false });
+      return;
+    }
+    const support = notificationSupport();
+    if (support === "tidak-ada") {
+      setNotifyError("Browser ini tidak mendukung notifikasi.");
+      return;
+    }
+    let permission = support;
+    if (permission === "belum") {
+      try {
+        permission = (await Notification.requestPermission()) === "granted" ? "diizinkan" : "ditolak";
+      } catch {
+        permission = "ditolak";
+      }
+    }
+    if (permission !== "diizinkan") {
+      setNotifyError("Browser memblokir notifikasi. Izinkan di pengaturan situs.");
+      onNotifyPrefsChange({ enabled: false, sound: false });
+      return;
+    }
+    onNotifyPrefsChange({ ...notifyPrefs, enabled: true });
+  };
+
+  const toggleSound = (): void => {
+    if (!notifyPrefs.enabled) return;
+    onNotifyPrefsChange({ ...notifyPrefs, sound: !notifyPrefs.sound });
+  };
+
   return (
     <aside class="jk-sidebar" aria-label="Navigasi">
       <header class="jk-brand">
@@ -498,6 +537,35 @@ export function Sidebar({
           <span class="jk-foot-text">{activeProfileLabel ?? "Atur provider"}</span>
           <Icon name="gear" />
         </a>
+        <button
+          type="button"
+          class={`jk-foot-link jk-foot-btn${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
+          aria-expanded={notifyOpen}
+          onClick={() => {
+            setNotifyOpen((open) => !open);
+            setNotifyError(undefined);
+          }}
+        >
+          <Icon name="bell" />
+          <span class="jk-foot-text">Notifikasi</span>
+          <span class="jk-foot-count">{notifyPrefs.enabled ? "Aktif" : "Mati"}</span>
+        </button>
+        {notifyOpen && (
+          <div class="jk-notify-menu">
+            <button type="button" class="jk-link-btn" onClick={() => void toggleNotify()}>
+              Notifikasi desktop: {notifyPrefs.enabled ? "aktif" : "mati"}
+            </button>
+            <button
+              type="button"
+              class="jk-link-btn"
+              disabled={!notifyPrefs.enabled}
+              onClick={toggleSound}
+            >
+              Bunyi: {notifyPrefs.sound ? "aktif" : "mati"}
+            </button>
+            {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
+          </div>
+        )}
       </footer>
     </aside>
   );

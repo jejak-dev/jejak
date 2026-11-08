@@ -10,6 +10,13 @@ import {
   type AppView,
 } from "./lib/format";
 import { parseRegistryView, type RegistryView } from "./lib/registry-view";
+import {
+  detectEvents,
+  notificationSupport,
+  playBeep,
+  showNotification,
+  type NotifyPrefs,
+} from "./lib/notify";
 import { followSession } from "./lib/sse";
 import { reduceTimeline, startTimeline, type TimelineItem } from "./lib/timeline";
 
@@ -124,7 +131,11 @@ export interface SessionsState {
   refresh: () => Promise<void>;
 }
 
-export function useSessions(api: ApiClient, intervalMs = 3000): SessionsState {
+export function useSessions(
+  api: ApiClient,
+  intervalMs = 3000,
+  keepPolling = false,
+): SessionsState {
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [error, setError] = useState<string | undefined>(undefined);
   const requestRef = useRef(0);
@@ -150,7 +161,9 @@ export function useSessions(api: ApiClient, intervalMs = 3000): SessionsState {
       if (timer !== undefined) return;
       void refresh();
       timer = setInterval(() => {
-        if (document.visibilityState === "visible") {
+        // Saat notifikasi aktif, polling tetap jalan di tab tersembunyi agar
+        // peristiwa izin/selesai tidak terlewat.
+        if (keepPolling || document.visibilityState === "visible") {
           void refresh();
         }
       }, intervalMs);
@@ -163,7 +176,7 @@ export function useSessions(api: ApiClient, intervalMs = 3000): SessionsState {
     };
 
     const onVisibility = (): void => {
-      if (document.visibilityState === "visible") {
+      if (document.visibilityState === "visible" || keepPolling) {
         start();
       } else {
         stop();
@@ -171,7 +184,7 @@ export function useSessions(api: ApiClient, intervalMs = 3000): SessionsState {
     };
 
     document.addEventListener("visibilitychange", onVisibility);
-    if (document.visibilityState === "visible") {
+    if (document.visibilityState === "visible" || keepPolling) {
       start();
     }
 
@@ -179,7 +192,7 @@ export function useSessions(api: ApiClient, intervalMs = 3000): SessionsState {
       stop();
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [refresh, intervalMs]);
+  }, [refresh, intervalMs, keepPolling]);
 
   return useMemo(() => ({ sessions, error, refresh }), [sessions, error, refresh]);
 }
@@ -439,4 +452,32 @@ export function useSessionRepos(
   }, [api, sessionId, doneKey]);
 
   return useMemo(() => ({ repos }), [repos]);
+}
+
+/**
+ * Notifikasi sistem untuk peristiwa izin dan selesai saat tab tidak terlihat
+ * atau jendela tidak fokus. Daftar sebelumnya selalu diperbarui meski
+ * notifikasi tidak ditampilkan.
+ */
+export function useNotifications(
+  sessions: SessionInfo[],
+  prefs: NotifyPrefs,
+  onOpenSession: (id: string) => void,
+): void {
+  const previousRef = useRef<SessionInfo[] | undefined>(undefined);
+
+  useEffect(() => {
+    const previous = previousRef.current;
+    previousRef.current = sessions;
+    if (previous === undefined) return;
+    if (!prefs.enabled) return;
+    if (notificationSupport() !== "diizinkan") return;
+    const visible = document.visibilityState === "visible";
+    if (visible && document.hasFocus()) return;
+
+    for (const event of detectEvents(previous, sessions)) {
+      showNotification(event, () => onOpenSession(event.sessionId));
+      if (prefs.sound) playBeep();
+    }
+  }, [sessions, prefs, onOpenSession]);
 }

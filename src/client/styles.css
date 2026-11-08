@@ -655,6 +655,26 @@ code {
   white-space: nowrap;
 }
 
+.jk-foot-btn {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jk-notify-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 8px 6px;
+}
+
+.jk-notify-menu .jk-link-btn {
+  text-align: left;
+}
+
 /* Bilah atas */
 
 .jk-top {
