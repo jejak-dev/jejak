@@ -88,6 +88,7 @@ interface FileBody {
   binary: boolean;
   truncated: boolean;
   content?: string;
+  version?: string;
 }
 
 interface ErrorBody {
@@ -152,6 +153,7 @@ describe("GET /api/sessions/:id/file", () => {
       binary: false,
       truncated: false,
       content: "halo\n",
+      version: "2c4bd1113a1308076e5015a9cf692d57ba9ef0e94f3badc919461b5f8c105572",
     });
 
     const utf8 = (await (await req(server, "GET", fileUrl(id, "utf8.txt"))).json()) as FileBody;

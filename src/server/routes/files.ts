@@ -6,6 +6,8 @@ import { listDirectory } from "../files/list";
 import { FileError } from "../files/path";
 import { readTextFile } from "../files/read";
 import { repoFieldFromBody, repoSnapshotName, resolveRepoRoot } from "../files/repo-root";
+import { searchText } from "../files/search";
+import { WriteError, saveTextFile } from "../files/write";
 import {
   REVERT_MESSAGES,
   RevertError,
@@ -26,6 +28,8 @@ export interface FileRoutesOptions {
   env?: Record<string, string | undefined>;
   git?: GitOptions;
   now?: () => Date;
+  /** false -> PUT /api/sessions/:id/file menjawab 403. */
+  editEnabled?: boolean;
 }
 
 function jsonResponse(status: number, payload: unknown): Response {
@@ -39,10 +43,52 @@ function errorResponse(error: unknown): Response {
   if (error instanceof RevertError) {
     return jsonResponse(error.status, { error: error.message });
   }
+  if (error instanceof WriteError) {
+    return jsonResponse(error.status, { error: error.message });
+  }
   if (error instanceof FileError) {
     return jsonResponse(error.code === "tidak-ditemukan" ? 404 : 400, { error: error.message });
   }
   return jsonResponse(400, { error: "Permintaan tidak valid." });
+}
+
+const MAX_QUERY_LENGTH = 200;
+const INVALID_QUERY = "Kata kunci tidak valid.";
+const EDIT_DISABLED = "Penyuntingan berkas dimatikan.";
+
+/** Query `q` harus string tunggal 1..200 tanpa NUL/baris baru. */
+function searchQuery(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new FileError(INVALID_QUERY, "tidak-valid");
+  }
+  if (
+    value.length < 1 ||
+    value.length > MAX_QUERY_LENGTH ||
+    value.includes("\0") ||
+    /[\r\n]/.test(value)
+  ) {
+    throw new FileError(INVALID_QUERY, "tidak-valid");
+  }
+  return value;
+}
+
+/** Parse body JSON objek untuk penyimpanan berkas. */
+function parseSaveBody(body: unknown): Record<string, unknown> {
+  let parsed: unknown = body;
+  if (typeof body === "string") {
+    if (body.trim() === "") {
+      throw new WriteError("Body permintaan harus berupa JSON.", 400);
+    }
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      throw new WriteError("Body permintaan harus berupa JSON yang valid.", 400);
+    }
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new WriteError("Body permintaan harus berupa objek.", 400);
+  }
+  return parsed as Record<string, unknown>;
 }
 
 // Nilai query bisa berupa array (mis. ?path=a&path=b); resolveInside menolak
@@ -58,6 +104,7 @@ function runningResponse(): Response {
 export function fileRoutes(options: FileRoutesOptions): Elysia {
   const manager = options.manager;
   const workspaces = options.workspaces;
+  const editEnabled = options.editEnabled ?? true;
   const undoDir = options.undoDir ?? join(jejakHome(options.env), "undo");
   const revertOptions: RevertOptions = { undoDir };
   if (options.git !== undefined) revertOptions.git = options.git;
@@ -88,6 +135,53 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
         return errorResponse(error);
       }
     })
+    .get("/api/sessions/:id/search", async ({ params, query, request }) => {
+      const session = manager.get(params.id);
+      if (session === undefined) {
+        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+      }
+      try {
+        // Elysia mengambil nilai terakhir untuk kunci ganda; array tetap ditolak.
+        const rawQuery = new URL(request.url).searchParams;
+        const q = rawQuery.getAll("q").length > 1 ? undefined : query.q;
+        const text = searchQuery(q);
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        return await searchText(root, text, { caseSensitive: query.case === "1" });
+      } catch (error) {
+        if (error instanceof FileError) {
+          return jsonResponse(400, { error: error.message });
+        }
+        return errorResponse(error);
+      }
+    })
+    .put(
+      "/api/sessions/:id/file",
+      async ({ params, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        if (session.status === "berjalan") {
+          return runningResponse();
+        }
+        try {
+          const record = parseSaveBody(body);
+          const root = await resolveRepoRoot(session, record.repo, workspaces);
+          const result = await saveTextFile(root, {
+            path: record.path,
+            content: record.content,
+            baseVersion: record.baseVersion,
+          });
+          return jsonResponse(200, { ok: true, version: result.version, size: result.size });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
     .get("/api/sessions/:id/changes", async ({ params, query }) => {
       const session = manager.get(params.id);
       if (session === undefined) {

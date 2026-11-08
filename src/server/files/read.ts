@@ -1,5 +1,6 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { FileError, resolveInside } from "./path";
 
 export interface FileContent {
@@ -8,6 +9,8 @@ export interface FileContent {
   binary: boolean;
   truncated: boolean;
   content?: string;
+  /** sha256 hex dari seluruh byte; hanya diisi bila teks utuh (tidak terpotong/biner). */
+  version?: string;
 }
 
 export const MAX_FILE_BYTES = 256 * 1024;
@@ -87,7 +90,14 @@ export async function readTextFile(cwd: string, rel: unknown): Promise<FileConte
       return { path: resolved.path, size: info.size, binary: true, truncated };
     }
 
-    return { path: resolved.path, size: info.size, binary: false, truncated, content };
+    return {
+      path: resolved.path,
+      size: info.size,
+      binary: false,
+      truncated,
+      content,
+      ...(truncated ? {} : { version: createHash("sha256").update(bytes).digest("hex") }),
+    };
   } finally {
     await handle.close();
   }

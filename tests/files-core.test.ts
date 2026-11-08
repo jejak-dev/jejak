@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -201,6 +202,7 @@ describe("readTextFile", () => {
       binary: false,
       truncated: false,
       content: "halo dunia\n",
+      version: createHash("sha256").update("halo dunia\n").digest("hex"),
     });
 
     const multibyte = "héllo — 日本語 🎉\n";

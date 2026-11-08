@@ -125,6 +125,7 @@ export function createApp(options: CreateAppOptions = {}) {
         workspaces: workspaceResolver,
         env: options.env,
         undoDir: options.undoDir,
+        editEnabled: env.JEJAK_FILE_EDIT?.trim() !== "0",
       }),
     )
     .use(checkpointRoutes({ manager, service: checkpoints }))
