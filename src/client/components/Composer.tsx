@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
-import { ApiError, type ApiClient } from "../lib/api";
+import { ApiError, type ApiClient, type WorkspaceItem } from "../lib/api";
 import type { RegistryView } from "../lib/registry-view";
 import { folderName } from "../lib/format";
+import { defaultRepoPath, workspaceRepoOptions } from "../lib/workspace";
 import { Icon } from "./Icon";
 
 export interface ComposerProps {
@@ -10,6 +11,7 @@ export interface ComposerProps {
   defaultCwd?: string;
   registry?: RegistryView;
   recentCwds?: string[];
+  workspaces?: WorkspaceItem[];
   onCreated: (session: SessionInfo) => void;
 }
 
@@ -24,6 +26,7 @@ const PERMISSION_OPTIONS: { value: PermissionMode; label: string }[] = [
 const STORAGE_CWD = "jejak.cwd";
 const STORAGE_PROVIDER = "jejak.provider";
 const STORAGE_MODE = "jejak.mode";
+const STORAGE_WORKSPACE = "jejak.workspace";
 
 const MAX_TEXTAREA_PX = 8 * 24;
 
@@ -53,9 +56,18 @@ function readStoredMode(): PermissionMode {
   return stored === "acceptEdits" || stored === "plan" ? stored : "default";
 }
 
-export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated }: ComposerProps) {
+export function Composer({
+  api,
+  defaultCwd,
+  registry,
+  recentCwds = [],
+  workspaces = [],
+  onCreated,
+}: ComposerProps) {
   const [prompt, setPrompt] = useState("");
   const [cwd, setCwd] = useState(() => readStorage(STORAGE_CWD) ?? defaultCwd ?? "");
+  const [workspaceId, setWorkspaceId] = useState("");
+  const [repoPath, setRepoPath] = useState("");
   const [profileId, setProfileId] = useState("");
   const [model, setModel] = useState("");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(readStoredMode);
@@ -105,6 +117,39 @@ export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated
     setCwd((current) => (current.trim() === "" ? defaultCwd : current));
   }, [defaultCwd]);
 
+  const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
+
+  useEffect(() => {
+    if (workspaces.length === 0) return;
+    setWorkspaceId((current) => {
+      if (current !== "") {
+        return workspaces.some((workspace) => workspace.id === current) ? current : "";
+      }
+      const stored = readStorage(STORAGE_WORKSPACE);
+      return stored !== undefined && workspaces.some((workspace) => workspace.id === stored)
+        ? stored
+        : "";
+    });
+  }, [workspaces]);
+
+  const repoOptions = useMemo(
+    () => (selectedWorkspace === undefined ? [] : workspaceRepoOptions(selectedWorkspace)),
+    [selectedWorkspace],
+  );
+
+  useEffect(() => {
+    if (selectedWorkspace === undefined) {
+      setRepoPath("");
+      return;
+    }
+    const fallback = defaultRepoPath(selectedWorkspace) ?? "";
+    setRepoPath((current) =>
+      repoOptions.some((option) => option.value === current && !option.missing) ? current : fallback,
+    );
+  }, [selectedWorkspace, repoOptions]);
+
+  const repoLabel = repoOptions.find((option) => option.value === repoPath)?.label ?? "Repo";
+
   const selectedProfile = profiles.find((profile) => profile.id === profileId);
   const models = useMemo(() => selectedProfile?.models ?? [], [selectedProfile]);
   const hasModelList = models.length > 0;
@@ -120,14 +165,18 @@ export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated
 
     const trimmedPrompt = prompt.trim();
     const trimmedCwd = cwd.trim();
+    const usingWorkspace = selectedWorkspace !== undefined;
 
     setPromptError(trimmedPrompt === "" ? "Tulis tugasnya dulu" : undefined);
-    setCwdError(trimmedCwd === "" ? "Isi folder kerja" : undefined);
+    setCwdError(!usingWorkspace && trimmedCwd === "" ? "Isi folder kerja" : undefined);
     setApiError(undefined);
 
-    if (trimmedPrompt === "" || trimmedCwd === "") {
-      if (trimmedPrompt === "") promptRef.current?.focus();
-      else cwdRef.current?.focus();
+    if (trimmedPrompt === "") {
+      promptRef.current?.focus();
+      return;
+    }
+    if (!usingWorkspace && trimmedCwd === "") {
+      cwdRef.current?.focus();
       return;
     }
 
@@ -135,15 +184,21 @@ export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated
     try {
       const input: Parameters<ApiClient["createSession"]>[0] = {
         prompt: trimmedPrompt,
-        cwd: trimmedCwd,
         permissionMode,
       };
+      if (usingWorkspace) {
+        input.workspaceId = selectedWorkspace.id;
+        if (repoPath !== "") input.cwd = repoPath;
+      } else {
+        input.cwd = trimmedCwd;
+      }
       if (profileId !== "") input.profileId = profileId;
       if (model !== "") input.model = model;
 
       const session = await api.createSession(input);
 
-      writeStorage(STORAGE_CWD, trimmedCwd);
+      if (!usingWorkspace) writeStorage(STORAGE_CWD, trimmedCwd);
+      writeStorage(STORAGE_WORKSPACE, usingWorkspace ? selectedWorkspace.id : "");
       writeStorage(STORAGE_PROVIDER, profileId);
       writeStorage(STORAGE_MODE, permissionMode);
 
@@ -184,7 +239,9 @@ export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated
     : undefined;
   const modeLabel = PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label ?? "";
   const canSend = !busy && prompt.trim() !== "";
-  const suggestions = recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4);
+  const suggestions = selectedWorkspace === undefined
+    ? recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4)
+    : [];
 
   return (
     <form class="jk-composer" onSubmit={onSubmit} aria-busy={busy}>
@@ -207,23 +264,68 @@ export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated
         />
 
         <div class="jk-comp-bar">
-          <label class="jk-chip jk-chip-cwd" title="Folder kerja">
-            <Icon name="folder" />
-            <span class="jk-visually-hidden">Folder kerja</span>
-            <input
-              id="jk-cwd"
-              ref={cwdRef}
-              type="text"
-              class="jk-chip-input"
-              value={cwd}
-              size={Math.min(Math.max(cwd.length, 12), 34)}
-              spellcheck={false}
-              onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
-              disabled={busy}
-              aria-invalid={cwdError !== undefined}
-              aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
-            />
-          </label>
+          {workspaces.length > 0 && (
+            <label class="jk-chip" title="Workspace">
+              <Icon name="workspace" />
+              <span>{selectedWorkspace?.name ?? "Tanpa workspace"}</span>
+              <select
+                id="jk-workspace"
+                class="jk-chip-select"
+                aria-label="Workspace"
+                value={workspaceId}
+                onChange={(event) => setWorkspaceId((event.currentTarget as HTMLSelectElement).value)}
+                disabled={busy}
+              >
+                <option value="">Tanpa workspace</option>
+                {workspaces.map((workspace) => (
+                  <option key={workspace.id} value={workspace.id}>
+                    {workspace.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {selectedWorkspace !== undefined ? (
+            <label class="jk-chip" title="Repo">
+              <Icon name="folder" />
+              <span>{repoLabel}</span>
+              <select
+                id="jk-repo"
+                class="jk-chip-select"
+                aria-label="Repo"
+                value={repoPath}
+                onChange={(event) => setRepoPath((event.currentTarget as HTMLSelectElement).value)}
+                disabled={busy}
+                aria-invalid={cwdError !== undefined}
+                aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
+              >
+                {repoOptions.map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.missing}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label class="jk-chip jk-chip-cwd" title="Folder kerja">
+              <Icon name="folder" />
+              <span class="jk-visually-hidden">Folder kerja</span>
+              <input
+                id="jk-cwd"
+                ref={cwdRef}
+                type="text"
+                class="jk-chip-input"
+                value={cwd}
+                size={Math.min(Math.max(cwd.length, 12), 34)}
+                spellcheck={false}
+                onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
+                disabled={busy}
+                aria-invalid={cwdError !== undefined}
+                aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
+              />
+            </label>
+          )}
 
           <label class="jk-chip">
             <Icon name="cube" />
@@ -320,6 +422,12 @@ export function Composer({ api, defaultCwd, registry, recentCwds = [], onCreated
       {apiError !== undefined && (
         <p class="jk-error-line" role="alert">
           {apiError}
+        </p>
+      )}
+
+      {selectedWorkspace !== undefined && (
+        <p class="jk-note">
+          Agent dapat membaca repo lain di workspace; panel berkas dan titik hanya untuk repo ini.
         </p>
       )}
 

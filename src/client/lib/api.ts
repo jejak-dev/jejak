@@ -167,12 +167,13 @@ export interface ApiClient {
   getSession(id: string): Promise<SessionInfo>;
   createSession(input: {
     prompt: string;
-    cwd: string;
+    cwd?: string;
     title?: string;
     profileId?: string;
     model?: string;
     lightModel?: string;
     permissionMode?: "default" | "acceptEdits" | "plan";
+    workspaceId?: string;
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;

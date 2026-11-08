@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
-import { ApiError, type ApiClient } from "./lib/api";
+import { ApiError, type ApiClient, type WorkspaceItem } from "./lib/api";
 import {
   memoryHash,
   parseHashRoute,
@@ -371,4 +371,33 @@ export function useMemoryCounts(api: ApiClient, view?: AppView): MemoryCountsSta
   }, [refresh, view]);
 
   return useMemo(() => ({ proposed, refresh }), [proposed, refresh]);
+}
+
+export interface WorkspacesState {
+  items: WorkspaceItem[];
+}
+
+/**
+ * Daftar workspace untuk dialog sesi baru. Galat apa pun (jaringan, 503,
+ * Workspace dimatikan) menghasilkan daftar kosong tanpa pesan.
+ */
+export function useWorkspaces(api: ApiClient): WorkspacesState {
+  const [items, setItems] = useState<WorkspaceItem[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    void api
+      .listWorkspaces()
+      .then((list) => {
+        if (active) setItems(list.items);
+      })
+      .catch(() => {
+        if (active) setItems([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  return useMemo(() => ({ items }), [items]);
 }

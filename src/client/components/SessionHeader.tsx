@@ -1,5 +1,5 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
-import { shortPath } from "../lib/format";
+import { sessionContextLabel } from "../lib/workspace";
 import { Icon } from "./Icon";
 
 export interface TopbarProps {
@@ -97,7 +97,7 @@ export function SessionHeader({
   const props: TopbarProps = {
     onMenu,
     title: session.title,
-    subtitle: shortPath(session.cwd),
+    subtitle: sessionContextLabel({ workspaceName: session.workspaceName, cwd: session.cwd }),
     subtitleTitle: session.cwd,
     state: sessionState(status, session.pendingPermissions),
     panel: { open: panelOpen, onToggle: onTogglePanel },

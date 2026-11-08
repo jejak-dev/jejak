@@ -119,6 +119,28 @@ describe("createApiClient", () => {
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual(input);
   });
 
+  test("createSession dengan workspaceId dan tanpa cwd tidak mengirim key cwd", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: SESSION }, 201));
+    const api = createApiClient({ fetch });
+
+    await api.createSession({ prompt: "Halo", workspaceId: "w1", permissionMode: "default" });
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).toEqual({ prompt: "Halo", workspaceId: "w1", permissionMode: "default" });
+    expect("cwd" in body).toBe(false);
+  });
+
+  test("createSession tanpa workspace tetap mengirim body persis seperti dulu", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: SESSION }, 201));
+    const api = createApiClient({ fetch });
+
+    await api.createSession({ prompt: "Halo", cwd: "/tmp", permissionMode: "plan" });
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).toEqual({ prompt: "Halo", cwd: "/tmp", permissionMode: "plan" });
+    expect("workspaceId" in body).toBe(false);
+  });
+
   test("interruptSession POST dan mengembalikan interrupted", async () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, interrupted: true }));
     const api = createApiClient({ fetch });

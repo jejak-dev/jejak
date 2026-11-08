@@ -9,12 +9,15 @@ import {
   WORKSPACE_NAME_MAX,
   WORKSPACE_REPOS_MAX,
   cardSummary,
+  defaultRepoPath,
   kindLabel,
   linesToList,
   listToLines,
   repoNameFromPath,
+  sessionContextLabel,
   validateCardDraft,
   validateWorkspaceDraft,
+  workspaceRepoOptions,
 } from "../src/client/lib/workspace";
 
 describe("kindLabel", () => {
@@ -178,5 +181,84 @@ describe("cardSummary", () => {
     );
     expect(cardSummary(card({ kind: "frontend" }))).toBe("Frontend");
     expect(cardSummary(card({ calls: ["api"] }))).toBe("Lainnya · 1 panggilan");
+  });
+});
+
+function workspace(
+  repos: { name: string; path: string; missing: boolean }[],
+): import("../src/client/lib/api").WorkspaceItem {
+  const card: ServiceCardItem = {
+    description: "",
+    kind: "lainnya",
+    tables: [],
+    queues: [],
+    calls: [],
+    updatedAt: null,
+  };
+  return {
+    id: "w1",
+    name: "Kantor",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    repos: repos.map((repo) => ({ ...repo, card })),
+  };
+}
+
+describe("workspaceRepoOptions", () => {
+  test("repo pertama primary, urutan dipertahankan, label missing", () => {
+    const options = workspaceRepoOptions(
+      workspace([
+        { name: "api", path: "/repos/api", missing: false },
+        { name: "web", path: "/repos/web", missing: true },
+        { name: "worker", path: "/repos/worker", missing: false },
+      ]),
+    );
+    expect(options).toEqual([
+      { value: "/repos/api", label: "api", missing: false, primary: true },
+      { value: "/repos/web", label: "web (hilang)", missing: true, primary: false },
+      { value: "/repos/worker", label: "worker", missing: false, primary: false },
+    ]);
+  });
+
+  test("workspace tanpa repo menghasilkan daftar kosong", () => {
+    expect(workspaceRepoOptions(workspace([]))).toEqual([]);
+  });
+});
+
+describe("defaultRepoPath", () => {
+  test("mengembalikan path repo utama yang tidak missing", () => {
+    expect(
+      defaultRepoPath(
+        workspace([
+          { name: "api", path: "/repos/api", missing: false },
+          { name: "web", path: "/repos/web", missing: false },
+        ]),
+      ),
+    ).toBe("/repos/api");
+  });
+
+  test("undefined bila repo utama hilang atau daftar kosong", () => {
+    expect(
+      defaultRepoPath(workspace([{ name: "api", path: "/repos/api", missing: true }])),
+    ).toBeUndefined();
+    expect(defaultRepoPath(workspace([]))).toBeUndefined();
+  });
+});
+
+describe("sessionContextLabel", () => {
+  test("workspace dan folder terakhir cwd", () => {
+    expect(sessionContextLabel({ workspaceName: "Kantor", cwd: "/x/api-service" })).toBe(
+      "Kantor · api-service",
+    );
+  });
+
+  test("tanpa workspace memakai shortPath cwd seperti biasa", () => {
+    expect(sessionContextLabel({ cwd: "/x/api" })).toBe("/x/api");
+    expect(sessionContextLabel({ cwd: "/x/" })).toBe("/x/");
+    expect(sessionContextLabel({})).toBe("");
+  });
+
+  test("workspace tanpa cwd hanya nama workspace", () => {
+    expect(sessionContextLabel({ workspaceName: "Kantor" })).toBe("Kantor");
   });
 });

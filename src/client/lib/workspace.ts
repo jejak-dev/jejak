@@ -1,4 +1,5 @@
-import type { ServiceCardItem, ServiceKind } from "./api";
+import type { ServiceCardItem, ServiceKind, WorkspaceItem } from "./api";
+import { folderName, shortPath } from "./format";
 
 /**
  * Batas yang sama dengan server (`src/server/workspaces/workspace-files.ts`
@@ -136,4 +137,42 @@ export function cardSummary(card: ServiceCardItem): string {
   if (card.queues.length > 0) parts.push(`${card.queues.length} queue`);
   if (card.calls.length > 0) parts.push(`${card.calls.length} panggilan`);
   return parts.join(" · ");
+}
+
+export interface WorkspaceRepoOption {
+  value: string;
+  label: string;
+  missing: boolean;
+  primary: boolean;
+}
+
+/** Opsi repo untuk pemilih di dialog sesi baru; repo pertama adalah repo utama. */
+export function workspaceRepoOptions(workspace: WorkspaceItem): WorkspaceRepoOption[] {
+  return workspace.repos.map((repo, index) => ({
+    value: repo.path,
+    label: repo.missing ? `${repo.name} (hilang)` : repo.name,
+    missing: repo.missing,
+    primary: index === 0,
+  }));
+}
+
+/** Path repo utama yang masih ada; undefined bila repo utama hilang atau daftar kosong. */
+export function defaultRepoPath(workspace: WorkspaceItem): string | undefined {
+  const primary = workspaceRepoOptions(workspace).find((repo) => repo.primary);
+  if (primary === undefined || primary.missing) return undefined;
+  return primary.value;
+}
+
+/** "<nama workspace> · <folder terakhir cwd>", atau path cwd seperti biasa tanpa workspace. */
+export function sessionContextLabel(input: {
+  workspaceName?: string;
+  cwd?: string;
+}): string {
+  const cwd = input.cwd ?? "";
+  if (input.workspaceName === undefined || input.workspaceName === "") {
+    return shortPath(cwd);
+  }
+  const folder = cwd === "" ? "" : shortPath(folderName(cwd));
+  if (folder === "") return input.workspaceName;
+  return `${input.workspaceName} · ${folder}`;
 }

@@ -16,6 +16,7 @@ import {
   useRegistry,
   useSessions,
   useTimeline,
+  useWorkspaces,
 } from "./hooks";
 import { createApiClient } from "./lib/api";
 import { readPanelPrefs, writePanelPrefs } from "./lib/panel-prefs";
@@ -27,6 +28,7 @@ export function App() {
   const { sessions, refresh } = useSessions(api);
   const { view, reload } = useRegistry(api);
   const { proposed: memoryProposed, refresh: refreshMemory } = useMemoryCounts(api, routeView);
+  const { items: workspaces } = useWorkspaces(api);
 
   const selected = sessions.find((session) => session.id === selectedId);
   const timeline = useTimeline(api, selected);
@@ -240,6 +242,7 @@ export function App() {
                   defaultCwd={info?.cwd}
                   registry={view}
                   recentCwds={recentCwds}
+                  workspaces={workspaces}
                   onCreated={onCreated}
                 />
               </div>
