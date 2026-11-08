@@ -1,5 +1,6 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { formatAgo, groupSessions } from "../lib/format";
+import { showsBypassMarker } from "../lib/permission-mode";
 import { Icon } from "./Icon";
 
 export interface SidebarProps {
@@ -92,6 +93,9 @@ export function Sidebar({
                           aria-hidden={label === undefined ? "true" : undefined}
                         />
                         <span class="jk-session-title">{session.title}</span>
+                        {showsBypassMarker(session.permissionMode) && (
+                          <span class="jk-session-bypass">Tanpa izin</span>
+                        )}
                         <time class="jk-session-time" dateTime={session.updatedAt}>
                           {formatAgo(session.updatedAt, now)}
                         </time>

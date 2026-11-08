@@ -98,6 +98,7 @@ export function createApp(options: CreateAppOptions = {}) {
       memoryBridge: memoryBridge?.bridge,
       checkpoints,
       workspaces: workspaceResolver,
+      allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
     });
 
   let app = new Elysia()

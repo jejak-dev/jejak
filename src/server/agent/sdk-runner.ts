@@ -185,6 +185,9 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       if (workspace !== undefined && workspace.additionalDirectories.length > 0) {
         sdkOptions.additionalDirectories = workspace.additionalDirectories;
       }
+      if (input.permissionMode === "bypassPermissions") {
+        sdkOptions.allowDangerouslySkipPermissions = true;
+      }
 
       // Add canUseTool handler if requestPermission is provided
       const requestPermission = input.requestPermission;

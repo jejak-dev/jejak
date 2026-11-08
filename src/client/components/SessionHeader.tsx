@@ -1,4 +1,5 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
+import { showsBypassMarker } from "../lib/permission-mode";
 import { sessionContextLabel } from "../lib/workspace";
 import { Icon } from "./Icon";
 
@@ -8,12 +9,13 @@ export interface TopbarProps {
   subtitle?: string;
   subtitleTitle?: string;
   state?: { label: string; dot: "" | "run" | "warn" | "bad" };
+  bypass?: boolean;
   action?: { label: string; onClick: () => void; disabled?: boolean };
   panel?: { open: boolean; onToggle: () => void };
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, action, panel, error }: TopbarProps) {
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, action, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
       <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
@@ -27,6 +29,7 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, action, 
           </span>
         )}
       </div>
+      {bypass === true && <span class="jk-bypass-marker">Tanpa izin</span>}
       {state !== undefined && (
         <span class="jk-state" role="status">
           <span class={`jk-dot${state.dot === "" ? "" : ` jk-dot-${state.dot}`}`} aria-hidden="true" />
@@ -103,6 +106,7 @@ export function SessionHeader({
     panel: { open: panelOpen, onToggle: onTogglePanel },
   };
   if (status === "berjalan") props.action = { label: "Hentikan", onClick: onInterrupt, disabled: busy };
+  if (showsBypassMarker(session.permissionMode)) props.bypass = true;
   if (error !== undefined) props.error = error;
   return <Topbar {...props} />;
 }

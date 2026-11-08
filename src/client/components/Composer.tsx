@@ -3,6 +3,13 @@ import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient, type WorkspaceItem } from "../lib/api";
 import type { RegistryView } from "../lib/registry-view";
 import { folderName } from "../lib/format";
+import {
+  BYPASS_WARNING,
+  canSubmitMode,
+  storableMode,
+  storedModeFrom,
+  type ComposerPermissionMode,
+} from "../lib/permission-mode";
 import { defaultRepoPath, workspaceRepoOptions } from "../lib/workspace";
 import { Icon } from "./Icon";
 
@@ -15,12 +22,13 @@ export interface ComposerProps {
   onCreated: (session: SessionInfo) => void;
 }
 
-type PermissionMode = "default" | "acceptEdits" | "plan";
+type PermissionMode = ComposerPermissionMode;
 
 const PERMISSION_OPTIONS: { value: PermissionMode; label: string }[] = [
   { value: "default", label: "Tanya dulu" },
   { value: "acceptEdits", label: "Setujui edit" },
   { value: "plan", label: "Hanya rencana" },
+  { value: "bypassPermissions", label: "Tanpa izin (berbahaya)" },
 ];
 
 const STORAGE_CWD = "jejak.cwd";
@@ -52,8 +60,7 @@ function autosize(element: HTMLTextAreaElement): void {
 }
 
 function readStoredMode(): PermissionMode {
-  const stored = readStorage(STORAGE_MODE);
-  return stored === "acceptEdits" || stored === "plan" ? stored : "default";
+  return storedModeFrom(readStorage(STORAGE_MODE));
 }
 
 export function Composer({
@@ -71,6 +78,7 @@ export function Composer({
   const [profileId, setProfileId] = useState("");
   const [model, setModel] = useState("");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(readStoredMode);
+  const [bypassAcknowledged, setBypassAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
   const [promptError, setPromptError] = useState<string | undefined>(undefined);
   const [cwdError, setCwdError] = useState<string | undefined>(undefined);
@@ -179,6 +187,10 @@ export function Composer({
       cwdRef.current?.focus();
       return;
     }
+    if (!canSubmitMode(permissionMode, bypassAcknowledged)) {
+      setApiError("Centang pernyataan risiko dulu untuk memakai mode tanpa izin.");
+      return;
+    }
 
     setBusy(true);
     try {
@@ -194,13 +206,15 @@ export function Composer({
       }
       if (profileId !== "") input.profileId = profileId;
       if (model !== "") input.model = model;
+      if (permissionMode === "bypassPermissions") input.confirmBypass = true;
 
       const session = await api.createSession(input);
 
       if (!usingWorkspace) writeStorage(STORAGE_CWD, trimmedCwd);
       writeStorage(STORAGE_WORKSPACE, usingWorkspace ? selectedWorkspace.id : "");
       writeStorage(STORAGE_PROVIDER, profileId);
-      writeStorage(STORAGE_MODE, permissionMode);
+      const remembered = storableMode(permissionMode);
+      if (remembered !== undefined) writeStorage(STORAGE_MODE, remembered);
 
       setPrompt("");
       if (promptRef.current !== null) autosize(promptRef.current);
@@ -238,7 +252,11 @@ export function Composer({
       : (modelEntry?.label ?? model)
     : undefined;
   const modeLabel = PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label ?? "";
-  const canSend = !busy && prompt.trim() !== "";
+  const bypassSelected = permissionMode === "bypassPermissions";
+  const canSend =
+    !busy &&
+    prompt.trim() !== "" &&
+    canSubmitMode(permissionMode, bypassAcknowledged);
   const suggestions = selectedWorkspace === undefined
     ? recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4)
     : [];
@@ -390,9 +408,10 @@ export function Composer({
               class="jk-chip-select"
               aria-label="Mode izin"
               value={permissionMode}
-              onChange={(event) =>
-                setPermissionMode((event.currentTarget as HTMLSelectElement).value as PermissionMode)
-              }
+              onChange={(event) => {
+                setPermissionMode((event.currentTarget as HTMLSelectElement).value as PermissionMode);
+                setBypassAcknowledged(false);
+              }}
               disabled={busy}
             >
               {PERMISSION_OPTIONS.map((option) => (
@@ -408,6 +427,23 @@ export function Composer({
           </button>
         </div>
       </div>
+
+      {bypassSelected && (
+        <div class="jk-bypass-warn" role="note">
+          <p>{BYPASS_WARNING}</p>
+          <label class="jk-bypass-check">
+            <input
+              type="checkbox"
+              checked={bypassAcknowledged}
+              onChange={(event) =>
+                setBypassAcknowledged((event.currentTarget as HTMLInputElement).checked)
+              }
+              disabled={busy}
+            />
+            <span>Saya mengerti risikonya</span>
+          </label>
+        </div>
+      )}
 
       {promptError !== undefined && (
         <p class="jk-error-line" id="jk-prompt-error" role="alert">

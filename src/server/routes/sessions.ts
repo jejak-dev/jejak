@@ -85,6 +85,12 @@ function parseCreateBody(body: unknown): CreateSessionInput {
     // Tipe tetap divalidasi di manager agar galatnya seragam.
     input.workspaceId = record.workspaceId as string;
   }
+  if (record.confirmBypass !== undefined) {
+    if (typeof record.confirmBypass !== "boolean") {
+      throw invalid("Field confirmBypass harus berupa boolean.");
+    }
+    input.confirmBypass = record.confirmBypass;
+  }
   return input;
 }
 

@@ -132,11 +132,11 @@ describe("SessionManager.create", () => {
     await expect(createOk(mgr, { cwd: file })).rejects.toMatchObject({ code: "tidak-valid" });
   });
 
-  test("permissionMode bypassPermissions dan nilai asing ditolak", async () => {
+  test("permissionMode bypass tanpa konfirmasi dan nilai asing ditolak", async () => {
     const mgr = manager({ runner: scriptedRunner([]) });
 
     await expect(createOk(mgr, { permissionMode: "bypassPermissions" })).rejects.toThrow(
-      /belum didukung/,
+      /konfirmasi eksplisit/,
     );
     await expect(createOk(mgr, { permissionMode: "aneh" })).rejects.toMatchObject({
       code: "tidak-valid",
@@ -1611,5 +1611,135 @@ describe("SessionManager + memory + workspace", () => {
 
     expect(opened).toHaveLength(1);
     expect("workspaceId" in (opened[0] ?? {})).toBe(false);
+  });
+});
+
+describe("SessionManager mode bypass", () => {
+  function modeRunner(): { runner: AgentRunner; modes: Array<string | undefined> } {
+    const modes: Array<string | undefined> = [];
+    return {
+      modes,
+      runner: {
+        async *run(input) {
+          modes.push(input.permissionMode);
+          yield { type: "session", sessionId: "sdk-bypass" };
+          yield { type: "result", ok: true };
+        },
+      },
+    };
+  }
+
+  test("tanpa confirmBypass ditolak, dengan true diterima dan tidak disimpan di info", async () => {
+    const scripted = modeRunner();
+    const mgr = manager({ runner: scripted.runner });
+
+    await expect(
+      createOk(mgr, { permissionMode: "bypassPermissions" }),
+    ).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "Mode bypass butuh konfirmasi eksplisit.",
+    });
+
+    const info = await createOk(mgr, {
+      permissionMode: "bypassPermissions",
+      confirmBypass: true,
+    });
+    await mgr.done(info.id);
+
+    expect(info.permissionMode).toBe("bypassPermissions");
+    expect("confirmBypass" in info).toBe(false);
+    expect(mgr.get(info.id)).not.toHaveProperty("confirmBypass");
+    expect(scripted.modes).toEqual(["bypassPermissions"]);
+  });
+
+  test("confirmBypass bersama mode lain atau bukan boolean ditolak", async () => {
+    const mgr = manager({ runner: scriptedRunner([]) });
+
+    await expect(
+      createOk(mgr, { permissionMode: "plan", confirmBypass: true }),
+    ).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "confirmBypass hanya untuk mode bypass.",
+    });
+    await expect(createOk(mgr, { confirmBypass: false })).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "confirmBypass hanya untuk mode bypass.",
+    });
+    await expect(
+      createOk(mgr, { permissionMode: "bypassPermissions", confirmBypass: "ya" }),
+    ).rejects.toMatchObject({ code: "tidak-valid" });
+  });
+
+  test("allowBypass false menolak walau terkonfirmasi", async () => {
+    const mgr = manager({ runner: scriptedRunner([]), allowBypass: false });
+
+    await expect(
+      createOk(mgr, { permissionMode: "bypassPermissions", confirmBypass: true }),
+    ).rejects.toMatchObject({
+      code: "tidak-valid",
+      message: "Mode bypass dimatikan.",
+    });
+
+    const plan = await createOk(mgr, { permissionMode: "plan" });
+    expect(plan.permissionMode).toBe("plan");
+  });
+
+  test("mode bypass bertahan di store dan giliran lanjutan memakai mode yang sama", async () => {
+    const path = join(dir, "sessions.db");
+    const first = new SqliteSessionStore(path);
+    const initial = modeRunner();
+    const mgr = manager({ runner: initial.runner, store: first });
+    const info = await createOk(mgr, {
+      permissionMode: "bypassPermissions",
+      confirmBypass: true,
+    });
+    await mgr.done(info.id);
+    first.close();
+
+    const reopened = new SqliteSessionStore(path);
+    expect(reopened.loadSessions()[0]?.info.permissionMode).toBe("bypassPermissions");
+
+    const followUp = modeRunner();
+    const restored = manager({ runner: followUp.runner, store: reopened });
+    expect(restored.get(info.id)?.permissionMode).toBe("bypassPermissions");
+    await restored.send(info.id, "lanjutkan");
+    await restored.done(info.id);
+    expect(followUp.modes).toEqual(["bypassPermissions"]);
+    reopened.close();
+  });
+
+  test("kill switch menurunkan sesi bypass lama ke mode default saat giliran lanjutan", async () => {
+    const path = join(dir, "sessions.db");
+    const first = new SqliteSessionStore(path);
+    const initial = modeRunner();
+    const mgr = manager({ runner: initial.runner, store: first });
+    const info = await createOk(mgr, {
+      permissionMode: "bypassPermissions",
+      confirmBypass: true,
+    });
+    await mgr.done(info.id);
+    first.close();
+
+    const reopened = new SqliteSessionStore(path);
+    const followUp = modeRunner();
+    const restored = manager({ runner: followUp.runner, store: reopened, allowBypass: false });
+    await restored.send(info.id, "lanjutkan");
+    await restored.done(info.id);
+    expect(followUp.modes).toEqual(["default"]);
+    reopened.close();
+  });
+
+  test("mode lain tidak berubah perilakunya", async () => {
+    const scripted = modeRunner();
+    const mgr = manager({ runner: scripted.runner });
+
+    const accept = await createOk(mgr, { permissionMode: "acceptEdits" });
+    const plain = await createOk(mgr);
+    await mgr.done(accept.id);
+    await mgr.done(plain.id);
+
+    expect(accept.permissionMode).toBe("acceptEdits");
+    expect(plain.permissionMode).toBe("default");
+    expect(scripted.modes).toEqual(["acceptEdits", "default"]);
   });
 });

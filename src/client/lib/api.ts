@@ -174,7 +174,9 @@ export interface ApiClient {
     profileId?: string;
     model?: string;
     lightModel?: string;
-    permissionMode?: "default" | "acceptEdits" | "plan";
+    permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions";
+    /** Dikirim hanya bersama mode bypass; UI mengirim `true` setelah pengguna menyetujui. */
+    confirmBypass?: boolean;
     workspaceId?: string;
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
@@ -474,7 +476,9 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     },
 
     async createSession(input) {
-      return sessionFrom(await request("POST", "/api/sessions", input));
+      const body: Parameters<ApiClient["createSession"]>[0] = { ...input };
+      if (body.confirmBypass !== true) delete body.confirmBypass;
+      return sessionFrom(await request("POST", "/api/sessions", body));
     },
 
     async interruptSession(id) {

@@ -17,7 +17,7 @@ import type { SessionStore, StoredSession } from "./session-store";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
 
-export type SessionPermissionMode = "default" | "acceptEdits" | "plan";
+export type SessionPermissionMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
 
 export interface SessionInfo {
   id: string;
@@ -52,6 +52,8 @@ export interface CreateSessionInput {
   title?: string;
   selection?: ProviderSelection;
   permissionMode?: string;
+  /** Wajib `true` untuk `permissionMode: "bypassPermissions"`; tidak disimpan di info. */
+  confirmBypass?: boolean;
   workspaceId?: string;
 }
 
@@ -95,6 +97,8 @@ export interface SessionManagerOptions {
   memoryBridge?: MemoryBridge;
   checkpoints?: SessionManagerCheckpoints;
   workspaces?: WorkspaceResolver;
+  /** Default `true`; `false` menolak semua sesi bermode bypass. */
+  allowBypass?: boolean;
 }
 
 export class SessionError extends Error {
@@ -138,7 +142,12 @@ const CHECKPOINT_TIMEOUT_MS = 30_000;
 
 const MAX_QUEUED_MESSAGES = 5;
 
-const PERMISSION_MODES: readonly SessionPermissionMode[] = ["default", "acceptEdits", "plan"];
+const PERMISSION_MODES: readonly SessionPermissionMode[] = [
+  "default",
+  "acceptEdits",
+  "plan",
+  "bypassPermissions",
+];
 
 const DEFAULTS = {
   maxConcurrent: 4,
@@ -224,6 +233,7 @@ export class SessionManager {
   private readonly memoryBridge: MemoryBridge | undefined;
   private readonly checkpoints: SessionManagerCheckpoints | undefined;
   private readonly workspaces: WorkspaceResolver | undefined;
+  private readonly allowBypass: boolean;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
@@ -241,6 +251,7 @@ export class SessionManager {
     this.memoryBridge = options.memoryBridge;
     this.checkpoints = options.checkpoints;
     this.workspaces = options.workspaces;
+    this.allowBypass = options.allowBypass ?? true;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -594,6 +605,20 @@ export class SessionManager {
       permissionMode = requested as SessionPermissionMode;
     }
 
+    if (input.confirmBypass !== undefined && typeof input.confirmBypass !== "boolean") {
+      throw new SessionError("Field confirmBypass harus berupa boolean.", "tidak-valid");
+    }
+    if (permissionMode === "bypassPermissions") {
+      if (!this.allowBypass) {
+        throw new SessionError("Mode bypass dimatikan.", "tidak-valid");
+      }
+      if (input.confirmBypass !== true) {
+        throw new SessionError("Mode bypass butuh konfirmasi eksplisit.", "tidak-valid");
+      }
+    } else if (input.confirmBypass !== undefined) {
+      throw new SessionError("confirmBypass hanya untuk mode bypass.", "tidak-valid");
+    }
+
     let title = "";
     if (typeof input.title === "string") {
       title = input.title.trim();
@@ -860,7 +885,11 @@ export class SessionManager {
       prompt,
       cwd: record.info.cwd,
       provider,
-      permissionMode: permissionMode as PermissionMode,
+      // Kill switch berlaku juga untuk sesi lama (mis. dipulihkan setelah restart):
+      // tanpa izin bypass, giliran jatuh ke mode "default" yang bertanya dulu.
+      permissionMode: (permissionMode === "bypassPermissions" && !this.allowBypass
+        ? "default"
+        : permissionMode) as PermissionMode,
       signal: record.controller.signal,
       requestPermission: (request) => this.requestPermission(record, request),
     };

@@ -725,3 +725,38 @@ test("token tidak bocor saat workspace aktif", async () => {
     expect(error.message).toContain("***");
   }
 });
+
+test("bypassPermissions menyetel allowDangerouslySkipPermissions dan tetap memasang canUseTool", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({
+        permissionMode: "bypassPermissions",
+        requestPermission: async () => ({ behavior: "allow" }),
+      }),
+    ),
+  );
+
+  expect(received?.permissionMode).toBe("bypassPermissions");
+  expect(received?.allowDangerouslySkipPermissions).toBe(true);
+  expect(typeof received?.canUseTool).toBe("function");
+});
+
+test("mode lain tidak menyetel allowDangerouslySkipPermissions", async () => {
+  const modes = ["default", "acceptEdits", "plan"] as const;
+  for (const mode of modes) {
+    let received: Record<string, unknown> | undefined;
+    const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+    await collect(
+      createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+        baseInput({ permissionMode: mode }),
+      ),
+    );
+
+    expect(received?.permissionMode).toBe(mode);
+    expect(received !== undefined && "allowDangerouslySkipPermissions" in received).toBe(false);
+  }
+});

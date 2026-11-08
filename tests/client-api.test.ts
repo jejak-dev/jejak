@@ -1168,3 +1168,38 @@ describe("createApiClient: workspace", () => {
     }
   });
 });
+
+describe("createApiClient mode bypass", () => {
+  test("createSession mengirim confirmBypass hanya bila true", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: SESSION }, 201));
+    const api = createApiClient({ fetch });
+
+    await api.createSession({
+      prompt: "Halo",
+      cwd: "/tmp",
+      permissionMode: "bypassPermissions",
+      confirmBypass: true,
+    });
+    const withTrue = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(withTrue).toEqual({
+      prompt: "Halo",
+      cwd: "/tmp",
+      permissionMode: "bypassPermissions",
+      confirmBypass: true,
+    });
+
+    await api.createSession({ prompt: "Halo", cwd: "/tmp", permissionMode: "plan", confirmBypass: false });
+    const withFalse = JSON.parse(String(calls[1]?.init.body)) as Record<string, unknown>;
+    expect("confirmBypass" in withFalse).toBe(false);
+  });
+
+  test("createSession tanpa confirmBypass tidak menambah key", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: SESSION }, 201));
+    const api = createApiClient({ fetch });
+
+    await api.createSession({ prompt: "Halo", cwd: "/tmp", permissionMode: "default" });
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body).toEqual({ prompt: "Halo", cwd: "/tmp", permissionMode: "default" });
+  });
+});

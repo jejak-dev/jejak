@@ -46,11 +46,12 @@ function makeApp(
     runner?: AgentRunner;
     sessions?: SessionManager;
     workspaces?: WorkspaceService;
+    env?: Record<string, string | undefined>;
   } = {},
 ): App {
   return createApp({
     providersPath: providersFile,
-    env: ENV,
+    env: options.env ?? ENV,
     runner: options.runner ?? createMockRunner(),
     ...(options.sessions === undefined ? {} : { sessions: options.sessions }),
     ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
@@ -595,5 +596,63 @@ describe("POST /api/sessions/:id/messages", () => {
       }),
     );
     expect(broken.status).toBe(400);
+  });
+});
+
+describe("POST /api/sessions mode bypass", () => {
+  test("bypass tanpa konfirmasi 400, dengan true 201 dan permissionMode tersimpan", async () => {
+    const server = makeApp();
+
+    const missing = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo", cwd: dir, permissionMode: "bypassPermissions" },
+    });
+    expect(missing.status).toBe(400);
+    expect((await missing.json()) as { error: string }).toEqual({
+      error: "Mode bypass butuh konfirmasi eksplisit.",
+    });
+
+    const session = await createSession(server, {
+      permissionMode: "bypassPermissions",
+      confirmBypass: true,
+    });
+    const detail = await req(server, "GET", `/api/sessions/${session.id}`);
+    const detailData = (await detail.json()) as {
+      session: { permissionMode: string; confirmBypass?: unknown };
+    };
+    expect(detailData.session.permissionMode).toBe("bypassPermissions");
+    expect("confirmBypass" in detailData.session).toBe(false);
+
+    const created = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo lagi", cwd: dir, permissionMode: "bypassPermissions", confirmBypass: true },
+    });
+    const createdData = (await created.json()) as { session: Record<string, unknown> };
+    expect("confirmBypass" in createdData.session).toBe(false);
+  });
+
+  test("confirmBypass dengan mode lain atau bukan boolean 400", async () => {
+    const server = makeApp();
+
+    for (const body of [
+      { permissionMode: "plan", confirmBypass: true },
+      { permissionMode: "default", confirmBypass: false },
+      { permissionMode: "bypassPermissions", confirmBypass: "ya" },
+    ]) {
+      const res = await req(server, "POST", "/api/sessions", {
+        body: { prompt: "Halo", cwd: dir, ...body },
+      });
+      expect(res.status).toBe(400);
+      const data = (await res.json()) as { error: string };
+      expect(typeof data.error).toBe("string");
+    }
+  });
+
+  test("JEJAK_ALLOW_BYPASS=0 menolak walau terkonfirmasi", async () => {
+    const server = makeApp({ env: { ...ENV, JEJAK_ALLOW_BYPASS: "0" } });
+
+    const res = await req(server, "POST", "/api/sessions", {
+      body: { prompt: "Halo", cwd: dir, permissionMode: "bypassPermissions", confirmBypass: true },
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()) as { error: string }).toEqual({ error: "Mode bypass dimatikan." });
   });
 });
