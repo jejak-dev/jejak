@@ -9,6 +9,7 @@ import {
   MAX_SNAPSHOTS,
   RevertError,
   rejectChange,
+  removeSessionUndo,
   undoChange,
 } from "../src/server/files/revert";
 
@@ -567,5 +568,39 @@ describe("diffId dan id hunk stabil", () => {
     const third = await fileAt("a.txt");
     expect(third?.diffId).not.toBe(first!.diffId);
     expect(third?.hunks[0]?.id).not.toBe(first!.hunks[0]?.id);
+  });
+});
+
+describe("removeSessionUndo", () => {
+  test("menghapus hanya <undoDir>/<id> termasuk repo-* dan tidak menyentuh sesi lain", async () => {
+    const target = join(undoDir, SESSION);
+    await mkdir(join(target, "repo-api"), { recursive: true });
+    await mkdir(join(target, "repo-web"), { recursive: true });
+    await writeFile(join(target, "meta.json"), "{}\n");
+    await writeFile(join(target, "repo-api", "meta.json"), "{}\n");
+    const other = join(undoDir, "s_lain");
+    await mkdir(other, { recursive: true });
+    await writeFile(join(other, "meta.json"), "{}\n");
+
+    await removeSessionUndo(undoDir, SESSION);
+
+    expect(existsSync(target)).toBe(false);
+    expect(existsSync(join(other, "meta.json"))).toBe(true);
+    expect(existsSync(undoDir)).toBe(true);
+  });
+
+  test("menolak id berpola salah tanpa menyentuh isi undoDir", async () => {
+    await mkdir(join(undoDir, SESSION), { recursive: true });
+    await writeFile(join(undoDir, SESSION, "meta.json"), "{}\n");
+
+    for (const id of ["..", "../..", "a/b", "a b", "", "s_1/../../x"]) {
+      await expect(removeSessionUndo(undoDir, id)).rejects.toBeInstanceOf(RevertError);
+    }
+    expect(existsSync(join(undoDir, SESSION, "meta.json"))).toBe(true);
+  });
+
+  test("tidak gagal bila direktori sesi tidak ada", async () => {
+    await expect(removeSessionUndo(undoDir, "s_tidakada")).resolves.toBeUndefined();
+    expect(existsSync(undoDir)).toBe(true);
   });
 });

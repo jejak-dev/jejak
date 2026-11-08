@@ -501,6 +501,23 @@ export async function rejectChange(
   return { undoId, path: target.rel, scope: input.scope };
 }
 
+/**
+ * Hapus seluruh snapshot satu sesi: `<undoDir>/<sessionId>` (termasuk subfolder
+ * `repo-*`). Id yang tidak lolos pola atau berada di luar `undoDir` ditolak;
+ * direktori yang tidak ada bukan galat.
+ */
+export async function removeSessionUndo(undoDir: string, sessionId: string): Promise<void> {
+  if (!SESSION_ID_RE.test(sessionId)) {
+    throw new RevertError("Sesi tidak valid.", 400);
+  }
+  const root = resolve(undoDir);
+  const target = resolve(root, sessionId);
+  if (target === root || !inside(root, target)) {
+    throw new RevertError("Sesi tidak valid.", 400);
+  }
+  await rm(target, { recursive: true, force: true });
+}
+
 export async function undoChange(
   sessionId: string,
   cwd: string,

@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../src/server";
 import { createMockRunner, type AgentRunner } from "../src/server/agent";
 import { SessionManager } from "../src/server/sessions/session-manager";
+import { SqliteSessionStore } from "../src/server/sessions/session-store";
 import { WorkspaceService } from "../src/server/workspaces/workspace-service";
 
 const ENV = { MOCK: "true" };
@@ -47,6 +49,8 @@ function makeApp(
     sessions?: SessionManager;
     workspaces?: WorkspaceService;
     env?: Record<string, string | undefined>;
+    undoDir?: string;
+    sessionStore?: SqliteSessionStore;
   } = {},
 ): App {
   return createApp({
@@ -55,6 +59,8 @@ function makeApp(
     runner: options.runner ?? createMockRunner(),
     ...(options.sessions === undefined ? {} : { sessions: options.sessions }),
     ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
+    ...(options.undoDir === undefined ? {} : { undoDir: options.undoDir }),
+    ...(options.sessionStore === undefined ? {} : { sessionStore: options.sessionStore }),
   });
 }
 
@@ -654,5 +660,179 @@ describe("POST /api/sessions mode bypass", () => {
     });
     expect(res.status).toBe(400);
     expect((await res.json()) as { error: string }).toEqual({ error: "Mode bypass dimatikan." });
+  });
+});
+
+describe("PATCH /api/sessions/:id", () => {
+  test("rename mengembalikan session dan bertahan di daftar", async () => {
+    const server = makeApp();
+    const session = await createSession(server);
+
+    const res = await req(server, "PATCH", `/api/sessions/${session.id}`, {
+      body: { title: "  Judul Baru  " },
+    });
+    expect(res.status).toBe(200);
+    const data = (await res.json()) as { session: { id: string; title: string; updatedAt: string } };
+    expect(data.session.id).toBe(session.id);
+    expect(data.session.title).toBe("Judul Baru");
+
+    const list = await req(server, "GET", "/api/sessions");
+    const listData = (await list.json()) as { sessions: Array<{ title: string }> };
+    expect(listData.sessions[0]?.title).toBe("Judul Baru");
+  });
+
+  test("arsip set dan hapus, daftar tetap memuat sesi terarsip", async () => {
+    const runner = createMockRunner();
+    const manager = new SessionManager({
+      runner,
+      resolveProvider: async () => ({ profileId: "lokal", apiKey: KEY }),
+    });
+    const server = makeApp({ runner, sessions: manager });
+    const session = await createSession(server);
+    await manager.done(session.id);
+
+    const archived = await req(server, "PATCH", `/api/sessions/${session.id}`, {
+      body: { archived: true },
+    });
+    expect(archived.status).toBe(200);
+    const archivedData = (await archived.json()) as { session: { archivedAt?: string } };
+    expect(typeof archivedData.session.archivedAt).toBe("string");
+
+    const list = await req(server, "GET", "/api/sessions");
+    const listData = (await list.json()) as { sessions: Array<{ archivedAt?: string }> };
+    expect(listData.sessions).toHaveLength(1);
+    expect(typeof listData.sessions[0]?.archivedAt).toBe("string");
+
+    const unarchived = await req(server, "PATCH", `/api/sessions/${session.id}`, {
+      body: { archived: false },
+    });
+    expect(unarchived.status).toBe(200);
+    expect("archivedAt" in ((await unarchived.json()) as { session: object }).session).toBe(false);
+  });
+
+  test("validasi body: field tak dikenal, tipe salah, kosong, dan bukan JSON -> 400", async () => {
+    const server = makeApp();
+    const session = await createSession(server);
+
+    for (const body of [
+      { judul: "x" },
+      { title: 42 },
+      { archived: "ya" },
+      {},
+      { title: "" },
+      { title: "x".repeat(121) },
+      { title: "baris\nbaru" },
+    ]) {
+      const res = await req(server, "PATCH", `/api/sessions/${session.id}`, { body });
+      expect(res.status).toBe(400);
+      expect(typeof ((await res.json()) as { error: string }).error).toBe("string");
+    }
+
+    const broken = await server.handle(
+      new Request(`http://127.0.0.1:3000/api/sessions/${session.id}`, {
+        method: "PATCH",
+        headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+        body: "{bukan json",
+      }),
+    );
+    expect(broken.status).toBe(400);
+  });
+
+  test("tanpa content-type json ditolak 415, id tak ada 404, sesi berjalan 409", async () => {
+    const server = makeApp();
+    const session = await createSession(server);
+
+    const noType = await server.handle(
+      new Request(`http://127.0.0.1:3000/api/sessions/${session.id}`, {
+        method: "PATCH",
+        headers: { host: "127.0.0.1:3000" },
+        body: JSON.stringify({ title: "Baru" }),
+      }),
+    );
+    expect(noType.status).toBe(415);
+
+    const missing = await req(server, "PATCH", "/api/sessions/s_tidakada", {
+      body: { title: "Baru" },
+    });
+    expect(missing.status).toBe(404);
+
+    const running = await req(server, "PATCH", `/api/sessions/${session.id}`, {
+      body: { archived: true },
+    });
+    expect(running.status).toBe(409);
+    expect(await running.json()).toEqual({ error: "Hentikan sesi dulu." });
+
+    // Rename tetap boleh saat sesi berjalan.
+    const rename = await req(server, "PATCH", `/api/sessions/${session.id}`, {
+      body: { title: "Saat Jalan" },
+    });
+    expect(rename.status).toBe(200);
+  });
+});
+
+describe("DELETE /api/sessions/:id", () => {
+  test("sesi selesai terhapus dari store dan snapshot undo di disk ikut dibersihkan", async () => {
+    const undoDir = join(dir, "undo");
+    const store = new SqliteSessionStore(":memory:");
+    const server = makeApp({ undoDir, sessionStore: store });
+
+    const session = await createSession(server);
+    // Aliran SSE berakhir saat sesi selesai.
+    await readStream(await req(server, "GET", `/api/sessions/${session.id}/events`));
+    expect(store.loadEvents(session.id).length).toBeGreaterThan(0);
+
+    const snapshot = join(undoDir, session.id);
+    await mkdir(join(snapshot, "repo-api"), { recursive: true });
+    await writeFile(join(snapshot, "meta.json"), "{}\n");
+    const lain = join(undoDir, "s_lain");
+    await mkdir(lain, { recursive: true });
+
+    const res = await req(server, "DELETE", `/api/sessions/${session.id}`, { body: {} });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+
+    const detail = await req(server, "GET", `/api/sessions/${session.id}`);
+    expect(detail.status).toBe(404);
+    expect(store.loadSessions()).toEqual([]);
+    expect(store.loadEvents(session.id)).toEqual([]);
+
+    // Hook dijalankan asinkron; tunggu sebentar lalu cek disk.
+    for (let i = 0; i < 50 && existsSync(snapshot); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(existsSync(snapshot)).toBe(false);
+    expect(existsSync(lain)).toBe(true);
+    store.close();
+  });
+
+  test("id tak ada 404, hapus dua kali 404, sesi berjalan 409, content-type wajib", async () => {
+    const runner = createMockRunner();
+    const manager = new SessionManager({
+      runner,
+      resolveProvider: async () => ({ profileId: "lokal", apiKey: KEY }),
+    });
+    const server = makeApp({ runner, sessions: manager });
+
+    const missing = await req(server, "DELETE", "/api/sessions/s_tidakada", { body: {} });
+    expect(missing.status).toBe(404);
+
+    const session = await createSession(server);
+    const running = await req(server, "DELETE", `/api/sessions/${session.id}`, { body: {} });
+    expect(running.status).toBe(409);
+    expect(await running.json()).toEqual({ error: "Hentikan sesi dulu." });
+    await manager.done(session.id);
+
+    const first = await req(server, "DELETE", `/api/sessions/${session.id}`, { body: {} });
+    expect(first.status).toBe(200);
+    const second = await req(server, "DELETE", `/api/sessions/${session.id}`, { body: {} });
+    expect(second.status).toBe(404);
+
+    const noType = await server.handle(
+      new Request(`http://127.0.0.1:3000/api/sessions/${session.id}`, {
+        method: "DELETE",
+        headers: { host: "127.0.0.1:3000" },
+      }),
+    );
+    expect(noType.status).toBe(415);
   });
 });

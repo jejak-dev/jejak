@@ -121,6 +121,25 @@ describe("SqliteSessionStore", () => {
     store.close();
   });
 
+  test("archivedAt bertahan lewat penyimpanan ulang dan bisa dihapus", () => {
+    const store = new SqliteSessionStore(":memory:");
+    store.saveSession(info("s_1", { archivedAt: "2026-03-01T00:00:00.000Z" }), undefined);
+
+    const archived = store.loadSessions();
+    expect(archived[0]?.info.archivedAt).toBe("2026-03-01T00:00:00.000Z");
+
+    const { archivedAt: _dibuang, ...tanpaArsip } = archived[0]!.info;
+    store.saveSession(tanpaArsip as SessionInfo, undefined);
+    expect(store.loadSessions()[0]?.info.archivedAt).toBeUndefined();
+
+    // Sesi lama yang ditulis sebelum field ini ada tetap termuat.
+    store.saveSession(info("s_lama"), undefined);
+    const lama = store.loadSessions().find((item) => item.info.id === "s_lama");
+    expect(lama?.info.archivedAt).toBeUndefined();
+    expect(lama?.info.title).toBe("Judul s_lama");
+    store.close();
+  });
+
   test("sesi lama tanpa field workspace tetap termuat", () => {
     const store = new SqliteSessionStore(":memory:");
     store.saveSession(info("s_lama"), undefined);

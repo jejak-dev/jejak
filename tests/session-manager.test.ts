@@ -1826,3 +1826,232 @@ describe("SessionManager server MCP per giliran", () => {
     warn.mockRestore();
   });
 });
+
+describe("SessionManager.rename", () => {
+  test("mengganti judul ter-trim tanpa mengubah updatedAt dan bertahan di store", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      store,
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    const before = mgr.get(info.id)!.updatedAt;
+
+    const renamed = mgr.rename(info.id, "  Judul Baru  ");
+    expect(renamed.title).toBe("Judul Baru");
+    expect(renamed.updatedAt).toBe(before);
+    expect(mgr.get(info.id)?.title).toBe("Judul Baru");
+    expect(store.loadSessions()[0]?.info.title).toBe("Judul Baru");
+    store.close();
+  });
+
+  test("judul kosong, terlalu panjang, karakter kontrol, dan tipe salah ditolak", async () => {
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]) });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    for (const title of ["", "   ", "x".repeat(121), "baris\nbaru", "tab\tx", 42, undefined]) {
+      expect(() => mgr.rename(info.id, title)).toThrow(SessionError);
+      try {
+        mgr.rename(info.id, title);
+      } catch (error) {
+        expect((error as SessionError).code).toBe("tidak-valid");
+      }
+    }
+    expect(mgr.get(info.id)?.title).toBe("Halo dunia");
+  });
+
+  test("id tak ada ditolak tidak-ditemukan dan rename saat berjalan boleh", async () => {
+    const mgr = manager({ runner: abortingRunner() });
+    const info = await createOk(mgr);
+
+    expect(() => mgr.rename("s_tidakada", "Judul")).toThrow(SessionError);
+    try {
+      mgr.rename("s_tidakada", "Judul");
+    } catch (error) {
+      expect((error as SessionError).code).toBe("tidak-ditemukan");
+    }
+
+    expect(mgr.get(info.id)?.status).toBe("berjalan");
+    expect(mgr.rename(info.id, "Saat Berjalan").title).toBe("Saat Berjalan");
+
+    mgr.interrupt(info.id);
+    await mgr.done(info.id);
+  });
+});
+
+describe("SessionManager.setArchived", () => {
+  test("set lalu hapus arsip tanpa mengubah updatedAt dan bertahan di store", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      store,
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    const before = mgr.get(info.id)!.updatedAt;
+
+    const archived = mgr.setArchived(info.id, true);
+    expect(typeof archived.archivedAt).toBe("string");
+    expect(archived.updatedAt).toBe(before);
+    expect(store.loadSessions()[0]?.info.archivedAt).toBe(archived.archivedAt);
+
+    const restored = mgr.setArchived(info.id, false);
+    expect(restored.archivedAt).toBeUndefined();
+    expect(restored.updatedAt).toBe(before);
+    expect(store.loadSessions()[0]?.info.archivedAt).toBeUndefined();
+    store.close();
+  });
+
+  test("sesi berjalan ditolak konflik", async () => {
+    const mgr = manager({ runner: abortingRunner() });
+    const info = await createOk(mgr);
+
+    expect(() => mgr.setArchived(info.id, true)).toThrow(SessionError);
+    try {
+      mgr.setArchived(info.id, true);
+    } catch (error) {
+      expect((error as SessionError).code).toBe("konflik");
+      expect((error as SessionError).message).toBe("Hentikan sesi dulu.");
+    }
+
+    mgr.interrupt(info.id);
+    await mgr.done(info.id);
+  });
+});
+
+describe("SessionManager.delete", () => {
+  test("selesai: hilang dari list/get, store, event, checkpoint, dan hook sekali", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const removed: string[] = [];
+    const deleted: string[] = [];
+    const mgr = manager({
+      runner: scriptedRunner([
+        { type: "text", text: "halo" },
+        { type: "result", ok: true },
+      ]),
+      store,
+      checkpoints: {
+        create: async () => {},
+        remove: (id) => {
+          removed.push(id);
+        },
+      },
+      onSessionDeleted: (id) => {
+        deleted.push(id);
+      },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    expect(store.loadEvents(info.id).length).toBeGreaterThan(0);
+
+    mgr.delete(info.id);
+
+    expect(mgr.get(info.id)).toBeUndefined();
+    expect(mgr.list()).toEqual([]);
+    expect(store.loadSessions()).toEqual([]);
+    expect(store.loadEvents(info.id)).toEqual([]);
+    expect(removed).toEqual([info.id]);
+    expect(deleted).toEqual([info.id]);
+    expect(() => mgr.delete(info.id)).toThrow(SessionError);
+    try {
+      mgr.delete(info.id);
+    } catch (error) {
+      expect((error as SessionError).code).toBe("tidak-ditemukan");
+    }
+    store.close();
+  });
+
+  test("sesi berjalan ditolak konflik", async () => {
+    const mgr = manager({ runner: abortingRunner() });
+    const info = await createOk(mgr);
+
+    expect(() => mgr.delete(info.id)).toThrow(SessionError);
+    try {
+      mgr.delete(info.id);
+    } catch (error) {
+      expect((error as SessionError).code).toBe("konflik");
+    }
+    expect(mgr.get(info.id)?.status).toBe("berjalan");
+
+    mgr.interrupt(info.id);
+    await mgr.done(info.id);
+  });
+
+  test("galat hook sinkron maupun async tidak menggagalkan delete", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      onSessionDeleted: () => {
+        throw new Error("hook gagal");
+      },
+    });
+    const first = await createOk(mgr);
+    await mgr.done(first.id);
+    expect(() => mgr.delete(first.id)).not.toThrow();
+    expect(mgr.get(first.id)).toBeUndefined();
+
+    const asyncMgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      onSessionDeleted: async () => {
+        throw new Error("hook async gagal");
+      },
+    });
+    const second = await createOk(asyncMgr);
+    await asyncMgr.done(second.id);
+    expect(() => asyncMgr.delete(second.id)).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(asyncMgr.get(second.id)).toBeUndefined();
+    // Sekali per manajer; isi peringatan tidak memuat pesan galat hook.
+    expect(warn.mock.calls.length).toBe(2);
+    for (const call of warn.mock.calls) {
+      expect(String(call[0])).not.toContain("hook");
+    }
+    warn.mockRestore();
+  });
+});
+
+describe("SessionManager eviksi sesi terarsip", () => {
+  test("sesi terarsip dibuang lebih dulu dan hook dipanggil", async () => {
+    const deleted: string[] = [];
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      maxSessions: 2,
+      onSessionDeleted: (id) => {
+        deleted.push(id);
+      },
+    });
+
+    const archived = await createOk(mgr);
+    await mgr.done(archived.id);
+    mgr.setArchived(archived.id, true);
+    const second = await createOk(mgr);
+    await mgr.done(second.id);
+
+    const third = await createOk(mgr);
+    await mgr.done(third.id);
+
+    expect(mgr.get(archived.id)).toBeUndefined();
+    expect(mgr.get(second.id)).toBeDefined();
+    expect(mgr.get(third.id)).toBeDefined();
+    expect(deleted).toEqual([archived.id]);
+  });
+
+  test("tanpa arsip urutan lama tetap: sesi selesai tertua dibuang", async () => {
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      maxSessions: 2,
+    });
+
+    const first = await createOk(mgr);
+    await mgr.done(first.id);
+    const second = await createOk(mgr);
+    await mgr.done(second.id);
+    const third = await createOk(mgr);
+    await mgr.done(third.id);
+
+    expect(mgr.get(first.id)).toBeUndefined();
+    expect(mgr.get(second.id)).toBeDefined();
+  });
+});

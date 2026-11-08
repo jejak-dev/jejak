@@ -27,7 +27,7 @@ function jsonResponse(status: number, payload: unknown): Response {
 
 function errorResponse(error: unknown): Response {
   if (error instanceof SessionError) {
-    const status = error.code === "tidak-ditemukan" ? 404 : error.code === "penuh" ? 429 : 400;
+    const status = error.code === "tidak-ditemukan" ? 404 : error.code === "penuh" ? 429 : error.code === "konflik" ? 409 : 400;
     return jsonResponse(status, { error: error.message });
   }
   const message = error instanceof Error ? error.message : "Permintaan tidak valid.";
@@ -104,6 +104,36 @@ function parseMessagesBody(body: unknown): string {
     throw invalid("Field text harus berupa string.");
   }
   return record.text;
+}
+
+function parseUpdateBody(body: unknown): { title?: string; archived?: boolean } {
+  const parsed = parseJsonBody(body);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw invalid("Body permintaan harus berupa objek.");
+  }
+  const record = parsed as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "title" && key !== "archived") {
+      throw invalid(`Field ${key} tidak dikenal.`);
+    }
+  }
+  const update: { title?: string; archived?: boolean } = {};
+  if (record.title !== undefined) {
+    if (typeof record.title !== "string") {
+      throw invalid("Field title harus berupa string.");
+    }
+    update.title = record.title;
+  }
+  if (record.archived !== undefined) {
+    if (typeof record.archived !== "boolean") {
+      throw invalid("Field archived harus berupa boolean.");
+    }
+    update.archived = record.archived;
+  }
+  if (update.title === undefined && update.archived === undefined) {
+    throw invalid("Minimal satu field (title atau archived) harus diisi.");
+  }
+  return update;
 }
 
 function parseSequence(raw: string | null): number {
@@ -192,6 +222,46 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
       }
       return { session: await withWorkspaceRepos(session, options.workspaces) };
     })
+    .patch(
+      "/api/sessions/:id",
+      ({ params, body }) => {
+        try {
+          const update = parseUpdateBody(body);
+          const current = manager.get(params.id);
+          if (current === undefined) {
+            return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+          }
+          // Dicek sebelum rename agar permintaan gabungan yang ditolak tidak
+          // sempat mengubah judul.
+          if (update.archived !== undefined && current.status === "berjalan") {
+            throw new SessionError("Hentikan sesi dulu.", "konflik");
+          }
+          let session = current;
+          if (update.title !== undefined) {
+            session = manager.rename(params.id, update.title);
+          }
+          if (update.archived !== undefined) {
+            session = manager.setArchived(params.id, update.archived);
+          }
+          return { session };
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .delete(
+      "/api/sessions/:id",
+      ({ params }) => {
+        try {
+          manager.delete(params.id);
+          return { ok: true };
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
     .post(
       "/api/sessions/:id/messages",
       async ({ params, body }) => {

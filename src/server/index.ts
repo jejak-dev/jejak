@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
 import { CheckpointService } from "./checkpoints/checkpoint-service";
+import { removeSessionUndo } from "./files/revert";
 import { localGuard } from "./guard";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
@@ -104,6 +105,11 @@ export function createApp(options: CreateAppOptions = {}) {
       workspaces: workspaceResolver,
       mcpServers: options.mcpServers,
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
+      onSessionDeleted: (id) =>
+        removeSessionUndo(
+          options.undoDir ?? join(jejakHome(env), "undo"),
+          id,
+        ),
     });
 
   let app = new Elysia()

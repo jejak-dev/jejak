@@ -36,6 +36,8 @@ export interface SessionInfo {
   queued: number;
   workspaceId?: string;
   workspaceName?: string;
+  /** Waktu sesi diarsipkan (ISO); tidak ada berarti tidak diarsipkan. */
+  archivedAt?: string;
   /** Hanya dihitung saat `GET /api/sessions/:id`; tidak disimpan di store. */
   workspaceRepos?: Array<{ name: string; primary: boolean; missing: boolean }>;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
@@ -107,12 +109,14 @@ export interface SessionManagerOptions {
   mcpServers?: McpServerResolver;
   /** Default `true`; `false` menolak semua sesi bermode bypass. */
   allowBypass?: boolean;
+  /** Dipanggil setelah sesi dibuang (hapus manual maupun eviksi). Galatnya ditelan. */
+  onSessionDeleted?: (id: string) => void | Promise<void>;
 }
 
 export class SessionError extends Error {
   constructor(
     message: string,
-    public readonly code: "tidak-valid" | "tidak-ditemukan" | "penuh",
+    public readonly code: "tidak-valid" | "tidak-ditemukan" | "penuh" | "konflik",
   ) {
     super(message);
     this.name = "SessionError";
@@ -243,10 +247,12 @@ export class SessionManager {
   private readonly workspaces: WorkspaceResolver | undefined;
   private readonly mcpServers: McpServerResolver | undefined;
   private readonly allowBypass: boolean;
+  private readonly onSessionDeleted: ((id: string) => void | Promise<void>) | undefined;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
   private mcpServersWarned = false;
+  private deleteHookWarned = false;
 
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
@@ -263,6 +269,7 @@ export class SessionManager {
     this.workspaces = options.workspaces;
     this.mcpServers = options.mcpServers;
     this.allowBypass = options.allowBypass ?? true;
+    this.onSessionDeleted = options.onSessionDeleted;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -362,9 +369,50 @@ export class SessionManager {
     while (this.sessions.size > this.maxSessions) {
       const victim = this.sessions.values().next().value as SessionRecord | undefined;
       if (victim === undefined) break;
-      this.sessions.delete(victim.info.id);
-      this.removeCheckpoints(victim.info.id);
-      this.storeGuard(() => store.deleteSession(victim.info.id));
+      this.dropSession(victim);
+    }
+  }
+
+  /**
+   * Satu jalur pembuangan untuk eviksi (restore/ensureCapacity) dan hapus manual.
+   * Sesi yang berjalan tidak boleh lewat sini; pemanggil memeriksanya lebih dulu.
+   */
+  private dropSession(record: SessionRecord): void {
+    const id = record.info.id;
+    this.sessions.delete(id);
+
+    record.queue.length = 0;
+    record.info.queued = 0;
+    for (const pending of record.pending.values()) {
+      pending.resolve({ behavior: "deny", message: PERMISSION_STOPPED_MESSAGE });
+    }
+    record.pending.clear();
+    record.info.pendingPermissions = 0;
+
+    this.removeCheckpoints(id);
+    this.storeGuard(() => this.store?.deleteSession(id));
+
+    // Pelanggan SSE yang menunggu dibangunkan agar loop-nya berakhir seperti biasa.
+    this.notify(record);
+
+    this.runDeleteHook(id);
+  }
+
+  private runDeleteHook(id: string): void {
+    const hook = this.onSessionDeleted;
+    if (hook === undefined) return;
+    const warn = (): void => {
+      if (this.deleteHookWarned) return;
+      this.deleteHookWarned = true;
+      console.warn("Pembersihan setelah hapus sesi gagal; sisa berkas dibiarkan.");
+    };
+    try {
+      const result = hook(id);
+      if (result !== undefined && typeof (result as Promise<void>).then === "function") {
+        void (result as Promise<void>).catch(warn);
+      }
+    } catch {
+      warn();
     }
   }
 
@@ -454,6 +502,67 @@ export class SessionManager {
   get(id: string): SessionInfo | undefined {
     const record = this.sessions.get(id);
     return record === undefined ? undefined : { ...record.info };
+  }
+
+  /** Ganti judul; `updatedAt` sengaja tidak diubah agar urutan daftar stabil. */
+  rename(id: string, title: unknown): SessionInfo {
+    const record = this.requireRecord(id);
+    const value = this.validateTitle(title);
+    record.info.title = value;
+    this.persistSession(record);
+    this.notify(record);
+    return { ...record.info };
+  }
+
+  /** Arsipkan/batalkan arsip; sesi berjalan harus dihentikan dulu. */
+  setArchived(id: string, archived: unknown): SessionInfo {
+    const record = this.requireRecord(id);
+    if (typeof archived !== "boolean") {
+      throw new SessionError("Field archived harus berupa boolean.", "tidak-valid");
+    }
+    if (record.info.status === "berjalan") {
+      throw new SessionError("Hentikan sesi dulu.", "konflik");
+    }
+    if (archived) {
+      record.info.archivedAt = this.now().toISOString();
+    } else {
+      delete record.info.archivedAt;
+    }
+    this.persistSession(record);
+    this.notify(record);
+    return { ...record.info };
+  }
+
+  /** Hapus sesi beserta event, checkpoint, dan snapshot undo (lewat hook). */
+  delete(id: string): void {
+    const record = this.requireRecord(id);
+    if (record.info.status === "berjalan") {
+      throw new SessionError("Hentikan sesi dulu.", "konflik");
+    }
+    this.dropSession(record);
+  }
+
+  private requireRecord(id: string): SessionRecord {
+    const record = this.sessions.get(id);
+    if (record === undefined) {
+      throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
+    }
+    return record;
+  }
+
+  private validateTitle(title: unknown): string {
+    if (typeof title !== "string") {
+      throw new SessionError("Judul harus berupa teks.", "tidak-valid");
+    }
+    const value = title.trim();
+    if (value === "" || value.length > 120) {
+      throw new SessionError("Judul harus 1..120 karakter.", "tidak-valid");
+    }
+    // Hanya spasi biasa yang boleh; karakter kontrol lain ditolak.
+    if (/[\u0000-\u001f\u007f]/.test(value)) {
+      throw new SessionError("Judul tidak boleh memuat karakter kontrol.", "tidak-valid");
+    }
+    return value;
   }
 
   async *events(
@@ -749,16 +858,19 @@ export class SessionManager {
     this.assertConcurrencyCapacity();
 
     while (this.sessions.size >= this.maxSessions) {
-      const victim = Array.from(this.sessions.values()).find(
+      // Sesi terarsip yang tidak berjalan dibuang lebih dulu (tertua lebih dulu),
+      // lalu urutan lama: sesi selesai pertama yang ditemukan.
+      const idle = Array.from(this.sessions.values()).filter(
         (record) => record.info.status !== "berjalan",
       );
+      const archived = idle
+        .filter((record) => record.info.archivedAt !== undefined)
+        .sort((a, b) => a.info.archivedAt!.localeCompare(b.info.archivedAt!));
+      const victim = archived[0] ?? idle[0];
       if (victim === undefined) {
         throw new SessionError("Kapasitas sesi penuh; tidak ada sesi selesai untuk dibuang.", "penuh");
       }
-      this.sessions.delete(victim.info.id);
-      const id = victim.info.id;
-      this.removeCheckpoints(id);
-      this.storeGuard(() => this.store?.deleteSession(id));
+      this.dropSession(victim);
     }
   }
 
