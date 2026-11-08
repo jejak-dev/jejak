@@ -1274,3 +1274,59 @@ describe("createApiClient mode bypass", () => {
     expect(body).toEqual({ prompt: "Halo", cwd: "/tmp", permissionMode: "default" });
   });
 });
+
+describe("createApiClient browseDirs", () => {
+  const BROWSE = {
+    path: "/tmp",
+    parent: "/",
+    home: "/Users/boy",
+    entries: [{ name: "proyek", path: "/tmp/proyek", git: true }],
+    truncated: false,
+  };
+
+  test("tanpa path memanggil /api/fs/dirs", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(BROWSE));
+    const api = createApiClient({ fetch });
+
+    const result = await api.browseDirs();
+
+    expect(result).toEqual(BROWSE);
+    expect(calls[0]?.url).toBe("/api/fs/dirs");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("dengan path mengirim query ?path= terenkode", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(BROWSE));
+    const api = createApiClient({ fetch });
+
+    await api.browseDirs("/tmp/My Folder");
+    await api.browseDirs("/tmp/a&b");
+    await api.browseDirs("/tmp/привет");
+
+    expect(calls[0]?.url).toBe("/api/fs/dirs?path=%2Ftmp%2FMy%20Folder");
+    expect(calls[1]?.url).toBe("/api/fs/dirs?path=%2Ftmp%2Fa%26b");
+    expect(calls[2]?.url).toBe("/api/fs/dirs?path=%2Ftmp%2F%D0%BF%D1%80%D0%B8%D0%B2%D0%B5%D1%82");
+  });
+
+  test("galat server memunculkan pesan dan status", async () => {
+    for (const [status, message] of [
+      [503, "Penelusur folder dimatikan."],
+      [400, "Path tidak valid."],
+      [404, "Folder tidak ditemukan."],
+    ] as const) {
+      const { fetch } = fakeFetch(() => jsonResponse({ error: message }, status));
+      const api = createApiClient({ fetch });
+
+      let caught: unknown;
+      try {
+        await api.browseDirs("/x");
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(ApiError);
+      expect((caught as ApiError).status).toBe(status);
+      expect((caught as ApiError).message).toBe(message);
+    }
+  });
+});

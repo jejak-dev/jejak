@@ -7,6 +7,7 @@ import type {
   PreviewResult,
   RewindResult,
 } from "../../server/checkpoints/checkpoint-service";
+import type { BrowseResult } from "../../server/files/browse";
 import type { Changes } from "../../server/files/changes";
 import type { DirectoryListing } from "../../server/files/list";
 import type { FileContent } from "../../server/files/read";
@@ -36,13 +37,8 @@ export type {
 export type CheckpointList = ListCheckpointsResult;
 export type CheckpointPreview = PreviewResult;
 
-export type {
-  ChangedFile,
-  ChangeStatus,
-  Changes,
-  DiffLine,
-  Hunk,
-} from "../../server/files/changes";
+export type { ChangedFile, ChangeStatus, Changes, DiffLine, Hunk } from "../../server/files/changes";
+export type { BrowseEntry, BrowseResult } from "../../server/files/browse";
 export type { DirEntry, DirectoryListing } from "../../server/files/list";
 export type { FileContent } from "../../server/files/read";
 export type {
@@ -187,6 +183,7 @@ export interface ApiClient {
   getFiles(id: string, path?: string, repo?: string): Promise<DirectoryListing>;
   getFile(id: string, path: string, repo?: string): Promise<FileContent>;
   getChanges(id: string, repo?: string): Promise<Changes>;
+  browseDirs(path?: string): Promise<BrowseResult>;
   rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
   undoChange(id: string, undoId: string, repo?: string): Promise<{ path: string }>;
   getCheckpoints(id: string): Promise<CheckpointList>;
@@ -546,6 +543,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         "GET",
         `/api/sessions/${encodeURIComponent(id)}/changes${query}`,
       )) as Changes;
+    },
+
+    async browseDirs(path) {
+      const query = queryString([["path", path]]);
+      return (await request("GET", `/api/fs/dirs${query}`)) as BrowseResult;
     },
 
     async rejectChange(id, input) {

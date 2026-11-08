@@ -11,6 +11,7 @@ import {
   type ComposerPermissionMode,
 } from "../lib/permission-mode";
 import { defaultRepoPath, workspaceRepoOptions } from "../lib/workspace";
+import { FolderPicker } from "./FolderPicker";
 import { Icon } from "./Icon";
 
 export interface ComposerProps {
@@ -80,6 +81,7 @@ export function Composer({
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(readStoredMode);
   const [bypassAcknowledged, setBypassAcknowledged] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [promptError, setPromptError] = useState<string | undefined>(undefined);
   const [cwdError, setCwdError] = useState<string | undefined>(undefined);
   const [apiError, setApiError] = useState<string | undefined>(undefined);
@@ -126,6 +128,10 @@ export function Composer({
   }, [defaultCwd]);
 
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
+
+  useEffect(() => {
+    if (selectedWorkspace !== undefined || busy) setPickerOpen(false);
+  }, [selectedWorkspace, busy]);
 
   useEffect(() => {
     if (workspaces.length === 0) return;
@@ -326,23 +332,47 @@ export function Composer({
               </select>
             </label>
           ) : (
-            <label class="jk-chip jk-chip-cwd" title="Folder kerja">
-              <Icon name="folder" />
-              <span class="jk-visually-hidden">Folder kerja</span>
-              <input
-                id="jk-cwd"
-                ref={cwdRef}
-                type="text"
-                class="jk-chip-input"
-                value={cwd}
-                size={Math.min(Math.max(cwd.length, 12), 34)}
-                spellcheck={false}
-                onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
+            <>
+              <label class="jk-chip jk-chip-cwd" title="Folder kerja">
+                <Icon name="folder" />
+                <span class="jk-visually-hidden">Folder kerja</span>
+                <input
+                  id="jk-cwd"
+                  ref={cwdRef}
+                  type="text"
+                  class="jk-chip-input"
+                  value={cwd}
+                  size={Math.min(Math.max(cwd.length, 12), 34)}
+                  spellcheck={false}
+                  onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
+                  disabled={busy}
+                  aria-invalid={cwdError !== undefined}
+                  aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
+                />
+              </label>
+              <button
+                type="button"
+                class="jk-icon-btn"
+                aria-label="Telusuri folder"
+                title="Telusuri…"
+                data-folder-opener
                 disabled={busy}
-                aria-invalid={cwdError !== undefined}
-                aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
-              />
-            </label>
+                onClick={() => setPickerOpen((open) => !open)}
+              >
+                <Icon name="folder" />
+              </button>
+              {pickerOpen && (
+                <FolderPicker
+                  api={api}
+                  initialPath={cwd.trim() === "" ? undefined : cwd.trim()}
+                  onPick={(path) => {
+                    setCwd(path);
+                    setPickerOpen(false);
+                  }}
+                  onClose={() => setPickerOpen(false)}
+                />
+              )}
+            </>
           )}
 
           <label class="jk-chip">

@@ -775,6 +775,7 @@ code {
 }
 
 .jk-comp-bar {
+  position: relative;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -879,7 +880,100 @@ code {
   text-underline-offset: 3px;
 }
 
-/* Balasan pesan lanjutan */
+/* Pemilih folder */
+
+.jk-picker {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(320px, calc(100vw - 32px));
+  padding: 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  outline: 0;
+}
+
+.jk-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.jk-picker-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.jk-picker-nav {
+  font-size: 13px;
+}
+
+.jk-picker-nav:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.jk-picker-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0 -4px;
+}
+
+.jk-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--t2);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.jk-picker-row:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-picker-git {
+  flex: none;
+  color: var(--t3);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+}
+
+.jk-picker-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
+
 
 .jk-reply {
   flex: none;
