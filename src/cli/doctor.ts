@@ -1,9 +1,10 @@
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { listSessionDirs } from "../server/checkpoints/checkpoint-service";
 import { readMemoryFile, scanMemoryFiles } from "../server/memory/memory-files";
 import { memoryDir } from "../server/memory/memory-store";
 import { redactResolved, resolveProvider, type ProviderRegistry } from "../server/provider";
-import { loadRegistry, providersPath } from "../server/provider-store";
+import { jejakHome, loadRegistry, providersPath } from "../server/provider-store";
 import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
 import { VERSION } from "../shared/version";
 
@@ -29,6 +30,26 @@ function parseMajorMinor(v: string): [number, number] {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function directoryBytes(dir: string): Promise<number> {
+  let total = 0;
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return 0;
+  }
+  for (const name of names) {
+    const path = join(dir, name);
+    try {
+      const info = await stat(path);
+      total += info.isDirectory() ? await directoryBytes(path) : info.size;
+    } catch {
+      // Berkas menghilang; lewati.
+    }
+  }
+  return total;
 }
 
 function defaultResolveSdk(): string | null {
@@ -241,8 +262,31 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
     }
   }
 
-  let sdkLocation: string | null;
-  try {
+  if (env.JEJAK_CHECKPOINTS?.trim() === "0") {
+    checks.push({
+      name: "Checkpoint",
+      status: "peringatan",
+      detail: "dimatikan (JEJAK_CHECKPOINTS=0)",
+    });
+  } else {
+    const dir = join(jejakHome(env), "checkpoints");
+    const sessions = await listSessionDirs(dir);
+    const bytes = await directoryBytes(dir);
+    const git = Bun.which("git");
+    const sizeText =
+      bytes < 1024 * 1024
+        ? `${Math.ceil(bytes / 1024)} KB`
+        : `${Math.ceil(bytes / (1024 * 1024))} MB`;
+    const gitText =
+      git === null ? "git tidak tersedia; checkpoint tidak akan dibuat" : "git tersedia";
+    checks.push({
+      name: "Checkpoint",
+      status: git === null ? "peringatan" : "ok",
+      detail: `${dir}; ${sessions.length} sesi; ${sizeText}; ${gitText}`,
+    });
+  }
+
+  let sdkLocation: string | null;  try {
     sdkLocation = resolveSdk();
   } catch {
     sdkLocation = null;

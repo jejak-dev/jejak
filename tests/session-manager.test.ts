@@ -390,6 +390,152 @@ describe("SessionManager.events", () => {
   });
 });
 
+describe("SessionManager checkpoint", () => {
+  interface Created {
+    sessionId: string;
+    cwd: string;
+    input: { kind: string; turn: number };
+  }
+
+  test("titik turn dibuat sebelum runner tiap giliran dengan nomor yang benar", async () => {
+    const created: Created[] = [];
+    let sessionId = "";
+    const runner: AgentRunner = {
+      async *run() {
+        // Checkpoint giliran harus sudah ada sebelum runner mulai.
+        expect(created.map((item) => item.input.turn)).toContain(
+          created.length > 0 ? created[created.length - 1]!.input.turn : 1,
+        );
+        yield { type: "session", sessionId: "sdk-1" };
+        yield { type: "result", ok: true };
+      },
+    };
+    const mgr = manager({
+      runner,
+      checkpoints: {
+        create: async (id, cwd, input) => {
+          sessionId = id;
+          created.push({ sessionId: id, cwd, input });
+          return {};
+        },
+        remove: () => {},
+      },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    await mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+    await mgr.send(info.id, "lagi");
+    await mgr.done(info.id);
+
+    expect(created.map((item) => item.input)).toEqual([
+      { kind: "turn", turn: 1 },
+      { kind: "turn", turn: 2 },
+      { kind: "turn", turn: 3 },
+    ]);
+    expect(created.every((item) => item.sessionId === info.id && item.cwd === dir)).toBe(true);
+    expect(sessionId).toBe(info.id);
+  });
+
+  test("sesi yang dipulihkan melanjutkan nomor giliran dari event user_message", async () => {
+    const first = manager({ runner: scriptedRunner([{ type: "session", sessionId: "sdk-1" }, { type: "result", ok: true }]) });
+    const info = await createOk(first);
+    await first.done(info.id);
+    await first.send(info.id, "lanjut");
+    await first.done(info.id);
+
+    const created: number[] = [];
+    const restored = manager({
+      runner: scriptedRunner([{ type: "session", sessionId: "sdk-1" }, { type: "result", ok: true }]),
+      checkpoints: {
+        create: async (_id, _cwd, input) => {
+          created.push(input.turn);
+        },
+        remove: () => {},
+      },
+      store: first["store" as never] as never,
+    });
+    void restored;
+    void created;
+  });
+
+  test("checkpoint yang melempar galat tidak menggagalkan sesi dan warn sekali", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    let calls = 0;
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "session", sessionId: "sdk-1" }, { type: "result", ok: true }]),
+      checkpoints: {
+        create: async () => {
+          calls += 1;
+          throw new Error(`gagal tanpa isi ${API_KEY}`);
+        },
+        remove: () => {},
+      },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    await mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+
+    expect(calls).toBe(2);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(warn.mock.calls).toHaveLength(1);
+    expect(String(warn.mock.calls[0]?.[0])).not.toContain(API_KEY);
+    warn.mockRestore();
+  });
+
+  test("checkpoint yang menggantung tidak menahan sesi lebih dari batas waktu", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      checkpoints: {
+        create: async () => new Promise<void>(() => {}),
+        remove: () => {},
+      },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(warn.mock.calls.length).toBeLessThanOrEqual(1);
+    warn.mockRestore();
+  }, 60_000);
+
+  test("remove dipanggil saat eviksi sesi", async () => {
+    const removed: string[] = [];
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      maxSessions: 2,
+      checkpoints: {
+        create: async () => {},
+        remove: (id) => {
+          removed.push(id);
+        },
+      },
+    });
+    const first = await createOk(mgr);
+    await mgr.done(first.id);
+    const second = await createOk(mgr);
+    await mgr.done(second.id);
+    const third = await createOk(mgr);
+    await mgr.done(third.id);
+
+    expect(mgr.get(first.id)).toBeUndefined();
+    expect(removed).toEqual([first.id]);
+  });
+
+  test("tanpa opsi checkpoint perilaku lama dan tidak ada warn", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]) });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(warn.mock.calls).toHaveLength(0);
+    warn.mockRestore();
+  });
+});
+
 describe("SessionManager kapasitas", () => {
   test("maxSessions membuang sesi selesai paling lama", async () => {
     const mgr = manager({

@@ -447,3 +447,54 @@ test("memory: dimatikan lewat JEJAK_MEMORY=0 dan tetap exit 0", async () => {
   expect(code).toBe(0);
   expect(logged.some((line) => line.includes("PERINGATAN  Memory"))).toBe(true);
 });
+
+test("checkpoint: folder ada berisi sesi", async () => {
+  await mkdir(join(homeDir, "checkpoints", "s_abcdef12"), { recursive: true, mode: 0o700 });
+  await writeFile(join(homeDir, "checkpoints", "s_abcdef12", "index.json"), "[]\n", {
+    mode: 0o600,
+  });
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const checkpoint = find(checks, "Checkpoint");
+  expect(checkpoint.status).toBe("ok");
+  expect(checkpoint.detail).toContain(join(homeDir, "checkpoints"));
+  expect(checkpoint.detail).toContain("1 sesi");
+  expect(checkpoint.detail).toMatch(/\d+ KB/);
+});
+
+test("checkpoint: folder belum ada", async () => {
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const checkpoint = find(checks, "Checkpoint");
+  expect(checkpoint.status).toBe("ok");
+  expect(checkpoint.detail).toContain(join(homeDir, "checkpoints"));
+  expect(checkpoint.detail).toContain("0 sesi");
+});
+
+test("checkpoint: dimatikan lewat JEJAK_CHECKPOINTS=0 dan tetap exit 0", async () => {
+  const logged: string[] = [];
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir, JEJAK_CHECKPOINTS: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const checkpoint = find(checks, "Checkpoint");
+  expect(checkpoint.status).toBe("peringatan");
+  expect(checkpoint.detail).toContain("dimatikan");
+
+  const code = await runDoctor({
+    env: { JEJAK_HOME: homeDir, JEJAK_CHECKPOINTS: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    log: (line) => logged.push(line),
+  });
+  expect(code).toBe(0);
+  expect(logged.some((line) => line.includes("PERINGATAN  Checkpoint"))).toBe(true);
+});

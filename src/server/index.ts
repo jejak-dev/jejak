@@ -1,12 +1,15 @@
 import { Elysia } from "elysia";
+import { join } from "node:path";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
+import { CheckpointService } from "./checkpoints/checkpoint-service";
 import { localGuard } from "./guard";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
-import { loadRegistry, providersPath } from "./provider-store";
+import { jejakHome, loadRegistry, providersPath } from "./provider-store";
+import { checkpointRoutes } from "./routes/checkpoints";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { fileRoutes } from "./routes/files";
 import { infoRoutes } from "./routes/info";
@@ -36,6 +39,10 @@ export interface CreateAppOptions {
   memory?: MemoryService;
   /** URL publik `/mcp` yang dipakai agent untuk menjangkau tool memory. */
   mcpUrl?: string;
+  /** Layanan checkpoint; tanpa opsi ini rute checkpoint menjawab 503. */
+  checkpoints?: CheckpointService;
+  /** Direktori checkpoint; default `<jejakHome(env)>/checkpoints`. */
+  checkpointDir?: string;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -47,6 +54,12 @@ export function createApp(options: CreateAppOptions = {}) {
       ? undefined
       : createMemoryBridge({ service: options.memory, mcpUrl: options.mcpUrl });
 
+  const checkpoints =
+    options.checkpoints ??
+    (options.checkpointDir === undefined
+      ? undefined
+      : new CheckpointService({ root: options.checkpointDir }));
+
   const manager =
     options.sessions ??
     new SessionManager({
@@ -55,6 +68,7 @@ export function createApp(options: CreateAppOptions = {}) {
         resolveRegistryProvider(await loadRegistry(path, env), selection),
       store: options.sessionStore,
       memoryBridge: memoryBridge?.bridge,
+      checkpoints,
     });
 
   let app = new Elysia()
@@ -62,6 +76,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .use(sessionRoutes({ manager }))
     .use(fileRoutes({ manager, env: options.env, undoDir: options.undoDir }))
+    .use(checkpointRoutes({ manager, service: checkpoints }))
     .use(memoryRoutes({ service: options.memory }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
@@ -96,8 +111,15 @@ export function startServer(options: ServeOptions = {}) {
     memoryStore === undefined
       ? undefined
       : new MemoryService({ store: memoryStore, cwd: process.cwd() });
+  const checkpointsDisabled = process.env.JEJAK_CHECKPOINTS?.trim() === "0";
+  const checkpoints = checkpointsDisabled
+    ? undefined
+    : new CheckpointService({ root: join(jejakHome(), "checkpoints") });
   const mcpUrl = mcpUrlFor(host, port);
-  const app = createApp({ sessionStore: store, memory, mcpUrl }).listen({ hostname: host, port });
+  const app = createApp({ sessionStore: store, memory, mcpUrl, checkpoints }).listen({
+    hostname: host,
+    port,
+  });
   console.log(`Jejak berjalan di http://${host}:${port}`);
   const closers: Array<() => void> = [];
   if (store !== undefined) closers.push(() => store.close());

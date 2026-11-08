@@ -48,6 +48,15 @@ export interface CreateSessionInput {
   permissionMode?: string;
 }
 
+export interface SessionManagerCheckpoints {
+  create(
+    sessionId: string,
+    cwd: string,
+    input: { kind: "turn"; turn: number },
+  ): Promise<unknown>;
+  remove(sessionId: string): Promise<void> | void;
+}
+
 export interface SessionManagerOptions {
   runner: AgentRunner;
   resolveProvider: (selection: ProviderSelection) => Promise<ResolvedProvider>;
@@ -59,6 +68,7 @@ export interface SessionManagerOptions {
   permissionTimeoutMs?: number;
   store?: SessionStore;
   memoryBridge?: MemoryBridge;
+  checkpoints?: SessionManagerCheckpoints;
 }
 
 export class SessionError extends Error {
@@ -92,7 +102,11 @@ interface SessionRecord {
   resolved?: ResolvedProvider;
   sdkSessionId?: string;
   queue: string[];
+  /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
+  turns: number;
 }
+
+const CHECKPOINT_TIMEOUT_MS = 30_000;
 
 const MAX_QUEUED_MESSAGES = 5;
 
@@ -180,8 +194,10 @@ export class SessionManager {
   private readonly permissionTimeoutMs: number;
   private readonly store: SessionStore | undefined;
   private readonly memoryBridge: MemoryBridge | undefined;
+  private readonly checkpoints: SessionManagerCheckpoints | undefined;
   private storeWarned = false;
   private memoryWarned = false;
+  private checkpointWarned = false;
 
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
@@ -194,6 +210,7 @@ export class SessionManager {
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULTS.permissionTimeoutMs;
     this.store = options.store;
     this.memoryBridge = options.memoryBridge;
+    this.checkpoints = options.checkpoints;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -261,6 +278,7 @@ export class SessionManager {
         pending: new Map(),
         permissionTimeoutMs: this.permissionTimeoutMs,
         queue: [],
+        turns: this.countTurns(buffer),
       };
       if (item.sdkSessionId !== undefined) {
         record.sdkSessionId = item.sdkSessionId;
@@ -293,7 +311,18 @@ export class SessionManager {
       const victim = this.sessions.values().next().value as SessionRecord | undefined;
       if (victim === undefined) break;
       this.sessions.delete(victim.info.id);
+      this.removeCheckpoints(victim.info.id);
       this.storeGuard(() => store.deleteSession(victim.info.id));
+    }
+  }
+
+  private removeCheckpoints(id: string): void {
+    const checkpoints = this.checkpoints;
+    if (checkpoints === undefined) return;
+    try {
+      void Promise.resolve(checkpoints.remove(id)).catch(() => undefined);
+    } catch {
+      // Pembersihan checkpoint tidak boleh menggagalkan siklus sesi.
     }
   }
 
@@ -350,6 +379,7 @@ export class SessionManager {
       price: resolved.price,
       resolved,
       queue: [],
+      turns: 0,
     };
     this.sessions.set(info.id, record);
     this.persistSession(record);
@@ -558,6 +588,7 @@ export class SessionManager {
       }
       this.sessions.delete(victim.info.id);
       const id = victim.info.id;
+      this.removeCheckpoints(id);
       this.storeGuard(() => this.store?.deleteSession(id));
     }
   }
@@ -579,6 +610,7 @@ export class SessionManager {
       settle = resolve;
     });
     record.settle = settle;
+    record.turns += 1;
 
     this.setStatus(record, "berjalan");
     if (isFollowUp) {
@@ -603,6 +635,37 @@ export class SessionManager {
     );
   }
 
+  /** Giliran terhitung dari event user_message; giliran pertama tidak punya event itu. */
+  private countTurns(buffer: SequencedEvent[]): number {
+    return buffer.filter((item) => item.event.type === "user_message").length + 1;
+  }
+
+  private async ensureTurnCheckpoint(record: SessionRecord): Promise<void> {
+    const checkpoints = this.checkpoints;
+    if (checkpoints === undefined) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        Promise.resolve(
+          checkpoints.create(record.info.id, record.info.cwd, {
+            kind: "turn",
+            turn: record.turns,
+          }),
+        ),
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, CHECKPOINT_TIMEOUT_MS);
+        }),
+      ]);
+    } catch {
+      if (!this.checkpointWarned) {
+        this.checkpointWarned = true;
+        console.warn("Checkpoint giliran tidak dibuat; sesi lanjut tanpa checkpoint.");
+      }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
+  }
+
   private async execute(
     record: SessionRecord,
     prompt: string,
@@ -610,6 +673,7 @@ export class SessionManager {
     permissionMode: SessionPermissionMode,
     resumeSessionId: string | undefined,
   ): Promise<void> {
+    await this.ensureTurnCheckpoint(record);
     let sawResult = false;
     const input: Parameters<AgentRunner["run"]>[0] = {
       prompt,
