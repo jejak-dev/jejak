@@ -60,6 +60,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
     return plugin
       .get("/api/memory", () => disabledResponse())
       .post("/api/memory", () => disabledResponse())
+      .post("/api/memory/import", () => disabledResponse())
       .patch("/api/memory/:id", () => disabledResponse())
       .post("/api/memory/:id/accept", () => disabledResponse())
       .post("/api/memory/:id/reject", () => disabledResponse())
@@ -99,6 +100,22 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
             body: input.body,
           });
           return jsonResponse(201, { item });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/memory/import",
+      async ({ body }) => {
+        try {
+          const input = parseObjectBody(body);
+          const projectKey = input.projectKey;
+          if (typeof projectKey !== "string") {
+            throw new MemoryError("Folder proyek tidak ditemukan.", "tidak-valid");
+          }
+          return jsonResponse(200, await service.importProjectDocs(projectKey));
         } catch (error) {
           return errorResponse(error);
         }

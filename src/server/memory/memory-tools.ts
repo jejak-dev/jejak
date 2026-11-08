@@ -140,7 +140,7 @@ export class MemoryTools {
       profile + project > 0
         ? `Jejak menyimpan memory lintas sesi (${profile} preferensi profil, ${project} fakta proyek ini).`
         : "Jejak menyimpan memory lintas sesi.";
-    return `${head} Gunakan tool memory_search untuk mencarinya dan memory_propose untuk mengusulkan hal baru yang layak diingat; usulan harus disetujui pengguna dan jangan menyertakan rahasia.`;
+    return `${head} Gunakan tool memory_search untuk mencarinya dan memory_propose untuk mengusulkan hal baru yang layak diingat; usulan harus disetujui pengguna dan jangan menyertakan rahasia. Di akhir tugas, bila ada keputusan, konvensi, atau perintah penting yang belum tercatat dan layak diingat lintas sesi, usulkan dengan memory_propose (maks beberapa, singkat).`;
   }
 
   private async search(

@@ -352,12 +352,87 @@ describe("kode status dan galat", () => {
   });
 });
 
+describe("impor dokumen proyek lewat API", () => {
+  interface ImportBody {
+    created: ItemBody["item"][];
+    skipped: { file: string; title: string; reason: string }[];
+    files: { file: string; found: boolean }[];
+  }
+
+  test("POST /api/memory/import membuat usulan dan idempoten", async () => {
+    const app = makeMemoryApp();
+    await writeFile(join(dir, "AGENTS.md"), "# Panduan\n\n## Perintah\n\nbun test\n");
+
+    const first = await req(app, "POST", "/api/memory/import", { projectKey: dir });
+    expect(first.status).toBe(200);
+    const body = (await first.json()) as ImportBody;
+    expect(body.created.map((item) => item.title)).toEqual(["Perintah"]);
+    expect(body.created[0]?.status).toBe("proposed");
+    expect(body.created[0]?.confidence).toBe("from_code");
+    expect(body.created[0]?.origin.file).toBe("AGENTS.md");
+    expect(body.files).toEqual([
+      { file: "AGENTS.md", found: true },
+      { file: "CLAUDE.md", found: false },
+    ]);
+
+    const second = (await (await req(app, "POST", "/api/memory/import", { projectKey: dir })).json()) as ImportBody;
+    expect(second.created).toHaveLength(0);
+    expect(second.skipped.some((item) => item.reason === "sudah-ada")).toBe(true);
+  });
+
+  test("projectKey tidak sah dijawab 400", async () => {
+    const app = makeMemoryApp();
+    for (const projectKey of [undefined, "relatif", `${dir}\0x`, join(dir, "tidak-ada"), 5]) {
+      const res = await req(app, "POST", "/api/memory/import", { projectKey });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toHaveProperty("error");
+    }
+  });
+
+  test("berkas asal yang berubah setelah diterima ditandai basi oleh GET", async () => {
+    const app = makeMemoryApp();
+    await writeFile(join(dir, "AGENTS.md"), "## Perintah\n\nbun test\n");
+    const imported = (await (await req(app, "POST", "/api/memory/import", {
+      projectKey: dir,
+    })).json()) as ImportBody;
+    await req(app, "POST", `/api/memory/${imported.created[0]!.id}/accept`);
+    await writeFile(join(dir, "AGENTS.md"), "## Perintah\n\nbun test --bail\n");
+
+    const listed = (await (await req(app, "GET", "/api/memory")).json()) as ListBody;
+    const found = listed.items.find((item) => item.id === imported.created[0]!.id);
+    expect(found?.staleReason).toBe("berkas asal berubah");
+  });
+
+  test("guard tetap berlaku: 415 tanpa JSON, 403 host/origin lain", async () => {
+    const app = makeMemoryApp();
+    const noType = await app.handle(
+      new Request("http://127.0.0.1:3000/api/memory/import", {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000", "content-type": "text/plain" },
+        body: JSON.stringify({ projectKey: dir }),
+      }),
+    );
+    expect(noType.status).toBe(415);
+
+    const badHost = await req(app, "POST", "/api/memory/import", { projectKey: dir }, {
+      host: "evil.test",
+    });
+    expect(badHost.status).toBe(403);
+
+    const badOrigin = await req(app, "POST", "/api/memory/import", { projectKey: dir }, {
+      origin: "http://evil.test",
+    });
+    expect(badOrigin.status).toBe(403);
+  });
+});
+
 describe("memory dimatikan", () => {
   test("semua rute menjawab 503 dan tidak menyentuh disk", async () => {
     const app = makeApp({ env: { MOCK: "true", JEJAK_HOME: home } });
     for (const [method, path] of [
       ["GET", "/api/memory"],
       ["POST", "/api/memory"],
+      ["POST", "/api/memory/import"],
       ["PATCH", "/api/memory/x"],
       ["POST", "/api/memory/x/accept"],
       ["POST", "/api/memory/x/reject"],

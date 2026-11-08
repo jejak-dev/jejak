@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
-import { open } from "node:fs/promises";
+import { open, realpath, stat } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 import { FileError, resolveInside } from "../files/path";
 import { findSecret } from "./secret-guard";
 import {
   MEMORY_BODY_MAX,
+  MEMORY_FILE_MAX_BYTES,
   MEMORY_PROJECT_KEY_MAX,
   MEMORY_TITLE_MAX,
   hasControlCharacters,
@@ -63,6 +64,99 @@ export interface ProposeInput extends CreateMemoryInput {
   sessionId?: unknown;
   commit?: unknown;
 }
+
+export type ImportSkipReason =
+  | "sudah-ada"
+  | "rahasia"
+  | "terlalu-panjang"
+  | "kosong"
+  | "batas";
+
+export interface ImportResult {
+  created: Memory[];
+  skipped: { file: string; title: string; reason: ImportSkipReason }[];
+  files: { file: string; found: boolean }[];
+}
+
+interface DocSection {
+  title: string;
+  body: string;
+}
+
+const IMPORT_FILES = ["AGENTS.md", "CLAUDE.md"] as const;
+const IMPORT_LOOKUP_LIMIT = 100_000;
+const FENCE = /^\s*(```|~~~)/;
+const H1 = /^#\s+(.*)$/;
+const H2 = /^##\s+(.*)$/;
+
+/** Memecah dokumen markdown per judul `##`; pagar kode diabaikan. */
+export function splitDocSections(text: string): DocSection[] {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  const sections: DocSection[] = [];
+  let preamble: string[] = [];
+  let currentTitle: string | null = null;
+  let currentBody: string[] = [];
+  let inFence = false;
+  let seenHeading = false;
+
+  const flush = (): void => {
+    if (currentTitle === null) return;
+    sections.push({ title: currentTitle, body: currentBody.join("\n").trim() });
+    currentTitle = null;
+    currentBody = [];
+  };
+
+  const flushPreamble = (): void => {
+    let title: string | null = null;
+    const body: string[] = [];
+    let fence = false;
+    for (const line of preamble) {
+      if (FENCE.test(line)) {
+        fence = !fence;
+        body.push(line);
+        continue;
+      }
+      if (!fence && title === null) {
+        const match = H1.exec(line);
+        if (match !== null) {
+          title = match[1]!.trim();
+          continue;
+        }
+      }
+      body.push(line);
+    }
+    preamble = [];
+    const trimmedTitle = title === null ? "" : title.slice(0, MEMORY_TITLE_MAX);
+    if (trimmedTitle === "") return;
+    sections.push({ title: trimmedTitle, body: body.join("\n").trim() });
+  };
+
+  for (const line of lines) {
+    if (FENCE.test(line)) {
+      inFence = !inFence;
+      if (seenHeading) currentBody.push(line);
+      else preamble.push(line);
+      continue;
+    }
+    if (!inFence) {
+      const match = H2.exec(line);
+      if (match !== null) {
+        if (!seenHeading) flushPreamble();
+        else flush();
+        seenHeading = true;
+        currentTitle = match[1]!.trim().slice(0, MEMORY_TITLE_MAX);
+        continue;
+      }
+    }
+    if (seenHeading) currentBody.push(line);
+    else preamble.push(line);
+  }
+
+  if (!seenHeading) flushPreamble();
+  else flush();
+  return sections;
+}
+
 
 export interface ListMemoryQuery {
   status?: unknown;
@@ -295,8 +389,129 @@ export class MemoryService {
     return this.store.create(memory);
   }
 
-  async list(query: ListMemoryQuery = {}): Promise<MemoryListResult> {
-    const filter: MemoryListQuery = {};
+  /**
+   * Mengimpor `AGENTS.md` dan `CLAUDE.md` di akar proyek menjadi usulan memory
+   * per judul `##`. Idempoten: bagian yang sudah ada (status apa pun) dilewati.
+   */
+  async importProjectDocs(projectKey: string): Promise<ImportResult> {
+    if (
+      typeof projectKey !== "string" ||
+      projectKey.includes("\0") ||
+      projectKey.length > MEMORY_PROJECT_KEY_MAX ||
+      !isAbsolute(projectKey)
+    ) {
+      throw invalid("Folder proyek tidak ditemukan.");
+    }
+    const key = projectKey.trim();
+    try {
+      const info = await stat(await realpath(key));
+      if (!info.isDirectory()) throw new Error("bukan direktori");
+    } catch {
+      throw invalid("Folder proyek tidak ditemukan.");
+    }
+
+    const created: Memory[] = [];
+    const skipped: ImportResult["skipped"] = [];
+    const files: ImportResult["files"] = [];
+
+    const existing = await this.store.list({ project: key, limit: IMPORT_LOOKUP_LIMIT });
+    const known = new Set<string>();
+    for (const memory of existing) {
+      if (memory.layer !== "project" || memory.projectKey !== key) continue;
+      const file = memory.origin.file;
+      if (file === undefined) continue;
+      known.add(`${file.toLowerCase()}\0${memory.title.toLowerCase()}`);
+    }
+
+    let proposedCount = await this.store.countProposed();
+
+    for (const name of IMPORT_FILES) {
+      let target: string;
+      try {
+        target = (await resolveInside(key, name)).target;
+      } catch {
+        files.push({ file: name, found: false });
+        continue;
+      }
+
+      let info;
+      try {
+        info = await stat(target);
+      } catch {
+        files.push({ file: name, found: false });
+        continue;
+      }
+      if (!info.isFile()) {
+        files.push({ file: name, found: false });
+        continue;
+      }
+      files.push({ file: name, found: true });
+
+      if (info.size > MEMORY_FILE_MAX_BYTES) {
+        skipped.push({ file: name, title: name, reason: "terlalu-panjang" });
+        continue;
+      }
+
+      let text: string;
+      try {
+        const handle = await open(target, "r");
+        try {
+          const buffer = new Uint8Array(Math.max(1, info.size));
+          const { bytesRead } = await handle.read(buffer, 0, info.size, 0);
+          text = Buffer.from(buffer.subarray(0, bytesRead)).toString("utf8");
+        } finally {
+          await handle.close();
+        }
+      } catch {
+        files[files.length - 1] = { file: name, found: false };
+        continue;
+      }
+
+      for (const section of splitDocSections(text)) {
+        const title = section.title.slice(0, MEMORY_TITLE_MAX);
+        const body = section.body.trim();
+        if (title === "" || body === "") {
+          skipped.push({ file: name, title, reason: "kosong" });
+          continue;
+        }
+        if (body.length > MEMORY_BODY_MAX) {
+          skipped.push({ file: name, title, reason: "terlalu-panjang" });
+          continue;
+        }
+        if (findSecret(title) !== null || findSecret(body) !== null) {
+          skipped.push({ file: name, title, reason: "rahasia" });
+          continue;
+        }
+        const dedupKey = `${name.toLowerCase()}\0${title.toLowerCase()}`;
+        if (known.has(dedupKey)) {
+          skipped.push({ file: name, title, reason: "sudah-ada" });
+          continue;
+        }
+        if (proposedCount >= MEMORY_PROPOSED_LIMIT) {
+          skipped.push({ file: name, title, reason: "batas" });
+          continue;
+        }
+
+        const memory = await this.propose(
+          {
+            layer: "project",
+            projectKey: key,
+            title,
+            body,
+            originFile: name,
+          },
+          key,
+        );
+        known.add(dedupKey);
+        created.push(memory);
+        proposedCount += 1;
+      }
+    }
+
+    return { created, skipped, files };
+  }
+
+  async list(query: ListMemoryQuery = {}): Promise<MemoryListResult> {    const filter: MemoryListQuery = {};
 
     if (query.status !== undefined && query.status !== null && query.status !== "") {
       if (typeof query.status !== "string" || !STATUSES.includes(query.status as MemoryStatus)) {

@@ -238,8 +238,12 @@ describe("indexLine", () => {
     expect(line).toContain("1 fakta proyek ini");
     expect(line).toContain("memory_search");
     expect(line).toContain("memory_propose");
+    expect(line).toContain(
+      "Di akhir tugas, bila ada keputusan, konvensi, atau perintah penting yang belum tercatat dan layak diingat lintas sesi, usulkan dengan memory_propose (maks beberapa, singkat).",
+    );
     expect(line).not.toContain("isi-profil-unik");
     expect(line).not.toContain("isi-proyek-unik");
+    expect(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(line)).toBe(false);
   });
 
   test("memory kosong tetap memberi kalimat tanpa angka", async () => {
