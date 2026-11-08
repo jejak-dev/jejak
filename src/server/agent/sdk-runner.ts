@@ -63,6 +63,11 @@ function sanitizeCwd(cwd: string): string {
   return cwd.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 }
 
+const MEMORY_TOOL_ALLOWLIST = [
+  "mcp__jejak-memory__memory_search",
+  "mcp__jejak-memory__memory_propose",
+];
+
 export function buildSdkEnv(
   base: Record<string, string | undefined>,
   resolved: ResolvedProvider,
@@ -100,6 +105,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         }
       }
 
+      const memory = input.memory;
+      let append = `Folder kerja sesi ini adalah ${sanitizeCwd(input.cwd)}. Semua path relatif merujuk ke folder itu. Saat membaca atau mengubah berkas, pakai path relatif atau path absolut yang diawali folder tersebut; jangan menebak path lain seperti /home/... atau /Users/....`;
+      if (memory !== undefined) {
+        append = `${append} ${sanitizeCwd(memory.indexLine)}`;
+      }
+
       const sdkOptions: Record<string, unknown> = {
         cwd: input.cwd,
         env: buildSdkEnv(baseEnv, input.provider),
@@ -109,9 +120,19 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         systemPrompt: {
           type: "preset",
           preset: "claude_code",
-          append: `Folder kerja sesi ini adalah ${sanitizeCwd(input.cwd)}. Semua path relatif merujuk ke folder itu. Saat membaca atau mengubah berkas, pakai path relatif atau path absolut yang diawali folder tersebut; jangan menebak path lain seperti /home/... atau /Users/....`,
+          append,
         },
       };
+      if (memory !== undefined && memory.url !== undefined && memory.token !== undefined) {
+        sdkOptions.mcpServers = {
+          "jejak-memory": {
+            type: "http",
+            url: memory.url,
+            headers: { Authorization: `Bearer ${memory.token}` },
+          },
+        };
+        sdkOptions.allowedTools = [...MEMORY_TOOL_ALLOWLIST];
+      }
       if (input.provider.model !== undefined) {
         sdkOptions.model = input.provider.model;
       }
@@ -173,7 +194,10 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           if (!sawResult) yield { type: "result", ok: false, error: "dibatalkan" };
           return;
         }
-        const message = sanitize(errorMessage(error), input.provider.apiKey);
+        let message = sanitize(errorMessage(error), input.provider.apiKey);
+        if (input.memory?.token !== undefined && input.memory.token !== "") {
+          message = message.split(input.memory.token).join("***");
+        }
         yield { type: "error", message };
         if (!sawResult) yield { type: "result", ok: false, error: message };
       } finally {

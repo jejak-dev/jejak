@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
 import { localGuard } from "./guard";
+import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
@@ -33,11 +34,18 @@ export interface CreateAppOptions {
   undoDir?: string;
   /** Layanan memory; tanpa opsi ini semua rute `/api/memory*` menjawab 503. */
   memory?: MemoryService;
+  /** URL publik `/mcp` yang dipakai agent untuk menjangkau tool memory. */
+  mcpUrl?: string;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
   const env = options.env ?? process.env;
   const path = options.providersPath ?? providersPath(env);
+
+  const memoryBridge =
+    options.memory === undefined
+      ? undefined
+      : createMemoryBridge({ service: options.memory, mcpUrl: options.mcpUrl });
 
   const manager =
     options.sessions ??
@@ -46,9 +54,10 @@ export function createApp(options: CreateAppOptions = {}) {
       resolveProvider: async (selection) =>
         resolveRegistryProvider(await loadRegistry(path, env), selection),
       store: options.sessionStore,
+      memoryBridge: memoryBridge?.bridge,
     });
 
-  return new Elysia()
+  let app = new Elysia()
     .use(localGuard())
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .use(sessionRoutes({ manager }))
@@ -60,8 +69,22 @@ export function createApp(options: CreateAppOptions = {}) {
         cwd: options.cwd,
         mock: env.MOCK?.trim().toLowerCase() === "true",
       }),
-    )
-    .use(clientRoutes(options.client));
+    );
+  if (memoryBridge !== undefined) {
+    app = app.use(memoryBridge.routes);
+  }
+  const result = app.use(clientRoutes(options.client));
+  if (memoryBridge !== undefined) {
+    // Seam untuk tes dan integrasi in-process: membuka sesi memory tanpa HTTP.
+    (result as unknown as { memoryBridge?: MemoryBridge }).memoryBridge =
+      memoryBridge.bridge;
+  }
+  return result;
+}
+
+function mcpUrlFor(host: string, port: number): string {
+  const safeHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
+  return `http://${safeHost}:${port}/mcp`;
 }
 
 export function startServer(options: ServeOptions = {}) {
@@ -73,7 +96,8 @@ export function startServer(options: ServeOptions = {}) {
     memoryStore === undefined
       ? undefined
       : new MemoryService({ store: memoryStore, cwd: process.cwd() });
-  const app = createApp({ sessionStore: store, memory }).listen({ hostname: host, port });
+  const mcpUrl = mcpUrlFor(host, port);
+  const app = createApp({ sessionStore: store, memory, mcpUrl }).listen({ hostname: host, port });
   console.log(`Jejak berjalan di http://${host}:${port}`);
   const closers: Array<() => void> = [];
   if (store !== undefined) closers.push(() => store.close());

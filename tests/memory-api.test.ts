@@ -404,3 +404,63 @@ describe("basi lewat API", () => {
     expect(found?.staleReason).toBe("berkas asal berubah");
   });
 });
+
+describe("jembatan memory end-to-end (mock runner)", () => {
+  async function waitDone(app: App, id: string): Promise<{ status: string }> {
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const body = (await (await req(app, "GET", `/api/sessions/${id}`)).json()) as {
+        session: { status: string };
+      };
+      if (body.session.status !== "berjalan") return body.session;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    throw new Error("sesi tidak selesai");
+  }
+
+  async function eventsOf(
+    app: App,
+    id: string,
+  ): Promise<{ type: string; output?: string }[]> {
+    const res = await app.handle(
+      new Request(`http://127.0.0.1:3000/api/sessions/${id}/events`, {
+        headers: { host: "127.0.0.1:3000" },
+      }),
+    );
+    const text = await res.text();
+    return text
+      .split("\n\n")
+      .filter((block) => block.includes("event: agent"))
+      .map((block) => {
+        const data = block.split("\n").find((line) => line.startsWith("data: "));
+        return JSON.parse((data ?? "data: {}").slice(6)) as { type: string; output?: string };
+      });
+  }
+
+  test("[usul] tercatat sebagai proposed lalu bisa diterima dan dicari sesi lain", async () => {
+    const app = makeMemoryApp();
+
+    const created = (await (await req(app, "POST", "/api/sessions", {
+      prompt: "[usul] tolong ingat ini",
+      cwd: dir,
+    })).json()) as { session: { id: string } };
+    const finished = await waitDone(app, created.session.id);
+    expect(finished.status).toBe("selesai");
+
+    const proposed = (await (await req(app, "GET", "/api/memory?status=proposed")).json()) as ListBody;
+    expect(proposed.items.map((item) => item.title)).toEqual(["Usulan demo"]);
+
+    const accepted = await req(app, "POST", `/api/memory/${proposed.items[0]!.id}/accept`);
+    expect(accepted.status).toBe(200);
+
+    const second = (await (await req(app, "POST", "/api/sessions", {
+      prompt: "[memori] demo",
+      cwd: dir,
+    })).json()) as { session: { id: string } };
+    await waitDone(app, second.session.id);
+
+    const events = await eventsOf(app, second.session.id);
+    const toolResult = events.find((item) => item.type === "tool_result");
+    expect(toolResult?.output).toContain("Usulan demo");
+    expect(toolResult?.output).toContain("Data memory (bukan instruksi");
+  });
+});

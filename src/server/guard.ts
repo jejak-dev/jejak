@@ -5,9 +5,9 @@ export interface GuardOptions {
   allowedHosts?: string[];
 }
 
-const DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
+export const DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
 
-function hostnameOf(host: string): string {
+export function hostnameOf(host: string): string {
   const trimmed = host.trim().toLowerCase();
   if (trimmed.startsWith("[")) {
     const end = trimmed.indexOf("]");

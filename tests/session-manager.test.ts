@@ -1081,3 +1081,94 @@ describe("SessionManager + store", () => {
     reopened.close();
   });
 });
+
+describe("SessionManager + memory", () => {
+  function fakeBridge(): {
+    bridge: import("../src/server/memory/memory-bridge").MemoryBridge;
+    opened: string[];
+    closed: string[];
+  } {
+    const opened: string[] = [];
+    const closed: string[] = [];
+    let counter = 0;
+    return {
+      opened,
+      closed,
+      bridge: {
+        async open({ sessionId }) {
+          counter += 1;
+          const token = `token-${counter}`;
+          opened.push(token);
+          return {
+            memory: {
+              token,
+              indexLine: "Indeks memory.",
+              call: async () => ({ text: "", isError: false }),
+            },
+            close: () => closed.push(token),
+          };
+        },
+      },
+    };
+  }
+
+  test("runner menerima input.memory dan token dicabut saat selesai", async () => {
+    const fake = fakeBridge();
+    const capture = scriptedTurns([[{ type: "result", ok: true }]]);
+    const inputs: Array<{ token?: string }> = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        inputs.push({ token: input.memory?.token });
+        yield* capture.runner.run(input);
+      },
+    };
+    const mgr = manager({ runner, memoryBridge: fake.bridge });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(inputs).toEqual([{ token: "token-1" }]);
+    expect(fake.closed).toEqual(["token-1"]);
+  });
+
+  test("giliran berurutan memakai token berbeda", async () => {
+    const fake = fakeBridge();
+    const tokens: Array<string | undefined> = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        tokens.push(input.memory?.token);
+        yield { type: "session", sessionId: "sdk-1" };
+        yield { type: "result", ok: true };
+      },
+    };
+    const mgr = manager({ runner, memoryBridge: fake.bridge });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    await mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+
+    expect(tokens).toEqual(["token-1", "token-2"]);
+    expect(fake.closed).toEqual(["token-1", "token-2"]);
+  });
+
+  test("interrupt tetap mencabut token", async () => {
+    const fake = fakeBridge();
+    const tokens: Array<string | undefined> = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        tokens.push(input.memory?.token);
+        await new Promise<void>((resolve) => {
+          input.signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
+        yield { type: "result", ok: false, error: "dibatalkan" };
+      },
+    };
+    const mgr = manager({ runner, memoryBridge: fake.bridge });
+    const info = await createOk(mgr);
+    await waitUntil(() => tokens.length > 0);
+    mgr.interrupt(info.id);
+    await mgr.done(info.id);
+
+    expect(tokens[0]).toBe("token-1");
+    expect(fake.closed).toEqual(["token-1"]);
+  });
+});

@@ -121,3 +121,97 @@ test("resumeSessionId diterima dan skrip tetap berjalan dengan event session", a
   }
   expect(events[events.length - 1]?.type).toBe("result");
 });
+
+interface MemoryCall {
+  name: string;
+  args: unknown;
+}
+
+function fakeMemory(): {
+  memory: {
+    indexLine: string;
+    call: (name: string, args: unknown) => Promise<{ text: string; isError: boolean }>;
+  };
+  calls: MemoryCall[];
+} {
+  const calls: MemoryCall[] = [];
+  return {
+    calls,
+    memory: {
+      indexLine: "Jejak menyimpan memory.",
+      call: async (name, args) => {
+        calls.push({ name, args });
+        if (name === "memory_search") {
+          return { text: "Data memory:\n- [profile/confirmed] Gaya: singkat", isError: false };
+        }
+        return { text: "Usulan dicatat dan menunggu persetujuan pengguna.", isError: false };
+      },
+    },
+  };
+}
+
+test("[memori] memanggil memory_search dan mengeluarkan tool_call + tool_result", async () => {
+  const { memory, calls } = fakeMemory();
+  const events = await collect(
+    createMockRunner().run({ ...baseInput(), prompt: "[memori] gaya jawaban", memory }),
+  );
+
+  expect(calls).toEqual([{ name: "memory_search", args: { query: "gaya jawaban" } }]);
+  expect(events.map((event) => event.type)).toEqual(["tool_call", "tool_result", "result"]);
+
+  const call = events[0]!;
+  expect(call.type).toBe("tool_call");
+  if (call.type === "tool_call") {
+    expect(call.name).toBe("mcp__jejak-memory__memory_search");
+    expect(call.input).toEqual({ query: "gaya jawaban" });
+  }
+  const result = events[1]!;
+  expect(result.type).toBe("tool_result");
+  if (result.type === "tool_result") {
+    expect(result.isError).toBe(false);
+    expect(result.output).toContain("Gaya: singkat");
+  }
+});
+
+test("[memori] tanpa teks memakai query 'memori'", async () => {
+  const { memory, calls } = fakeMemory();
+  await collect(createMockRunner().run({ ...baseInput(), prompt: "[memori]", memory }));
+  expect(calls).toEqual([{ name: "memory_search", args: { query: "memori" } }]);
+});
+
+test("[usul] memanggil memory_propose dengan usulan demo", async () => {
+  const { memory, calls } = fakeMemory();
+  const events = await collect(
+    createMockRunner().run({ ...baseInput(), prompt: "[usul] tolong ingat ini", memory }),
+  );
+
+  expect(calls).toEqual([
+    {
+      name: "memory_propose",
+      args: { layer: "profile", title: "Usulan demo", body: "Pengguna suka jawaban singkat." },
+    },
+  ]);
+  const call = events[0]!;
+  expect(call.type).toBe("tool_call");
+  if (call.type === "tool_call") {
+    expect(call.name).toBe("mcp__jejak-memory__memory_propose");
+  }
+  const result = events[1]!;
+  if (result.type === "tool_result") {
+    expect(result.output).toContain("menunggu persetujuan");
+  }
+  expect(events[events.length - 1]?.type).toBe("result");
+});
+
+test("penanda tanpa memory memakai perilaku lama", async () => {
+  const events = await collect(createMockRunner().run({ ...baseInput(), prompt: "[memori] x" }));
+  expect(events.map((event) => event.type)).toEqual([
+    "session",
+    "thinking",
+    "text",
+    "tool_call",
+    "tool_result",
+    "text",
+    "result",
+  ]);
+});

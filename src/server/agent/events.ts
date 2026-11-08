@@ -41,6 +41,13 @@ export interface PermissionRequest { toolUseId?: string; name: string; input: un
 export type PermissionDecision = { behavior: "allow" } | { behavior: "deny"; message: string };
 export type PermissionHandler = (request: PermissionRequest, signal: AbortSignal) => Promise<PermissionDecision>;
 
+export interface RunMemory {
+  url?: string;
+  token?: string;
+  indexLine: string;
+  call(name: string, args: unknown): Promise<{ text: string; isError: boolean }>;
+}
+
 export interface RunInput {
   prompt: string;
   cwd: string;
@@ -49,6 +56,7 @@ export interface RunInput {
   signal?: AbortSignal;
   requestPermission?: PermissionHandler;
   resumeSessionId?: string;
+  memory?: RunMemory;
 }
 
 export interface AgentRunner {

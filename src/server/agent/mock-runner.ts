@@ -40,6 +40,16 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+const MEMORY_SEARCH_TOOL = "mcp__jejak-memory__memory_search";
+const MEMORY_PROPOSE_TOOL = "mcp__jejak-memory__memory_propose";
+
+function markerText(prompt: string, marker: string): string | undefined {
+  const index = prompt.indexOf(marker);
+  if (index === -1) return undefined;
+  const rest = prompt.slice(index + marker.length).trim();
+  return rest === "" ? undefined : rest;
+}
+
 export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
   const delayMs = options.delayMs ?? 0;
   const provided = options.script;
@@ -71,6 +81,41 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
           yield { type: "result", ok: true };
           return;
         }
+      }
+
+      const memory = input.memory;
+      if (memory !== undefined && input.prompt.includes("[memori]")) {
+        const query = markerText(input.prompt, "[memori]") ?? "memori";
+        const id = `memory-search-${crypto.randomUUID()}`;
+        yield { type: "tool_call", id, name: MEMORY_SEARCH_TOOL, input: { query } };
+        let outcome: { text: string; isError: boolean };
+        try {
+          outcome = await memory.call("memory_search", { query });
+        } catch {
+          outcome = { text: "Pencarian memory gagal.", isError: true };
+        }
+        yield { type: "tool_result", id, output: outcome.text, isError: outcome.isError };
+        yield { type: "result", ok: true, summary: "Pencarian memory selesai." };
+        return;
+      }
+
+      if (memory !== undefined && input.prompt.includes("[usul]")) {
+        const id = `memory-propose-${crypto.randomUUID()}`;
+        const args = {
+          layer: "profile",
+          title: "Usulan demo",
+          body: "Pengguna suka jawaban singkat.",
+        };
+        yield { type: "tool_call", id, name: MEMORY_PROPOSE_TOOL, input: args };
+        let outcome: { text: string; isError: boolean };
+        try {
+          outcome = await memory.call("memory_propose", args);
+        } catch {
+          outcome = { text: "Usulan gagal dicatat.", isError: true };
+        }
+        yield { type: "tool_result", id, output: outcome.text, isError: outcome.isError };
+        yield { type: "result", ok: true, summary: "Usulan memory dicatat." };
+        return;
       }
 
       // Normal mock behavior without [izin]

@@ -382,8 +382,7 @@ test("systemPrompt append tidak memuat karakter kontrol/baris baru dari cwd", as
   expect(append).toContain("/tmp/kerja baris kontrol");
 });
 
-test("opsi lain tidak berubah setelah penambahan systemPrompt", async () => {
-  let received: Record<string, unknown> | undefined;
+test("opsi lain tidak berubah setelah penambahan systemPrompt", async () => {  let received: Record<string, unknown> | undefined;
   const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
 
   await collect(
@@ -400,4 +399,119 @@ test("opsi lain tidak berubah setelah penambahan systemPrompt", async () => {
   const env = received?.env as Record<string, string | undefined>;
   expect(env.ANTHROPIC_API_KEY).toBe(API_KEY);
   expect("ANTHROPIC_AUTH_TOKEN" in env).toBe(false);
+});
+
+const MEMORY_TOKEN = "mcp-token-rahasia-0123456789";
+
+function memoryInput(overrides: Partial<RunInput> = {}): RunInput {
+  return baseInput({
+    memory: {
+      url: "http://127.0.0.1:3000/mcp",
+      token: MEMORY_TOKEN,
+      indexLine: "Jejak menyimpan memory lintas sesi.",
+      call: async () => ({ text: "", isError: false }),
+    },
+    ...overrides,
+  });
+}
+
+test("memory dengan url menambahkan mcpServers, allowedTools, dan indexLine", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(memoryInput()),
+  );
+
+  expect(received?.mcpServers).toEqual({
+    "jejak-memory": {
+      type: "http",
+      url: "http://127.0.0.1:3000/mcp",
+      headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+    },
+  });
+  expect(received?.allowedTools).toEqual([
+    "mcp__jejak-memory__memory_search",
+    "mcp__jejak-memory__memory_propose",
+  ]);
+
+  const prompt = received?.systemPrompt as Record<string, unknown> | undefined;
+  const append = prompt?.append as string;
+  expect(append).toContain("/tmp/kerja");
+  expect(append).toContain("Jejak menyimpan memory lintas sesi.");
+  expect(append.indexOf("Jejak menyimpan memory")).toBeGreaterThan(append.indexOf("/tmp/kerja"));
+});
+
+test("memory tanpa url tetap menambah indexLine tanpa mcpServers", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({
+        memory: {
+          indexLine: "Indeks memory khusus.",
+          call: async () => ({ text: "", isError: false }),
+        },
+      }),
+    ),
+  );
+
+  expect("mcpServers" in (received ?? {})).toBe(false);
+  expect("allowedTools" in (received ?? {})).toBe(false);
+  const append = (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(append).toContain("Indeks memory khusus.");
+});
+
+test("tanpa memory tidak ada mcpServers, allowedTools, atau indexLine", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()));
+
+  expect("mcpServers" in (received ?? {})).toBe(false);
+  expect("allowedTools" in (received ?? {})).toBe(false);
+  const append = (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(append).not.toContain("memory_search");
+});
+
+test("indexLine dibersihkan dari karakter kontrol", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({
+        memory: {
+          indexLine: "baris\nsatu\x00dua",
+          call: async () => ({ text: "", isError: false }),
+        },
+      }),
+    ),
+  );
+
+  const append = (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(append).not.toContain("\n");
+  expect(append).not.toContain("\x00");
+  expect(append).toContain("baris satu dua");
+});
+
+test("token memory tidak muncul di event atau pesan galat", async () => {
+  const sdk = fakeSdk({
+    messages: [INIT],
+    throwAfter: 1,
+    error: new Error(`gagal menghubungi ${MEMORY_TOKEN}`),
+  });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(memoryInput()),
+  );
+
+  const serialized = JSON.stringify(events);
+  expect(serialized).not.toContain(MEMORY_TOKEN);
+  const error = events.find((event) => event.type === "error");
+  expect(error?.type).toBe("error");
+  if (error?.type === "error") {
+    expect(error.message).toContain("***");
+  }
 });

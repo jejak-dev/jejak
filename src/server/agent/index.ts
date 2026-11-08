@@ -2,7 +2,7 @@ import type { AgentRunner } from "./events";
 import { createMockRunner } from "./mock-runner";
 import { createSdkRunner } from "./sdk-runner";
 
-export type { AgentEvent, AgentRunner, PermissionMode, RunInput, PermissionRequest, PermissionDecision, PermissionHandler } from "./events";
+export type { AgentEvent, AgentRunner, PermissionMode, RunInput, RunMemory, PermissionRequest, PermissionDecision, PermissionHandler } from "./events";
 export { PERMISSION_EXPIRED_MESSAGE, PERMISSION_STOPPED_MESSAGE } from "./events";
 export { createMockRunner } from "./mock-runner";
 export type { MockRunnerOptions } from "./mock-runner";

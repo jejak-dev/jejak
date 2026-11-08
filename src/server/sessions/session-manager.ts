@@ -10,6 +10,7 @@ import {
   type PermissionRequest,
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
+import type { MemoryBridge } from "../memory/memory-bridge";
 import { estimateCostUsd } from "../pricing";
 import type { SessionStore, StoredSession } from "./session-store";
 
@@ -57,6 +58,7 @@ export interface SessionManagerOptions {
   now?: () => Date;
   permissionTimeoutMs?: number;
   store?: SessionStore;
+  memoryBridge?: MemoryBridge;
 }
 
 export class SessionError extends Error {
@@ -177,7 +179,9 @@ export class SessionManager {
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly permissionTimeoutMs: number;
   private readonly store: SessionStore | undefined;
+  private readonly memoryBridge: MemoryBridge | undefined;
   private storeWarned = false;
+  private memoryWarned = false;
 
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
@@ -189,6 +193,7 @@ export class SessionManager {
     this.now = options.now ?? (() => new Date());
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULTS.permissionTimeoutMs;
     this.store = options.store;
+    this.memoryBridge = options.memoryBridge;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -617,6 +622,25 @@ export class SessionManager {
     if (resumeSessionId !== undefined) {
       input.resumeSessionId = resumeSessionId;
     }
+
+    let closeMemory: (() => void) | undefined;
+    const bridge = this.memoryBridge;
+    if (bridge !== undefined) {
+      try {
+        const opened = await bridge.open({
+          sessionId: record.info.id,
+          cwd: record.info.cwd,
+        });
+        input.memory = opened.memory;
+        closeMemory = opened.close;
+      } catch {
+        if (!this.memoryWarned) {
+          this.memoryWarned = true;
+          console.warn("Memory sesi tidak tersedia; sesi lanjut tanpa memory.");
+        }
+      }
+    }
+
     try {
       const events = this.runner.run(input);
 
@@ -655,6 +679,11 @@ export class SessionManager {
         this.setStatus(record, "gagal");
       }
     } finally {
+      try {
+        closeMemory?.();
+      } catch {
+        // Pencabutan token tidak boleh menggagalkan sesi.
+      }
       if (record.info.status === "berjalan") {
         this.setStatus(record, "gagal");
       }
