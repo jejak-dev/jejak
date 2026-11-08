@@ -1,10 +1,11 @@
 import { Elysia } from "elysia";
 import { join } from "node:path";
-import type { SessionManager } from "../sessions/session-manager";
+import type { SessionManager, WorkspaceResolver } from "../sessions/session-manager";
 import { getChanges, type GitOptions } from "../files/changes";
 import { listDirectory } from "../files/list";
 import { FileError } from "../files/path";
 import { readTextFile } from "../files/read";
+import { repoFieldFromBody, repoSnapshotName, resolveRepoRoot } from "../files/repo-root";
 import {
   REVERT_MESSAGES,
   RevertError,
@@ -18,6 +19,8 @@ import { jejakHome } from "../provider-store";
 
 export interface FileRoutesOptions {
   manager: SessionManager;
+  /** Dipakai untuk mencari repo workspace dari query/body `repo`. */
+  workspaces?: WorkspaceResolver;
   /** Direktori snapshot undo; default `<jejakHome(env)>/undo`. */
   undoDir?: string;
   env?: Record<string, string | undefined>;
@@ -54,6 +57,7 @@ function runningResponse(): Response {
 
 export function fileRoutes(options: FileRoutesOptions): Elysia {
   const manager = options.manager;
+  const workspaces = options.workspaces;
   const undoDir = options.undoDir ?? join(jejakHome(options.env), "undo");
   const revertOptions: RevertOptions = { undoDir };
   if (options.git !== undefined) revertOptions.git = options.git;
@@ -66,7 +70,8 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
       }
       try {
-        return await listDirectory(session.cwd, pathParam(query.path));
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        return await listDirectory(root, pathParam(query.path));
       } catch (error) {
         return errorResponse(error);
       }
@@ -77,18 +82,25 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
       }
       try {
-        return await readTextFile(session.cwd, pathParam(query.path));
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        return await readTextFile(root, pathParam(query.path));
       } catch (error) {
         return errorResponse(error);
       }
     })
-    .get("/api/sessions/:id/changes", async ({ params }) => {
+    .get("/api/sessions/:id/changes", async ({ params, query }) => {
       const session = manager.get(params.id);
       if (session === undefined) {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
       }
+      let root: string;
       try {
-        return await getChanges(session.cwd);
+        root = await resolveRepoRoot(session, query.repo, workspaces);
+      } catch (error) {
+        return errorResponse(error);
+      }
+      try {
+        return await getChanges(root);
       } catch {
         return jsonResponse(400, { error: "Perubahan folder kerja tidak dapat dibaca." });
       }
@@ -104,8 +116,11 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
           return runningResponse();
         }
         try {
+          const repoParam = repoFieldFromBody(body);
+          const root = await resolveRepoRoot(session, repoParam, workspaces);
+          const snapshotRepo = await repoSnapshotName(session, repoParam, root);
           const input = parseRejectInput(body);
-          const result = await rejectChange(session.id, session.cwd, input, revertOptions);
+          const result = await rejectChange(session.id, root, input, revertOptions, snapshotRepo);
           return jsonResponse(200, {
             ok: true,
             undoId: result.undoId,
@@ -129,8 +144,11 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
           return runningResponse();
         }
         try {
+          const repoParam = repoFieldFromBody(body);
+          const root = await resolveRepoRoot(session, repoParam, workspaces);
+          const snapshotRepo = await repoSnapshotName(session, repoParam, root);
           const undoId = parseUndoInput(body);
-          const result = await undoChange(session.id, session.cwd, undoId, revertOptions);
+          const result = await undoChange(session.id, root, undoId, revertOptions, snapshotRepo);
           return jsonResponse(200, { ok: true, path: result.path });
         } catch (error) {
           return errorResponse(error);

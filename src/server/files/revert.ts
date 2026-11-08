@@ -60,6 +60,8 @@ const DIFF_ARGS = ["-U3", "--relative", "--find-renames", "--no-ext-diff", "--no
 const UUID_V4_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SESSION_ID_RE = /^[A-Za-z0-9_-]+$/;
+/** Sama dengan pola nama repo workspace; dipakai untuk subfolder snapshot. */
+const SNAPSHOT_REPO_RE = /^[a-z0-9][a-z0-9._-]{0,39}$/;
 
 const UNSUPPORTED = "Jenis perubahan ini belum bisa ditolak lewat Jejak.";
 const STALE = "Berkas berubah sejak diff ditampilkan. Muat ulang perubahan.";
@@ -265,11 +267,21 @@ function sha256Bytes(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function sessionDir(options: RevertOptions, sessionId: string): string {
+/**
+ * Snapshot cwd memakai `<undoDir>/<sessionId>` (format lama, tetap valid).
+ * Repo lain memakai `<undoDir>/<sessionId>/repo-<nama>` sehingga undoId dari
+ * satu repo tidak pernah ditemukan saat dipakai pada repo lain.
+ */
+function sessionDir(options: RevertOptions, sessionId: string, repoName?: string): string {
   if (!SESSION_ID_RE.test(sessionId)) {
     throw new RevertError("Sesi tidak valid.", 400);
   }
-  return resolve(options.undoDir, sessionId);
+  const root = resolve(options.undoDir, sessionId);
+  if (repoName === undefined) return root;
+  if (!SNAPSHOT_REPO_RE.test(repoName)) {
+    throw new RevertError("Parameter repo tidak valid.", 400);
+  }
+  return resolve(root, `repo-${repoName}`);
 }
 
 async function writeMeta(dir: string, meta: SnapshotMeta): Promise<void> {
@@ -396,6 +408,7 @@ export async function rejectChange(
   cwd: string,
   input: RejectInput,
   options: RevertOptions,
+  repoName?: string,
 ): Promise<RejectResult> {
   let target: ResolvedTarget;
   try {
@@ -437,7 +450,7 @@ export async function rejectChange(
   }
 
   const undoId = crypto.randomUUID();
-  const sessionRoot = sessionDir(options, sessionId);
+  const sessionRoot = sessionDir(options, sessionId, repoName);
   const snapshotDir = resolve(sessionRoot, undoId);
   await mkdir(snapshotDir, { recursive: true, mode: 0o700 });
   try {
@@ -493,11 +506,12 @@ export async function undoChange(
   cwd: string,
   undoId: string,
   options: RevertOptions,
+  repoName?: string,
 ): Promise<{ path: string }> {
   if (!UUID_V4_RE.test(undoId)) {
     throw new RevertError("Field undoId tidak valid.", 400);
   }
-  const sessionRoot = sessionDir(options, sessionId);
+  const sessionRoot = sessionDir(options, sessionId, repoName);
   const snapshotDir = resolve(sessionRoot, undoId);
   const meta = await readMeta(snapshotDir);
   if (meta === null) {

@@ -17,7 +17,7 @@ import { memoryRoutes } from "./routes/memory";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
-import { SessionManager } from "./sessions/session-manager";
+import { SessionManager, type WorkspaceResolver } from "./sessions/session-manager";
 import { defaultSessionStore, type SessionStore } from "./sessions/session-store";
 import type { WorkspaceService } from "./workspaces/workspace-service";
 
@@ -68,6 +68,26 @@ export function createApp(options: CreateAppOptions = {}) {
       ? undefined
       : new CheckpointService({ root: options.checkpointDir }));
 
+  const workspaceResolver: WorkspaceResolver | undefined =
+    options.workspaces === undefined
+      ? undefined
+      : {
+          get: async (id) => {
+            const view = await options.workspaces!.get(id);
+            if (view === undefined || view === null) return undefined;
+            return {
+              id: view.id,
+              name: view.name,
+              repos: view.repos.map((repo) => ({
+                name: repo.name,
+                path: repo.path,
+                kind: repo.card.kind,
+                missing: repo.missing,
+              })),
+            };
+          },
+        };
+
   const manager =
     options.sessions ??
     new SessionManager({
@@ -77,32 +97,21 @@ export function createApp(options: CreateAppOptions = {}) {
       store: options.sessionStore,
       memoryBridge: memoryBridge?.bridge,
       checkpoints,
-      workspaces:
-        options.workspaces === undefined
-          ? undefined
-          : {
-              get: async (id) => {
-                const view = await options.workspaces!.get(id);
-                if (view === undefined || view === null) return undefined;
-                return {
-                  id: view.id,
-                  name: view.name,
-                  repos: view.repos.map((repo) => ({
-                    name: repo.name,
-                    path: repo.path,
-                    kind: repo.card.kind,
-                    missing: repo.missing,
-                  })),
-                };
-              },
-            },
+      workspaces: workspaceResolver,
     });
 
   let app = new Elysia()
     .use(localGuard())
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
-    .use(sessionRoutes({ manager }))
-    .use(fileRoutes({ manager, env: options.env, undoDir: options.undoDir }))
+    .use(sessionRoutes({ manager, workspaces: workspaceResolver }))
+    .use(
+      fileRoutes({
+        manager,
+        workspaces: workspaceResolver,
+        env: options.env,
+        undoDir: options.undoDir,
+      }),
+    )
     .use(checkpointRoutes({ manager, service: checkpoints }))
     .use(memoryRoutes({ service: options.memory }))
     .use(workspaceRoutes({ service: options.workspaces }))

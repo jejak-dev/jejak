@@ -35,6 +35,8 @@ export interface SessionInfo {
   queued: number;
   workspaceId?: string;
   workspaceName?: string;
+  /** Hanya dihitung saat `GET /api/sessions/:id`; tidak disimpan di store. */
+  workspaceRepos?: Array<{ name: string; primary: boolean; missing: boolean }>;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
 }
 

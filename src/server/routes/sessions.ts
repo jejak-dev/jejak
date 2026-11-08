@@ -1,13 +1,18 @@
 import { Elysia } from "elysia";
+import { realpath } from "node:fs/promises";
 import type { ProviderSelection } from "../provider";
 import {
   SessionError,
   type CreateSessionInput,
+  type SessionInfo,
   type SessionManager,
+  type WorkspaceResolver,
 } from "../sessions/session-manager";
 
 export interface SessionRoutesOptions {
   manager: SessionManager;
+  /** Dipakai untuk menghitung `workspaceRepos` saat satu sesi dibaca. */
+  workspaces?: WorkspaceResolver;
 }
 
 const KEEP_ALIVE_MS = 15_000;
@@ -107,6 +112,49 @@ function frame(seq: number, event: unknown): Uint8Array {
   return encoder.encode(`id: ${seq}\nevent: agent\ndata: ${JSON.stringify(event)}\n\n`);
 }
 
+/** `workspaceRepos` dihitung saat dibaca; workspace atau resolver hilang berarti tanpa field. */
+async function withWorkspaceRepos(
+  session: SessionInfo,
+  resolver: WorkspaceResolver | undefined,
+): Promise<SessionInfo> {
+  const workspaceId = session.workspaceId;
+  if (workspaceId === undefined || resolver === undefined) return session;
+
+  let view;
+  try {
+    view = await resolver.get(workspaceId);
+  } catch {
+    return session;
+  }
+  if (view === undefined) return session;
+
+  let cwdReal: string | undefined;
+  try {
+    cwdReal = await realpath(session.cwd);
+  } catch {
+    cwdReal = undefined;
+  }
+
+  const repos = await Promise.all(
+    view.repos.map(async (repo) => {
+      let repoReal: string | undefined;
+      if (!repo.missing) {
+        try {
+          repoReal = await realpath(repo.path);
+        } catch {
+          repoReal = undefined;
+        }
+      }
+      return {
+        name: repo.name,
+        primary: cwdReal !== undefined && repoReal === cwdReal,
+        missing: repo.missing,
+      };
+    }),
+  );
+  return { ...session, workspaceRepos: repos };
+}
+
 function endFrame(status: string): Uint8Array {
   return encoder.encode(`event: end\ndata: ${JSON.stringify({ status })}\n\n`);
 }
@@ -131,12 +179,12 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
     .get("/api/sessions", () => {
       return { sessions: manager.list() };
     })
-    .get("/api/sessions/:id", ({ params }) => {
+    .get("/api/sessions/:id", async ({ params }) => {
       const session = manager.get(params.id);
       if (session === undefined) {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
       }
-      return { session };
+      return { session: await withWorkspaceRepos(session, options.workspaces) };
     })
     .post(
       "/api/sessions/:id/messages",
