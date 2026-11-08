@@ -1,5 +1,7 @@
 import { stat } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+import { readMemoryFile, scanMemoryFiles } from "../server/memory/memory-files";
+import { memoryDir } from "../server/memory/memory-store";
 import { redactResolved, resolveProvider, type ProviderRegistry } from "../server/provider";
 import { loadRegistry, providersPath } from "../server/provider-store";
 import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
@@ -175,6 +177,64 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
       if (loose) issues.push("izin lebih longgar dari 600; sarankan chmod 600");
       checks.push({
         name: "Penyimpanan sesi",
+        status: loose ? "peringatan" : "ok",
+        detail: issues.join("; "),
+      });
+    }
+  }
+
+  if (env.JEJAK_MEMORY?.trim() === "0") {
+    checks.push({
+      name: "Memory",
+      status: "peringatan",
+      detail: "dimatikan (JEJAK_MEMORY=0)",
+    });
+  } else {
+    const dir = memoryDir(env);
+    let dirInfo: Awaited<ReturnType<typeof stat>> | null = null;
+    try {
+      dirInfo = await stat(dir);
+      if (!dirInfo.isDirectory()) dirInfo = null;
+    } catch {
+      dirInfo = null;
+    }
+
+    if (dirInfo === null) {
+      checks.push({
+        name: "Memory",
+        status: "ok",
+        detail: `${dir} belum ada; dibuat saat server pertama berjalan`,
+      });
+    } else {
+      const files = await scanMemoryFiles(dir);
+      let active = 0;
+      let proposed = 0;
+      let problems = 0;
+      for (const file of files) {
+        const read = await readMemoryFile(dir, file.relPath, file.layer, file.projectKey);
+        if (!read.ok) {
+          problems += 1;
+          continue;
+        }
+        if (read.memory.status === "active") active += 1;
+        if (read.memory.status === "proposed") proposed += 1;
+      }
+
+      let hasIndex = false;
+      try {
+        const indexInfo = await stat(join(dir, "index.db"));
+        hasIndex = indexInfo.isFile();
+      } catch {
+        hasIndex = false;
+      }
+
+      const loose = (dirInfo.mode & 0o077) !== 0;
+      const issues = [
+        `${dir}; ${files.length} berkas; ${active} aktif/${proposed} usulan; ${problems} problems; ${hasIndex ? "indeks ada" : "indeks belum ada"}`,
+      ];
+      if (loose) issues.push("izin lebih longgar dari 700; sarankan chmod 700");
+      checks.push({
+        name: "Memory",
         status: loose ? "peringatan" : "ok",
         detail: issues.join("; "),
       });

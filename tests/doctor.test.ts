@@ -339,3 +339,111 @@ test("penyimpanan sesi: dimatikan lewat JEJAK_PERSIST=0 dan tetap exit 0", async
   expect(code).toBe(0);
   expect(logged.some((line) => line.includes("Penyimpanan sesi"))).toBe(true);
 });
+
+test("memory: folder belum ada", async () => {
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const memory = find(checks, "Memory");
+  expect(memory.status).toBe("ok");
+  expect(memory.detail).toContain(join(homeDir, "memory"));
+  expect(memory.detail).toContain("belum ada");
+});
+
+test("memory: ada berkas, indeks, dan jumlah aktif/usulan", async () => {
+  const { FileMemoryStore } = await import("../src/server/memory/memory-store");
+  const store = new FileMemoryStore({ dir: join(homeDir, "memory") });
+  await store.create({
+    id: crypto.randomUUID(),
+    layer: "profile",
+    projectKey: null,
+    title: "Perintah tes",
+    body: "bun test",
+    status: "active",
+    confidence: "confirmed",
+    origin: { kind: "manual", at: "2026-11-08T10:00:00.000Z" },
+    staleReason: null,
+    createdAt: "2026-11-08T10:00:00.000Z",
+    updatedAt: "2026-11-08T10:00:00.000Z",
+    decidedAt: null,
+  });
+  await store.create({
+    id: crypto.randomUUID(),
+    layer: "profile",
+    projectKey: null,
+    title: "Usulan",
+    body: "isi",
+    status: "proposed",
+    confidence: "inferred",
+    origin: { kind: "session", at: "2026-11-08T10:00:00.000Z" },
+    staleReason: null,
+    createdAt: "2026-11-08T10:00:00.000Z",
+    updatedAt: "2026-11-08T10:00:00.000Z",
+    decidedAt: null,
+  });
+  store.close();
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const memory = find(checks, "Memory");
+  expect(memory.status).toBe("ok");
+  expect(memory.detail).toContain("2 berkas");
+  expect(memory.detail).toContain("1 aktif/1 usulan");
+  expect(memory.detail).toContain("indeks ada");
+});
+
+test("memory: berkas rusak dihitung sebagai problems", async () => {
+  await mkdir(join(homeDir, "memory", "profile"), { recursive: true, mode: 0o700 });
+  await writeFile(join(homeDir, "memory", "profile", "rusak.md"), "bukan frontmatter", {
+    mode: 0o600,
+  });
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const memory = find(checks, "Memory");
+  expect(memory.detail).toContain("1 problems");
+  expect(memory.detail).toContain("indeks belum ada");
+});
+
+test("memory: izin folder longgar memberi peringatan", async () => {
+  await mkdir(join(homeDir, "memory"), { recursive: true, mode: 0o755 });
+  await chmod(join(homeDir, "memory"), 0o755);
+
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const memory = find(checks, "Memory");
+  expect(memory.status).toBe("peringatan");
+  expect(memory.detail).toContain("chmod 700");
+});
+
+test("memory: dimatikan lewat JEJAK_MEMORY=0 dan tetap exit 0", async () => {
+  const logged: string[] = [];
+  const checks = await collectChecks({
+    env: { JEJAK_HOME: homeDir, JEJAK_MEMORY: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const memory = find(checks, "Memory");
+  expect(memory.status).toBe("peringatan");
+  expect(memory.detail).toContain("dimatikan");
+
+  const code = await runDoctor({
+    env: { JEJAK_HOME: homeDir, JEJAK_MEMORY: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    log: (line) => logged.push(line),
+  });
+  expect(code).toBe(0);
+  expect(logged.some((line) => line.includes("PERINGATAN  Memory"))).toBe(true);
+});
