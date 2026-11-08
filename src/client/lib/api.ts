@@ -1,3 +1,12 @@
+import type {
+  ChangeAction,
+  CheckpointChange,
+  CheckpointItem,
+  CheckpointKind,
+  ListCheckpointsResult,
+  PreviewResult,
+  RewindResult,
+} from "../../server/checkpoints/checkpoint-service";
 import type { Changes } from "../../server/files/changes";
 import type { DirectoryListing } from "../../server/files/list";
 import type { FileContent } from "../../server/files/read";
@@ -9,6 +18,16 @@ import type {
 } from "../../server/memory/memory-files";
 import type { ImportResult } from "../../server/memory/memory-service";
 import type { SessionInfo } from "../../server/sessions/session-manager";
+
+export type {
+  ChangeAction,
+  CheckpointChange,
+  CheckpointItem,
+  CheckpointKind,
+  RewindResult,
+};
+export type CheckpointList = ListCheckpointsResult;
+export type CheckpointPreview = PreviewResult;
 
 export type {
   ChangedFile,
@@ -115,6 +134,10 @@ export interface ApiClient {
   getChanges(id: string): Promise<Changes>;
   rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
   undoChange(id: string, undoId: string): Promise<{ path: string }>;
+  getCheckpoints(id: string): Promise<CheckpointList>;
+  createCheckpoint(id: string, label?: string): Promise<CheckpointItem>;
+  previewCheckpoint(id: string, cid: string): Promise<CheckpointPreview>;
+  rewindCheckpoint(id: string, cid: string): Promise<RewindResult>;
   decidePermission(
     sessionId: string,
     requestId: string,
@@ -206,6 +229,62 @@ function memoryQuery(params: MemoryQuery | undefined): string {
 }
 
 const TOOL_CALLING_VALUES = new Set(["ok", "tidak-dipanggil", "tidak-diuji"]);
+const CHECKPOINT_KINDS = new Set(["turn", "manual", "pre-rewind"]);
+const CHANGE_ACTIONS = new Set(["restore", "recreate", "remove"]);
+
+function invalidResponse(): ApiError {
+  return new ApiError("respons server tidak valid", 200);
+}
+
+function checkpointItemFrom(value: unknown): CheckpointItem {
+  if (!isRecord(value)) throw invalidResponse();
+  const { id, kind, label, createdAt, files, turn } = value;
+  if (typeof id !== "string" || !CHECKPOINT_KINDS.has(kind as string)) throw invalidResponse();
+  if (typeof label !== "string" || typeof createdAt !== "string") throw invalidResponse();
+  if (typeof files !== "number" || !Number.isFinite(files)) throw invalidResponse();
+  if (turn !== undefined && (typeof turn !== "number" || !Number.isFinite(turn))) {
+    throw invalidResponse();
+  }
+  return value as unknown as CheckpointItem;
+}
+
+function checkpointListFrom(payload: unknown): CheckpointList {
+  if (!isRecord(payload) || typeof payload.enabled !== "boolean") throw invalidResponse();
+  const { items, reason } = payload;
+  if (!Array.isArray(items)) throw invalidResponse();
+  const list: CheckpointList = {
+    enabled: payload.enabled,
+    items: items.map(checkpointItemFrom),
+  };
+  if (typeof reason === "string") list.reason = reason;
+  return list;
+}
+
+function checkpointPreviewFrom(payload: unknown): CheckpointPreview {
+  if (!isRecord(payload) || typeof payload.truncated !== "boolean") throw invalidResponse();
+  const { changes } = payload;
+  if (!Array.isArray(changes)) throw invalidResponse();
+  for (const change of changes) {
+    if (
+      !isRecord(change) ||
+      typeof change.path !== "string" ||
+      !CHANGE_ACTIONS.has(change.action as string)
+    ) {
+      throw invalidResponse();
+    }
+  }
+  return payload as unknown as CheckpointPreview;
+}
+
+function rewindResultFrom(payload: unknown): RewindResult {
+  if (!isRecord(payload)) throw invalidResponse();
+  const { safetyId, restored, recreated, removed } = payload;
+  if (typeof safetyId !== "string") throw invalidResponse();
+  for (const count of [restored, recreated, removed]) {
+    if (typeof count !== "number" || !Number.isFinite(count)) throw invalidResponse();
+  }
+  return { safetyId, restored: restored as number, recreated: recreated as number, removed: removed as number };
+}
 
 function connectionTestFrom(payload: unknown): ConnectionTestView {
   const result = field(payload, "result");
@@ -377,6 +456,41 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         throw new ApiError("respons server tidak valid", 200);
       }
       return { path };
+    },
+
+    async getCheckpoints(id) {
+      return checkpointListFrom(
+        await request("GET", `/api/sessions/${encodeURIComponent(id)}/checkpoints`),
+      );
+    },
+
+    async createCheckpoint(id, label) {
+      const body = label === undefined ? {} : { label };
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/checkpoints`,
+        body,
+      );
+      return checkpointItemFrom(field(data, "item"));
+    },
+
+    async previewCheckpoint(id, cid) {
+      return checkpointPreviewFrom(
+        await request(
+          "GET",
+          `/api/sessions/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(cid)}/preview`,
+        ),
+      );
+    },
+
+    async rewindCheckpoint(id, cid) {
+      return rewindResultFrom(
+        await request(
+          "POST",
+          `/api/sessions/${encodeURIComponent(id)}/checkpoints/${encodeURIComponent(cid)}/rewind`,
+          { confirm: true },
+        ),
+      );
     },
 
     async getProviders() {

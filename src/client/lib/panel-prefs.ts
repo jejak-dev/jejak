@@ -1,4 +1,4 @@
-export type PanelTab = "changes" | "files";
+export type PanelTab = "changes" | "files" | "checkpoints";
 
 export interface PanelPrefs {
   open: boolean;
@@ -7,6 +7,11 @@ export interface PanelPrefs {
 
 const STORAGE_KEY = "jejak.panel";
 const DEFAULT_PREFS: PanelPrefs = { open: false, tab: "changes" };
+const TABS: readonly PanelTab[] = ["changes", "files", "checkpoints"];
+
+function isTab(value: unknown): value is PanelTab {
+  return typeof value === "string" && (TABS as readonly string[]).includes(value);
+}
 
 /** Baca preferensi panel dari string JSON; bentuk asing jatuh ke bawaan. */
 export function parsePanelPrefs(raw: string | null): PanelPrefs {
@@ -21,7 +26,7 @@ export function parsePanelPrefs(raw: string | null): PanelPrefs {
   const value = parsed as Record<string, unknown>;
   return {
     open: value.open === true,
-    tab: value.tab === "files" ? "files" : "changes",
+    tab: isTab(value.tab) ? value.tab : "changes",
   };
 }
 

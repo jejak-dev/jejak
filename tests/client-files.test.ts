@@ -217,6 +217,13 @@ describe("parsePanelPrefs", () => {
     expect(parsePanelPrefs('{"open":true,"tab":"files"}')).toEqual({ open: true, tab: "files" });
   });
 
+  test("membaca tab Titik", () => {
+    expect(parsePanelPrefs('{"open":true,"tab":"checkpoints"}')).toEqual({
+      open: true,
+      tab: "checkpoints",
+    });
+  });
+
   test("tab asing kembali ke Perubahan", () => {
     expect(parsePanelPrefs('{"open":true,"tab":"entah"}')).toEqual({ open: true, tab: "changes" });
   });

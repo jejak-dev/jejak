@@ -3,6 +3,7 @@ import type { ApiClient } from "../lib/api";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "../lib/panel-prefs";
 import { formatCount } from "../lib/format";
 import { ChangesTab } from "./ChangesTab";
+import { CheckpointsTab } from "./CheckpointsTab";
 import { FilesTab } from "./FilesTab";
 import { Icon } from "./Icon";
 
@@ -18,11 +19,13 @@ export interface PanelProps {
 const TABS: { id: PanelTab; label: string }[] = [
   { id: "changes", label: "Perubahan" },
   { id: "files", label: "Berkas" },
+  { id: "checkpoints", label: "Titik" },
 ];
 
 export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }: PanelProps) {
   const [tab, setTab] = useState<PanelTab>(() => readPanelPrefs().tab);
   const [fileCount, setFileCount] = useState<number | undefined>(undefined);
+  const [checkpointCount, setCheckpointCount] = useState<number | undefined>(undefined);
   const [refreshToken, setRefreshToken] = useState(0);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
@@ -47,9 +50,9 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
   };
 
   return (
-    <aside class="jk-panel" aria-label="Perubahan dan berkas">
+    <aside class="jk-panel" aria-label="Perubahan, berkas, dan titik">
       <div class="jk-panel-head">
-        <div class="jk-panel-tabs" role="tablist" aria-label="Perubahan dan berkas">
+        <div class="jk-panel-tabs" role="tablist" aria-label="Perubahan, berkas, dan titik">
           {TABS.map((entry, index) => (
             <button
               key={entry.id}
@@ -69,6 +72,9 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
               {entry.label}
               {entry.id === "changes" && fileCount !== undefined && fileCount > 0 && (
                 <span class="jk-panel-count">{formatCount(fileCount)}</span>
+              )}
+              {entry.id === "checkpoints" && checkpointCount !== undefined && checkpointCount > 0 && (
+                <span class="jk-panel-count">{formatCount(checkpointCount)}</span>
               )}
             </button>
           ))}
@@ -107,6 +113,17 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
             status={status}
             refreshToken={refreshToken}
             onFileCount={setFileCount}
+          />
+        ) : tab === "checkpoints" ? (
+          <CheckpointsTab
+            api={api}
+            sessionId={sessionId}
+            open={open}
+            eventCount={eventCount}
+            status={status}
+            refreshToken={refreshToken}
+            onCount={setCheckpointCount}
+            onChanged={() => setRefreshToken((value) => value + 1)}
           />
         ) : (
           <FilesTab api={api} sessionId={sessionId} open={open} refreshToken={refreshToken} />

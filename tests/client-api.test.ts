@@ -788,3 +788,179 @@ describe("createApiClient: memory", () => {
     }
   });
 });
+
+const CHECKPOINT = {
+  id: "a".repeat(40),
+  kind: "turn" as const,
+  turn: 3,
+  label: "Giliran 3",
+  createdAt: "2026-11-08T10:00:00.000Z",
+  files: 4,
+};
+
+describe("createApiClient: checkpoint", () => {
+  test("getCheckpoints GET path ter-encode dan mengembalikan daftar", async () => {
+    const payload = { enabled: true, items: [CHECKPOINT] };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch, baseUrl: "http://localhost:9" });
+
+    expect(await api.getCheckpoints("s 1")).toEqual(payload);
+    expect(calls[0]?.url).toBe("http://localhost:9/api/sessions/s%201/checkpoints");
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("getCheckpoints membawa alasan saat dimatikan", async () => {
+    const payload = { enabled: false, reason: "Folder terlalu besar", items: [] };
+    const { fetch } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getCheckpoints("s1")).toEqual(payload);
+  });
+
+  test("getCheckpoints menolak bentuk respons yang salah", async () => {
+    const invalidPayloads: unknown[] = [
+      {},
+      { enabled: "ya", items: [] },
+      { enabled: true },
+      { enabled: true, items: [{ ...CHECKPOINT, kind: "entah" }] },
+      { enabled: true, items: [{ ...CHECKPOINT, files: "4" }] },
+      { enabled: true, items: [null] },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+      await expect(api.getCheckpoints("s1")).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  test("createCheckpoint POST body label ter-encode dan mengembalikan item", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, item: CHECKPOINT }, 201));
+    const api = createApiClient({ fetch });
+
+    expect(await api.createCheckpoint("a b", "sebelum refactor")).toEqual(CHECKPOINT);
+    expect(calls[0]?.url).toBe("/api/sessions/a%20b/checkpoints");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ label: "sebelum refactor" });
+  });
+
+  test("createCheckpoint tanpa label mengirim body kosong JSON", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, item: CHECKPOINT }, 201));
+    const api = createApiClient({ fetch });
+
+    await api.createCheckpoint("s1");
+
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("createCheckpoint menolak respons tanpa item yang sah", async () => {
+    for (const payload of [{}, { item: null }, { item: { ...CHECKPOINT, createdAt: 1 } }]) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload, 201));
+      const api = createApiClient({ fetch });
+      await expect(api.createCheckpoint("s1")).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  test("previewCheckpoint GET path cid ter-encode", async () => {
+    const payload = {
+      changes: [
+        { path: "src/a.ts", action: "restore" as const },
+        { path: "baru.txt", action: "remove" as const },
+      ],
+      truncated: false,
+    };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.previewCheckpoint("s 1", "ab/cd")).toEqual(payload);
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/checkpoints/ab%2Fcd/preview");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("previewCheckpoint menolak bentuk respons yang salah", async () => {
+    const invalidPayloads: unknown[] = [
+      {},
+      { changes: [] },
+      { changes: "x", truncated: false },
+      { changes: [{ path: "a", action: "entah" }], truncated: false },
+      { changes: [], truncated: "tidak" },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+      await expect(api.previewCheckpoint("s1", "a".repeat(40))).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  test("rewindCheckpoint POST body confirm dan mengembalikan ringkasan", async () => {
+    const payload = { ok: true, safetyId: "b".repeat(40), restored: 1, recreated: 2, removed: 3 };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    expect(await api.rewindCheckpoint("s 1", "c".repeat(40))).toEqual({
+      safetyId: "b".repeat(40),
+      restored: 1,
+      recreated: 2,
+      removed: 3,
+    });
+    expect(calls[0]?.url).toBe(`/api/sessions/s%201/checkpoints/${"c".repeat(40)}/rewind`);
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ confirm: true });
+  });
+
+  test("rewindCheckpoint menolak bentuk respons yang salah", async () => {
+    const invalidPayloads: unknown[] = [
+      {},
+      { safetyId: "x", restored: 1, recreated: 0 },
+      { safetyId: 1, restored: 1, recreated: 0, removed: 0 },
+      { safetyId: "x", restored: "1", recreated: 0, removed: 0 },
+    ];
+
+    for (const payload of invalidPayloads) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+      await expect(api.rewindCheckpoint("s1", "a".repeat(40))).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  test("checkpoint 409 dan 503 menjadi ApiError dengan status", async () => {
+    for (const [status, message] of [
+      [409, "Sesi sedang berjalan. Tunggu selesai atau hentikan dulu."],
+      [503, "Checkpoint dimatikan."],
+    ] as const) {
+      const { fetch } = fakeFetch(() => jsonResponse({ error: message }, status));
+      const api = createApiClient({ fetch });
+
+      let caught: unknown;
+      try {
+        await api.rewindCheckpoint("s1", "a".repeat(40));
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(ApiError);
+      expect((caught as ApiError).status).toBe(status);
+      expect((caught as ApiError).message).toBe(message);
+    }
+  });
+
+  test("getCheckpoints 503 menjadi ApiError dengan status", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Checkpoint dimatikan." }, 503));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.getCheckpoints("s1");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(503);
+  });
+});
