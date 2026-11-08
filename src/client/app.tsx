@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
+import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { MemoryPage } from "./components/MemoryPage";
 import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { ReplyBar } from "./components/ReplyBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
+import { ShortcutHelp } from "./components/ShortcutHelp";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
 import { WorkspacePage } from "./components/WorkspacePage";
@@ -20,12 +22,22 @@ import {
   useWorkspaces,
 } from "./hooks";
 import { createApiClient } from "./lib/api";
+import { buildCommands, type CommandId } from "./lib/commands";
+import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs } from "./lib/panel-prefs";
+import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 
 export function App() {
   const api = useMemo(() => createApiClient(), []);
-  const { sessionId: selectedId, view: routeView, navigateToSession: navigate } = useHashRoute();
+  const {
+    sessionId: selectedId,
+    view: routeView,
+    navigateToSession: navigate,
+    navigateToMemory,
+    navigateToProviders,
+    navigateToWorkspaces,
+  } = useHashRoute();
   const { info } = useInfo(api);
   const [notifyPrefs, setNotifyPrefs] = useState<NotifyPrefs>(() => readNotifyPrefs());
   const { sessions, refresh } = useSessions(api, undefined, notifyPrefs.enabled);
@@ -54,6 +66,10 @@ export function App() {
   const [interrupting, setInterrupting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => readPanelPrefs().open);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const previousFocusRef = useRef<Element | null>(null);
+  const [promptFocusTick, setPromptFocusTick] = useState(0);
 
   const activeProfile = view?.profiles.find((profile) => profile.id === view.activeProfileId);
   const activeProfileLabel = activeProfile?.name ?? view?.activeProfileId;
@@ -84,6 +100,10 @@ export function App() {
 
   const openDrawer = useCallback((): void => setDrawerOpen(true), []);
   const closeDrawer = useCallback((): void => setDrawerOpen(false), []);
+  const openPalette = useCallback((): void => {
+    previousFocusRef.current = document.activeElement;
+    setPaletteOpen(true);
+  }, []);
 
   const onPanelOpenChange = useCallback((open: boolean): void => {
     setPanelOpen(open);
@@ -98,6 +118,146 @@ export function App() {
   const onSaved = useCallback((): void => {
     void reload();
   }, [reload]);
+
+  // Pintasan keyboard global (Ctrl/Cmd+K, ?, /, n, p, Alt↑↓).
+  // Saat overlay terbuka, tombol ditangani komponen overlay itu sendiri.
+  useEffect(() => {
+    if (paletteOpen || helpOpen) return;
+
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented) return;
+
+      const targetKind = targetKindOf(event.target);
+      const action = matchShortcut({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        altKey: event.altKey,
+        shiftKey: event.shiftKey,
+        isComposing: event.isComposing,
+        targetKind,
+      });
+      if (action === undefined || action === "escape") return;
+
+      if (action === "palette") {
+        // Selalu cegah perilaku bawaan, termasuk saat fokus di kolom teks.
+        event.preventDefault();
+        previousFocusRef.current = document.activeElement;
+        setPaletteOpen(true);
+        return;
+      }
+
+      if (action === "help") {
+        event.preventDefault();
+        setHelpOpen(true);
+        return;
+      }
+
+      if (action === "search") {
+        // Input pencarian hanya ada saat sidebar punya sesi.
+        const search = document.getElementById("jk-session-search");
+        if (search === null) return;
+        event.preventDefault();
+        (search as HTMLInputElement).focus();
+        return;
+      }
+
+      if (action === "new-session") {
+        event.preventDefault();
+        setPromptFocusTick(tick => tick + 1);
+        navigate();
+        return;
+      }
+
+      if (action === "toggle-panel") {
+        if (selected === undefined) return;
+        event.preventDefault();
+        togglePanel();
+        return;
+      }
+
+      if (action === "prev-session" || action === "next-session") {
+        event.preventDefault();
+        // Urutan sama dengan daftar sidebar: per folder, terbaru dulu.
+        const visible = sessions.filter((session) => session.archivedAt === undefined);
+        const ids = groupSessions(visible).flatMap((group) => group.items.map((session) => session.id));
+        const next = adjacentSession(ids, selectedId, action === "next-session" ? "next" : "prev");
+        if (next !== undefined) navigate(next);
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [
+    helpOpen,
+    navigate,
+    paletteOpen,
+    selected,
+    selectedId,
+    sessions,
+    togglePanel,
+  ]);
+
+  // Fokus ke textarea tugas setelah "Sesi baru" lewat pintasan.
+  const handledPromptFocusRef = useRef(0);
+  useEffect(() => {
+    if (promptFocusTick === 0 || handledPromptFocusRef.current === promptFocusTick) return;
+    if (routeView !== undefined || selected !== undefined) return;
+    handledPromptFocusRef.current = promptFocusTick;
+    const prompt = document.getElementById("jk-prompt");
+    if (prompt !== null) (prompt as HTMLTextAreaElement).focus();
+  }, [promptFocusTick, routeView, selected, selectedId]);
+
+  const closePalette = useCallback((): void => {
+    setPaletteOpen(false);
+    const focused = previousFocusRef.current;
+    previousFocusRef.current = null;
+    if (focused instanceof HTMLElement) focused.focus();
+  }, []);
+
+  const runCommand = useCallback(
+    (run: CommandId | { session: string }): void => {
+      if (typeof run === "object") {
+        navigate(run.session);
+        return;
+      }
+      switch (run) {
+        case "new-session":
+          setPromptFocusTick(tick => tick + 1);
+          navigate(undefined);
+          return;
+        case "open-workspace":
+          navigateToWorkspaces();
+          return;
+        case "open-memory":
+          navigateToMemory();
+          return;
+        case "open-providers":
+          navigateToProviders();
+          return;
+        case "toggle-panel":
+          togglePanel();
+          return;
+        case "focus-search":
+          document.getElementById("jk-session-search")?.focus();
+          return;
+        case "show-shortcuts":
+          setHelpOpen(true);
+          return;
+      }
+    },
+    [navigate, navigateToMemory, navigateToProviders, navigateToWorkspaces, togglePanel],
+  );
+
+  const commands = useMemo(
+    () =>
+      buildCommands({
+        sessions,
+        hasSession: selected !== undefined,
+        panelOpen,
+      }),
+    [panelOpen, selected, sessions],
+  );
 
   const onSelect = useCallback(
     (id: string): void => {
@@ -217,6 +377,7 @@ export function App() {
         onDelete={onDeleteSession}
         notifyPrefs={notifyPrefs}
         onNotifyPrefsChange={onNotifyPrefsChange}
+        onOpenPalette={openPalette}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
 
@@ -298,6 +459,11 @@ export function App() {
           </>
         )}
       </main>
+
+      {paletteOpen && (
+        <CommandPalette commands={commands} onRun={runCommand} onClose={closePalette} />
+      )}
+      {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }

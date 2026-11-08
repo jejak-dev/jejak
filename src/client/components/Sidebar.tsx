@@ -24,6 +24,7 @@ export interface SidebarProps {
   onDelete: (id: string) => Promise<void>;
   notifyPrefs: NotifyPrefs;
   onNotifyPrefsChange: (prefs: NotifyPrefs) => void;
+  onOpenPalette?: () => void;
 }
 
 function dotClass(session: SessionInfo): string {
@@ -64,6 +65,7 @@ export function Sidebar({
   onDelete,
   notifyPrefs,
   onNotifyPrefsChange,
+  onOpenPalette,
 }: SidebarProps) {
   const now = new Date();
   const [query, setQuery] = useState("");
@@ -445,6 +447,13 @@ export function Sidebar({
     onNotifyPrefsChange({ ...notifyPrefs, sound: !notifyPrefs.sound });
   };
 
+  // Teks pintasan sesuai platform (Mac: ⌘K, lain: Ctrl K).
+  const paletteKeys = () => {
+    const isMac =
+      typeof navigator !== "undefined" && navigator.userAgent.includes("Macintosh");
+    return isMac ? "⌘K" : "Ctrl K";
+  };
+
   return (
     <aside class="jk-sidebar" aria-label="Navigasi">
       <header class="jk-brand">
@@ -509,6 +518,12 @@ export function Sidebar({
       </nav>
 
       <footer class="jk-sidebar-foot">
+        {onOpenPalette !== undefined && (
+          <button type="button" class="jk-foot-link jk-foot-btn" onClick={onOpenPalette}>
+            <span class="jk-foot-text">Perintah</span>
+            <span class="jk-foot-count">{paletteKeys()}</span>
+          </button>
+        )}
         <a
           class={`jk-foot-link${workspacesActive ? " jk-foot-link-active" : ""}`}
           href="#/workspaces"
