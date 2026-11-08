@@ -32,6 +32,21 @@ export interface ConnectionTestView {
   error?: string;
 }
 
+export type RejectScope = "hunk" | "file";
+
+export interface RejectChangeInput {
+  path: string;
+  scope: RejectScope;
+  hunkId?: string;
+  diffId: string;
+}
+
+export interface RejectChangeResult {
+  undoId: string;
+  path: string;
+  scope: RejectScope;
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
@@ -50,6 +65,8 @@ export interface ApiClient {
   getFiles(id: string, path?: string): Promise<DirectoryListing>;
   getFile(id: string, path: string): Promise<FileContent>;
   getChanges(id: string): Promise<Changes>;
+  rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
+  undoChange(id: string, undoId: string): Promise<{ path: string }>;
   decidePermission(
     sessionId: string,
     requestId: string,
@@ -227,6 +244,34 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         "GET",
         `/api/sessions/${encodeURIComponent(id)}/changes`,
       )) as Changes;
+    },
+
+    async rejectChange(id, input) {
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/changes/reject`,
+        input,
+      );
+      const undoId = field(data, "undoId");
+      const path = field(data, "path");
+      const scope = field(data, "scope");
+      if (typeof undoId !== "string" || typeof path !== "string") {
+        throw new ApiError("respons server tidak valid", 200);
+      }
+      return { undoId, path, scope: scope === "file" ? "file" : "hunk" };
+    },
+
+    async undoChange(id, undoId) {
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/changes/undo`,
+        { undoId },
+      );
+      const path = field(data, "path");
+      if (typeof path !== "string") {
+        throw new ApiError("respons server tidak valid", 200);
+      }
+      return { path };
     },
 
     async getProviders() {

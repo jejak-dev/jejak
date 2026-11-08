@@ -1,6 +1,21 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ApiClient, type Changes, type ChangedFile } from "../lib/api";
-import { diffRows, shouldRefreshChanges, statusLabel, totalStats, type ChangesMarker } from "../lib/files";
+import {
+  canReject,
+  diffRows,
+  nextOpenPaths,
+  pushUndoLine,
+  rejectBlockedReason,
+  rejectTargetKey,
+  removeUndoLine,
+  shouldRefreshChanges,
+  statusLabel,
+  totalStats,
+  updateUndoLine,
+  type ChangesMarker,
+  type RejectTarget,
+  type UndoLine,
+} from "../lib/files";
 import { formatCount } from "../lib/format";
 import { Icon } from "./Icon";
 
@@ -15,18 +30,158 @@ export interface ChangesTabProps {
   onFileCount?: (count: number | undefined) => void;
 }
 
+interface RejectFailure {
+  message: string;
+  stale: boolean;
+}
+
 function errorMessage(caught: unknown): string {
   return caught instanceof ApiError ? caught.message : "perubahan tidak dapat dimuat";
 }
 
-function FileRow({ file }: { file: ChangedFile }) {
+function failureOf(caught: unknown, fallback: string): RejectFailure {
+  if (caught instanceof ApiError) {
+    return { message: caught.message, stale: caught.status === 409 };
+  }
+  return { message: fallback, stale: false };
+}
+
+interface RejectConfirmProps {
+  question: string;
+  busy: boolean;
+  confirmLabel: string;
+  cancelLabel: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+/** Konfirmasi inline; fokus awal ke "Batal" dan Escape membatalkan. */
+function RejectConfirm({
+  question,
+  busy,
+  confirmLabel,
+  cancelLabel,
+  onConfirm,
+  onCancel,
+}: RejectConfirmProps) {
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    cancelRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" || busy) return;
+      event.preventDefault();
+      onCancel();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [busy, onCancel]);
+
+  return (
+    <div class="jk-panel-confirm">
+      <p>{question}</p>
+      <div class="jk-panel-confirm-actions">
+        <button
+          type="button"
+          class="jk-button jk-button-caution"
+          disabled={busy}
+          aria-label={confirmLabel}
+          onClick={onConfirm}
+        >
+          {busy ? "Menolak…" : "Tolak"}
+        </button>
+        <button
+          ref={cancelRef}
+          type="button"
+          class="jk-button"
+          disabled={busy}
+          aria-label={cancelLabel}
+          onClick={onCancel}
+        >
+          Batal
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface RejectErrorLineProps {
+  failure: RejectFailure;
+  path: string;
+  onRefresh: () => void;
+}
+
+function RejectErrorLine({ failure, path, onRefresh }: RejectErrorLineProps) {
+  return (
+    <div class="jk-panel-reject-error">
+      <p class="jk-perm-error" role="alert">
+        {failure.message}
+      </p>
+      {failure.stale && (
+        <button
+          type="button"
+          class="jk-link-btn"
+          aria-label={`Muat ulang perubahan setelah gagal menolak ${path}`}
+          onClick={onRefresh}
+        >
+          Muat ulang perubahan
+        </button>
+      )}
+    </div>
+  );
+}
+
+interface FileRowProps {
+  file: ChangedFile;
+  sessionStatus: string;
+  open: boolean;
+  onToggleOpen: (path: string, open: boolean) => void;
+  confirmTarget: RejectTarget | undefined;
+  busyKey: string | undefined;
+  failures: Record<string, RejectFailure | undefined>;
+  onAsk: (target: RejectTarget) => void;
+  onCancel: () => void;
+  onConfirm: (target: RejectTarget) => void;
+  onRefresh: () => void;
+  onRegisterTrigger: (key: string, element: HTMLButtonElement | null) => void;
+}
+
+function FileRow({
+  file,
+  sessionStatus,
+  open,
+  onToggleOpen,
+  confirmTarget,
+  busyKey,
+  failures,
+  onAsk,
+  onCancel,
+  onConfirm,
+  onRefresh,
+  onRegisterTrigger,
+}: FileRowProps) {
   const slash = file.path.lastIndexOf("/");
   const dir = slash > 0 ? file.path.slice(0, slash) : "";
   const name = slash >= 0 ? file.path.slice(slash + 1) : file.path;
   const unchanged = !file.binary && file.hunks.length === 0;
+  const rejectable = canReject(file);
+  const blocked = rejectable ? rejectBlockedReason({ sessionStatus, file }) : undefined;
+  const rejectDisabled = blocked !== undefined || busyKey !== undefined;
+  const fileKey = file.path;
+  const fileTarget: RejectTarget = { path: file.path, scope: "file" };
+  const fileConfirming = rejectTargetKey(confirmTarget) === fileKey;
+  const fileFailure = failures[fileKey];
 
   return (
-    <details class="jk-panel-file" data-path={file.path}>
+    <details
+      class="jk-panel-file"
+      data-path={file.path}
+      open={open}
+      onToggle={(event) => onToggleOpen(file.path, event.currentTarget.open)}
+    >
       <summary>
         <span class="jk-chev">
           <Icon name="chevron" />
@@ -49,20 +204,89 @@ function FileRow({ file }: { file: ChangedFile }) {
         ) : unchanged ? (
           <p class="jk-panel-note">Tidak ada perubahan yang bisa ditampilkan</p>
         ) : (
-          file.hunks.map((hunk, hunkIndex) => (
-            <div class="jk-panel-hunk" key={hunkIndex}>
-              <p class="jk-panel-hunk-head">{hunk.header}</p>
-              <div class="jk-panel-diff" tabIndex={0} role="region" aria-label={`Perubahan ${file.path}`}>
-                {diffRows(hunk).map((row, rowIndex) => (
-                  <div class={`jk-panel-dline${row.t === "ctx" ? "" : ` jk-perm-${row.t === "add" ? "add" : "del"}`}`} key={rowIndex}>
-                    <i>{row.oldNo ?? ""}</i>
-                    <i>{row.newNo ?? ""}</i>
-                    <span>{row.text === "" ? " " : row.text}</span>
+          <>
+            {rejectable && (
+              <>
+                {blocked !== undefined && <p class="jk-panel-note">{blocked}</p>}
+                {fileConfirming ? (
+                  <RejectConfirm
+                    question="Kembalikan seluruh berkas ke versi HEAD? Semua perubahan di berkas ini hilang."
+                    busy={busyKey === fileKey}
+                    confirmLabel={`Konfirmasi tolak seluruh berkas ${file.path}`}
+                    cancelLabel={`Batal menolak seluruh berkas ${file.path}`}
+                    onConfirm={() => onConfirm(fileTarget)}
+                    onCancel={onCancel}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    ref={(element) => onRegisterTrigger(fileKey, element)}
+                    class="jk-link-btn jk-panel-reject jk-panel-reject-all"
+                    disabled={rejectDisabled}
+                    title={blocked}
+                    aria-label={`Tolak seluruh berkas ${file.path}`}
+                    onClick={() => onAsk(fileTarget)}
+                  >
+                    Tolak seluruh berkas
+                  </button>
+                )}
+                {fileFailure !== undefined && (
+                  <RejectErrorLine failure={fileFailure} path={file.path} onRefresh={onRefresh} />
+                )}
+              </>
+            )}
+            {file.hunks.map((hunk, hunkIndex) => {
+              const target: RejectTarget = { path: file.path, scope: "hunk", hunkId: hunk.id };
+              const key = rejectTargetKey(target) ?? "";
+              const confirming = rejectTargetKey(confirmTarget) === key;
+              const failure = failures[key];
+              return (
+                <div class="jk-panel-hunk" key={hunk.id}>
+                  <div class="jk-panel-hunk-head">
+                    {confirming ? (
+                      <RejectConfirm
+                        question="Kembalikan hunk ini ke versi sebelumnya?"
+                        busy={busyKey === key}
+                        confirmLabel={`Konfirmasi tolak hunk ${hunkIndex + 1} di ${file.path}`}
+                        cancelLabel={`Batal menolak hunk ${hunkIndex + 1} di ${file.path}`}
+                        onConfirm={() => onConfirm(target)}
+                        onCancel={onCancel}
+                      />
+                    ) : (
+                      <>
+                        <span class="jk-panel-hunk-header">{hunk.header}</span>
+                        {rejectable && (
+                          <button
+                            type="button"
+                            ref={(element) => onRegisterTrigger(key, element)}
+                            class="jk-link-btn jk-panel-reject"
+                            disabled={rejectDisabled}
+                            title={blocked}
+                            aria-label={`Tolak hunk ${hunkIndex + 1} di ${file.path}`}
+                            onClick={() => onAsk(target)}
+                          >
+                            Tolak
+                          </button>
+                        )}
+                      </>
+                    )}
                   </div>
-                ))}
-              </div>
-            </div>
-          ))
+                  {failure !== undefined && (
+                    <RejectErrorLine failure={failure} path={file.path} onRefresh={onRefresh} />
+                  )}
+                  <div class="jk-panel-diff" tabIndex={0} role="region" aria-label={`Perubahan ${file.path}`}>
+                    {diffRows(hunk).map((row, rowIndex) => (
+                      <div class={`jk-panel-dline${row.t === "ctx" ? "" : ` jk-perm-${row.t === "add" ? "add" : "del"}`}`} key={rowIndex}>
+                        <i>{row.oldNo ?? ""}</i>
+                        <i>{row.newNo ?? ""}</i>
+                        <span>{row.text === "" ? " " : row.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </>
         )}
       </div>
     </details>
@@ -81,15 +305,29 @@ export function ChangesTab({
   const [data, setData] = useState<Changes | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(false);
+  const [openPaths, setOpenPaths] = useState<Set<string>>(() => new Set());
+  const [confirmTarget, setConfirmTarget] = useState<RejectTarget | undefined>(undefined);
+  const [busyKey, setBusyKey] = useState<string | undefined>(undefined);
+  const [failures, setFailures] = useState<Record<string, RejectFailure | undefined>>({});
+  const [undoLines, setUndoLines] = useState<UndoLine[]>([]);
+  const [undoBusy, setUndoBusy] = useState<string | undefined>(undefined);
+
   const requestRef = useRef(0);
   const markerRef = useRef<ChangesMarker | undefined>(undefined);
   const tokenRef = useRef(0);
+  const summaryRef = useRef<HTMLParagraphElement | null>(null);
+  const emptyRef = useRef<HTMLParagraphElement | null>(null);
+  const undoRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const pendingFocusRef = useRef<{ undoId?: string } | undefined>(undefined);
+  const pendingTriggerFocusRef = useRef<string | undefined>(undefined);
 
   const load = async (): Promise<void> => {
     requestRef.current += 1;
     const ticket = requestRef.current;
     setLoading(true);
     setError(undefined);
+    setFailures({});
     try {
       const payload = await api.getChanges(sessionId);
       if (ticket !== requestRef.current) return;
@@ -128,7 +366,152 @@ export function ChangesTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sessionId, status, eventCount, refreshToken]);
 
+  // Kembalikan fokus setelah muat ulang: ke baris urung baru atau ke ringkasan.
+  useEffect(() => {
+    const pending = pendingFocusRef.current;
+    if (pending === undefined) return;
+    pendingFocusRef.current = undefined;
+    if (pending.undoId !== undefined) {
+      undoRefs.current[pending.undoId]?.focus();
+      return;
+    }
+    (summaryRef.current ?? emptyRef.current)?.focus();
+  }, [data, undoLines]);
+
+  // Fokus kembali ke tombol "Tolak" setelah konfirmasi dibatalkan.
+  useEffect(() => {
+    const key = pendingTriggerFocusRef.current;
+    if (key === undefined) return;
+    pendingTriggerFocusRef.current = undefined;
+    triggerRefs.current[key]?.focus();
+  }, [confirmTarget]);
+
+  const setFileOpen = (path: string, isOpen: boolean): void => {
+    setOpenPaths((paths) => nextOpenPaths(paths, path, isOpen));
+  };
+
+  const registerTrigger = (key: string, element: HTMLButtonElement | null): void => {
+    if (element === null) delete triggerRefs.current[key];
+    else triggerRefs.current[key] = element;
+  };
+
+  const cancelReject = (): void => {
+    if (confirmTarget !== undefined) {
+      pendingTriggerFocusRef.current = rejectTargetKey(confirmTarget);
+    }
+    setConfirmTarget(undefined);
+  };
+
+  const submitReject = async (target: RejectTarget): Promise<void> => {
+    if (busyKey !== undefined) return;
+    const file = data?.files.find((item) => item.path === target.path);
+    const key = rejectTargetKey(target);
+    if (file === undefined || key === undefined) return;
+    if (target.scope === "hunk" && target.hunkId === undefined) return;
+
+    setBusyKey(key);
+    try {
+      const result = await api.rejectChange(sessionId, {
+        path: target.path,
+        scope: target.scope,
+        ...(target.hunkId !== undefined ? { hunkId: target.hunkId } : {}),
+        diffId: file.diffId,
+      });
+      setConfirmTarget(undefined);
+      setUndoLines((lines) => pushUndoLine(lines, { undoId: result.undoId, path: result.path }));
+      pendingFocusRef.current = { undoId: result.undoId };
+      await load();
+    } catch (caught) {
+      pendingTriggerFocusRef.current = key;
+      setConfirmTarget(undefined);
+      const failure = failureOf(caught, "Gagal menolak perubahan.");
+      setFailures((current) => ({ ...current, [key]: failure }));
+    } finally {
+      setBusyKey(undefined);
+    }
+  };
+
+  const submitUndo = async (line: UndoLine): Promise<void> => {
+    if (undoBusy !== undefined) return;
+    setUndoBusy(line.undoId);
+    try {
+      await api.undoChange(sessionId, line.undoId);
+      setUndoLines((lines) => removeUndoLine(lines, line.undoId));
+      pendingFocusRef.current = {};
+      await load();
+    } catch (caught) {
+      const failure = failureOf(caught, "Gagal mengurungkan perubahan.");
+      setUndoLines((lines) => updateUndoLine(lines, line.undoId, { error: failure.message }));
+    } finally {
+      setUndoBusy(undefined);
+    }
+  };
+
+  const closeUndoLine = (undoId: string): void => {
+    setUndoLines((lines) => removeUndoLine(lines, undoId));
+    pendingFocusRef.current = {};
+  };
+
   const stats = data === undefined ? undefined : totalStats(data.files);
+
+  const undoBlock =
+    undoLines.length === 0 ? null : (
+      <ul class="jk-panel-undo-list">
+        {undoLines.map((line) => (
+          <li
+            key={line.undoId}
+            ref={(element) => {
+              if (element === null) delete undoRefs.current[line.undoId];
+              else undoRefs.current[line.undoId] = element;
+            }}
+            class="jk-panel-undo"
+            tabIndex={-1}
+            role="status"
+            aria-label={`Penolakan ${line.path}`}
+          >
+            <span>
+              Perubahan di <code>{line.path}</code> ditolak.
+            </span>
+            {line.error !== undefined ? (
+              <>
+                <span class="jk-perm-error" role="alert">
+                  {line.error}
+                </span>
+                <button
+                  type="button"
+                  class="jk-link-btn"
+                  aria-label={`Tutup pemberitahuan penolakan ${line.path}`}
+                  onClick={() => closeUndoLine(line.undoId)}
+                >
+                  Tutup
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  class="jk-link-btn"
+                  disabled={undoBusy !== undefined}
+                  aria-label={`Urungkan penolakan ${line.path}`}
+                  onClick={() => void submitUndo(line)}
+                >
+                  {undoBusy === line.undoId ? "Mengurungkan…" : "Urungkan"}
+                </button>
+                <button
+                  type="button"
+                  class="jk-link-btn"
+                  disabled={undoBusy !== undefined}
+                  aria-label={`Tutup pemberitahuan penolakan ${line.path}`}
+                  onClick={() => closeUndoLine(line.undoId)}
+                >
+                  Tutup
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
+    );
 
   return (
     <div class="jk-panel-body">
@@ -152,10 +535,15 @@ export function ChangesTab({
       {data !== undefined && data.isRepo && (
         <>
           {data.files.length === 0 ? (
-            <p class="jk-panel-note">Belum ada perubahan di folder kerja.</p>
+            <>
+              <p ref={emptyRef} tabIndex={-1} class="jk-panel-note">
+                Belum ada perubahan di folder kerja.
+              </p>
+              {undoBlock}
+            </>
           ) : (
             <>
-              <p class="jk-panel-summary">
+              <p ref={summaryRef} tabIndex={-1} class="jk-panel-summary">
                 {formatCount(data.files.length)} berkas
                 {stats !== undefined && (
                   <>
@@ -165,9 +553,24 @@ export function ChangesTab({
                   </>
                 )}
               </p>
+              {undoBlock}
               <div class="jk-panel-list">
                 {data.files.map((file) => (
-                  <FileRow file={file} key={file.path} />
+                  <FileRow
+                    file={file}
+                    key={file.path}
+                    sessionStatus={status}
+                    open={openPaths.has(file.path)}
+                    onToggleOpen={setFileOpen}
+                    confirmTarget={confirmTarget}
+                    busyKey={busyKey}
+                    failures={failures}
+                    onAsk={setConfirmTarget}
+                    onCancel={cancelReject}
+                    onConfirm={(target) => void submitReject(target)}
+                    onRefresh={() => void load()}
+                    onRegisterTrigger={registerTrigger}
+                  />
                 ))}
               </div>
               {data.truncated && (

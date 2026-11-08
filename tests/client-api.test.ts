@@ -256,6 +256,90 @@ describe("createApiClient", () => {
     expect(calls[0]?.init.method).toBe("GET");
   });
 
+  test("rejectChange POST body path, scope, hunkId, diffId", async () => {
+    const diffId = "a".repeat(64);
+    const hunkId = "b".repeat(64);
+    const payload = { ok: true, undoId: "undo-1", path: "src/a.ts", scope: "hunk" };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch });
+
+    const result = await api.rejectChange("s 1", {
+      path: "src/a.ts",
+      scope: "hunk",
+      hunkId,
+      diffId,
+    });
+
+    expect(result).toEqual({ undoId: "undo-1", path: "src/a.ts", scope: "hunk" });
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/changes/reject");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      path: "src/a.ts",
+      scope: "hunk",
+      hunkId,
+      diffId,
+    });
+  });
+
+  test("rejectChange scope file tidak mengirim hunkId", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ ok: true, undoId: "undo-2", path: "a.txt", scope: "file" }),
+    );
+    const api = createApiClient({ fetch });
+
+    await api.rejectChange("s1", { path: "a.txt", scope: "file", diffId: "c".repeat(64) });
+
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      path: "a.txt",
+      scope: "file",
+      diffId: "c".repeat(64),
+    });
+  });
+
+  test("rejectChange 409 menjadi ApiError dengan status dan pesan server", async () => {
+    const pesan = "Berkas berubah sejak diff ditampilkan. Muat ulang perubahan.";
+    const { fetch } = fakeFetch(() => jsonResponse({ error: pesan }, 409));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.rejectChange("s1", { path: "a.txt", scope: "file", diffId: "d".repeat(64) });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).message).toBe(pesan);
+  });
+
+  test("undoChange POST body undoId dan mengembalikan path", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, path: "src/a.ts" }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.undoChange("s 1", "undo-1")).toEqual({ path: "src/a.ts" });
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/changes/undo");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ undoId: "undo-1" });
+  });
+
+  test("undoChange galat memakai pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Urungkan tidak tersedia." }, 409));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.undoChange("s1", "undo-1");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).message).toBe("Urungkan tidak tersedia.");
+  });
+
   test("getProviders GET dan mengembalikan payload apa adanya", async () => {
     const payload = { registry: { profiles: [] } };
     const { fetch, calls } = fakeFetch(() => jsonResponse(payload));

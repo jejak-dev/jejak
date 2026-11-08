@@ -1,4 +1,4 @@
-import type { ChangeStatus, ChangedFile, Hunk } from "./api";
+import type { ChangeStatus, ChangedFile, Hunk, RejectScope } from "./api";
 
 export interface Crumb {
   label: string;
@@ -122,4 +122,71 @@ export function shouldRefreshChanges(
   if (!trigger.open || trigger.tab !== "changes") return false;
   if (previous === undefined) return true;
   return previous.status !== trigger.status || previous.eventCount !== trigger.eventCount;
+}
+
+/** Hanya berkas M/D non-biner yang punya hunk yang bisa dikembalikan ke HEAD. */
+export function canReject(file: ChangedFile): boolean {
+  if (file.status !== "M" && file.status !== "D") return false;
+  if (file.binary) return false;
+  return file.hunks.length > 0;
+}
+
+/** Alasan penolakan tidak tersedia, atau undefined bila bisa ditolak. */
+export function rejectBlockedReason(input: {
+  sessionStatus: string;
+  file: ChangedFile;
+}): string | undefined {
+  if (input.sessionStatus === "berjalan") {
+    return "Sesi sedang berjalan. Tunggu selesai atau hentikan dulu.";
+  }
+  if (!canReject(input.file)) {
+    return "Jenis perubahan ini belum bisa ditolak.";
+  }
+  return undefined;
+}
+
+export interface UndoLine {
+  undoId: string;
+  path: string;
+  error?: string;
+}
+
+/** Baris urung terbaru di depan, paling banyak 5. */
+export function pushUndoLine(lines: readonly UndoLine[], line: UndoLine): UndoLine[] {
+  return [line, ...lines].slice(0, 5);
+}
+
+export function removeUndoLine(lines: readonly UndoLine[], undoId: string): UndoLine[] {
+  return lines.filter((line) => line.undoId !== undoId);
+}
+
+export function updateUndoLine(
+  lines: readonly UndoLine[],
+  undoId: string,
+  patch: Partial<UndoLine>,
+): UndoLine[] {
+  return lines.map((line) => (line.undoId === undoId ? { ...line, ...patch } : line));
+}
+
+/** Set path berkas yang terbuka setelah satu berkas dibuka/ditutup. */
+export function nextOpenPaths(
+  paths: ReadonlySet<string>,
+  path: string,
+  open: boolean,
+): Set<string> {
+  const next = new Set(paths);
+  if (open) next.add(path);
+  else next.delete(path);
+  return next;
+}
+
+export interface RejectTarget {
+  path: string;
+  scope: RejectScope;
+  hunkId?: string;
+}
+
+export function rejectTargetKey(target: RejectTarget | undefined): string | undefined {
+  if (target === undefined) return undefined;
+  return target.scope === "hunk" ? `${target.path}\0${target.hunkId ?? ""}` : target.path;
 }

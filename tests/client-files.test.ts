@@ -2,15 +2,23 @@ import { describe, expect, test } from "bun:test";
 import type { ChangedFile, Hunk } from "../src/client/lib/api";
 import {
   breadcrumbs,
+  canReject,
   diffRows,
   formatSize,
   joinPath,
+  nextOpenPaths,
   parentPath,
+  pushUndoLine,
+  rejectBlockedReason,
+  rejectTargetKey,
+  removeUndoLine,
   shouldRefreshChanges,
   splitLines,
   statusLabel,
   totalStats,
+  updateUndoLine,
   type ChangesMarker,
+  type UndoLine,
 } from "../src/client/lib/files";
 import { parsePanelPrefs } from "../src/client/lib/panel-prefs";
 
@@ -211,5 +219,120 @@ describe("parsePanelPrefs", () => {
 
   test("tab asing kembali ke Perubahan", () => {
     expect(parsePanelPrefs('{"open":true,"tab":"entah"}')).toEqual({ open: true, tab: "changes" });
+  });
+});
+
+function changedFile(patch: Partial<ChangedFile>): ChangedFile {
+  return {
+    path: "src/a.ts",
+    status: "M",
+    diffId: "a".repeat(64),
+    additions: 1,
+    deletions: 0,
+    binary: false,
+    hunks: [
+      {
+        id: "h".repeat(64),
+        header: "@@ -1,1 +1,2 @@",
+        oldStart: 1,
+        oldLines: 1,
+        newStart: 1,
+        newLines: 2,
+        lines: [{ t: "add", text: "baru" }],
+      },
+    ],
+    ...patch,
+  };
+}
+
+describe("canReject", () => {
+  test("berkas M dan D dengan hunk bisa ditolak", () => {
+    expect(canReject(changedFile({ status: "M" }))).toBe(true);
+    expect(canReject(changedFile({ status: "D" }))).toBe(true);
+  });
+
+  test("status A, U, dan R tidak bisa ditolak", () => {
+    expect(canReject(changedFile({ status: "A" }))).toBe(false);
+    expect(canReject(changedFile({ status: "U" }))).toBe(false);
+    expect(canReject(changedFile({ status: "R" }))).toBe(false);
+  });
+
+  test("berkas biner tidak bisa ditolak", () => {
+    expect(canReject(changedFile({ status: "M", binary: true }))).toBe(false);
+  });
+
+  test("berkas tanpa hunk tidak bisa ditolak", () => {
+    expect(canReject(changedFile({ status: "M", hunks: [] }))).toBe(false);
+  });
+});
+
+describe("rejectBlockedReason", () => {
+  test("sesi berjalan memblokir walau berkas bisa ditolak", () => {
+    expect(
+      rejectBlockedReason({ sessionStatus: "berjalan", file: changedFile({ status: "M" }) }),
+    ).toBe("Sesi sedang berjalan. Tunggu selesai atau hentikan dulu.");
+  });
+
+  test("jenis perubahan tidak didukung memblokir", () => {
+    expect(
+      rejectBlockedReason({ sessionStatus: "selesai", file: changedFile({ status: "A" }) }),
+    ).toBe("Jenis perubahan ini belum bisa ditolak.");
+    expect(
+      rejectBlockedReason({ sessionStatus: "selesai", file: changedFile({ binary: true }) }),
+    ).toBe("Jenis perubahan ini belum bisa ditolak.");
+  });
+
+  test("sesi tidak berjalan dan berkas M/D tidak diblokir", () => {
+    expect(
+      rejectBlockedReason({ sessionStatus: "selesai", file: changedFile({ status: "D" }) }),
+    ).toBeUndefined();
+  });
+});
+
+describe("antrean baris urung", () => {
+  const line = (undoId: string): UndoLine => ({ undoId, path: `${undoId}.txt` });
+
+  test("baris baru di depan dan maksimal 5", () => {
+    let lines: UndoLine[] = [];
+    for (const id of ["a", "b", "c", "d", "e", "f"]) {
+      lines = pushUndoLine(lines, line(id));
+    }
+    expect(lines.map((item) => item.undoId)).toEqual(["f", "e", "d", "c", "b"]);
+    expect(lines).toHaveLength(5);
+  });
+
+  test("hapus dan perbarui baris berdasarkan undoId", () => {
+    const lines = [line("a"), line("b")];
+    expect(removeUndoLine(lines, "a").map((item) => item.undoId)).toEqual(["b"]);
+    expect(updateUndoLine(lines, "b", { error: "gagal" })).toEqual([
+      line("a"),
+      { undoId: "b", path: "b.txt", error: "gagal" },
+    ]);
+  });
+
+  test("baris tak dikenal tidak berubah", () => {
+    const lines = [line("a")];
+    expect(removeUndoLine(lines, "x")).toEqual(lines);
+    expect(updateUndoLine(lines, "x", { error: "gagal" })).toEqual(lines);
+  });
+});
+
+describe("nextOpenPaths", () => {
+  test("menambah dan menghapus path tanpa mengubah set lama", () => {
+    const before = new Set(["a.txt"]);
+    const opened = nextOpenPaths(before, "b.txt", true);
+    expect([...opened].sort()).toEqual(["a.txt", "b.txt"]);
+    expect([...before]).toEqual(["a.txt"]);
+
+    const closed = nextOpenPaths(opened, "a.txt", false);
+    expect([...closed]).toEqual(["b.txt"]);
+  });
+});
+
+describe("rejectTargetKey", () => {
+  test("hunk memakai path dan id; berkas hanya path", () => {
+    expect(rejectTargetKey(undefined)).toBeUndefined();
+    expect(rejectTargetKey({ path: "a.txt", scope: "file" })).toBe("a.txt");
+    expect(rejectTargetKey({ path: "a.txt", scope: "hunk", hunkId: "h1" })).toBe("a.txt\0h1");
   });
 });

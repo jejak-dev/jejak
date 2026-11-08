@@ -1853,9 +1853,97 @@ h2.jk-md-heading {
 }
 
 .jk-panel-hunk-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
   margin: 0 0 2px;
   font: 11px var(--mono);
   color: var(--t3);
+}
+
+.jk-panel-hunk-header {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-panel-reject {
+  flex: none;
+  font: 11px var(--sans);
+  color: var(--t3);
+}
+
+.jk-panel-reject:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+.jk-panel-reject-all {
+  align-self: flex-start;
+  font-size: 12px;
+}
+
+.jk-panel-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font: 12px var(--sans);
+  color: var(--t2);
+}
+
+.jk-panel-confirm p {
+  margin: 0;
+}
+
+.jk-panel-confirm-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.jk-panel-confirm-actions .jk-button {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.jk-panel-reject-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.jk-panel-reject-error .jk-perm-error {
+  margin: 0;
+}
+
+.jk-panel-undo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-panel-undo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--t2);
+}
+
+.jk-panel-undo:focus {
+  outline: none;
+}
+
+.jk-panel-undo .jk-perm-error {
+  margin: 0;
 }
 
 .jk-panel-diff {
