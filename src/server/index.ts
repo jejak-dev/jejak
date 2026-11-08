@@ -14,6 +14,7 @@ import { jejakHome, loadRegistry, providersPath } from "./provider-store";
 import { checkpointRoutes } from "./routes/checkpoints";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { fileRoutes } from "./routes/files";
+import { fsRoutes } from "./routes/fs";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
@@ -52,6 +53,8 @@ export interface CreateAppOptions {
   workspaces?: WorkspaceService;
   /** Layanan server MCP; tanpa opsi ini semua rute `/api/mcp-servers*` menjawab 503. */
   mcpServers?: McpServerService;
+  /** Folder awal penelusur folder; default `os.homedir()`. */
+  fsHome?: string;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -127,6 +130,12 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(checkpointRoutes({ manager, service: checkpoints }))
     .use(memoryRoutes({ service: options.memory }))
     .use(workspaceRoutes({ service: options.workspaces }))
+    .use(
+      fsRoutes({
+        ...(options.fsHome === undefined ? {} : { home: options.fsHome }),
+        enabled: env.JEJAK_FS_BROWSE?.trim() !== "0",
+      }),
+    )
     .use(mcpServerRoutes({ service: options.mcpServers, fetch: options.fetch }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
