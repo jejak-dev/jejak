@@ -1,5 +1,6 @@
 import { h, type ComponentChild, type VNode } from "preact";
 import { parseMarkdown, safeHref, type MdBlock, type MdInline } from "../lib/markdown";
+import { CopyButton } from "./CopyButton";
 
 function renderInlines(nodes: readonly MdInline[]): ComponentChild[] {
   return nodes.map((node, index): ComponentChild => {
@@ -46,10 +47,13 @@ function renderBlock(block: MdBlock, index: number): ComponentChild {
     }
     case "code":
       return (
-        <pre class="jk-md-pre" tabIndex={0} key={index}>
-          {block.lang !== undefined && <span class="jk-md-lang">{block.lang}</span>}
-          <code>{block.text}</code>
-        </pre>
+        <div class="jk-md-codeblock" key={index}>
+          <pre class="jk-md-pre" tabIndex={0}>
+            {block.lang !== undefined && <span class="jk-md-lang">{block.lang}</span>}
+            <code>{block.text}</code>
+          </pre>
+          <CopyButton text={block.text} label="Salin kode" />
+        </div>
       );
     case "list": {
       const items = block.items.map((item, itemIndex) => (
@@ -104,5 +108,15 @@ function alignStyle(
 }
 
 export function Markdown({ text }: { text: string }): VNode {
-  return <div class="jk-md">{renderBlocks(parseMarkdown(text))}</div>;
+  const blocks = parseMarkdown(text);
+  return (
+    <div class="jk-md">
+      {renderBlocks(blocks)}
+      {text !== "" && (
+        <div class="jk-md-foot">
+          <CopyButton text={text} label="Salin markdown" />
+        </div>
+      )}
+    </div>
+  );
 }

@@ -1,6 +1,9 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { TimelineItem } from "../lib/timeline";
+import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
 import { formatCost, formatCount } from "../lib/format";
+import { CopyButton } from "./CopyButton";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
@@ -13,19 +16,115 @@ export interface TimelineProps {
 }
 
 const MAX_INPUT_CHARS = 2000;
+const MAX_OUTPUT_CHARS = 20000;
 const PIN_THRESHOLD_PX = 80;
 
 function clip(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}…` : text;
 }
 
-function prettyInput(input: unknown): string {
+function rawInput(input: unknown): string {
   if (input === undefined) return "";
   try {
     const json = JSON.stringify(input, null, 2);
-    return json === undefined ? String(input) : clip(json, MAX_INPUT_CHARS);
+    return json === undefined ? String(input) : json;
   } catch {
-    return clip(String(input), MAX_INPUT_CHARS);
+    return String(input);
+  }
+}
+
+function prettyInput(input: unknown): string {
+  const text = rawInput(input);
+  return text === "" ? "" : clip(text, MAX_INPUT_CHARS);
+}
+
+function SectionHead({ label, children }: { label: string; children?: ComponentChildren }) {
+  return (
+    <div class="jk-step-head">
+      <h4 class="jk-step-label">{label}</h4>
+      {children}
+    </div>
+  );
+}
+
+function ToolInputView({
+  name,
+  input,
+  view,
+}: {
+  name: string;
+  input: unknown;
+  view: ToolView;
+}) {
+  switch (view.kind) {
+    case "command":
+      return (
+        <section>
+          <SectionHead label="Perintah">
+            <CopyButton text={view.command} label="Salin perintah" />
+          </SectionHead>
+          <pre class="jk-pre jk-tool-cmd">{view.command}</pre>
+          {view.description !== undefined && <p class="jk-tool-note">{view.description}</p>}
+        </section>
+      );
+
+    case "diff": {
+      const truncated = view.lines.some((line) => line.type === "more");
+      const removed = view.lines.filter((line) => line.type === "del").length;
+      const added = view.lines.filter((line) => line.type === "add").length;
+      return (
+        <section>
+          <SectionHead label={view.path}>
+            {!truncated && (
+              <span class="jk-tool-count">
+                −{removed} +{added}
+              </span>
+            )}
+            <CopyButton text={() => diffCopyText(name, input)} label="Salin isi baru" />
+          </SectionHead>
+          <div class="jk-tool-diff" tabIndex={0} role="region" aria-label={`Perubahan ${view.path}`}>
+            {view.lines.map((line, index) => {
+              if (line.type === "sep") return <div class="jk-tool-dsep" key={index} />;
+              if (line.type === "more") {
+                return (
+                  <div class="jk-tool-dmore" key={index}>
+                    … {formatCount(line.count)} baris lagi
+                  </div>
+                );
+              }
+              return (
+                <div
+                  class={`jk-tool-dline ${line.type === "add" ? "jk-perm-add" : "jk-perm-del"}`}
+                  key={index}
+                >
+                  <i>{line.type === "add" ? "+" : "-"}</i>
+                  <span>{line.text === "" ? " " : line.text}</span>
+                </div>
+              );
+            })}
+          </div>
+          {view.note !== undefined && <p class="jk-tool-note">{view.note}</p>}
+        </section>
+      );
+    }
+
+    case "write": {
+      const shown = clipContent(view.content);
+      return (
+        <section>
+          <SectionHead label={view.path}>
+            <CopyButton text={view.content} label="Salin isi berkas" />
+          </SectionHead>
+          <pre class="jk-pre jk-pre-output">
+            {shown.text}
+            {shown.hidden > 0 ? `\n… ${formatCount(shown.hidden)} baris lagi` : ""}
+          </pre>
+        </section>
+      );
+    }
+
+    case "generic":
+      return null;
   }
 }
 
@@ -135,6 +234,7 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
                 );
 
               case "tool": {
+                const view = toolView(item.name, item.input);
                 const input = prettyInput(item.input);
                 return (
                   <details class="jk-step" key={index} style={depthStyle(item.depth)}>
@@ -147,16 +247,22 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
                       <span class={`jk-step-status jk-step-${item.status}`}>{item.status}</span>
                     </summary>
                     <div class="jk-step-body">
-                      {input !== "" && (
-                        <section>
-                          <h4 class="jk-step-label">Masukan</h4>
-                          <pre class="jk-pre">{input}</pre>
-                        </section>
-                      )}
+                      {view.kind === "generic"
+                        ? input !== "" && (
+                            <section>
+                              <SectionHead label="Masukan">
+                                <CopyButton text={rawInput(item.input)} label="Salin JSON masukan" />
+                              </SectionHead>
+                              <pre class="jk-pre">{input}</pre>
+                            </section>
+                          )
+                        : <ToolInputView name={item.name} input={item.input} view={view} />}
                       {item.output !== undefined && (
                         <section>
-                          <h4 class="jk-step-label">Hasil</h4>
-                          <pre class="jk-pre jk-pre-output">{clip(item.output, 20000)}</pre>
+                          <SectionHead label="Hasil">
+                            <CopyButton text={item.output} label="Salin hasil" />
+                          </SectionHead>
+                          <pre class="jk-pre jk-pre-output">{clip(item.output, MAX_OUTPUT_CHARS)}</pre>
                         </section>
                       )}
                     </div>
