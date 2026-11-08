@@ -181,6 +181,26 @@ describe("getChanges", () => {
     expect(file?.hunks[0]?.lines.some((line) => line.text.includes("No newline"))).toBe(false);
   });
 
+  test("id hunk mencakup penanda No newline pada blok mentah", () => {
+    const base = [
+      "diff --git a/nonl.txt b/nonl.txt",
+      "index 1..2 100644",
+      "--- a/nonl.txt",
+      "+++ b/nonl.txt",
+      "@@ -1,2 +1,2 @@",
+      " a",
+      "-b",
+      "+c",
+    ];
+    const withMarker = [...base, "\\ No newline at end of file", ""].join("\n");
+    const withoutMarker = [...base, ""].join("\n");
+
+    const marked = parseUnifiedDiff(withMarker).files[0]!;
+    const plain = parseUnifiedDiff(withoutMarker).files[0]!;
+    expect(marked.hunks[0]?.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(marked.hunks[0]?.id).not.toBe(plain.hunks[0]?.id);
+  });
+
   test("nama berkas berspasi dan non-ASCII", async () => {
     await initRepo();
     await writeFile(join(dir, "spasi nama.txt"), "a\n");
@@ -323,6 +343,33 @@ describe("parseUnifiedDiff", () => {
     const parsed = parseUnifiedDiff(output);
     expect(parsed.files[0]?.binary).toBe(true);
     expect(parsed.files[0]?.hunks).toEqual([]);
+  });
+
+  test("diffId dan id hunk adalah sha256 hex 64 karakter yang stabil", () => {
+    const output = [
+      "diff --git a/a.txt b/a.txt",
+      "index 1..2 100644",
+      "--- a/a.txt",
+      "+++ b/a.txt",
+      "@@ -1 +1,2 @@",
+      " satu",
+      "+dua",
+      "",
+    ].join("\n");
+
+    const first = parseUnifiedDiff(output);
+    const second = parseUnifiedDiff(output);
+    const file = first.files[0]!;
+    expect(file.diffId).toMatch(/^[0-9a-f]{64}$/);
+    expect(file.hunks[0]?.id).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.files[0]?.diffId).toBe(file.diffId);
+    expect(second.files[0]?.hunks[0]?.id).toBe(file.hunks[0]?.id);
+
+    const changed = parseUnifiedDiff(
+      output.replace("+dua", "+dua diubah"),
+    );
+    expect(changed.files[0]?.diffId).not.toBe(file.diffId);
+    expect(changed.files[0]?.hunks[0]?.id).not.toBe(file.hunks[0]?.id);
   });
 });
 

@@ -239,6 +239,7 @@ describe("createApiClient", () => {
         {
           path: "src/a.ts",
           status: "M" as const,
+          diffId: "0".repeat(64),
           additions: 2,
           deletions: 1,
           binary: false,

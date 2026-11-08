@@ -26,6 +26,8 @@ export interface CreateAppOptions {
   sessions?: SessionManager;
   sessionStore?: SessionStore;
   client?: ClientRoutesOptions;
+  /** Direktori snapshot undo; default `<jejakHome(env)>/undo`. */
+  undoDir?: string;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -45,7 +47,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(localGuard())
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .use(sessionRoutes({ manager }))
-    .use(fileRoutes({ manager }))
+    .use(fileRoutes({ manager, env: options.env, undoDir: options.undoDir }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({

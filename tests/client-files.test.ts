@@ -137,6 +137,7 @@ describe("totalStats", () => {
 
 describe("diffRows", () => {
   const hunk: Hunk = {
+    id: "h1",
     header: "@@ -3,4 +3,5 @@",
     oldStart: 3,
     oldLines: 4,
@@ -163,7 +164,15 @@ describe("diffRows", () => {
 
   test("hunk kosong tidak menghasilkan baris", () => {
     expect(
-      diffRows({ header: "@@ -1,0 +1,0 @@", oldStart: 1, oldLines: 0, newStart: 1, newLines: 0, lines: [] }),
+      diffRows({
+        id: "h2",
+        header: "@@ -1,0 +1,0 @@",
+        oldStart: 1,
+        oldLines: 0,
+        newStart: 1,
+        newLines: 0,
+        lines: [],
+      }),
     ).toEqual([]);
   });
 });

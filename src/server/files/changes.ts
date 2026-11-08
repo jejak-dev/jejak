@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolveInside } from "./path";
 import { readTextFile } from "./read";
 
@@ -9,6 +10,8 @@ export interface DiffLine {
 }
 
 export interface Hunk {
+  /** sha256 hex dari blok mentah hunk (baris @@ sampai akhir hunk). */
+  id: string;
   header: string;
   oldStart: number;
   oldLines: number;
@@ -21,6 +24,8 @@ export interface ChangedFile {
   path: string;
   status: ChangeStatus;
   oldPath?: string;
+  /** sha256 hex dari teks diff mentah berkas ini. */
+  diffId: string;
   additions: number;
   deletions: number;
   binary: boolean;
@@ -62,11 +67,15 @@ const SAFETY_ARGS = [
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
-interface RunResult {
+export interface GitRunResult {
   code: number | null;
   stdout: string;
   truncated: boolean;
   timedOut: boolean;
+}
+
+export function sha256Hex(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
 }
 
 function gitEnv(extra: Record<string, string | undefined> | undefined): Record<string, string> {
@@ -85,19 +94,24 @@ function gitEnv(extra: Record<string, string | undefined> | undefined): Record<s
   return env;
 }
 
-async function runGit(
+/**
+ * Menjalankan git tanpa shell dengan flag dan env keamanan yang sama untuk
+ * semua pemanggil (baca maupun tulis). `stdinText` dikirim lewat stdin bila ada.
+ */
+export async function runGit(
   args: string[],
   cwd: string,
   options: GitOptions,
   maxBytes: number,
-): Promise<RunResult> {
+  stdinText?: string,
+): Promise<GitRunResult> {
   let proc;
   try {
     proc = Bun.spawn({
       cmd: ["git", ...SAFETY_ARGS, ...args],
       cwd,
       env: gitEnv(options.env),
-      stdin: "ignore",
+      stdin: stdinText === undefined ? "ignore" : "pipe",
       stdout: "pipe",
       stderr: "pipe",
       // Grup proses sendiri supaya timeout juga membunuh anak proses git
@@ -106,6 +120,16 @@ async function runGit(
     });
   } catch {
     return { code: null, stdout: "", truncated: false, timedOut: false };
+  }
+
+  if (stdinText !== undefined) {
+    try {
+      const sink = proc.stdin as { write(data: string): unknown; end(): unknown };
+      sink.write(stdinText);
+      sink.end();
+    } catch {
+      // Proses sudah berhenti; hasil ditangani lewat kode keluar.
+    }
   }
 
   const killTree = (): void => {
@@ -304,6 +328,18 @@ interface Section {
   hunks: Hunk[];
   additions: number;
   deletions: number;
+  /** Baris mentah dari `diff --git` sampai sebelum berkas berikutnya. */
+  rawLines: string[];
+  /** Baris mentah hunk yang sedang diurai. */
+  rawHunk: string[] | null;
+}
+
+function finalizeHunk(section: Section): void {
+  const raw = section.rawHunk;
+  section.rawHunk = null;
+  if (raw === null) return;
+  const hunk = section.hunks[section.hunks.length - 1];
+  if (hunk !== undefined) hunk.id = sha256Hex(raw.join("\n"));
 }
 
 function sectionToFile(section: Section): ChangedFile | null {
@@ -333,6 +369,7 @@ function sectionToFile(section: Section): ChangedFile | null {
   const file: ChangedFile = {
     path,
     status,
+    diffId: sha256Hex(section.rawLines.join("\n")),
     additions: section.additions,
     deletions: section.deletions,
     binary: section.binary,
@@ -351,9 +388,11 @@ export function parseUnifiedDiff(output: string): { files: ChangedFile[]; trunca
 
   const flush = (): void => {
     if (section === null) return;
+    finalizeHunk(section);
     const file = sectionToFile(section);
     if (file !== null) files.push(file);
     section = null;
+    hunk = null;
   };
 
   for (const line of lines) {
@@ -365,19 +404,25 @@ export function parseUnifiedDiff(output: string): { files: ChangedFile[]; trunca
         hunks: [],
         additions: 0,
         deletions: 0,
+        rawLines: [line],
+        rawHunk: null,
       };
       hunk = null;
       continue;
     }
     if (section === null) continue;
+    // Baris kosong hanya muncul sebagai pemisah di ujung keluaran git.
+    if (line !== "") section.rawLines.push(line);
 
     if (line.startsWith("@@ ")) {
+      finalizeHunk(section);
       const match = HUNK_RE.exec(line);
       if (match === null) {
         hunk = null;
         continue;
       }
       hunk = {
+        id: "",
         header: line,
         oldStart: Number(match[1]),
         oldLines: match[2] === undefined ? 1 : Number(match[2]),
@@ -386,11 +431,13 @@ export function parseUnifiedDiff(output: string): { files: ChangedFile[]; trunca
         lines: [],
       };
       section.hunks.push(hunk);
+      section.rawHunk = [line];
       continue;
     }
 
     const marker = line[0];
     if (hunk !== null && (marker === " " || marker === "+" || marker === "-" || marker === "\\")) {
+      section.rawHunk?.push(line);
       if (marker === "\\") continue;
       if (marker === "+") section.additions += 1;
       if (marker === "-") section.deletions += 1;
@@ -405,6 +452,7 @@ export function parseUnifiedDiff(output: string): { files: ChangedFile[]; trunca
       continue;
     }
 
+    finalizeHunk(section);
     hunk = null;
 
     if (line.startsWith("--- ")) {
@@ -443,6 +491,68 @@ export function parseUnifiedDiff(output: string): { files: ChangedFile[]; trunca
   return { files, truncated };
 }
 
+export interface RawDiffFile {
+  /** Baris dari `diff --git` sampai baris `+++` (disambung dengan newline). */
+  header: string;
+  /** Blok mentah tiap hunk beserta sha256-nya. */
+  hunks: Array<{ id: string; text: string }>;
+}
+
+/**
+ * Mengambil header dan blok mentah hunk dari keluaran `git diff` satu berkas.
+ * Dipakai untuk menyusun patch terbalik tanpa merekonstruksi teks.
+ */
+export function splitRawFileDiff(output: string): RawDiffFile | null {
+  const lines = output.split("\n");
+  const header: string[] = [];
+  const hunks: Array<{ id: string; text: string }> = [];
+  let current: string[] | null = null;
+  let sawHeaderEnd = false;
+  let sawDiff = false;
+
+  for (const line of lines) {
+    if (line.startsWith("diff --git ")) {
+      if (sawDiff) break; // lebih dari satu berkas: hanya berkas pertama yang dipakai
+      sawDiff = true;
+      header.push(line);
+      continue;
+    }
+    if (!sawDiff) continue;
+
+    if (!sawHeaderEnd) {
+      if (line.startsWith("@@ ")) {
+        sawHeaderEnd = true;
+      } else {
+        header.push(line);
+        if (line.startsWith("+++ ")) sawHeaderEnd = true;
+        continue;
+      }
+    }
+
+    if (line.startsWith("@@ ")) {
+      if (current !== null) hunks.push({ id: sha256Hex(current.join("\n")), text: current.join("\n") });
+      current = [line];
+      continue;
+    }
+    if (current === null) continue;
+    if (line === "") {
+      // Baris kosong di ujung keluaran git menandakan hunk selesai.
+      hunks.push({ id: sha256Hex(current.join("\n")), text: current.join("\n") });
+      current = null;
+      continue;
+    }
+    current.push(line);
+  }
+  if (current !== null) {
+    hunks.push({ id: sha256Hex(current.join("\n")), text: current.join("\n") });
+  }
+  if (!sawDiff) return null;
+
+  // Buang baris kosong di ujung header (pemisah keluaran git).
+  while (header.length > 0 && header[header.length - 1] === "") header.pop();
+  return { header: header.join("\n"), hunks };
+}
+
 interface UntrackedResult {
   file: ChangedFile;
   truncated: boolean;
@@ -455,7 +565,15 @@ async function untrackedEntry(cwd: string, rel: string): Promise<UntrackedResult
     const read = await readTextFile(cwd, rel);
     if (read.binary || read.truncated) {
       return {
-        file: { path: rel, status: "U", additions: 0, deletions: 0, binary: true, hunks: [] },
+        file: {
+          path: rel,
+          status: "U",
+          diffId: sha256Hex(`untracked\0${rel}\0binary`),
+          additions: 0,
+          deletions: 0,
+          binary: true,
+          hunks: [],
+        },
         truncated: false,
       };
     }
@@ -464,13 +582,23 @@ async function untrackedEntry(cwd: string, rel: string): Promise<UntrackedResult
     if (allLines.length > 0 && allLines[allLines.length - 1] === "") allLines.pop();
     if (allLines.length === 0) {
       return {
-        file: { path: rel, status: "U", additions: 0, deletions: 0, binary: false, hunks: [] },
+        file: {
+          path: rel,
+          status: "U",
+          diffId: sha256Hex(`untracked\0${rel}\0empty`),
+          additions: 0,
+          deletions: 0,
+          binary: false,
+          hunks: [],
+        },
         truncated: false,
       };
     }
     const stored = allLines.slice(0, MAX_UNTRACKED_LINES);
+    const header = `@@ -0,0 +1,${allLines.length} @@`;
     const hunk: Hunk = {
-      header: `@@ -0,0 +1,${allLines.length} @@`,
+      id: sha256Hex([header, ...allLines.map((text) => `+${text}`)].join("\n")),
+      header,
       oldStart: 0,
       oldLines: 0,
       newStart: 1,
@@ -481,6 +609,7 @@ async function untrackedEntry(cwd: string, rel: string): Promise<UntrackedResult
       file: {
         path: rel,
         status: "U",
+        diffId: hunk.id,
         additions: allLines.length,
         deletions: 0,
         binary: false,
@@ -491,7 +620,15 @@ async function untrackedEntry(cwd: string, rel: string): Promise<UntrackedResult
   } catch {
     // Tidak terbaca aman (symlink keluar cwd, hilang, dll): laporkan sebagai biner.
     return {
-      file: { path: rel, status: "U", additions: 0, deletions: 0, binary: true, hunks: [] },
+      file: {
+        path: rel,
+        status: "U",
+        diffId: sha256Hex(`untracked\0${rel}\0binary`),
+        additions: 0,
+        deletions: 0,
+        binary: true,
+        hunks: [],
+      },
       truncated: false,
     };
   }
