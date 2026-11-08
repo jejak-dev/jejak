@@ -1,6 +1,12 @@
 import type { Changes } from "../../server/files/changes";
 import type { DirectoryListing } from "../../server/files/list";
 import type { FileContent } from "../../server/files/read";
+import type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
+import type {
+  Memory,
+  MemoryLayer,
+  MemoryStatus,
+} from "../../server/memory/memory-files";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 
 export type {
@@ -12,6 +18,42 @@ export type {
 } from "../../server/files/changes";
 export type { DirEntry, DirectoryListing } from "../../server/files/list";
 export type { FileContent } from "../../server/files/read";
+export type {
+  Memory,
+  MemoryConfidence,
+  MemoryLayer,
+  MemoryOrigin,
+  MemoryStatus,
+} from "../../server/memory/memory-files";
+export type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
+
+export type MemoryItem = Memory;
+
+export interface MemoryList {
+  items: MemoryItem[];
+  counts: MemoryCounts;
+  problems: MemoryProblem[];
+}
+
+export interface MemoryQuery {
+  status?: MemoryStatus;
+  layer?: MemoryLayer;
+  project?: string;
+  q?: string;
+  limit?: number;
+}
+
+export interface MemoryCreateInput {
+  layer: MemoryLayer;
+  projectKey?: string;
+  title: string;
+  body: string;
+}
+
+export interface MemoryUpdateInput {
+  title?: string;
+  body?: string;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -77,6 +119,13 @@ export interface ApiClient {
   saveProviders(registry: unknown): Promise<unknown>;
   setActiveProvider(profileId: string): Promise<unknown>;
   testProvider(selection?: { profileId?: string; model?: string }): Promise<ConnectionTestView>;
+  listMemory(params?: MemoryQuery): Promise<MemoryList>;
+  createMemory(input: MemoryCreateInput): Promise<MemoryItem>;
+  updateMemory(id: string, input: MemoryUpdateInput): Promise<MemoryItem>;
+  acceptMemory(id: string): Promise<MemoryItem>;
+  rejectMemory(id: string): Promise<MemoryItem>;
+  archiveMemory(id: string): Promise<MemoryItem>;
+  deleteMemory(id: string): Promise<void>;
 }
 
 export interface ApiClientOptions {
@@ -98,6 +147,29 @@ function sessionFrom(payload: unknown): SessionInfo {
     throw new ApiError("respons server tidak valid", 200);
   }
   return session as unknown as SessionInfo;
+}
+
+function memoryFrom(payload: unknown): MemoryItem {
+  const item = field(payload, "item");
+  if (!isRecord(item)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  return item as unknown as MemoryItem;
+}
+
+function memoryQuery(params: MemoryQuery | undefined): string {
+  if (params === undefined) return "";
+  const parts: string[] = [];
+  const push = (key: string, value: string | number | undefined): void => {
+    if (value === undefined) return;
+    parts.push(`${key}=${encodeURIComponent(String(value))}`);
+  };
+  push("status", params.status);
+  push("layer", params.layer);
+  push("project", params.project);
+  push("q", params.q);
+  push("limit", params.limit);
+  return parts.length === 0 ? "" : `?${parts.join("&")}`;
 }
 
 const TOOL_CALLING_VALUES = new Set(["ok", "tidak-dipanggil", "tidak-diuji"]);
@@ -297,6 +369,50 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       }
       await request("POST", `/api/sessions/${encodeURIComponent(sessionId)}/permissions/${encodeURIComponent(requestId)}`, body);
       return { ok: true };
+    },
+
+    async listMemory(params) {
+      const data = await request("GET", `/api/memory${memoryQuery(params)}`);
+      const items = field(data, "items");
+      if (!Array.isArray(items)) {
+        throw new ApiError("respons server tidak valid", 200);
+      }
+      const counts = field(data, "counts");
+      const problems = field(data, "problems");
+      const proposed = field(counts, "proposed");
+      const active = field(counts, "active");
+      return {
+        items: items as MemoryItem[],
+        counts: {
+          proposed: typeof proposed === "number" ? proposed : 0,
+          active: typeof active === "number" ? active : 0,
+        },
+        problems: Array.isArray(problems) ? (problems as MemoryProblem[]) : [],
+      };
+    },
+
+    async createMemory(input) {
+      return memoryFrom(await request("POST", "/api/memory", input));
+    },
+
+    async updateMemory(id, input) {
+      return memoryFrom(await request("PATCH", `/api/memory/${encodeURIComponent(id)}`, input));
+    },
+
+    async acceptMemory(id) {
+      return memoryFrom(await request("POST", `/api/memory/${encodeURIComponent(id)}/accept`, {}));
+    },
+
+    async rejectMemory(id) {
+      return memoryFrom(await request("POST", `/api/memory/${encodeURIComponent(id)}/reject`, {}));
+    },
+
+    async archiveMemory(id) {
+      return memoryFrom(await request("POST", `/api/memory/${encodeURIComponent(id)}/archive`, {}));
+    },
+
+    async deleteMemory(id) {
+      await request("DELETE", `/api/memory/${encodeURIComponent(id)}`, {});
     },
   };
 }

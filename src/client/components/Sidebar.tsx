@@ -11,6 +11,9 @@ export interface SidebarProps {
   onClose: () => void;
   activeProfileLabel?: string;
   providersActive?: boolean;
+  memoryActive?: boolean;
+  /** Jumlah usulan memory terbuka; angka kecil ditampilkan bila > 0. */
+  memoryProposed?: number;
 }
 
 function dotClass(session: SessionInfo): string {
@@ -36,6 +39,8 @@ export function Sidebar({
   onClose,
   activeProfileLabel,
   providersActive = false,
+  memoryActive = false,
+  memoryProposed,
 }: SidebarProps) {
   const now = new Date();
   const groups = groupSessions(sessions);
@@ -99,6 +104,17 @@ export function Sidebar({
       </nav>
 
       <footer class="jk-sidebar-foot">
+        <a
+          class={`jk-foot-link${memoryActive ? " jk-foot-link-active" : ""}`}
+          href="#/memory"
+          aria-current={memoryActive ? "page" : undefined}
+        >
+          <Icon name="memory" />
+          <span class="jk-foot-text">Memory</span>
+          {memoryProposed !== undefined && memoryProposed > 0 && (
+            <span class="jk-foot-count">{memoryProposed}</span>
+          )}
+        </a>
         <a
           class={`jk-foot-link${providersActive ? " jk-foot-link-active" : ""}`}
           href="#/providers"

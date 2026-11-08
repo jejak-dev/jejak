@@ -118,14 +118,19 @@ export function shortPath(path: string, max = 36): string {
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
+export type AppView = "providers" | "memory";
+
 export interface HashRoute {
   sessionId?: string;
-  view?: "providers";
+  view?: AppView;
 }
 
 export function parseHashRoute(hash: string): HashRoute {
   if (hash === "#/providers") {
     return { view: "providers" };
+  }
+  if (hash === "#/memory") {
+    return { view: "memory" };
   }
 
   const match = /^#\/s\/([^/?#]+)$/.exec(hash);
@@ -156,6 +161,10 @@ export function sessionHash(id?: string): string {
 
 export function providersHash(): string {
   return "#/providers";
+}
+
+export function memoryHash(): string {
+  return "#/memory";
 }
 
 export type ToolCallingTone = "success" | "warning" | "muted";

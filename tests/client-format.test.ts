@@ -7,6 +7,7 @@ import {
   formatCount,
   formatRelative,
   groupSessions,
+  memoryHash,
   parseHashRoute,
   providersHash,
   sessionHash,
@@ -121,6 +122,13 @@ describe("hash route", () => {
     expect(providersHash()).toBe("#/providers");
     expect(parseHashRoute("#/providers/")).toEqual({});
     expect(parseHashRoute("#/provider")).toEqual({});
+  });
+
+  test("rute memory", () => {
+    expect(parseHashRoute(memoryHash())).toEqual({ view: "memory" });
+    expect(memoryHash()).toBe("#/memory");
+    expect(parseHashRoute("#/memory/")).toEqual({});
+    expect(parseHashRoute("#/memori")).toEqual({});
   });
 });
 

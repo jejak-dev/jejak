@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { Composer } from "./components/Composer";
+import { MemoryPage } from "./components/MemoryPage";
 import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { ReplyBar } from "./components/ReplyBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
-import { useHashRoute, useInfo, useRegistry, useSessions, useTimeline } from "./hooks";
+import {
+  useHashRoute,
+  useInfo,
+  useMemoryCounts,
+  useRegistry,
+  useSessions,
+  useTimeline,
+} from "./hooks";
 import { createApiClient } from "./lib/api";
 import { readPanelPrefs, writePanelPrefs } from "./lib/panel-prefs";
 
@@ -17,6 +25,7 @@ export function App() {
   const { info } = useInfo(api);
   const { sessions, refresh } = useSessions(api);
   const { view, reload } = useRegistry(api);
+  const { proposed: memoryProposed, refresh: refreshMemory } = useMemoryCounts(api, routeView);
 
   const selected = sessions.find((session) => session.id === selectedId);
   const timeline = useTimeline(api, selected);
@@ -30,17 +39,20 @@ export function App() {
   const activeProfileLabel = activeProfile?.name ?? view?.activeProfileId;
 
   const showingProviders = routeView === "providers";
+  const showingMemory = routeView === "memory";
 
   const waiting = sessions.reduce((total, session) => total + session.pendingPermissions, 0);
 
   useEffect(() => {
     const base = showingProviders
       ? "Provider · Jejak"
-      : selected !== undefined
-        ? `${selected.title} · Jejak`
-        : "Jejak";
+      : showingMemory
+        ? "Memory · Jejak"
+        : selected !== undefined
+          ? `${selected.title} · Jejak`
+          : "Jejak";
     document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
-  }, [selected, showingProviders, waiting]);
+  }, [selected, showingProviders, showingMemory, waiting]);
 
   // Pindah halaman menutup laci sidebar (tampilan sempit).
   useEffect(() => {
@@ -121,20 +133,35 @@ export function App() {
     return seen;
   }, [sessions]);
 
+  const memoryProjects = useMemo(() => {
+    const seen = [...recentCwds];
+    const cwd = info?.cwd;
+    if (cwd !== undefined && cwd !== "" && !seen.includes(cwd)) seen.unshift(cwd);
+    return seen;
+  }, [info?.cwd, recentCwds]);
+
+  const onMemoryChanged = useCallback((): void => {
+    void refreshMemory();
+  }, [refreshMemory]);
+
   const mainClass =
-    showingProviders || selected !== undefined ? "jk-main" : "jk-main jk-main-home";
+    showingProviders || showingMemory || selected !== undefined
+      ? "jk-main"
+      : "jk-main jk-main-home";
 
   return (
     <div class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}`}>
       <Sidebar
         info={info}
         sessions={sessions}
-        selectedId={showingProviders ? undefined : selectedId}
+        selectedId={showingProviders || showingMemory ? undefined : selectedId}
         onSelect={onSelect}
         onNew={onNew}
         onClose={closeDrawer}
         activeProfileLabel={activeProfileLabel}
         providersActive={showingProviders}
+        memoryActive={showingMemory}
+        memoryProposed={memoryProposed}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
 
@@ -144,6 +171,13 @@ export function App() {
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
               <ProviderSettings api={api} onSaved={onSaved} />
+            </div>
+          </>
+        ) : showingMemory ? (
+          <>
+            <Topbar onMenu={openDrawer} />
+            <div class="jk-page">
+              <MemoryPage api={api} projects={memoryProjects} onChanged={onMemoryChanged} />
             </div>
           </>
         ) : selected !== undefined ? (

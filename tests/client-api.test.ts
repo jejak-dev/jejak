@@ -488,3 +488,242 @@ describe("createApiClient", () => {
     expect((caught as ApiError).message).toBe("tidak dapat terhubung ke server");
   });
 });
+
+const MEMORY = {
+  id: "0f0e0d0c-0b0a-4f0e-8d0c-0b0a09080706",
+  layer: "project" as const,
+  projectKey: "/tmp/proyek",
+  title: "Perintah tes",
+  body: "Jalankan bun test.",
+  status: "proposed" as const,
+  confidence: "inferred" as const,
+  origin: { kind: "session" as const, at: "2026-11-08T10:00:00.000Z" },
+  staleReason: null,
+  createdAt: "2026-11-08T10:00:00.000Z",
+  updatedAt: "2026-11-08T10:00:00.000Z",
+  decidedAt: null,
+};
+
+describe("createApiClient: memory", () => {
+  test("listMemory GET query ter-encode dan mengembalikan items, counts, problems", async () => {
+    const payload = {
+      items: [MEMORY],
+      counts: { proposed: 1, active: 2 },
+      problems: [{ file: "profile/rusak.md", reason: "frontmatter tidak valid" }],
+    };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+    const api = createApiClient({ fetch, baseUrl: "http://localhost:9" });
+
+    const result = await api.listMemory({
+      status: "proposed",
+      layer: "project",
+      project: "/tmp/dir a",
+      q: "tes & coba",
+      limit: 20,
+    });
+
+    expect(result).toEqual(payload);
+    expect(calls[0]?.url).toBe(
+      "http://localhost:9/api/memory?status=proposed&layer=project" +
+        "&project=%2Ftmp%2Fdir%20a&q=tes%20%26%20coba&limit=20",
+    );
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("listMemory tanpa parameter tidak memakai query", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ items: [], counts: { proposed: 0, active: 0 }, problems: [] }),
+    );
+    const api = createApiClient({ fetch });
+
+    const result = await api.listMemory();
+
+    expect(result.items).toEqual([]);
+    expect(result.counts).toEqual({ proposed: 0, active: 0 });
+    expect(result.problems).toEqual([]);
+    expect(calls[0]?.url).toBe("/api/memory");
+  });
+
+  test("counts yang tidak lengkap dianggap nol", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ items: [] }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.listMemory()).toEqual({
+      items: [],
+      counts: { proposed: 0, active: 0 },
+      problems: [],
+    });
+  });
+
+  test("listMemory menolak respons tanpa array items", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ items: "bukan array" }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.listMemory()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("listMemory 400 memakai pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Nilai status tidak dikenal." }, 400));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.listMemory({ status: "entah" as never });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(400);
+    expect((caught as ApiError).message).toBe("Nilai status tidak dikenal.");
+  });
+
+  test("createMemory POST body layer, projectKey, title, body", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: MEMORY }, 201));
+    const api = createApiClient({ fetch });
+
+    const item = await api.createMemory({
+      layer: "project",
+      projectKey: "/tmp/proyek",
+      title: "Perintah tes",
+      body: "Jalankan bun test.",
+    });
+
+    expect(item).toEqual(MEMORY);
+    expect(calls[0]?.url).toBe("/api/memory");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      layer: "project",
+      projectKey: "/tmp/proyek",
+      title: "Perintah tes",
+      body: "Jalankan bun test.",
+    });
+  });
+
+  test("createMemory 400 penolakan rahasia memakai pesan server", async () => {
+    const pesan = "Teks tampak memuat rahasia (api-key). Hapus dulu sebelum menyimpan.";
+    const { fetch } = fakeFetch(() => jsonResponse({ error: pesan }, 400));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.createMemory({ layer: "profile", title: "x", body: "sk-abcdefghijklmnop" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(400);
+    expect((caught as ApiError).message).toBe(pesan);
+  });
+
+  test("updateMemory PATCH path id ter-encode dan body judul/isi", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: MEMORY }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.updateMemory("a/b c", { title: "Judul baru" })).toEqual(MEMORY);
+    expect(calls[0]?.url).toBe("/api/memory/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ title: "Judul baru" });
+  });
+
+  test("updateMemory 409 konflik memakai pesan server", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: 'Memory berstatus "archived" tidak bisa berpindah ke "active".' }, 409),
+    );
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.updateMemory("id-1", { body: "x" });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).message).toBe(
+      'Memory berstatus "archived" tidak bisa berpindah ke "active".',
+    );
+  });
+
+  test("acceptMemory, rejectMemory, archiveMemory memakai POST sub-jalur", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: MEMORY }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.acceptMemory("id 1")).toEqual(MEMORY);
+    expect(await api.rejectMemory("id 1")).toEqual(MEMORY);
+    expect(await api.archiveMemory("id 1")).toEqual(MEMORY);
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "/api/memory/id%201/accept",
+      "/api/memory/id%201/reject",
+      "/api/memory/id%201/archive",
+    ]);
+    expect(calls.map((call) => call.init.method)).toEqual(["POST", "POST", "POST"]);
+  });
+
+  test("acceptMemory 409 memakai pesan server", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Batas 500 memory aktif untuk lingkup ini sudah tercapai." }, 409),
+    );
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.acceptMemory("id-1");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).message).toBe(
+      "Batas 500 memory aktif untuk lingkup ini sudah tercapai.",
+    );
+  });
+
+  test("deleteMemory DELETE path id ter-encode", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.deleteMemory("a/b c")).toBeUndefined();
+    expect(calls[0]?.url).toBe("/api/memory/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("DELETE");
+  });
+
+  test("deleteMemory mengirim content-type application/json pada DELETE", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await api.deleteMemory("id-1");
+
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("503 memory dimatikan menjadi ApiError dengan status dan pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Memory dimatikan." }, 503));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.listMemory();
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(503);
+    expect((caught as ApiError).message).toBe("Memory dimatikan.");
+  });
+
+  test("respons memory tanpa item menjadi ApiError", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.acceptMemory("id-1")).rejects.toBeInstanceOf(ApiError);
+  });
+});

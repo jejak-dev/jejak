@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "./lib/api";
-import { parseHashRoute, providersHash, sessionHash } from "./lib/format";
+import { memoryHash, parseHashRoute, providersHash, sessionHash, type AppView } from "./lib/format";
 import { parseRegistryView, type RegistryView } from "./lib/registry-view";
 import { followSession } from "./lib/sse";
 import { reduceTimeline, startTimeline, type TimelineItem } from "./lib/timeline";
@@ -15,7 +15,7 @@ function messageOf(error: unknown): string {
 
 interface Route {
   sessionId?: string;
-  view?: "providers";
+  view?: AppView;
 }
 
 function currentRoute(): Route {
@@ -24,9 +24,10 @@ function currentRoute(): Route {
 
 export interface HashRouteState {
   sessionId?: string;
-  view?: "providers";
+  view?: AppView;
   navigateToSession: (id?: string) => void;
   navigateToProviders: () => void;
+  navigateToMemory: () => void;
 }
 
 export function useHashRoute(): HashRouteState {
@@ -62,14 +63,19 @@ export function useHashRoute(): HashRouteState {
     applyHash(providersHash());
   }, [applyHash]);
 
+  const navigateToMemory = useCallback(() => {
+    applyHash(memoryHash());
+  }, [applyHash]);
+
   return useMemo(
     () => ({
       sessionId: route.sessionId,
       view: route.view,
       navigateToSession,
       navigateToProviders,
+      navigateToMemory,
     }),
-    [route, navigateToSession, navigateToProviders],
+    [route, navigateToSession, navigateToProviders, navigateToMemory],
   );
 }
 
@@ -318,4 +324,38 @@ export function useRegistry(api: ApiClient): RegistryState {
   }, [reload]);
 
   return useMemo(() => ({ view, error, reload }), [view, error, reload]);
+}
+
+export interface MemoryCountsState {
+  /** Jumlah usulan terbuka; undefined bila belum diketahui atau tidak tersedia. */
+  proposed?: number;
+  refresh: () => Promise<void>;
+}
+
+/**
+ * Hook ringan untuk angka usulan di sidebar. Galat apa pun (jaringan, 503)
+ * disembunyikan: angka tidak ditampilkan, bukan ditampilkan sebagai galat.
+ */
+export function useMemoryCounts(api: ApiClient, view?: AppView): MemoryCountsState {
+  const [proposed, setProposed] = useState<number | undefined>(undefined);
+  const requestRef = useRef(0);
+
+  const refresh = useCallback(async (): Promise<void> => {
+    requestRef.current += 1;
+    const ticket = requestRef.current;
+    try {
+      const list = await api.listMemory({ limit: 1 });
+      if (ticket !== requestRef.current) return;
+      setProposed(list.counts.proposed);
+    } catch {
+      if (ticket !== requestRef.current) return;
+      setProposed(undefined);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh, view]);
+
+  return useMemo(() => ({ proposed, refresh }), [proposed, refresh]);
 }

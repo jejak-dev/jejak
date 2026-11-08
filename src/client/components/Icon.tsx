@@ -14,6 +14,7 @@ const PATHS = {
   cube: "M8 1.8l5.5 3v6.4L8 14.2l-5.5-3V4.8zM8 8.2l5.5-3.2M8 8.2v6M8 8.2L2.5 5",
   refresh: "M13.5 8a5.5 5.5 0 1 1-1.7-3.9M13.5 2.6v3.2h-3.2",
   close: "M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6",
+  memory: "M8 3.2c-1.6-1-3.4-1.2-5.2-.7v9.6c1.8-.5 3.6-.3 5.2.7 1.6-1 3.4-1.2 5.2-.7V2.5C11.4 2 9.6 2.2 8 3.2zM8 3.2v9.6",
 } as const;
 
 export type IconName = keyof typeof PATHS;

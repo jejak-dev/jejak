@@ -221,6 +221,19 @@ describe("rute memory aktif", () => {
     expect(again.status).toBe(404);
     expect(await again.json()).toHaveProperty("error");
   });
+
+  test("DELETE dengan content-type JSON dan body {} seperti klien berhasil", async () => {
+    const app = makeMemoryApp();
+    const created = (await (await req(app, "POST", "/api/memory", {
+      layer: "profile",
+      title: "A",
+      body: "a",
+    })).json()) as ItemBody;
+
+    const removed = await req(app, "DELETE", `/api/memory/${created.item.id}`, {});
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toEqual({ ok: true });
+  });
 });
 
 describe("kode status dan galat", () => {
@@ -296,6 +309,18 @@ describe("kode status dan galat", () => {
       }),
     );
     expect(res.status).toBe(415);
+  });
+
+  test("DELETE tanpa content-type json ditolak 415", async () => {
+    const app = makeMemoryApp();
+    const res = await app.handle(
+      new Request("http://127.0.0.1:3000/api/memory/id-1", {
+        method: "DELETE",
+        headers: { host: "127.0.0.1:3000" },
+      }),
+    );
+    expect(res.status).toBe(415);
+    expect(await res.json()).toEqual({ error: "content-type harus application/json" });
   });
 
   test("guard Host dan Origin tetap berlaku", async () => {
