@@ -201,3 +201,13 @@ describe("rute workspace", () => {
     expect(parseHashRoute("#/workspace")).toEqual({});
   });
 });
+
+describe("rute MCP", () => {
+  test("hash dan parsing", async () => {
+    const { mcpHash } = await import("../src/client/lib/format");
+    expect(mcpHash()).toBe("#/mcp");
+    expect(parseHashRoute(mcpHash())).toEqual({ view: "mcp" });
+    expect(parseHashRoute("#/mcp/")).toEqual({});
+    expect(parseHashRoute("#/mcp-servers")).toEqual({});
+  });
+});

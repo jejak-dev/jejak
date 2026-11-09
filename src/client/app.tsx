@@ -3,6 +3,7 @@ import type { SessionInfo } from "../server/sessions/session-manager";
 import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { MemoryPage } from "./components/MemoryPage";
+import { McpPage } from "./components/McpPage";
 import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { ReplyBar } from "./components/ReplyBar";
@@ -35,6 +36,7 @@ export function App() {
     view: routeView,
     navigateToSession: navigate,
     navigateToMemory,
+    navigateToMcp,
     navigateToProviders,
     navigateToWorkspaces,
   } = useHashRoute();
@@ -77,6 +79,7 @@ export function App() {
   const showingProviders = routeView === "providers";
   const showingMemory = routeView === "memory";
   const showingWorkspaces = routeView === "workspaces";
+  const showingMcp = routeView === "mcp";
 
   const waiting = sessions.reduce((total, session) => total + session.pendingPermissions, 0);
 
@@ -87,11 +90,13 @@ export function App() {
         ? "Memory · Jejak"
         : showingWorkspaces
           ? "Workspace · Jejak"
-          : selected !== undefined
-            ? `${selected.title} · Jejak`
-            : "Jejak";
+          : showingMcp
+            ? "Server MCP · Jejak"
+            : selected !== undefined
+              ? `${selected.title} · Jejak`
+              : "Jejak";
     document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
-  }, [selected, showingProviders, showingMemory, showingWorkspaces, waiting]);
+  }, [selected, showingProviders, showingMemory, showingWorkspaces, showingMcp, waiting]);
 
   // Pindah halaman menutup laci sidebar (tampilan sempit).
   useEffect(() => {
@@ -229,6 +234,9 @@ export function App() {
         case "open-workspace":
           navigateToWorkspaces();
           return;
+        case "open-mcp":
+          navigateToMcp();
+          return;
         case "open-memory":
           navigateToMemory();
           return;
@@ -246,7 +254,7 @@ export function App() {
           return;
       }
     },
-    [navigate, navigateToMemory, navigateToProviders, navigateToWorkspaces, togglePanel],
+    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, togglePanel],
   );
 
   const commands = useMemo(
@@ -354,7 +362,7 @@ export function App() {
   }, [refreshMemory]);
 
   const mainClass =
-    showingProviders || showingMemory || showingWorkspaces || selected !== undefined
+    showingProviders || showingMemory || showingWorkspaces || showingMcp || selected !== undefined
       ? "jk-main"
       : "jk-main jk-main-home";
 
@@ -363,7 +371,11 @@ export function App() {
       <Sidebar
         info={info}
         sessions={sessions}
-        selectedId={showingProviders || showingMemory || showingWorkspaces ? undefined : selectedId}
+        selectedId={
+          showingProviders || showingMemory || showingWorkspaces || showingMcp
+            ? undefined
+            : selectedId
+        }
         onSelect={onSelect}
         onNew={onNew}
         onClose={closeDrawer}
@@ -371,6 +383,7 @@ export function App() {
         providersActive={showingProviders}
         memoryActive={showingMemory}
         workspacesActive={showingWorkspaces}
+        mcpActive={showingMcp}
         memoryProposed={memoryProposed}
         onRename={onRenameSession}
         onArchive={onArchiveSession}
@@ -401,6 +414,13 @@ export function App() {
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
               <WorkspacePage api={api} projects={memoryProjects} />
+            </div>
+          </>
+        ) : showingMcp ? (
+          <>
+            <Topbar onMenu={openDrawer} />
+            <div class="jk-page">
+              <McpPage api={api} />
             </div>
           </>
         ) : selected !== undefined ? (

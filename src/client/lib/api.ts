@@ -12,6 +12,8 @@ import type { Changes } from "../../server/files/changes";
 import type { DirectoryListing } from "../../server/files/list";
 import type { FileContent } from "../../server/files/read";
 import type { SearchResult } from "../../server/files/search";
+import type { McpProblem, McpServerView, McpTransport } from "../../server/mcp/mcp-config";
+import type { McpTestResult } from "../../server/mcp/mcp-tester";
 import type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
 import type {
   Memory,
@@ -103,6 +105,37 @@ export interface WorkspaceCreateInput {
 export interface WorkspaceUpdateInput {
   name?: string;
   repos?: WorkspaceRepoInput[];
+}
+
+export type McpServerItem = McpServerView;
+export type McpTestOutcome = McpTestResult;
+
+export interface McpList {
+  items: McpServerItem[];
+  problems: McpProblem[];
+}
+
+export interface McpServerInput {
+  name?: string;
+  transport?: McpTransport;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  enabled?: boolean;
+}
+
+/** PATCH: `null` pada env/headers berarti hapus kunci. */
+export interface McpServerUpdateInput {
+  name?: string;
+  transport?: McpTransport;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string | null>;
+  url?: string;
+  headers?: Record<string, string | null>;
+  enabled?: boolean;
 }
 
 export interface ServiceCardInput {
@@ -240,6 +273,11 @@ export interface ApiClient {
     card: ServiceCardInput,
   ): Promise<WorkspaceItem>;
   deleteWorkspace(id: string): Promise<void>;
+  listMcpServers(): Promise<McpList>;
+  createMcpServer(input: McpServerInput): Promise<McpServerItem>;
+  updateMcpServer(id: string, input: McpServerUpdateInput): Promise<McpServerItem>;
+  deleteMcpServer(id: string): Promise<void>;
+  testMcpServer(id: string): Promise<McpTestOutcome>;
 }
 
 export interface ApiClientOptions {
@@ -314,6 +352,43 @@ function workspaceListFrom(payload: unknown): WorkspaceList {
     items: payload.items as WorkspaceItem[],
     problems: Array.isArray(problems) ? (problems as WorkspaceProblem[]) : [],
   };
+}
+
+function mcpServerFrom(payload: unknown): McpServerItem {
+  const item = field(payload, "item");
+  if (
+    !isRecord(item) ||
+    typeof item.id !== "string" ||
+    typeof item.name !== "string" ||
+    (item.transport !== "stdio" && item.transport !== "http") ||
+    typeof item.enabled !== "boolean"
+  ) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  return item as unknown as McpServerItem;
+}
+
+function mcpListFrom(payload: unknown): McpList {
+  if (!isRecord(payload) || !Array.isArray(payload.items)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  const problems = payload.problems;
+  return {
+    items: payload.items as McpServerItem[],
+    problems: Array.isArray(problems) ? (problems as McpProblem[]) : [],
+  };
+}
+
+function mcpTestFrom(payload: unknown): McpTestOutcome {
+  if (
+    !isRecord(payload) ||
+    typeof payload.ok !== "boolean" ||
+    typeof payload.ms !== "number" ||
+    !Number.isFinite(payload.ms)
+  ) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  return payload as unknown as McpTestOutcome;
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {
@@ -771,6 +846,30 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async deleteWorkspace(id) {
       await request("DELETE", `/api/workspaces/${encodeURIComponent(id)}`, {});
+    },
+
+    async listMcpServers() {
+      return mcpListFrom(await request("GET", "/api/mcp-servers"));
+    },
+
+    async createMcpServer(input) {
+      return mcpServerFrom(await request("POST", "/api/mcp-servers", input));
+    },
+
+    async updateMcpServer(id, input) {
+      return mcpServerFrom(
+        await request("PATCH", `/api/mcp-servers/${encodeURIComponent(id)}`, input),
+      );
+    },
+
+    async deleteMcpServer(id) {
+      await request("DELETE", `/api/mcp-servers/${encodeURIComponent(id)}`, {});
+    },
+
+    async testMcpServer(id) {
+      return mcpTestFrom(
+        await request("POST", `/api/mcp-servers/${encodeURIComponent(id)}/test`, {}),
+      );
     },
   };
 }

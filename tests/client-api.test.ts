@@ -1440,3 +1440,132 @@ describe("saveFile", () => {
     );
   });
 });
+
+describe("server MCP", () => {
+  const MCP_ITEM = {
+    id: "00000000-0000-4000-8000-000000000000",
+    name: "github",
+    transport: "stdio" as const,
+    command: "npx",
+    args: ["-y", "server"],
+    envKeys: ["TOKEN"],
+    headerNames: [],
+    enabled: true,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  test("listMcpServers GET dan membawa problems", async () => {
+    const problems = [{ file: "mcp-servers.json", reason: "server #1 rusak" }];
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ items: [MCP_ITEM], problems }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.listMcpServers()).toEqual({ items: [MCP_ITEM], problems });
+    expect(calls[0]?.url).toBe("/api/mcp-servers");
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("listMcpServers menolak respons tanpa array items", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ items: "bukan array" }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.listMcpServers()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("createMcpServer POST body input dan periksa item", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: MCP_ITEM }, 201));
+    const api = createApiClient({ fetch });
+
+    const created = await api.createMcpServer({
+      name: "github",
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "server"],
+    });
+
+    expect(created).toEqual(MCP_ITEM);
+    expect(calls[0]?.url).toBe("/api/mcp-servers");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      name: "github",
+      transport: "stdio",
+      command: "npx",
+      args: ["-y", "server"],
+    });
+  });
+
+  test("createMcpServer menolak respons item yang tidak valid", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ item: { name: "x" } }, 201));
+    const api = createApiClient({ fetch });
+
+    await expect(api.createMcpServer({ name: "x" })).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("updateMcpServer PATCH path ter-encode dan body parsial", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ item: MCP_ITEM }));
+    const api = createApiClient({ fetch });
+
+    await api.updateMcpServer("a/b c", { enabled: false, env: { TOKEN: null } });
+
+    expect(calls[0]?.url).toBe("/api/mcp-servers/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      enabled: false,
+      env: { TOKEN: null },
+    });
+  });
+
+  test("deleteMcpServer DELETE body JSON kosong", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await api.deleteMcpServer("m 1");
+
+    expect(calls[0]?.url).toBe("/api/mcp-servers/m%201");
+    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("testMcpServer POST body JSON kosong dan mengembalikan hasil", async () => {
+    const result = { ok: true, tools: [{ name: "a", description: "A" }], ms: 320 };
+    const { fetch, calls } = fakeFetch(() => jsonResponse(result));
+    const api = createApiClient({ fetch });
+
+    expect(await api.testMcpServer("m1")).toEqual(result);
+    expect(calls[0]?.url).toBe("/api/mcp-servers/m1/test");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("testMcpServer menolak respons tanpa ok dan ms", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ tools: [] }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.testMcpServer("m1")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("503 Server MCP dimatikan tampil sebagai pesan galat biasa", async () => {
+    for (const call of [
+      (api: ReturnType<typeof createApiClient>) => api.listMcpServers(),
+      (api: ReturnType<typeof createApiClient>) => api.createMcpServer({ name: "x" }),
+      (api: ReturnType<typeof createApiClient>) => api.updateMcpServer("m1", { enabled: false }),
+      (api: ReturnType<typeof createApiClient>) => api.deleteMcpServer("m1"),
+      (api: ReturnType<typeof createApiClient>) => api.testMcpServer("m1"),
+    ]) {
+      const { fetch } = fakeFetch(() => jsonResponse({ error: "Server MCP dimatikan." }, 503));
+      const api = createApiClient({ fetch });
+
+      let caught: unknown;
+      try {
+        await call(api);
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(ApiError);
+      expect((caught as ApiError).status).toBe(503);
+      expect((caught as ApiError).message).toBe("Server MCP dimatikan.");
+    }
+  });
+});

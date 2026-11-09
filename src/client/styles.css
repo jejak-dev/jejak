@@ -3295,6 +3295,207 @@ h2.jk-md-heading {
   }
 }
 
+/* Halaman Server MCP */
+
+.jk-mcp {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px 80px;
+}
+
+.jk-mcp .jk-settings-head {
+  margin-bottom: 18px;
+}
+
+.jk-mcp-head {
+  display: flex;
+  align-items: center;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-mcp-add {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.jk-mcp-form-wrap {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.jk-mcp-form {
+  display: grid;
+  gap: 14px;
+}
+
+.jk-mcp-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 6px;
+}
+
+.jk-mcp-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-mcp-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jk-mcp-name {
+  flex: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.jk-mcp-transport {
+  flex: none;
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.jk-mcp-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.jk-mcp-switch {
+  flex: none;
+}
+
+.jk-mcp-switch-on {
+  color: var(--t1);
+  text-decoration: none;
+}
+
+.jk-mcp-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jk-mcp-key-line {
+  margin: 0;
+  color: var(--t2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.jk-mcp-key-label {
+  margin-right: 8px;
+  color: var(--t3);
+}
+
+.jk-mcp-test {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.jk-mcp-test-bad {
+  color: var(--bad);
+}
+
+.jk-mcp-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.jk-mcp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.jk-mcp-danger {
+  color: var(--t3);
+}
+
+.jk-mcp-danger:hover:not(:disabled) {
+  color: var(--bad);
+}
+
+.jk-mcp-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-mcp-key {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.jk-mcp-key-state {
+  color: var(--t3);
+}
+
+.jk-mcp-problems {
+  margin-top: 14px;
+  border: 0;
+}
+
+.jk-mcp-problems > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+}
+
+.jk-mcp-problems > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jk-mcp-warn {
+  color: var(--warn);
+}
+
+.jk-mcp-problem-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--t3);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.jk-mcp-secret-note {
+  margin-top: 18px;
+}
+
 /* Sempit: sidebar menjadi laci */
 
 @media (max-width: 760px) {

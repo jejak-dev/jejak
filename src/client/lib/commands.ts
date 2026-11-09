@@ -54,6 +54,7 @@ export function fuzzyScore(query: string, label: string): number | undefined {
 export type CommandId =
   | "new-session"
   | "open-workspace"
+  | "open-mcp"
   | "open-memory"
   | "open-providers"
   | "toggle-panel"
@@ -89,6 +90,7 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
   const commands: Command[] = [
     { id: "new-session", label: "Sesi baru", group: "aksi", run: "new-session" },
     { id: "open-workspace", label: "Buka Workspace", group: "aksi", run: "open-workspace" },
+    { id: "open-mcp", label: "Buka Server MCP", group: "aksi", run: "open-mcp" },
     { id: "open-memory", label: "Buka Memory", group: "aksi", run: "open-memory" },
     { id: "open-providers", label: "Buka Provider", group: "aksi", run: "open-providers" },
   ];

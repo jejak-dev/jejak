@@ -52,8 +52,17 @@ describe("buildCommands", () => {
     const ids = cmds.map((c) => c.id);
     expect(ids[0]).toBe("new-session");
     expect(ids[1]).toBe("open-workspace");
+    expect(ids[2]).toBe("open-mcp");
     expect(ids[cmds.length - 2]).toBe("focus-search");
     expect(ids[cmds.length - 1]).toBe("show-shortcuts");
+  });
+
+  test("perintah Buka Server MCP tersedia", () => {
+    const cmds = buildCommands({ sessions: [], hasSession: false, panelOpen: false });
+    const mcp = cmds.find((c) => c.id === "open-mcp");
+    expect(mcp?.label).toBe("Buka Server MCP");
+    expect(mcp?.run).toBe("open-mcp");
+    expect(mcp?.group).toBe("aksi");
   });
 
   test("toggle-panel hanya bila ada sesi terbuka", () => {
