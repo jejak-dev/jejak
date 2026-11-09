@@ -6,7 +6,7 @@ import {
   type FileContent,
   type SearchResult,
 } from "../lib/api";
-import { breadcrumbs, formatSize, joinPath, splitLines } from "../lib/files";
+import { breadcrumbs, formatSize, joinPath, parentPath, splitLines } from "../lib/files";
 import {
   describeSaveError,
   highlightMatch,
@@ -77,6 +77,7 @@ export function FilesTab({
 
   const requestRef = useRef(0);
   const searchRef = useRef(0);
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const tokenRef = useRef(0);
   const loadedRef = useRef(false);
   const repoRef = useRef(repo);
@@ -224,9 +225,14 @@ export function FilesTab({
     }
     setSearchLoading(true);
     const timer = setTimeout(() => {
+      searchTimerRef.current = undefined;
       void runSearch(query);
     }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    searchTimerRef.current = timer;
+    return () => {
+      clearTimeout(timer);
+      if (searchTimerRef.current === timer) searchTimerRef.current = undefined;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, searchInput, searchCase, repo, sessionId]);
 
@@ -284,6 +290,7 @@ export function FilesTab({
   const openFile = (path: string, line?: number): void => {
     leave(() => {
       resetEditor();
+      setDir(parentPath(path));
       void run(path, "file", line);
     });
   };
@@ -572,6 +579,10 @@ export function FilesTab({
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
                   event.preventDefault();
+                  if (searchTimerRef.current !== undefined) {
+                    clearTimeout(searchTimerRef.current);
+                    searchTimerRef.current = undefined;
+                  }
                   const text = searchInput.trim();
                   if (text !== "") void runSearch(text);
                 }
