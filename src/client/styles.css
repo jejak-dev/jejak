@@ -4053,3 +4053,224 @@ h2.jk-md-heading {
   gap: 6px 12px;
   margin-top: 6px;
 }
+
+/* Halaman Log audit */
+
+.jk-audit {
+  width: min(900px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px 80px;
+}
+
+.jk-audit .jk-settings-head {
+  margin-bottom: 18px;
+}
+
+.jk-audit-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-audit-summary-line {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
+.jk-audit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jk-audit-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.jk-audit-chip:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-audit-chip-active {
+  border-color: var(--line-2);
+  color: var(--t1);
+  background: var(--hover);
+}
+
+.jk-audit-chip-count {
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-audit-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.jk-audit-select {
+  height: 28px;
+  max-width: 220px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--t1);
+  font-size: 12px;
+}
+
+.jk-audit-refresh {
+  margin-left: auto;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.jk-audit-table {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.jk-audit-table th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-2);
+  color: var(--t3);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jk-audit-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.jk-audit-time {
+  color: var(--t3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-audit-kind {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.jk-audit-kind-warn {
+  color: var(--warn);
+}
+
+.jk-audit-kind-bad {
+  color: var(--bad);
+}
+
+.jk-audit-summary-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jk-audit-entry-summary {
+  display: block;
+  color: var(--t1);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.jk-audit-meta {
+  display: block;
+  color: var(--t3);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.jk-audit-session-cell {
+  color: var(--t2);
+  white-space: nowrap;
+}
+
+.jk-audit-session-link {
+  color: var(--t2);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 2px;
+}
+
+.jk-audit-session-link:hover {
+  color: var(--t1);
+}
+
+.jk-audit-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.jk-audit-more-btn {
+  height: 28px;
+  padding: 0 14px;
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .jk-audit-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .jk-audit-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .jk-audit-table td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .jk-audit-summary-cell {
+    flex: 1 1 100%;
+    order: 4;
+  }
+
+  .jk-audit-session-cell {
+    order: 3;
+    margin-left: auto;
+  }
+
+  .jk-audit-refresh {
+    margin-left: 0;
+  }
+}

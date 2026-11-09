@@ -1,3 +1,4 @@
+import type { AuditEntry, AuditSummary } from "../../server/audit/audit-store";
 import type {
   ChangeAction,
   CheckpointChange,
@@ -32,6 +33,21 @@ import type {
   WorkspaceRepo,
 } from "../../server/workspaces/workspace-files";
 import type { WorkspaceView } from "../../server/workspaces/workspace-service";
+
+export type AuditEntryItem = AuditEntry;
+export type AuditSummaryResult = AuditSummary;
+
+export interface AuditListResult {
+  entries: AuditEntryItem[];
+  next: number | null;
+}
+
+export interface AuditQueryInput {
+  session?: string;
+  kind?: string;
+  before?: number;
+  limit?: number;
+}
 
 export type {
   ChangeAction,
@@ -326,6 +342,8 @@ export interface ApiClient {
   updateMcpServer(id: string, input: McpServerUpdateInput): Promise<McpServerItem>;
   deleteMcpServer(id: string): Promise<void>;
   testMcpServer(id: string): Promise<McpTestOutcome>;
+  listAudit(query?: AuditQueryInput): Promise<AuditListResult>;
+  getAuditSummary(): Promise<AuditSummaryResult>;
 }
 
 export interface ApiClientOptions {
@@ -437,6 +455,38 @@ function mcpTestFrom(payload: unknown): McpTestOutcome {
     throw new ApiError("respons server tidak valid", 200);
   }
   return payload as unknown as McpTestOutcome;
+}
+
+function auditListFrom(payload: unknown): AuditListResult {
+  if (!isRecord(payload) || !Array.isArray(payload.entries)) {
+    throw invalidResponse();
+  }
+  const raw = payload.next;
+  if (raw !== undefined && raw !== null && (typeof raw !== "number" || !Number.isFinite(raw))) {
+    throw invalidResponse();
+  }
+  return {
+    entries: payload.entries as AuditEntryItem[],
+    next: typeof raw === "number" ? raw : null,
+  };
+}
+
+function auditSummaryFrom(payload: unknown): AuditSummaryResult {
+  if (!isRecord(payload)) throw invalidResponse();
+  const { days, since, total, byKind, redactedSessions } = payload;
+  if (
+    typeof days !== "number" ||
+    !Number.isFinite(days) ||
+    typeof since !== "string" ||
+    typeof total !== "number" ||
+    !Number.isFinite(total) ||
+    !isRecord(byKind) ||
+    typeof redactedSessions !== "number" ||
+    !Number.isFinite(redactedSessions)
+  ) {
+    throw invalidResponse();
+  }
+  return payload as unknown as AuditSummaryResult;
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {
@@ -1055,6 +1105,22 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return mcpTestFrom(
         await request("POST", `/api/mcp-servers/${encodeURIComponent(id)}/test`, {}),
       );
+    },
+
+    async listAudit(query) {
+      const session = query?.session;
+      const kind = query?.kind;
+      const search = queryString([
+        ["session", session === undefined || session === "" ? undefined : session],
+        ["kind", kind === undefined || kind === "" ? undefined : kind],
+        ["before", query?.before === undefined ? undefined : String(query.before)],
+        ["limit", query?.limit === undefined ? undefined : String(query.limit)],
+      ]);
+      return auditListFrom(await request("GET", `/api/audit${search}`));
+    },
+
+    async getAuditSummary() {
+      return auditSummaryFrom(await request("GET", "/api/audit/summary"));
     },
   };
 }

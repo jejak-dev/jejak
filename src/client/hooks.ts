@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import type { SessionInfo } from "../server/sessions/session-manager";
 import { ApiError, type ApiClient, type WorkspaceItem } from "./lib/api";
 import {
+  auditHash,
   mcpHash,
   memoryHash,
   parseHashRoute,
@@ -45,6 +46,7 @@ export interface HashRouteState {
   navigateToMemory: () => void;
   navigateToWorkspaces: () => void;
   navigateToMcp: () => void;
+  navigateToAudit: () => void;
 }
 
 export function useHashRoute(): HashRouteState {
@@ -92,6 +94,10 @@ export function useHashRoute(): HashRouteState {
     applyHash(mcpHash());
   }, [applyHash]);
 
+  const navigateToAudit = useCallback(() => {
+    applyHash(auditHash());
+  }, [applyHash]);
+
   return useMemo(
     () => ({
       sessionId: route.sessionId,
@@ -101,6 +107,7 @@ export function useHashRoute(): HashRouteState {
       navigateToMemory,
       navigateToWorkspaces,
       navigateToMcp,
+      navigateToAudit,
     }),
     [
       route,
@@ -109,6 +116,7 @@ export function useHashRoute(): HashRouteState {
       navigateToMemory,
       navigateToWorkspaces,
       navigateToMcp,
+      navigateToAudit,
     ],
   );
 }
