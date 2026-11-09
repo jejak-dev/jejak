@@ -129,6 +129,7 @@ export function createApp(options: CreateAppOptions = {}) {
       audit: options.audit,
       secrets: {
         mode: secretsMode === "off" || secretsMode === "warn" ? secretsMode : "redact",
+        blockPaths: env.JEJAK_SECRET_BLOCK?.trim() !== "0",
         ...(env.JEJAK_SECRETS_ENV?.trim() === "1"
           ? { loadEnvValues: loadEnvValuesFromDir }
           : {}),

@@ -129,6 +129,34 @@ function sanitizeCwd(cwd: string): string {
   return cwd.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 }
 
+type SecretGuard = NonNullable<RunInput["secretGuard"]>;
+
+/** Hook `PreToolUse` yang menolak tool bila kebijakan rahasia mengembalikan alasan. */
+function preToolUseHook(guard: SecretGuard): (input: unknown) => Promise<unknown> {
+  return async (input: unknown): Promise<unknown> => {
+    try {
+      if (!isRecord(input) || input.hook_event_name !== "PreToolUse") return {};
+      const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
+      const agentId =
+        typeof input.agent_id === "string" && input.agent_id !== ""
+          ? input.agent_id
+          : undefined;
+      const result = guard({ toolName, toolInput: input.tool_input, agentId });
+      if (!isRecord(result) || typeof result.reason !== "string") return {};
+      return {
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: result.reason,
+        },
+      };
+    } catch {
+      // Kebijakan tidak boleh membuat sesi macet.
+      return {};
+    }
+  };
+}
+
 const MEMORY_TOOL_ALLOWLIST = [
   "mcp__jejak-memory__memory_search",
   "mcp__jejak-memory__memory_propose",
@@ -261,6 +289,17 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       }
       if (input.permissionMode === "bypassPermissions") {
         sdkOptions.allowDangerouslySkipPermissions = true;
+      }
+
+      const secretGuard = input.secretGuard;
+      if (secretGuard !== undefined) {
+        const existingHooks = isRecord(sdkOptions.hooks) ? sdkOptions.hooks : {};
+        const existingPre = existingHooks.PreToolUse;
+        const ours = { hooks: [preToolUseHook(secretGuard)] };
+        sdkOptions.hooks = {
+          ...existingHooks,
+          PreToolUse: Array.isArray(existingPre) ? [...existingPre, ours] : [ours],
+        };
       }
 
       // Add canUseTool handler if requestPermission is provided

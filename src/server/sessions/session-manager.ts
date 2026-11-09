@@ -18,6 +18,7 @@ import type { MemoryBridge } from "../memory/memory-bridge";
 import { estimateCostUsd } from "../pricing";
 import { redactSecrets } from "../security/redact";
 import { redactEvent } from "../security/redact-event";
+import { SECRET_BLOCK_REASON, checkSecretAccess } from "../security/secret-paths";
 import { WorktreeError, type WorktreeInfo, type WorktreeService } from "../git/worktree-service";
 import type { SessionStore, StoredSession } from "./session-store";
 
@@ -133,6 +134,8 @@ export interface SessionManagerOptions {
     mode?: "off" | "warn" | "redact";
     /** Nilai literal rahasia untuk cwd sesi (mis. isi .env); dipanggil sekali per sesi. */
     loadEnvValues?: (cwd: string) => readonly string[];
+    /** Tolak akses tool ke berkas rahasia; default `true` kecuali mode `off`. */
+    blockPaths?: boolean;
   };
 }
 
@@ -316,6 +319,7 @@ export class SessionManager {
   private readonly auditStore: AuditStore | undefined;
   private readonly secretsMode: SessionSecretsMode;
   private readonly loadEnvValues: ((cwd: string) => readonly string[]) | undefined;
+  private readonly blockSecretPaths: boolean;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
@@ -346,6 +350,8 @@ export class SessionManager {
         ? requestedMode
         : "redact";
     this.loadEnvValues = options.secrets?.loadEnvValues;
+    this.blockSecretPaths =
+      this.secretsMode !== "off" && options.secrets?.blockPaths !== false;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -1330,6 +1336,25 @@ export class SessionManager {
       if (workspace !== undefined) {
         input.workspace = workspace;
       }
+    }
+
+    if (this.blockSecretPaths) {
+      input.secretGuard = (call) => {
+        const verdict = checkSecretAccess({
+          toolName: call.toolName,
+          toolInput: call.toolInput,
+          cwd: record.info.cwd,
+        });
+        if (!verdict.blocked) return undefined;
+        const rule = verdict.rule ?? "";
+        this.audit(
+          "rahasia-diblokir",
+          `Akses ke berkas rahasia diblokir: ${call.toolName}`,
+          record.info.id,
+          { tool: call.toolName, aturan: rule, sub: call.agentId !== undefined },
+        );
+        return { reason: verdict.reason ?? SECRET_BLOCK_REASON, rule: verdict.rule };
+      };
     }
 
     if (this.mcpServers !== undefined) {

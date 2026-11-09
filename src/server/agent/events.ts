@@ -73,6 +73,15 @@ export interface RunInput {
   workspace?: RunWorkspace;
   /** Server MCP eksternal (nilai penuh); tidak pernah dikirim ke klien. */
   mcpServers?: ResolvedMcpServer[];
+  /**
+   * Kebijakan penolakan akses berkas rahasia. Mengembalikan alasan bila tool harus
+   * ditolak lewat hook `PreToolUse`; `undefined` berarti diteruskan.
+   */
+  secretGuard?: (call: {
+    toolName: string;
+    toolInput: unknown;
+    agentId?: string;
+  }) => { reason: string; rule?: string } | undefined;
 }
 
 export interface AgentRunner {
