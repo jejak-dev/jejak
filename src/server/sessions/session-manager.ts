@@ -13,6 +13,11 @@ import {
   type RunWorkspace,
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
+import {
+  classifyProviderError,
+  describeFallbackReason,
+  type ProviderErrorKind,
+} from "../agent/provider-error";
 import type { AuditKind, AuditMeta, AuditStore } from "../audit/audit-store";
 import {
   evaluateBudget,
@@ -120,6 +125,11 @@ export interface McpServerResolver {
 export interface SessionManagerOptions {
   runner: AgentRunner;
   resolveProvider: (selection: ProviderSelection) => Promise<ResolvedProvider>;
+  /**
+   * Profil cadangan untuk satu kali percobaan ulang bila giliran gagal oleh
+   * galat provider sebelum output substantif; `undefined` berarti tak ada.
+   */
+  fallback?: (profileId: string) => Promise<ResolvedProvider | undefined>;
   maxConcurrent?: number;
   maxSessions?: number;
   maxEventsPerSession?: number;
@@ -198,7 +208,28 @@ interface SessionRecord {
   workspaceWarned?: boolean;
   /** Nilai rahasia dari `.env` sesi; dimuat malas dan tidak dipersist. */
   envValues?: readonly string[];
+  /** Penyalur event yang tertahan sebelum output substantif (mode fallback). */
+  flushPending?: () => void;
+  /** Kunci tambahan yang ikut disanitasi dari event (kunci profil asal saat fallback). */
+  extraApiKeys?: readonly string[];
 }
+
+/** Kegagalan satu percobaan giliran; event tertahan dipakai bila tanpa fallback. */
+interface AttemptFailure {
+  message: string;
+  /** Event yang tertahan sebelum output substantif (termasuk `result` gagal). */
+  events: AgentEvent[];
+  /** Apakah `events` sudah memuat `result` gagal. */
+  hasResult: boolean;
+  /** Kegagalan karena stream habis/exception, bukan event `result` lengkap. */
+  synthetic: boolean;
+  /** Sudah ada output substantif? Bila ya, fallback tidak berlaku. */
+  substantive: boolean;
+}
+
+type AttemptOutcome =
+  | { kind: "selesai" }
+  | { kind: "gagal"; failure: AttemptFailure };
 
 const CHECKPOINT_TIMEOUT_MS = 30_000;
 
@@ -249,6 +280,32 @@ function sanitizeValue(value: unknown, apiKey: string | undefined): unknown {
 
 function sanitizeEvent(event: AgentEvent, apiKey: string | undefined): AgentEvent {
   return sanitizeValue(event, apiKey) as AgentEvent;
+}
+
+/** Satu event melewati daftar kunci (dipakai saat fallback: kunci asal + cadangan). */
+function sanitizeEventKeys(event: AgentEvent, apiKeys: readonly (string | undefined)[]): AgentEvent {
+  let result = event;
+  for (const key of apiKeys) {
+    if (key !== undefined && key !== "") result = sanitizeEvent(result, key);
+  }
+  return result;
+}
+
+function sanitizeTextKeys(text: string, apiKeys: readonly (string | undefined)[]): string {
+  let result = text;
+  for (const key of apiKeys) {
+    if (key !== undefined && key !== "") result = sanitizeText(result, key);
+  }
+  return result;
+}
+
+function isSubstantiveEvent(event: AgentEvent): boolean {
+  return (
+    event.type === "text" ||
+    event.type === "thinking" ||
+    event.type === "tool_call" ||
+    event.type === "permission_request"
+  );
 }
 
 function collapseWhitespace(text: string): string {
@@ -323,6 +380,7 @@ function waitForChange(
 export class SessionManager {
   private readonly runner: AgentRunner;
   private readonly resolveProvider: (selection: ProviderSelection) => Promise<ResolvedProvider>;
+  private readonly fallback: ((profileId: string) => Promise<ResolvedProvider | undefined>) | undefined;
   private readonly maxConcurrent: number;
   private readonly maxSessions: number;
   private readonly maxEventsPerSession: number;
@@ -359,6 +417,7 @@ export class SessionManager {
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
     this.resolveProvider = options.resolveProvider;
+    this.fallback = options.fallback;
     this.maxConcurrent = options.maxConcurrent ?? DEFAULTS.maxConcurrent;
     this.maxSessions = options.maxSessions ?? DEFAULTS.maxSessions;
     this.maxEventsPerSession = options.maxEventsPerSession ?? DEFAULTS.maxEventsPerSession;
@@ -1463,7 +1522,6 @@ export class SessionManager {
     resumeSessionId: string | undefined,
   ): Promise<void> {
     await this.ensureTurnCheckpoint(record);
-    let sawResult = false;
     const input: Parameters<AgentRunner["run"]>[0] = {
       prompt,
       cwd: record.info.cwd,
@@ -1542,41 +1600,10 @@ export class SessionManager {
     }
 
     try {
-      const events = this.runner.run(input);
-
-      for await (const event of events) {
-        if (event.type === "session" && record.sdkSessionId === undefined) {
-          record.sdkSessionId = event.sessionId;
-          this.persistSession(record);
-        }
-        if (event.type === "result") {
-          sawResult = true;
-          if (record.price !== undefined) {
-            event.estimatedCostUsd = estimateCostUsd(event, record.price);
-          }
-          this.append(record, event);
-          this.setStatus(
-            record,
-            event.ok ? "selesai" : event.error === "dibatalkan" ? "dibatalkan" : "gagal",
-          );
-          return;
-        }
-        this.append(record, event);
-      }
-
-      if (!sawResult) {
-        sawResult = true;
-        this.append(record, { type: "error", message: "sesi berakhir tanpa hasil" });
-        this.append(record, { type: "result", ok: false, error: "sesi berakhir tanpa hasil" });
-        this.setStatus(record, "gagal");
-      }
-    } catch (error) {
-      if (!sawResult) {
-        sawResult = true;
-        const message = sanitizeText(errorMessage(error), record.apiKey) || "sesi gagal";
-        this.append(record, { type: "error", message });
-        this.append(record, { type: "result", ok: false, error: message });
-        this.setStatus(record, "gagal");
+      if (this.fallback === undefined) {
+        await this.runPlain(record, input);
+      } else {
+        await this.runWithFallback(record, input, provider);
       }
     } finally {
       try {
@@ -1600,8 +1627,268 @@ export class SessionManager {
     }
   }
 
+  /** Jalur lama: event diteruskan apa adanya tanpa buffer/fallback. */
+  private async runPlain(
+    record: SessionRecord,
+    input: Parameters<AgentRunner["run"]>[0],
+  ): Promise<void> {
+    let sawResult = false;
+    try {
+      for await (const event of this.runner.run(input)) {
+        if (event.type === "session" && record.sdkSessionId === undefined) {
+          record.sdkSessionId = event.sessionId;
+          this.persistSession(record);
+        }
+        if (event.type === "result") {
+          sawResult = true;
+          if (record.price !== undefined) {
+            event.estimatedCostUsd = estimateCostUsd(event, record.price);
+          }
+          this.append(record, event);
+          this.setStatus(
+            record,
+            event.ok ? "selesai" : event.error === "dibatalkan" ? "dibatalkan" : "gagal",
+          );
+          return;
+        }
+        this.append(record, event);
+      }
+
+      if (!sawResult) {
+        this.append(record, { type: "error", message: "sesi berakhir tanpa hasil" });
+        this.append(record, { type: "result", ok: false, error: "sesi berakhir tanpa hasil" });
+        this.setStatus(record, "gagal");
+      }
+    } catch (error) {
+      if (!sawResult) {
+        const message = sanitizeText(errorMessage(error), record.apiKey) || "sesi gagal";
+        this.append(record, { type: "error", message });
+        this.append(record, { type: "result", ok: false, error: message });
+        this.setStatus(record, "gagal");
+      }
+    }
+  }
+
+  /**
+   * Satu percobaan giliran dengan buffer sampai output substantif pertama.
+   * Kegagalan sebelum output substantif dikembalikan agar pemanggil bisa
+   * memutuskan fallback; event tertahan baru ditulis saat gagal final.
+   */
+  private async runAttempt(
+    record: SessionRecord,
+    input: Parameters<AgentRunner["run"]>[0],
+  ): Promise<AttemptOutcome> {
+    const buffered: AgentEvent[] = [];
+    let substantive = false;
+    let sawResult = false;
+    let lastErrorMessage: string | undefined;
+
+    const flush = (): void => {
+      for (const event of buffered.splice(0)) this.append(record, event);
+    };
+    // Permintaan izin datang lewat callback, bukan iterator: anggap substantif.
+    record.flushPending = () => {
+      substantive = true;
+      flush();
+    };
+
+    try {
+      for await (const event of this.runner.run(input)) {
+        if (event.type === "session") {
+          if (record.sdkSessionId === undefined) {
+            record.sdkSessionId = event.sessionId;
+            this.persistSession(record);
+          }
+          // Event sesi diteruskan langsung, bukan bagian buffer fallback.
+          this.append(record, event);
+          continue;
+        }
+
+        if (event.type === "result") {
+          sawResult = true;
+          if (record.price !== undefined) {
+            event.estimatedCostUsd = estimateCostUsd(event, record.price);
+          }
+          if (event.ok || substantive) {
+            flush();
+            this.append(record, event);
+            this.setStatus(
+              record,
+              event.ok ? "selesai" : event.error === "dibatalkan" ? "dibatalkan" : "gagal",
+            );
+            return { kind: "selesai" };
+          }
+          return {
+            kind: "gagal",
+            failure: {
+              message: event.error ?? "",
+              events: [...buffered, event],
+              hasResult: true,
+              synthetic: false,
+              substantive,
+            },
+          };
+        }
+
+        if (isSubstantiveEvent(event)) {
+          substantive = true;
+          flush();
+          this.append(record, event);
+          continue;
+        }
+
+        if (event.type === "error") {
+          lastErrorMessage = event.message;
+        }
+        if (substantive) {
+          this.append(record, event);
+        } else {
+          buffered.push(event);
+        }
+      }
+
+      if (sawResult) return { kind: "selesai" };
+
+      if (substantive) {
+        this.append(record, { type: "error", message: "sesi berakhir tanpa hasil" });
+        this.append(record, { type: "result", ok: false, error: "sesi berakhir tanpa hasil" });
+        this.setStatus(record, "gagal");
+        return { kind: "selesai" };
+      }
+      return {
+        kind: "gagal",
+        failure: {
+          message: lastErrorMessage ?? "sesi berakhir tanpa hasil",
+          events: buffered,
+          hasResult: false,
+          synthetic: true,
+          substantive,
+        },
+      };
+    } catch (error) {
+      if (sawResult) return { kind: "selesai" };
+      if (substantive) {
+        const keys = [record.apiKey, ...(record.extraApiKeys ?? [])];
+        const message = sanitizeTextKeys(errorMessage(error), keys) || "sesi gagal";
+        this.append(record, { type: "error", message });
+        this.append(record, { type: "result", ok: false, error: message });
+        this.setStatus(record, "gagal");
+        return { kind: "selesai" };
+      }
+      return {
+        kind: "gagal",
+        failure: {
+          message: sanitizeTextKeys(errorMessage(error), [
+            record.apiKey,
+            ...(record.extraApiKeys ?? []),
+          ]),
+          events: buffered,
+          hasResult: false,
+          synthetic: false,
+          substantive,
+        },
+      };
+    } finally {
+      record.flushPending = undefined;
+    }
+  }
+
+  /** Perilaku gagal biasa: tulis event tertahan lalu hasil gagal. */
+  private replayFailure(record: SessionRecord, failure: AttemptFailure): void {
+    for (const event of failure.events) this.append(record, event);
+    if (!failure.hasResult) {
+      const message = failure.synthetic
+        ? "sesi berakhir tanpa hasil"
+        : sanitizeTextKeys(failure.message, [
+            record.apiKey,
+            ...(record.extraApiKeys ?? []),
+          ]) || "sesi gagal";
+      this.append(record, { type: "error", message });
+      this.append(record, { type: "result", ok: false, error: message });
+    }
+    const cancelled =
+      failure.hasResult &&
+      failure.events.some(
+        (event) => event.type === "result" && event.error === "dibatalkan",
+      );
+    this.setStatus(record, cancelled ? "dibatalkan" : "gagal");
+  }
+
+  /**
+   * Jalur fallback: gagal oleh galat provider sebelum output substantif
+   * mengulang SEKALI dengan profil cadangan; event gagal pertama dibuang.
+   */
+  private async runWithFallback(
+    record: SessionRecord,
+    input: Parameters<AgentRunner["run"]>[0],
+    provider: ResolvedProvider,
+  ): Promise<void> {
+    const attempt = await this.runAttempt(record, input);
+    if (attempt.kind === "selesai") return;
+
+    const failure = attempt.failure;
+    if (failure.substantive || record.controller.signal.aborted) {
+      this.replayFailure(record, failure);
+      return;
+    }
+    const kind = classifyProviderError(failure.message);
+    if (kind === undefined) {
+      this.replayFailure(record, failure);
+      return;
+    }
+
+    let fallbackProvider: ResolvedProvider | undefined;
+    try {
+      fallbackProvider = await this.fallback!(provider.profileId);
+    } catch {
+      fallbackProvider = undefined;
+    }
+    if (fallbackProvider === undefined || fallbackProvider.profileId === provider.profileId) {
+      this.replayFailure(record, failure);
+      return;
+    }
+
+    this.append(record, {
+      type: "notice",
+      text: `Profil ${provider.profileId} gagal (${describeFallbackReason(kind)}); memakai ${fallbackProvider.profileId}.`,
+      level: "warn",
+    });
+    this.audit(
+      "provider",
+      `Fallback provider: ${provider.profileId} → ${fallbackProvider.profileId}`,
+      record.info.id,
+      { dari: provider.profileId, ke: fallbackProvider.profileId, alasan: kind },
+    );
+
+    const originalKey = provider.apiKey;
+    const originalPrice = provider.price;
+    record.apiKey = fallbackProvider.apiKey;
+    if (fallbackProvider.price === undefined) {
+      delete record.price;
+    } else {
+      record.price = fallbackProvider.price;
+    }
+    record.extraApiKeys = originalKey === undefined ? [] : [originalKey];
+
+    try {
+      const retry = await this.runAttempt(record, { ...input, provider: fallbackProvider });
+      if (retry.kind === "gagal") this.replayFailure(record, retry.failure);
+    } finally {
+      record.apiKey = originalKey;
+      if (originalPrice === undefined) {
+        delete record.price;
+      } else {
+        record.price = originalPrice;
+      }
+      record.extraApiKeys = undefined;
+    }
+  }
+
   private append(record: SessionRecord, event: AgentEvent): void {
-    const sanitized = sanitizeEvent(event, record.apiKey);
+    const sanitized = sanitizeEventKeys(event, [
+      record.apiKey,
+      ...(record.extraApiKeys ?? []),
+    ]);
 
     // Penyamaran hanya untuk yang disimpan/disiarkan; `event` asli tetap dipakai
     // untuk akumulasi usage di bawah agar perilaku lama tidak berubah.
@@ -1725,6 +2012,9 @@ export class SessionManager {
     record: SessionRecord,
     request: PermissionRequest,
   ): Promise<PermissionDecision> {
+    // Permintaan izin adalah output substantif: hentikan buffer fallback.
+    record.flushPending?.();
+
     const requestId = this.generateRequestId();
 
     // Create a promise that resolves when the permission is granted or denied

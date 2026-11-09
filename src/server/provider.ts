@@ -20,6 +20,8 @@ export interface ProviderProfile {
   models: ModelEntry[];
   defaultModel?: string;
   lightModel?: string;
+  /** Profil cadangan untuk satu kali fallback; bukan rahasia. */
+  fallbackProfileId?: string;
 }
 
 export interface ProviderRegistry {
@@ -170,6 +172,9 @@ function parseProfile(raw: unknown, index: number, env: Record<string, string | 
   const lightModel = readOptionalString(raw, "lightModel", context);
   if (lightModel !== undefined) profile.lightModel = lightModel;
 
+  const fallbackProfileId = readOptionalString(raw, "fallbackProfileId", context);
+  if (fallbackProfileId !== undefined) profile.fallbackProfileId = fallbackProfileId;
+
   return profile;
 }
 
@@ -272,6 +277,9 @@ export function serializeRegistry(registry: ProviderRegistry): unknown {
     }
     if (profile.defaultModel !== undefined) serialized.defaultModel = profile.defaultModel;
     if (profile.lightModel !== undefined) serialized.lightModel = profile.lightModel;
+    if (profile.fallbackProfileId !== undefined) {
+      serialized.fallbackProfileId = profile.fallbackProfileId;
+    }
     return serialized;
   });
 
@@ -370,6 +378,28 @@ export function validateRegistry(registry: ProviderRegistry): string[] {
     errors.push(`activeProfileId "${registry.activeProfileId}" tidak cocok dengan profil mana pun.`);
   }
 
+  const byId = new Map(profiles.map((profile) => [profile.id, profile]));
+  for (const profile of profiles) {
+    const fallbackId = profile.fallbackProfileId;
+    if (fallbackId === undefined) continue;
+    if (fallbackId === profile.id) {
+      errors.push(`Profil "${profile.id}" tidak boleh menjadi cadangan dirinya sendiri.`);
+      continue;
+    }
+    const fallback = byId.get(fallbackId);
+    if (fallback === undefined) {
+      errors.push(
+        `Profil cadangan "${fallbackId}" pada profil "${profile.id}" tidak ditemukan.`,
+      );
+      continue;
+    }
+    if (fallback.fallbackProfileId !== undefined) {
+      errors.push(
+        `Profil cadangan "${fallbackId}" tidak boleh memiliki fallbackProfileId sendiri.`,
+      );
+    }
+  }
+
   return errors;
 }
 
@@ -423,6 +453,17 @@ export function resolveProvider(
   return resolved;
 }
 
+export function fallbackSelection(
+  registry: ProviderRegistry,
+  profileId: string,
+): ProviderSelection | undefined {
+  const profile = registry.profiles.find((candidate) => candidate.id === profileId);
+  const fallbackId = profile?.fallbackProfileId;
+  if (fallbackId === undefined) return undefined;
+  if (!registry.profiles.some((candidate) => candidate.id === fallbackId)) return undefined;
+  return { profileId: fallbackId };
+}
+
 export function toSdkEnv(resolved: ResolvedProvider): Record<string, string> {
   const env: Record<string, string> = {};
 
@@ -462,6 +503,9 @@ export function redactRegistry(registry: ProviderRegistry): unknown {
     if (profile.apiKey !== undefined) redacted.apiKey = "***";
     if (profile.defaultModel !== undefined) redacted.defaultModel = profile.defaultModel;
     if (profile.lightModel !== undefined) redacted.lightModel = profile.lightModel;
+    if (profile.fallbackProfileId !== undefined) {
+      redacted.fallbackProfileId = profile.fallbackProfileId;
+    }
     return redacted;
   });
 

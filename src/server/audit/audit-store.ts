@@ -16,6 +16,7 @@ export const AUDIT_KINDS = [
   "mcp",
   "pengaturan",
   "anggaran",
+  "provider",
 ] as const;
 export type AuditKind = (typeof AUDIT_KINDS)[number];
 

@@ -13,7 +13,7 @@ import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
 import type { McpServerService } from "./mcp/mcp-service";
-import { resolveProvider as resolveRegistryProvider } from "./provider";
+import { fallbackSelection, resolveProvider as resolveRegistryProvider } from "./provider";
 import { jejakHome, loadRegistry, providersPath } from "./provider-store";
 import { loadEnvValuesFromDir } from "./security/env-values";
 import {
@@ -134,6 +134,13 @@ export function createApp(options: CreateAppOptions = {}) {
       runner: options.runner ?? createRunner(env),
       resolveProvider: async (selection) =>
         resolveRegistryProvider(await loadRegistry(path, env), selection),
+      fallback: async (profileId) => {
+        const registry = await loadRegistry(path, env);
+        const selection = fallbackSelection(registry, profileId);
+        return selection === undefined
+          ? undefined
+          : resolveRegistryProvider(registry, selection);
+      },
       store: options.sessionStore,
       memoryBridge: memoryBridge?.bridge,
       checkpoints,
