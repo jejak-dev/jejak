@@ -28,6 +28,7 @@ import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs } from "./lib/panel-prefs";
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
+import { dirtyWarning } from "./lib/worktree";
 
 export function App() {
   const api = useMemo(() => createApiClient(), []);
@@ -73,6 +74,9 @@ export function App() {
   >(undefined);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [worktreeNotice, setWorktreeNotice] = useState<
+    { sessionId: string; text: string } | undefined
+  >(undefined);
   const previousFocusRef = useRef<Element | null>(null);
   const [promptFocusTick, setPromptFocusTick] = useState(0);
 
@@ -223,6 +227,13 @@ export function App() {
     if (prompt !== null) (prompt as HTMLTextAreaElement).focus();
   }, [promptFocusTick, routeView, selected, selectedId]);
 
+  // Peringatan perubahan folder asli hanya untuk sesi yang baru dibuat; hilang saat pindah sesi.
+  useEffect(() => {
+    setWorktreeNotice((current) =>
+      current !== undefined && current.sessionId !== selectedId ? undefined : current,
+    );
+  }, [selectedId]);
+
   const closePalette = useCallback((): void => {
     setPaletteOpen(false);
     const focused = previousFocusRef.current;
@@ -293,6 +304,10 @@ export function App() {
 
   const onCreated = useCallback(
     (session: SessionInfo): void => {
+      const warning = dirtyWarning(session.dirtyInSource);
+      setWorktreeNotice(
+        warning === undefined ? undefined : { sessionId: session.id, text: warning },
+      );
       void (async () => {
         await refresh();
         navigate(session.id);
@@ -450,6 +465,19 @@ export function App() {
             />
             <div class="jk-main-body">
               <div class="jk-main-col">
+                {worktreeNotice !== undefined && worktreeNotice.sessionId === selected.id && (
+                  <div class="jk-worktree-notice" role="status">
+                    <span>{worktreeNotice.text}</span>
+                    <button
+                      type="button"
+                      class="jk-link-btn"
+                      aria-label="Tutup peringatan worktree"
+                      onClick={() => setWorktreeNotice(undefined)}
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                )}
                 <Timeline
                   items={timeline.items}
                   connection={timeline.connection}
@@ -463,11 +491,13 @@ export function App() {
                   key={selected.id}
                   api={api}
                   sessionId={selected.id}
+                  session={selected}
                   eventCount={selected.eventCount}
                   status={timeline.status ?? selected.status}
                   open={panelOpen}
                   onOpenChange={onPanelOpenChange}
                   tabRequest={panelTabRequest}
+                  onSessionChanged={() => void refresh()}
                 />
               )}
             </div>

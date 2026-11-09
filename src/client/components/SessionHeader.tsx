@@ -1,6 +1,7 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { showsBypassMarker } from "../lib/permission-mode";
 import { sessionContextLabel } from "../lib/workspace";
+import { worktreeBadge } from "../lib/worktree";
 import { Icon } from "./Icon";
 
 export interface TopbarProps {
@@ -10,12 +11,13 @@ export interface TopbarProps {
   subtitleTitle?: string;
   state?: { label: string; dot: "" | "run" | "warn" | "bad" };
   bypass?: boolean;
+  badge?: { label: string; title: string; tone: "" | "warn" | "bad" };
   action?: { label: string; onClick: () => void; disabled?: boolean };
   panel?: { open: boolean; onToggle: () => void };
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, action, panel, error }: TopbarProps) {
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, action, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
       <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
@@ -26,6 +28,16 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
         {subtitle !== undefined && (
           <span class="jk-mono" title={subtitleTitle}>
             {subtitle}
+          </span>
+        )}
+        {badge !== undefined && (
+          <span
+            class={`jk-worktree-badge${badge.tone === "" ? "" : ` jk-worktree-badge-${badge.tone}`}`}
+            title={badge.title}
+            aria-label={`Worktree ${badge.label}`}
+          >
+            <Icon name="branch" />
+            <span>{badge.label}</span>
           </span>
         )}
       </div>
@@ -107,6 +119,8 @@ export function SessionHeader({
   };
   if (status === "berjalan") props.action = { label: "Hentikan", onClick: onInterrupt, disabled: busy };
   if (showsBypassMarker(session.permissionMode)) props.bypass = true;
+  const badge = worktreeBadge(session);
+  if (badge !== undefined) props.badge = badge;
   if (error !== undefined) props.error = error;
   return <Topbar {...props} />;
 }

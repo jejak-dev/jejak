@@ -36,6 +36,11 @@ const STORAGE_CWD = "jejak.cwd";
 const STORAGE_PROVIDER = "jejak.provider";
 const STORAGE_MODE = "jejak.mode";
 const STORAGE_WORKSPACE = "jejak.workspace";
+const STORAGE_WORKTREE = "jejak.worktree";
+
+const WORKTREE_NOTE =
+  "Sesi bekerja di cabang baru jejak/… dalam folder terpisah; repo asli tidak tersentuh. " +
+  "Perubahan yang belum di-commit tidak ikut.";
 
 const MAX_TEXTAREA_PX = 8 * 24;
 
@@ -80,6 +85,7 @@ export function Composer({
   const [model, setModel] = useState("");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(readStoredMode);
   const [bypassAcknowledged, setBypassAcknowledged] = useState(false);
+  const [useWorktree, setUseWorktree] = useState(() => readStorage(STORAGE_WORKTREE) === "1");
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [promptError, setPromptError] = useState<string | undefined>(undefined);
@@ -213,11 +219,13 @@ export function Composer({
       if (profileId !== "") input.profileId = profileId;
       if (model !== "") input.model = model;
       if (permissionMode === "bypassPermissions") input.confirmBypass = true;
+      if (!usingWorkspace && useWorktree) input.worktree = true;
 
       const session = await api.createSession(input);
 
       if (!usingWorkspace) writeStorage(STORAGE_CWD, trimmedCwd);
       writeStorage(STORAGE_WORKSPACE, usingWorkspace ? selectedWorkspace.id : "");
+      writeStorage(STORAGE_WORKTREE, useWorktree ? "1" : "0");
       writeStorage(STORAGE_PROVIDER, profileId);
       const remembered = storableMode(permissionMode);
       if (remembered !== undefined) writeStorage(STORAGE_MODE, remembered);
@@ -457,6 +465,27 @@ export function Composer({
           </button>
         </div>
       </div>
+
+      {selectedWorkspace === undefined && (
+        <div class="jk-worktree-option">
+          <label class="jk-bypass-check">
+            <input
+              id="jk-worktree"
+              type="checkbox"
+              checked={useWorktree}
+              aria-describedby="jk-worktree-note"
+              onChange={(event) =>
+                setUseWorktree((event.currentTarget as HTMLInputElement).checked)
+              }
+              disabled={busy}
+            />
+            <span>Worktree terisolasi</span>
+          </label>
+          <p class="jk-note" id="jk-worktree-note">
+            {WORKTREE_NOTE}
+          </p>
+        </div>
+      )}
 
       {bypassSelected && (
         <div class="jk-bypass-warn" role="note">

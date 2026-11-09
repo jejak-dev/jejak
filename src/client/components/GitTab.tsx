@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import type { SessionInfo } from "../../server/sessions/session-manager";
 import {
   ApiError,
   type ApiClient,
@@ -23,10 +24,13 @@ import {
 import { formatCount } from "../lib/format";
 import { CopyButton } from "./CopyButton";
 import { Icon } from "./Icon";
+import { WorktreeBox } from "./WorktreeBox";
 
 export interface GitTabProps {
   api: ApiClient;
   sessionId: string;
+  /** Sesi lengkap; dipakai kotak worktree bila sesi punya worktree. */
+  session?: SessionInfo;
   open: boolean;
   eventCount: number;
   status: string;
@@ -42,6 +46,8 @@ export interface GitTabProps {
   onCount?: (count: number | undefined) => void;
   /** Dipanggil setelah commit agar tab lain menyegar. */
   onChanged?: () => void;
+  /** Dipanggil setelah aksi worktree agar daftar sesi dimuat ulang. */
+  onSessionChanged?: () => void;
 }
 
 interface ShowState {
@@ -64,6 +70,7 @@ function errorMessage(caught: unknown): string {
 export function GitTab({
   api,
   sessionId,
+  session,
   open,
   eventCount,
   status,
@@ -74,6 +81,7 @@ export function GitTab({
   onOpenChanges,
   onCount,
   onChanged,
+  onSessionChanged,
 }: GitTabProps) {
   const [data, setData] = useState<GitStatus | undefined>(undefined);
   const [commits, setCommits] = useState<GitCommit[]>([]);  const [error, setError] = useState<string | undefined>(undefined);
@@ -361,6 +369,9 @@ export function GitTab({
 
   return (
     <div class="jk-panel-body">
+      {session?.worktree !== undefined && (
+        <WorktreeBox api={api} session={session} onChanged={onSessionChanged} />
+      )}
       {disabled !== undefined && <p class="jk-panel-note">{disabled}</p>}
 
       {disabled === undefined && (

@@ -14,6 +14,7 @@ import type { FileContent } from "../../server/files/read";
 import type { SearchResult } from "../../server/files/search";
 import type { GitCommit, GitStatus } from "../../server/git/git-read";
 import type { GitCommitResult } from "../../server/git/git-write";
+import type { WorktreeInfo, WorktreeInspect } from "../../server/git/worktree-service";
 import type { McpProblem, McpServerView, McpTransport } from "../../server/mcp/mcp-config";
 import type { McpTestResult } from "../../server/mcp/mcp-tester";
 import type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
@@ -162,14 +163,27 @@ export interface MemoryUpdateInput {
   body?: string;
 }
 
+export interface ApiErrorDetails {
+  dirtyFiles?: number;
+  commitsAhead?: number;
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    public readonly details?: ApiErrorDetails,
   ) {
     super(message);
     this.name = "ApiError";
   }
+}
+
+export type WorktreeState = WorktreeInfo & { missing?: boolean };
+
+export interface WorktreeView {
+  worktree: WorktreeState;
+  inspect: WorktreeInspect;
 }
 
 export interface ConnectionTestView {
@@ -250,6 +264,8 @@ export interface ApiClient {
     /** Dikirim hanya bersama mode bypass; UI mengirim `true` setelah pengguna menyetujui. */
     confirmBypass?: boolean;
     workspaceId?: string;
+    /** Sesi bekerja di worktree terpisah pada cabang baru. */
+    worktree?: boolean;
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
@@ -268,6 +284,9 @@ export interface ApiClient {
   gitStage(id: string, input: GitStageInput): Promise<void>;
   gitUnstage(id: string, input: GitStageInput): Promise<void>;
   gitCommit(id: string, message: string, repo?: string): Promise<GitCommitResult>;
+  getWorktree(id: string): Promise<WorktreeView>;
+  removeWorktree(id: string, options?: { force?: boolean }): Promise<void>;
+  restoreWorktree(id: string): Promise<void>;
   browseDirs(path?: string): Promise<BrowseResult>;
   rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
   undoChange(id: string, undoId: string, repo?: string): Promise<{ path: string }>;
@@ -583,7 +602,22 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         isJson && typeof serverError === "string" && serverError !== ""
           ? serverError
           : `permintaan gagal (status ${response.status})`;
-      throw new ApiError(message, response.status);
+      const details: ApiErrorDetails = {};
+      const dirtyFiles = field(parsed, "dirtyFiles");
+      const commitsAhead = field(parsed, "commitsAhead");
+      if (typeof dirtyFiles === "number" && Number.isFinite(dirtyFiles)) {
+        details.dirtyFiles = dirtyFiles;
+      }
+      if (typeof commitsAhead === "number" && Number.isFinite(commitsAhead)) {
+        details.commitsAhead = commitsAhead;
+      }
+      throw new ApiError(
+        message,
+        response.status,
+        details.dirtyFiles === undefined && details.commitsAhead === undefined
+          ? undefined
+          : details,
+      );
     }
 
     if (!isJson) {
@@ -635,6 +669,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     async createSession(input) {
       const body: Parameters<ApiClient["createSession"]>[0] = { ...input };
       if (body.confirmBypass !== true) delete body.confirmBypass;
+      if (body.worktree !== true) delete body.worktree;
       return sessionFrom(await request("POST", "/api/sessions", body));
     },
 
@@ -785,6 +820,44 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         throw new ApiError("respons server tidak valid", 200);
       }
       return { hash, short, subject };
+    },
+
+    async getWorktree(id) {
+      const data = await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/worktree`,
+      );
+      const worktree = field(data, "worktree");
+      const inspect = field(data, "inspect");
+      if (
+        !isRecord(worktree) ||
+        typeof worktree.repoRoot !== "string" ||
+        typeof worktree.path !== "string" ||
+        typeof worktree.branch !== "string" ||
+        typeof worktree.baseCommit !== "string" ||
+        !isRecord(inspect) ||
+        typeof inspect.exists !== "boolean" ||
+        typeof inspect.dirtyFiles !== "number" ||
+        typeof inspect.commitsAhead !== "number" ||
+        typeof inspect.branchExists !== "boolean"
+      ) {
+        throw invalidResponse();
+      }
+      return { worktree, inspect } as unknown as WorktreeView;
+    },
+
+    async removeWorktree(id, options) {
+      const body: { force?: true } = {};
+      if (options?.force === true) body.force = true;
+      await request("DELETE", `/api/sessions/${encodeURIComponent(id)}/worktree`, body);
+    },
+
+    async restoreWorktree(id) {
+      await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/worktree/restore`,
+        {},
+      );
     },
 
     async browseDirs(path) {

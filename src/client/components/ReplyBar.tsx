@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "../lib/api";
+import { canSendToSession } from "../lib/worktree";
 import { Icon } from "./Icon";
 
 export interface ReplyBarProps {
@@ -40,7 +41,8 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
   }, []);
 
   const running = session.status === "berjalan";
-  const canSend = !busy && text.trim() !== "";
+  const usable = canSendToSession(session);
+  const canSend = !busy && usable.allowed && text.trim() !== "";
 
   const submit = async (): Promise<void> => {
     if (!canSend) return;
@@ -95,17 +97,31 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
             value={text}
             onInput={onInput}
             onKeyDown={onKeyDown}
+            disabled={!usable.allowed || busy}
+            aria-describedby={usable.allowed ? undefined : "jk-reply-blocked"}
           />
 
           <div class="jk-comp-bar">
             {session.queued > 0 && (
               <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
             )}
-            <button type="submit" class="jk-send" disabled={!canSend} aria-label="Kirim pesan">
+            <button
+              type="submit"
+              class="jk-send"
+              disabled={!canSend}
+              aria-label="Kirim pesan"
+              title={usable.reason}
+            >
               <Icon name="send" />
             </button>
           </div>
         </div>
+
+        {!usable.allowed && usable.reason !== undefined && (
+          <p class="jk-note" id="jk-reply-blocked" role="status">
+            {usable.reason}
+          </p>
+        )}
 
         {error !== undefined && (
           <p class="jk-error-line" role="alert">

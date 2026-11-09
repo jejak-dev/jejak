@@ -3930,3 +3930,126 @@ h2.jk-md-heading {
   white-space: nowrap;
 }
 
+
+/* Worktree sesi */
+
+.jk-worktree-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 180px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--t2);
+  font: 11.5px var(--mono);
+  white-space: nowrap;
+}
+
+.jk-worktree-badge .jk-icon {
+  flex: none;
+}
+
+.jk-worktree-badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-worktree-badge-warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
+}
+
+.jk-worktree-badge-bad {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--bad);
+}
+
+.jk-worktree-option {
+  margin-top: 10px;
+}
+
+.jk-worktree-option .jk-note {
+  margin: 4px 0 0 22px;
+}
+
+.jk-worktree-notice {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 10px 20px 0;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: 9px;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.jk-worktree-box {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.jk-worktree-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--t2);
+}
+
+.jk-worktree-branch {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11.5px var(--mono);
+  color: var(--t1);
+}
+
+.jk-worktree-status {
+  flex: none;
+  color: var(--t3);
+  font-size: 11.5px;
+}
+
+.jk-worktree-warn {
+  color: var(--warn);
+}
+
+.jk-worktree-bad,
+.jk-worktree-danger {
+  color: var(--bad);
+}
+
+.jk-worktree-meta {
+  margin: 4px 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-worktree-cmd {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 0;
+}
+
+.jk-worktree-cmd .jk-panel-note {
+  margin: 0;
+}
+
+.jk-worktree-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 6px;
+}

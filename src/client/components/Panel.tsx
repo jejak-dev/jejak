@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import type { SessionInfo } from "../../server/sessions/session-manager";
 import type { ApiClient } from "../lib/api";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "../lib/panel-prefs";
 import { formatCount } from "../lib/format";
@@ -18,12 +19,16 @@ import { Icon } from "./Icon";
 export interface PanelProps {
   api: ApiClient;
   sessionId: string;
+  /** Sesi terpilih; diteruskan ke tab Git untuk kotak worktree. */
+  session?: SessionInfo;
   eventCount: number;
   status: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** Permintaan pindah tab dari luar (palette); `nonce` memaksa ulang. */
   tabRequest?: { tab: PanelTab; nonce: number };
+  /** Dipanggil setelah aksi yang mengubah sesi (mis. hapus/pulihkan worktree). */
+  onSessionChanged?: () => void;
 }
 
 const TABS: { id: PanelTab; label: string }[] = [
@@ -36,11 +41,13 @@ const TABS: { id: PanelTab; label: string }[] = [
 export function Panel({
   api,
   sessionId,
+  session,
   eventCount,
   status,
   open,
   onOpenChange,
   tabRequest,
+  onSessionChanged,
 }: PanelProps) {
   const [tab, setTab] = useState<PanelTab>(() => readPanelPrefs().tab);
   const [fileCount, setFileCount] = useState<number | undefined>(undefined);
@@ -191,6 +198,7 @@ export function Panel({
           <GitTab
             api={api}
             sessionId={sessionId}
+            session={session}
             open={open}
             eventCount={eventCount}
             status={status}
@@ -201,6 +209,7 @@ export function Panel({
             onOpenChanges={() => select("changes")}
             onCount={setGitCount}
             onChanged={() => setRefreshToken((value) => value + 1)}
+            onSessionChanged={onSessionChanged}
           />
         ) : (
           <FilesTab

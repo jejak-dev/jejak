@@ -1275,6 +1275,135 @@ describe("createApiClient mode bypass", () => {
   });
 });
 
+describe("createApiClient worktree", () => {
+  const WORKTREE = {
+    repoRoot: "/tmp/repo",
+    path: "/tmp/home/worktrees/s1",
+    branch: "jejak/tugas-s1",
+    baseCommit: "a".repeat(40),
+    missing: false,
+  };
+  const INSPECT = { exists: true, dirtyFiles: 2, commitsAhead: 1, branchExists: true };
+
+  test("createSession mengirim worktree hanya bila true", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: SESSION }, 201));
+    const api = createApiClient({ fetch });
+
+    await api.createSession({ prompt: "Halo", cwd: "/tmp", worktree: true });
+    await api.createSession({ prompt: "Halo", cwd: "/tmp", worktree: false });
+    await api.createSession({ prompt: "Halo", cwd: "/tmp" });
+
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      prompt: "Halo",
+      cwd: "/tmp",
+      worktree: true,
+    });
+    expect("worktree" in (JSON.parse(String(calls[1]?.init.body)) as object)).toBe(false);
+    expect("worktree" in (JSON.parse(String(calls[2]?.init.body)) as object)).toBe(false);
+  });
+
+  test("getWorktree GET path ter-encode dan mengembalikan worktree + inspect", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ worktree: WORKTREE, inspect: INSPECT }),
+    );
+    const api = createApiClient({ fetch, baseUrl: "http://localhost:9" });
+
+    expect(await api.getWorktree("s 1")).toEqual({ worktree: WORKTREE, inspect: INSPECT });
+    expect(calls[0]?.url).toBe("http://localhost:9/api/sessions/s%201/worktree");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("getWorktree menolak bentuk respons yang salah", async () => {
+    for (const payload of [{}, { worktree: WORKTREE }, { worktree: WORKTREE, inspect: {} }]) {
+      const { fetch } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+      await expect(api.getWorktree("s1")).rejects.toBeInstanceOf(ApiError);
+    }
+  });
+
+  test("removeWorktree DELETE body kosong, force hanya bila diminta", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.removeWorktree("a/b c")).toBeUndefined();
+    await api.removeWorktree("a/b c", { force: true });
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "/api/sessions/a%2Fb%20c/worktree",
+      "/api/sessions/a%2Fb%20c/worktree",
+    ]);
+    expect(calls.map((call) => call.init.method)).toEqual(["DELETE", "DELETE"]);
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({ force: true });
+  });
+
+  test("removeWorktree 409 membawa dirtyFiles dan commitsAhead di details", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse(
+        {
+          error: "Worktree masih punya 2 berkas berubah dan 1 commit belum digabung.",
+          dirtyFiles: 2,
+          commitsAhead: 1,
+        },
+        409,
+      ),
+    );
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.removeWorktree("s1");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).details).toEqual({ dirtyFiles: 2, commitsAhead: 1 });
+  });
+
+  test("ApiError tanpa angka tidak membawa details", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Hentikan sesi dulu." }, 409));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.removeWorktree("s1");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect((caught as ApiError).details).toBeUndefined();
+  });
+
+  test("restoreWorktree POST body JSON kosong", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ worktree: WORKTREE }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.restoreWorktree("a b")).toBeUndefined();
+    expect(calls[0]?.url).toBe("/api/sessions/a%20b/worktree/restore");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("503 worktree dimatikan menjadi ApiError dengan pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Worktree dimatikan." }, 503));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.getWorktree("s1");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(503);
+    expect((caught as ApiError).message).toBe("Worktree dimatikan.");
+  });
+});
+
 describe("createApiClient browseDirs", () => {
   const BROWSE = {
     path: "/tmp",
