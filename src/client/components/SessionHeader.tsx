@@ -1,4 +1,5 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
+import { budgetBadge } from "../lib/budget";
 import { showsBypassMarker } from "../lib/permission-mode";
 import { secretBadge } from "../lib/secret-badge";
 import { sessionContextLabel } from "../lib/workspace";
@@ -14,12 +15,13 @@ export interface TopbarProps {
   bypass?: boolean;
   badge?: { label: string; title: string; tone: "" | "warn" | "bad" };
   secretBadge?: { label: string; title: string };
+  budgetBadge?: { label: string; title: string; tone: "warn" | "bad" };
   action?: { label: string; onClick: () => void; disabled?: boolean };
   panel?: { open: boolean; onToggle: () => void };
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, action, panel, error }: TopbarProps) {
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, budgetBadge, action, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
       <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
@@ -46,6 +48,16 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
           <span class="jk-secret-badge" title={secretBadge.title} aria-label={secretBadge.label}>
             <Icon name="shield" />
             <span>{secretBadge.label}</span>
+          </span>
+        )}
+        {budgetBadge !== undefined && (
+          <span
+            class={`jk-budget-badge jk-budget-badge-${budgetBadge.tone}`}
+            title={budgetBadge.title}
+            aria-label={budgetBadge.label}
+          >
+            <Icon name="alert" />
+            <span>{budgetBadge.label}</span>
           </span>
         )}
       </div>
@@ -131,6 +143,8 @@ export function SessionHeader({
   if (badge !== undefined) props.badge = badge;
   const secret = secretBadge(session);
   if (secret !== undefined) props.secretBadge = secret;
+  const budget = budgetBadge(session);
+  if (budget !== undefined) props.budgetBadge = budget;
   if (error !== undefined) props.error = error;
   return <Topbar {...props} />;
 }

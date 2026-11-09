@@ -25,8 +25,8 @@ function entry(id: number, overrides: Partial<AuditEntryItem> = {}): AuditEntryI
 }
 
 describe("label dan nada jenis", () => {
-  test("sepuluh jenis punya label Bahasa Indonesia", () => {
-    expect(Object.keys(AUDIT_KIND_LABELS)).toHaveLength(10);
+  test("dua belas jenis punya label Bahasa Indonesia", () => {
+    expect(Object.keys(AUDIT_KIND_LABELS)).toHaveLength(12);
     expect(kindLabel("sesi-mulai")).toBe("Sesi mulai");
     expect(kindLabel("sesi-berhenti")).toBe("Sesi berhenti");
     expect(kindLabel("tool")).toBe("Tool");
@@ -37,15 +37,19 @@ describe("label dan nada jenis", () => {
     expect(kindLabel("rahasia-diblokir")).toBe("Rahasia diblokir");
     expect(kindLabel("mcp")).toBe("MCP");
     expect(kindLabel("pengaturan")).toBe("Pengaturan");
+    expect(kindLabel("anggaran")).toBe("Anggaran");
+    expect(kindLabel("provider")).toBe("Provider");
   });
 
   test("jenis tak dikenal dikembalikan mentah", () => {
     expect(kindLabel("lain")).toBe("lain");
   });
 
-  test("nada hanya beda untuk jenis rahasia", () => {
+  test("nada hanya beda untuk jenis rahasia dan anggaran", () => {
     expect(kindTone("rahasia-diblokir")).toBe("bad");
     expect(kindTone("rahasia-disamarkan")).toBe("warn");
+    expect(kindTone("anggaran")).toBe("warn");
+    expect(kindTone("provider")).toBe("");
     expect(kindTone("izin")).toBe("");
     expect(kindTone("tool")).toBe("");
   });

@@ -3,6 +3,8 @@ import { ApiError, type ApiClient, type ConnectionTestView } from "../lib/api";
 import { parseRegistryView, type RegistryView } from "../lib/registry-view";
 import {
   addProfile,
+  fallbackName,
+  fallbackOptions,
   isDirty,
   newProfileDraft,
   removeProfile,
@@ -13,6 +15,7 @@ import {
   type ProfileDraft,
   type RegistryDraft,
 } from "../lib/registry-edit";
+import { BudgetSettings } from "./BudgetSettings";
 import { ProfileForm } from "./ProfileForm";
 
 export interface ProviderSettingsProps {
@@ -221,6 +224,7 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
               {draft.profiles.map((profile) => {
                 const active = draft.activeProfileId === profile.id;
                 const current = profile.id === selectedId;
+                const fallback = fallbackName(draft, profile);
                 return (
                   <li key={profile.id}>
                     <button
@@ -235,6 +239,9 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
                       <span class="jk-profile-item-name">{profile.name || profile.id}</span>
                       {active && <span class="jk-badge jk-badge-accent">aktif</span>}
                       <span class="jk-profile-item-id jk-mono">{profile.id}</span>
+                      {fallback !== undefined && (
+                        <span class="jk-help jk-profile-item-fallback">cadangan: {fallback}</span>
+                      )}
                     </button>
                   </li>
                 );
@@ -267,6 +274,7 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
                 profile={selected}
                 hasStoredKey={selectedHasStoredKey}
                 activeProfileId={draft.activeProfileId}
+                fallbackOptions={fallbackOptions(draft, selected.id)}
                 errors={errors[selected.id] ?? []}
                 dirty={dirty}
                 valid={!hasError}
@@ -304,6 +312,8 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
           </div>
         </div>
       )}
+
+      <BudgetSettings api={api} />
     </section>
   );
 }

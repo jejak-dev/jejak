@@ -14,6 +14,8 @@ export interface ProfileDraft {
   modelPrices: Record<string, { input: string; output: string; cacheRead: string; cacheWrite: string }>;
   defaultModel: string;
   lightModel: string;
+  /** ID profil lain untuk satu kali fallback; string kosong berarti tanpa cadangan. */
+  fallbackProfileId?: string;
   isNew: boolean;
 }
 
@@ -107,7 +109,7 @@ export function toDraft(view: RegistryView): RegistryDraft {
         };
       }
     }
-    return {
+    const draft: ProfileDraft = {
       id: profile.id,
       name: profile.name,
       baseUrl: profile.baseUrl ?? "",
@@ -121,6 +123,10 @@ export function toDraft(view: RegistryView): RegistryDraft {
       lightModel: profile.lightModel ?? "",
       isNew: false,
     };
+    if (profile.fallbackProfileId !== undefined) {
+      draft.fallbackProfileId = profile.fallbackProfileId;
+    }
+    return draft;
   });
 
   const draft: RegistryDraft = { profiles };
@@ -146,8 +152,57 @@ export function newProfileDraft(existingIds: string[]): ProfileDraft {
     modelPrices: {},
     defaultModel: "",
     lightModel: "",
+    fallbackProfileId: "",
     isNew: true,
   };
+}
+
+export interface FallbackOption {
+  id: string;
+  name: string;
+}
+
+/** Profil lain yang boleh menjadi cadangan: bukan dirinya dan tanpa cadangan sendiri. */
+export function fallbackOptions(draft: RegistryDraft, profileId: string): FallbackOption[] {
+  const options: FallbackOption[] = [];
+  for (const profile of draft.profiles) {
+    if (profile.id === profileId) continue;
+    if ((profile.fallbackProfileId ?? "") !== "") continue;
+    options.push({ id: profile.id, name: profile.name.trim() === "" ? profile.id : profile.name });
+  }
+  return options;
+}
+
+/** `null` menghapus cadangan; ID divalidasi server. */
+export function setFallbackProfile(
+  draft: RegistryDraft,
+  id: string,
+  fallbackProfileId: string | null,
+): RegistryDraft {
+  return updateProfile(draft, id, { fallbackProfileId: fallbackProfileId ?? "" });
+}
+
+/** Nama tampilan cadangan; `undefined` bila tidak diisi. */
+export function fallbackName(draft: RegistryDraft, profile: ProfileDraft): string | undefined {
+  const id = profile.fallbackProfileId;
+  if (id === undefined || id === "") return undefined;
+  const match = draft.profiles.find((entry) => entry.id === id);
+  if (match === undefined) return id;
+  return match.name.trim() === "" ? match.id : match.name;
+}
+
+/** Petakan galat validasi (lokal atau server) ke field formulir profil. */
+export function fieldForMessage(message: string): string {  if (message.includes("cadangan")) return "fallback";
+  if (message.startsWith("ID ")) return "id";
+  if (message.startsWith("Nama variabel env")) return "apiKeyEnv";
+  if (message.startsWith("Nama ")) return "name";
+  if (message.startsWith("Base URL")) return "baseUrl";
+  if (message.startsWith("API key")) return "apiKey";
+  if (message.startsWith("Model utama")) return "defaultModel";
+  if (message.startsWith("Model ringan")) return "lightModel";
+  if (message.startsWith("Tarif ")) return "prices";
+  if (message.startsWith("Model ")) return "models";
+  return "lain";
 }
 
 export function updateProfile(
@@ -219,6 +274,20 @@ export function validateDraft(draft: RegistryDraft): Record<string, string[]> {
       }
     } else if (profile.keyMode === "literal" && profile.apiKey.trim() === "") {
       push(id, "API key tidak boleh kosong.");
+    }
+
+    const fallbackProfileId = (profile.fallbackProfileId ?? "").trim();
+    if (fallbackProfileId !== "") {
+      if (fallbackProfileId === profile.id) {
+        push(id, "Profil cadangan tidak boleh dirinya sendiri.");
+      } else {
+        const fallback = draft.profiles.find((entry) => entry.id === fallbackProfileId);
+        if (fallback === undefined) {
+          push(id, `Profil cadangan "${fallbackProfileId}" tidak ditemukan.`);
+        } else if ((fallback.fallbackProfileId ?? "") !== "") {
+          push(id, `Profil cadangan "${fallbackProfileId}" tidak boleh memiliki cadangan sendiri.`);
+        }
+      }
     }
 
     const models = modelLines(profile.modelsText);
@@ -320,6 +389,10 @@ export function toPayload(draft: RegistryDraft): unknown {
     if (profile.lightModel.trim() !== "") {
       payload.lightModel = profile.lightModel.trim();
     }
+    const fallbackProfileId = (profile.fallbackProfileId ?? "").trim();
+    if (fallbackProfileId !== "") {
+      payload.fallbackProfileId = fallbackProfileId;
+    }
     return payload;
   });
 
@@ -342,6 +415,7 @@ function comparable(profile: ProfileDraft): Record<string, unknown> {
     modelPrices: profile.modelPrices,
     defaultModel: profile.defaultModel,
     lightModel: profile.lightModel,
+    fallbackProfileId: profile.fallbackProfileId ?? "",
   };
 }
 

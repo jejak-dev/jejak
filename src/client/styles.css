@@ -1922,6 +1922,37 @@ h2.jk-md-heading {
   font-size: 11.5px;
 }
 
+.jk-profile-item-fallback {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.jk-budget {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.jk-budget-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.jk-budget-form {
+  display: grid;
+  gap: 14px;
+  max-width: 720px;
+}
+
+.jk-budget-line {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
 .jk-profile-list-pane > .jk-button {
   align-self: flex-start;
   border-color: transparent;
@@ -4057,6 +4088,39 @@ h2.jk-md-heading {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.jk-budget-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 180px;
+  padding: 1px 7px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  font: 11.5px var(--mono);
+  white-space: nowrap;
+}
+
+.jk-budget-badge .jk-icon {
+  flex: none;
+}
+
+.jk-budget-badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-budget-badge-warn {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
+}
+
+.jk-budget-badge-bad {
+  border-color: color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--bad);
 }
 
 .jk-worktree-option {

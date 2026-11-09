@@ -1,11 +1,12 @@
 import type { ConnectionTestView } from "../lib/api";
 import { describeToolCalling } from "../lib/format";
-import type { KeyMode, ProfileDraft } from "../lib/registry-edit";
+import { fieldForMessage, type FallbackOption, type KeyMode, type ProfileDraft } from "../lib/registry-edit";
 
 export interface ProfileFormProps {
   profile: ProfileDraft;
   hasStoredKey: boolean;
   activeProfileId?: string;
+  fallbackOptions: FallbackOption[];
   errors: string[];
   dirty: boolean;
   valid: boolean;
@@ -51,16 +52,7 @@ function splitModels(text: string): string[] {
 }
 
 function fieldOf(message: string): string {
-  if (message.startsWith("ID ")) return "id";
-  if (message.startsWith("Nama variabel env")) return "apiKeyEnv";
-  if (message.startsWith("Nama ")) return "name";
-  if (message.startsWith("Base URL")) return "baseUrl";
-  if (message.startsWith("API key")) return "apiKey";
-  if (message.startsWith("Model utama")) return "defaultModel";
-  if (message.startsWith("Model ringan")) return "lightModel";
-  if (message.startsWith("Tarif ")) return "prices";
-  if (message.startsWith("Model ")) return "models";
-  return "lain";
+  return fieldForMessage(message);
 }
 
 function describedBy(...ids: (string | undefined)[]): string | undefined {
@@ -99,6 +91,7 @@ export function ProfileForm({
   profile,
   hasStoredKey,
   activeProfileId,
+  fallbackOptions,
   errors,
   dirty,
   valid,
@@ -425,6 +418,39 @@ export function ProfileForm({
           <FieldError id="jk-pf-prices-error" messages={messagesFor("prices")} />
         </div>
       )}
+
+      <div class="jk-field">
+        <label class="jk-label" for="jk-pf-fallback">
+          Profil cadangan
+        </label>
+        <select
+          id="jk-pf-fallback"
+          class="jk-select"
+          value={profile.fallbackProfileId ?? ""}
+          onChange={(event) =>
+            onChange({ fallbackProfileId: (event.currentTarget as HTMLSelectElement).value })
+          }
+          aria-invalid={invalid("fallback")}
+          aria-describedby={describedBy("jk-pf-fallback-help", errorId("fallback"))}
+        >
+          <option value="">Tanpa cadangan</option>
+          {fallbackOptions.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
+          {(profile.fallbackProfileId ?? "") !== "" &&
+            !fallbackOptions.some((option) => option.id === profile.fallbackProfileId) && (
+              <option value={profile.fallbackProfileId}>{profile.fallbackProfileId}</option>
+            )}
+        </select>
+        <p class="jk-help" id="jk-pf-fallback-help">
+          Bila giliran gagal karena provider (koneksi, 429, 5xx, autentikasi) sebelum ada output,
+          Jejak mengulang sekali dengan profil ini. Prompt dan konteks akan terkirim ke penyedia
+          cadangan.
+        </p>
+        <FieldError id="jk-pf-fallback-error" messages={messagesFor("fallback")} />
+      </div>
 
       <div class="jk-form-actions">
         <button type="submit" class="jk-button jk-button-primary" disabled={!dirty || !valid || busy}>

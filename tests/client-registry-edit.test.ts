@@ -2,9 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { RegistryView } from "../src/client/lib/registry-view";
 import {
   addProfile,
+  fallbackName,
+  fallbackOptions,
+  fieldForMessage,
   isDirty,
   newProfileDraft,
   removeProfile,
+  setFallbackProfile,
   toDraft,
   toPayload,
   updateProfile,
@@ -512,5 +516,99 @@ describe("tarif model", () => {
       },
     });
     expect(isDirty(original, changed)).toBe(true);
+  });
+});
+
+describe("profil cadangan", () => {
+  const fallbackView: RegistryView = {
+    profiles: [
+      { id: "utama", name: "Utama", hasKey: false, models: [], fallbackProfileId: "cadangan" },
+      { id: "cadangan", name: "Cadangan", hasKey: false, models: [] },
+      { id: "lain", name: "Lain", hasKey: false, models: [], fallbackProfileId: "cadangan" },
+    ],
+  };
+
+  test("toDraft membawa fallbackProfileId", () => {
+    const draft = toDraft(fallbackView);
+    expect(draft.profiles[0]?.fallbackProfileId).toBe("cadangan");
+    expect(draft.profiles[1]?.fallbackProfileId).toBeUndefined();
+  });
+
+  test("toPayload mengirim fallbackProfileId yang diisi saja", () => {
+    const payload = toPayload(toDraft(fallbackView)) as {
+      profiles: Record<string, unknown>[];
+    };
+    expect(payload.profiles[0]?.fallbackProfileId).toBe("cadangan");
+    expect(payload.profiles[1]?.fallbackProfileId).toBeUndefined();
+  });
+
+  test("opsi cadangan mengecualikan diri sendiri dan profil bercadangan", () => {
+    const draft = toDraft(fallbackView);
+    // utama dan lain sudah punya cadangan sendiri, jadi tidak bisa jadi cadangan cadangan.
+    expect(fallbackOptions(draft, "cadangan")).toEqual([]);
+    expect(fallbackOptions(draft, "utama").map((option) => option.id)).toEqual(["cadangan"]);
+  });
+
+  test("nama kosong memakai id pada opsi dan penanda", () => {
+    const draft: RegistryDraft = {
+      profiles: [validProfile({ id: "a", name: "" }), validProfile({ id: "b" })],
+    };
+    expect(fallbackOptions(draft, "b")).toEqual([{ id: "a", name: "a" }]);
+    expect(fallbackName(draft, validProfile({ id: "b", fallbackProfileId: "a" }))).toBe("a");
+  });
+
+  test("setFallbackProfile menyetel dan menghapus cadangan", () => {
+    const draft = toDraft(fallbackView);
+    const removed = setFallbackProfile(draft, "utama", null);
+    expect(removed.profiles[0]?.fallbackProfileId).toBe("");
+    const set = setFallbackProfile(draft, "cadangan", "lain");
+    expect(set.profiles[1]?.fallbackProfileId).toBe("lain");
+  });
+
+  test("fallbackName mengembalikan nama atau id tak dikenal", () => {
+    const draft = toDraft(fallbackView);
+    expect(fallbackName(draft, validProfile({ fallbackProfileId: "cadangan" }))).toBe("Cadangan");
+    expect(fallbackName(draft, validProfile({ fallbackProfileId: "hilang" }))).toBe("hilang");
+    expect(fallbackName(draft, validProfile())).toBeUndefined();
+  });
+
+  test("validateDraft menerima cadangan yang valid", () => {
+    expect(validateDraft(toDraft(fallbackView))).toEqual({});
+  });
+
+  test("validateDraft menolak cadangan diri sendiri, tak dikenal, dan bercadangan", () => {
+    const draft: RegistryDraft = {
+      profiles: [
+        validProfile({ id: "a", fallbackProfileId: "a" }),
+        validProfile({ id: "b", fallbackProfileId: "hilang" }),
+        validProfile({ id: "c" }),
+        validProfile({ id: "d", fallbackProfileId: "c" }),
+      ],
+    };
+    const errors = validateDraft(draft);
+    expect(errors.a).toContain("Profil cadangan tidak boleh dirinya sendiri.");
+    expect(errors.b).toContain('Profil cadangan "hilang" tidak ditemukan.');
+    expect(errors.d).toBeUndefined();
+    expect(validateDraft({
+      profiles: [
+        validProfile({ id: "a" }),
+        validProfile({ id: "b", fallbackProfileId: "a" }),
+        validProfile({ id: "c", fallbackProfileId: "b" }),
+      ],
+    }).c).toContain('Profil cadangan "b" tidak boleh memiliki cadangan sendiri.');
+  });
+
+  test("perubahan cadangan menandai draf kotor", () => {
+    const original = toDraft(fallbackView);
+    expect(isDirty(original, setFallbackProfile(original, "cadangan", "lain"))).toBe(true);
+  });
+
+  test("fieldForMessage memetakan galat cadangan ke field fallback", () => {
+    expect(fieldForMessage('Profil cadangan "hilang" tidak ditemukan.')).toBe("fallback");
+    expect(fieldForMessage('Profil cadangan "b" tidak boleh memiliki fallbackProfileId sendiri.')).toBe("fallback");
+    expect(fieldForMessage("Nama tidak boleh kosong.")).toBe("name");
+    expect(fieldForMessage("ID hanya boleh berisi huruf kecil.")).toBe("id");
+    expect(fieldForMessage("Tarif model x: salah.")).toBe("prices");
+    expect(fieldForMessage("lain sekali")).toBe("lain");
   });
 });

@@ -273,6 +273,29 @@ export interface SecretAllowAddResult {
   allowed: string[];
 }
 
+export type BudgetLevel = "ok" | "warn" | "over";
+
+export interface BudgetConfigItem {
+  sessionUsd?: number;
+  dailyUsd?: number;
+  warnAt: number;
+}
+
+export interface BudgetStatusResult {
+  config: BudgetConfigItem;
+  todayUsd: number;
+  dayLevel?: BudgetLevel;
+  sessionUsd?: number;
+  sessionLevel?: BudgetLevel;
+}
+
+/** `null` pada batas berarti hapus batas. */
+export interface BudgetPatch {
+  sessionUsd?: number | null;
+  dailyUsd?: number | null;
+  warnAt?: number;
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
@@ -361,6 +384,10 @@ export interface ApiClient {
     sessionId: string,
     path: string,
   ): Promise<{ removed: boolean; allowed: string[] }>;
+  getBudget(): Promise<BudgetConfigItem>;
+  /** `null` pada batas berarti hapus batas. */
+  putBudget(patch: BudgetPatch): Promise<BudgetConfigItem>;
+  getBudgetStatus(sessionId?: string): Promise<BudgetStatusResult>;
 }
 
 export interface ApiClientOptions {
@@ -532,8 +559,46 @@ function secretAllowRemoveFrom(payload: unknown): { removed: boolean; allowed: s
   return { removed: payload.removed, allowed: payload.allowed as string[] };
 }
 
-function memoryQuery(params: MemoryQuery | undefined): string {
-  if (params === undefined) return "";
+const BUDGET_LEVELS = new Set(["ok", "warn", "over"]);
+
+function finiteOrUndefined(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function budgetConfigFrom(payload: unknown): BudgetConfigItem {
+  if (!isRecord(payload)) throw invalidResponse();
+  const warnAt = finiteOrUndefined(payload.warnAt);
+  if (warnAt === undefined) throw invalidResponse();
+  const config: BudgetConfigItem = { warnAt };
+  const sessionUsd = finiteOrUndefined(payload.sessionUsd);
+  if (sessionUsd !== undefined) config.sessionUsd = sessionUsd;
+  const dailyUsd = finiteOrUndefined(payload.dailyUsd);
+  if (dailyUsd !== undefined) config.dailyUsd = dailyUsd;
+  return config;
+}
+
+function budgetLevel(value: unknown): BudgetLevel | undefined {
+  return typeof value === "string" && BUDGET_LEVELS.has(value) ? (value as BudgetLevel) : undefined;
+}
+
+function budgetStatusFrom(payload: unknown): BudgetStatusResult {
+  if (!isRecord(payload)) throw invalidResponse();
+  const todayUsd = finiteOrUndefined(payload.todayUsd);
+  if (todayUsd === undefined) throw invalidResponse();
+  const result: BudgetStatusResult = {
+    config: budgetConfigFrom(payload.config),
+    todayUsd,
+  };
+  const dayLevel = budgetLevel(payload.dayLevel);
+  if (dayLevel !== undefined) result.dayLevel = dayLevel;
+  const sessionUsd = finiteOrUndefined(payload.sessionUsd);
+  if (sessionUsd !== undefined) result.sessionUsd = sessionUsd;
+  const sessionLevel = budgetLevel(payload.sessionLevel);
+  if (sessionLevel !== undefined) result.sessionLevel = sessionLevel;
+  return result;
+}
+
+function memoryQuery(params: MemoryQuery | undefined): string {  if (params === undefined) return "";
   const parts: string[] = [];
   const push = (key: string, value: string | number | undefined): void => {
     if (value === undefined) return;
@@ -1193,6 +1258,25 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
           { path },
         ),
       );
+    },
+
+    async getBudget() {
+      return budgetConfigFrom(await request("GET", "/api/budget"));
+    },
+
+    async putBudget(patch) {
+      const body: BudgetPatch = {};
+      if (patch.sessionUsd !== undefined) body.sessionUsd = patch.sessionUsd;
+      if (patch.dailyUsd !== undefined) body.dailyUsd = patch.dailyUsd;
+      if (patch.warnAt !== undefined) body.warnAt = patch.warnAt;
+      return budgetConfigFrom(await request("PUT", "/api/budget", body));
+    },
+
+    async getBudgetStatus(sessionId) {
+      const search = sessionId === undefined || sessionId === ""
+        ? ""
+        : `?session=${encodeURIComponent(sessionId)}`;
+      return budgetStatusFrom(await request("GET", `/api/budget/status${search}`));
     },
   };
 }

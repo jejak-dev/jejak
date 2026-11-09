@@ -22,6 +22,7 @@ export interface RegistryView {
     models: ModelView[];
     defaultModel?: string;
     lightModel?: string;
+    fallbackProfileId?: string;
   }[];
 }
 
@@ -116,6 +117,8 @@ function parseProfile(
   if (defaultModel !== undefined) profile.defaultModel = defaultModel;
   const lightModel = readString(raw, "lightModel");
   if (lightModel !== undefined) profile.lightModel = lightModel;
+  const fallbackProfileId = readString(raw, "fallbackProfileId");
+  if (fallbackProfileId !== undefined) profile.fallbackProfileId = fallbackProfileId;
 
   return profile;
 }
