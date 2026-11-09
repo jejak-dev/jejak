@@ -135,6 +135,7 @@ export function createApp(options: CreateAppOptions = {}) {
         manager,
         workspaces: workspaceResolver,
         enabled: env.JEJAK_GIT?.trim() !== "0",
+        writeEnabled: env.JEJAK_GIT_WRITE?.trim() !== "0",
       }),
     )
     .use(memoryRoutes({ service: options.memory }))

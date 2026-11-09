@@ -42,6 +42,8 @@ export interface GitOptions {
   timeoutMs?: number;
   /** Tambahan/penimpa environment; dipakai tes untuk mengganti PATH. */
   env?: Record<string, string | undefined>;
+  /** Izinkan hook git berjalan (hanya untuk `commit`). Default: hook dimatikan. */
+  allowHooks?: boolean;
 }
 
 const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbb9ee4";
@@ -51,12 +53,11 @@ const MAX_HUNK_LINES = 500;
 const MAX_UNTRACKED_LINES = 2000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const SMALL_OUTPUT_BYTES = 64 * 1024;
+const MAX_STDERR_BYTES = 8 * 1024;
 
 const SAFETY_ARGS = [
   "-c",
   "core.fsmonitor=false",
-  "-c",
-  "core.hooksPath=/dev/null",
   "-c",
   "diff.external=",
   "-c",
@@ -65,11 +66,20 @@ const SAFETY_ARGS = [
   "core.quotepath=false",
 ];
 
+/** `commit` boleh menjalankan hook pengguna; perintah lain tidak pernah. */
+const HOOKS_DISABLED_ARGS = ["-c", "core.hooksPath=/dev/null"];
+
+function safetyArgs(allowHooks: boolean): string[] {
+  return allowHooks ? SAFETY_ARGS : [...SAFETY_ARGS, ...HOOKS_DISABLED_ARGS];
+}
+
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
 export interface GitRunResult {
   code: number | null;
   stdout: string;
+  /** Awal stderr (maks 8 KiB), untuk pesan galat yang ramah. */
+  stderr: string;
   truncated: boolean;
   timedOut: boolean;
 }
@@ -108,7 +118,7 @@ export async function runGit(
   let proc;
   try {
     proc = Bun.spawn({
-      cmd: ["git", ...SAFETY_ARGS, ...args],
+      cmd: ["git", ...safetyArgs(options.allowHooks === true), ...args],
       cwd,
       env: gitEnv(options.env),
       stdin: stdinText === undefined ? "ignore" : "pipe",
@@ -119,7 +129,7 @@ export async function runGit(
       detached: true,
     });
   } catch {
-    return { code: null, stdout: "", truncated: false, timedOut: false };
+    return { code: null, stdout: "", stderr: "", truncated: false, timedOut: false };
   }
 
   if (stdinText !== undefined) {
@@ -145,12 +155,21 @@ export async function runGit(
   };
 
   // stderr harus tetap dikuras agar proses anak tidak memblokir saat pipa penuh.
+  // Hanya 8 KiB pertama yang disimpan; sisanya dibuang supaya memori tetap kecil.
+  const stderrChunks: Uint8Array[] = [];
+  let stderrTotal = 0;
   const stderrDrain = (async () => {
     try {
       const reader = (proc.stderr as ReadableStream<Uint8Array>).getReader();
       while (true) {
-        const { done } = await reader.read();
+        const { done, value } = await reader.read();
         if (done) break;
+        if (stderrTotal < MAX_STDERR_BYTES) {
+          const remaining = MAX_STDERR_BYTES - stderrTotal;
+          const kept = value.length > remaining ? value.subarray(0, remaining) : value;
+          stderrChunks.push(kept);
+          stderrTotal += kept.length;
+        }
       }
     } catch {
       // Pipa ditutup saat proses dibunuh.
@@ -206,9 +225,19 @@ export async function runGit(
     merged.set(chunk, offset);
     offset += chunk.length;
   }
+
+  await stderrDrain;
+  const stderrMerged = new Uint8Array(stderrTotal);
+  let stderrOffset = 0;
+  for (const chunk of stderrChunks) {
+    stderrMerged.set(chunk, stderrOffset);
+    stderrOffset += chunk.length;
+  }
+
   return {
     code,
     stdout: new TextDecoder("utf-8", { fatal: false }).decode(merged),
+    stderr: new TextDecoder("utf-8", { fatal: false }).decode(stderrMerged),
     truncated: truncated || (timedOut && total > 0),
     timedOut,
   };

@@ -43,7 +43,7 @@ export interface GitCommit {
   date: string;
 }
 
-export type GitErrorCode = "tidak-valid" | "tidak-ditemukan" | "gagal";
+export type GitErrorCode = "tidak-valid" | "tidak-ditemukan" | "konflik" | "gagal";
 
 export class GitError extends Error {
   constructor(

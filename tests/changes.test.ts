@@ -3,7 +3,7 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getChanges, parseUnifiedDiff, type ChangedFile } from "../src/server/files/changes";
+import { getChanges, parseUnifiedDiff, runGit, type ChangedFile } from "../src/server/files/changes";
 
 let dir: string;
 
@@ -392,5 +392,72 @@ describe("berkas tak terlacak dengan karakter khusus", () => {
     expect(file?.hunks[0]?.newStart).toBe(1);
     expect(file?.hunks[0]?.newLines).toBe(2);
     expect(await readFile(join(dir, "isi.txt"), "utf8")).toBe("satu\ndua\n");
+  });
+});
+
+describe("runGit stderr dan allowHooks", () => {
+  test("stderr dikumpulkan dan stdout tetap terpisah", async () => {
+    await initRepo();
+    const result = await runGit(["status", "--porcelain"], dir, {}, 64 * 1024);
+    expect(result.code).toBe(0);
+    expect(result.stderr).toBe("");
+
+    const failed = await runGit(
+      ["rev-parse", "--verify", "tidak-ada-ref-ini"],
+      dir,
+      {},
+      64 * 1024,
+    );
+    expect(failed.code).not.toBe(0);
+    expect(failed.stderr.length).toBeGreaterThan(0);
+  });
+
+  test("stderr dipotong pada 8 KiB pertama", async () => {
+    const fakeDir = await mkdtemp(join(tmpdir(), "jejak-changes-stderr-"));
+    const fakeGit = join(fakeDir, "git");
+    await writeFile(
+      fakeGit,
+      '#!/bin/sh\nyes "e" | head -c 20000 >&2\nexit 1\n',
+    );
+    await chmod(fakeGit, 0o755);
+    const result = await runGit(["apa-saja"], dir, {
+      env: { PATH: `${fakeDir}:${process.env.PATH ?? ""}` },
+    }, 64 * 1024);
+    expect(result.code).toBe(1);
+    expect(result.stderr.length).toBe(8 * 1024);
+    await rm(fakeDir, { recursive: true, force: true });
+  }, 15_000);
+
+  test("hook dimatikan secara default dan berjalan saat allowHooks", async () => {
+    await initRepo();
+    const marker = join(dir, "marker-hook");
+    const hook = join(dir, ".git", "hooks", "pre-commit");
+    await writeFile(hook, `#!/bin/sh\ntouch ${marker}\nexit 0\n`);
+    await chmod(hook, 0o755);
+    await writeFile(join(dir, "a.txt"), "satu\n");
+    await git(dir, ["add", "a.txt"]);
+
+    const blocked = await runGit(
+      ["commit", "-m", "tanpa hook"],
+      dir,
+      { env: { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" } },
+      64 * 1024,
+    );
+    expect(blocked.code).toBe(0);
+    expect(existsSync(marker)).toBe(false);
+
+    await writeFile(join(dir, "b.txt"), "dua\n");
+    await git(dir, ["add", "b.txt"]);
+    const hooked = await runGit(
+      ["commit", "-m", "dengan hook"],
+      dir,
+      {
+        allowHooks: true,
+        env: { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" },
+      },
+      64 * 1024,
+    );
+    expect(hooked.code).toBe(0);
+    expect(existsSync(marker)).toBe(true);
   });
 });

@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type CreateAppOptions } from "../src/server";
 import { createMockRunner } from "../src/server/agent";
+import { resolveProvider as resolveRegistryProvider } from "../src/server/provider";
+import { loadRegistry } from "../src/server/provider-store";
+import { SessionManager } from "../src/server/sessions/session-manager";
 import { WorkspaceService } from "../src/server/workspaces/workspace-service";
 
 let root: string;
@@ -62,6 +65,8 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 async function initRepo(cwd: string): Promise<void> {
   await git(cwd, ["init", "-q", "-b", "main", "."]);
+  await git(cwd, ["config", "user.name", "t"]);
+  await git(cwd, ["config", "user.email", "t@t"]);
   await git(cwd, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "awal"]);
 }
 
@@ -75,6 +80,7 @@ type App = ReturnType<typeof createApp>;
 interface Harness {
   app: App;
   workspaceId: string;
+  manager: SessionManager;
 }
 
 async function makeWorkflow(extra: Partial<CreateAppOptions> = {}): Promise<Harness> {
@@ -86,14 +92,38 @@ async function makeWorkflow(extra: Partial<CreateAppOptions> = {}): Promise<Harn
       { name: "web", path: repoB },
     ],
   });
+  const manager =
+    extra.sessions ??
+    new SessionManager({
+      runner: extra.runner ?? createMockRunner(),
+      resolveProvider: async (selection) =>
+        resolveRegistryProvider(await loadRegistry(providersFile, { MOCK: "true" }), selection),
+      workspaces: {
+        get: async (id) => {
+          const view = await service.get(id);
+          if (view === undefined || view === null) return undefined;
+          return {
+            id: view.id,
+            name: view.name,
+            repos: view.repos.map((repo) => ({
+              name: repo.name,
+              path: repo.path,
+              kind: repo.card.kind,
+              missing: repo.missing,
+            })),
+          };
+        },
+      },
+    });
   const app = createApp({
     providersPath: providersFile,
     env: { MOCK: "true", JEJAK_HOME: home },
     runner: createMockRunner(),
     workspaces: service,
     ...extra,
+    sessions: manager,
   });
-  return { app, workspaceId: workspace.id };
+  return { app, workspaceId: workspace.id, manager };
 }
 
 function req(app: App, method: string, path: string, body?: unknown): Promise<Response> {
@@ -129,6 +159,13 @@ interface StatusBody {
 
 interface ErrorBody {
   error: string;
+}
+
+/** Sesi dibuat lalu ditandai selesai agar rute tulis tidak 409 "sedang berjalan". */
+async function idleSession(harness: Harness, body: Record<string, unknown> = {}): Promise<string> {
+  const id = await createSession(harness, body);
+  await harness.manager.done(id);
+  return id;
 }
 
 describe("rute git baca", () => {
@@ -239,5 +276,200 @@ describe("rute git baca", () => {
 
     const after = await git(dir, ["status", "--porcelain=v2", "--branch"]);
     expect(after).toBe(before);
+  });
+});
+
+describe("rute git tulis", () => {
+  async function setup(): Promise<{ harness: Harness; id: string; app: App }> {
+    await initRepo(dir);
+    const harness = await makeWorkflow();
+    const id = await idleSession(harness, { cwd: dir });
+    return { harness, id, app: harness.app };
+  }
+
+  test("stage, unstage, dan commit end-to-end", async () => {
+    const { app, id } = await setup();
+    await writeFile(join(dir, "a.txt"), "satu\n");
+    await writeFile(join(dir, "nama dengan spasi.txt"), "dua\n");
+
+    const staged = await req(app, "POST", `/api/sessions/${id}/git/stage`, {
+      paths: ["a.txt", "nama dengan spasi.txt"],
+    });
+    expect(staged.status).toBe(200);
+    expect((await staged.json()) as { ok: boolean }).toEqual({ ok: true });
+
+    const status = (await (await req(app, "GET", `/api/sessions/${id}/git/status`)).json()) as StatusBody;
+    expect(status.staged.map((file) => file.path).sort()).toEqual(["a.txt", "nama dengan spasi.txt"]);
+
+    const unstage = await req(app, "POST", `/api/sessions/${id}/git/unstage`, { paths: ["a.txt"] });
+    expect(unstage.status).toBe(200);
+    const afterUnstage = (await (await req(app, "GET", `/api/sessions/${id}/git/status`)).json()) as StatusBody;
+    expect(afterUnstage.staged.map((file) => file.path)).toEqual(["nama dengan spasi.txt"]);
+
+    const commit = await req(app, "POST", `/api/sessions/${id}/git/commit`, { message: "dua berkas" });
+    expect(commit.status).toBe(200);
+    const data = (await commit.json()) as { hash: string; short: string; subject: string };
+    expect(data.hash).toMatch(/^[0-9a-f]{40}$/);
+    expect(data.short).toBe(data.hash.slice(0, 7));
+    expect(data.subject).toBe("dua berkas");
+
+    const afterCommit = (await (await req(app, "GET", `/api/sessions/${id}/git/status`)).json()) as StatusBody;
+    expect(afterCommit.staged).toEqual([]);
+    expect(afterCommit.untracked).toEqual(["a.txt"]);
+  });
+
+  test("all true pada stage dan unstage", async () => {
+    const { app, id } = await setup();
+    await writeFile(join(dir, "x.txt"), "x\n");
+    await writeFile(join(dir, "y.txt"), "y\n");
+
+    expect((await req(app, "POST", `/api/sessions/${id}/git/stage`, { all: true })).status).toBe(200);
+    let status = (await (await req(app, "GET", `/api/sessions/${id}/git/status`)).json()) as StatusBody;
+    expect(status.staged.length).toBe(2);
+
+    expect((await req(app, "POST", `/api/sessions/${id}/git/unstage`, { all: true })).status).toBe(200);
+    status = (await (await req(app, "GET", `/api/sessions/${id}/git/status`)).json()) as StatusBody;
+    expect(status.staged).toEqual([]);
+  });
+
+  test("commit tanpa staged 409 dan pesan tidak valid 400", async () => {
+    const { app, id } = await setup();
+
+    const empty = await req(app, "POST", `/api/sessions/${id}/git/commit`, { message: "x" });
+    expect(empty.status).toBe(409);
+    expect(((await empty.json()) as ErrorBody).error).toBe("Tidak ada perubahan yang ter-stage.");
+
+    for (const message of ["", "   ", "x".repeat(2001), 42]) {
+      const response = await req(app, "POST", `/api/sessions/${id}/git/commit`, { message });
+      expect(response.status).toBe(400);
+    }
+  });
+
+  test("body bukan JSON, bukan objek, dan field asing ditolak 400", async () => {
+    const { app, id } = await setup();
+
+    const raw = await req(app, "POST", `/api/sessions/${id}/git/stage`, "bukan json");
+    expect(raw.status).toBe(400);
+
+    const array = await req(app, "POST", `/api/sessions/${id}/git/stage`, [1, 2]);
+    expect(array.status).toBe(400);
+
+    const foreign = await req(app, "POST", `/api/sessions/${id}/git/stage`, {
+      paths: ["a.txt"],
+      aneh: true,
+    });
+    expect(foreign.status).toBe(400);
+    expect(((await foreign.json()) as ErrorBody).error).toBe('Field "aneh" tidak dikenal.');
+
+    const foreignCommit = await req(app, "POST", `/api/sessions/${id}/git/commit`, {
+      message: "x",
+      amend: true,
+    });
+    expect(foreignCommit.status).toBe(400);
+
+    const both = await req(app, "POST", `/api/sessions/${id}/git/stage`, { paths: ["a.txt"], all: true });
+    expect(both.status).toBe(400);
+
+    const traversal = await req(app, "POST", `/api/sessions/${id}/git/stage`, { paths: ["../luar.txt"] });
+    expect(traversal.status).toBe(400);
+  });
+
+  test("sesi tidak ada 404", async () => {
+    await initRepo(dir);
+    const harness = await makeWorkflow();
+    for (const [route, body] of [
+      ["stage", { paths: ["a.txt"] }],
+      ["unstage", { paths: ["a.txt"] }],
+      ["commit", { message: "x" }],
+    ] as const) {
+      const response = await req(harness.app, "POST", `/api/sessions/tidak-ada/git/${route}`, body);
+      expect(response.status).toBe(404);
+    }
+  });
+
+  test("sesi berjalan 409 untuk semua rute tulis", async () => {
+    await initRepo(dir);
+    // Runner yang menahan giliran sampai dibatalkan: status tetap `berjalan`.
+    const harness = await makeWorkflow({
+      runner: {
+        async *run(input) {
+          yield { type: "text", text: "menunggu" };
+          await new Promise<void>((resolve) => {
+            if (input.signal?.aborted === true) {
+              resolve();
+              return;
+            }
+            input.signal?.addEventListener("abort", () => resolve(), { once: true });
+          });
+          yield { type: "result", ok: false, error: "dibatalkan" };
+        },
+      },
+    });
+    const id = await createSession(harness, { cwd: dir });
+    expect(harness.manager.get(id)?.status).toBe("berjalan");
+
+    for (const [route, body] of [
+      ["stage", { paths: ["a.txt"] }],
+      ["unstage", { paths: ["a.txt"] }],
+      ["commit", { message: "x" }],
+    ] as const) {
+      const response = await req(harness.app, "POST", `/api/sessions/${id}/git/${route}`, body);
+      expect(response.status).toBe(409);
+      expect(((await response.json()) as ErrorBody).error).toBe(
+        "Sesi sedang berjalan; tunggu selesai sebelum mengubah git.",
+      );
+    }
+    harness.manager.interrupt(id);
+    await harness.manager.done(id);
+  });
+
+  test("JEJAK_GIT_WRITE=0 menjawab 403, JEJAK_GIT=0 menjawab 503", async () => {
+    await initRepo(dir);
+    const readOnly = await makeWorkflow({
+      env: { MOCK: "true", JEJAK_HOME: home, JEJAK_GIT_WRITE: "0" },
+    });
+    const id = await idleSession(readOnly, { cwd: dir });
+    for (const [route, body] of [
+      ["stage", { paths: ["a.txt"] }],
+      ["unstage", { paths: ["a.txt"] }],
+      ["commit", { message: "x" }],
+    ] as const) {
+      const response = await req(readOnly.app, "POST", `/api/sessions/${id}/git/${route}`, body);
+      expect(response.status).toBe(403);
+      expect(((await response.json()) as ErrorBody).error).toBe("Penulisan git dimatikan.");
+    }
+
+    const off = await makeWorkflow({ env: { MOCK: "true", JEJAK_HOME: home, JEJAK_GIT: "0" } });
+    const id2 = await idleSession(off, { cwd: dir });
+    for (const [route, body] of [
+      ["stage", { paths: ["a.txt"] }],
+      ["unstage", { paths: ["a.txt"] }],
+      ["commit", { message: "x" }],
+    ] as const) {
+      const response = await req(off.app, "POST", `/api/sessions/${id2}/git/${route}`, body);
+      expect(response.status).toBe(503);
+      expect(((await response.json()) as ErrorBody).error).toBe("Panel git dimatikan.");
+    }
+  });
+
+  test("param repo workspace dipakai untuk stage dan commit", async () => {
+    await initRepo(repoB);
+    const harness = await makeWorkflow();
+    const id = await idleSession(harness, { workspaceId: harness.workspaceId, cwd: repoA });
+    await writeFile(join(repoB, "web.txt"), "isi\n");
+
+    expect(
+      (await req(harness.app, "POST", `/api/sessions/${id}/git/stage`, {
+        paths: ["web.txt"],
+        repo: "web",
+      })).status,
+    ).toBe(200);
+    const commit = await req(harness.app, "POST", `/api/sessions/${id}/git/commit`, {
+      message: "web",
+      repo: "web",
+    });
+    expect(commit.status).toBe(200);
+    expect(((await commit.json()) as { subject: string }).subject).toBe("web");
+    expect((await git(repoB, ["status", "--porcelain"])).trim()).toBe("");
   });
 });
