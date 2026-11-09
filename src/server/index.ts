@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import { join } from "node:path";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
+import { defaultAuditStore, type AuditStore } from "./audit/audit-store";
 import { CheckpointService } from "./checkpoints/checkpoint-service";
 import { removeSessionUndo } from "./files/revert";
 import { localGuard } from "./guard";
@@ -12,6 +13,7 @@ import type { McpServerService } from "./mcp/mcp-service";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
 import { jejakHome, loadRegistry, providersPath } from "./provider-store";
 import { checkpointRoutes } from "./routes/checkpoints";
+import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { fileRoutes } from "./routes/files";
 import { fsRoutes } from "./routes/fs";
@@ -60,6 +62,8 @@ export interface CreateAppOptions {
   worktrees?: WorktreeService;
   /** Folder awal penelusur folder; default `os.homedir()`. */
   fsHome?: string;
+  /** Penyimpanan log audit; tanpa opsi ini semua rute `/api/audit*` menjawab 503. */
+  audit?: AuditStore;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -159,6 +163,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }),
     )
     .use(mcpServerRoutes({ service: options.mcpServers, fetch: options.fetch }))
+    .use(auditRoutes({ store: options.audit }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({
@@ -199,6 +204,7 @@ export function startServer(options: ServeOptions = {}) {
   const mcpUrl = mcpUrlFor(host, port);
   const workspaces = defaultWorkspaceService(process.env);
   const mcpServers = defaultMcpServerService(process.env);
+  const audit = defaultAuditStore(process.env);
   const app = createApp({
     sessionStore: store,
     memory,
@@ -206,6 +212,7 @@ export function startServer(options: ServeOptions = {}) {
     checkpoints,
     workspaces,
     ...(mcpServers === undefined ? {} : { mcpServers }),
+    ...(audit === undefined ? {} : { audit }),
   }).listen({
     hostname: host,
     port,
@@ -214,6 +221,7 @@ export function startServer(options: ServeOptions = {}) {
   const closers: Array<() => void> = [];
   if (store !== undefined) closers.push(() => store.close());
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
+  if (audit !== undefined) closers.push(() => audit.close());
   if (closers.length > 0) {
     const close = (): void => {
       for (const closer of closers) closer();
