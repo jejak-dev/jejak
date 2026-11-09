@@ -311,6 +311,13 @@ code {
   font-size: 12px;
 }
 
+.jk-secret-warning {
+  margin: 6px 0 0;
+  color: var(--warn);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .jk-help {
   margin: 0;
   color: var(--t3);
@@ -2670,6 +2677,55 @@ h2.jk-md-heading {
   margin: 0;
 }
 
+.jk-secret-allow-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.jk-secret-allow-form .jk-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.jk-secret-allow-form .jk-button {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.jk-secret-allow-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-secret-allow-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.jk-secret-allow-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 .jk-panel-cp {
   border-bottom: 1px solid var(--line);
 }
@@ -3965,6 +4021,30 @@ h2.jk-md-heading {
 .jk-worktree-badge-bad {
   border-color: color-mix(in srgb, var(--bad) 45%, transparent);
   color: var(--bad);
+}
+
+.jk-secret-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 180px;
+  padding: 1px 7px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 999px;
+  color: var(--warn);
+  font: 11.5px var(--mono);
+  white-space: nowrap;
+}
+
+.jk-secret-badge .jk-icon {
+  flex: none;
+}
+
+.jk-secret-badge span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .jk-worktree-option {

@@ -1,5 +1,6 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { showsBypassMarker } from "../lib/permission-mode";
+import { secretBadge } from "../lib/secret-badge";
 import { sessionContextLabel } from "../lib/workspace";
 import { worktreeBadge } from "../lib/worktree";
 import { Icon } from "./Icon";
@@ -12,12 +13,13 @@ export interface TopbarProps {
   state?: { label: string; dot: "" | "run" | "warn" | "bad" };
   bypass?: boolean;
   badge?: { label: string; title: string; tone: "" | "warn" | "bad" };
+  secretBadge?: { label: string; title: string };
   action?: { label: string; onClick: () => void; disabled?: boolean };
   panel?: { open: boolean; onToggle: () => void };
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, action, panel, error }: TopbarProps) {
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, action, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
       <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
@@ -38,6 +40,12 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
           >
             <Icon name="branch" />
             <span>{badge.label}</span>
+          </span>
+        )}
+        {secretBadge !== undefined && (
+          <span class="jk-secret-badge" title={secretBadge.title} aria-label={secretBadge.label}>
+            <Icon name="shield" />
+            <span>{secretBadge.label}</span>
           </span>
         )}
       </div>
@@ -121,6 +129,8 @@ export function SessionHeader({
   if (showsBypassMarker(session.permissionMode)) props.bypass = true;
   const badge = worktreeBadge(session);
   if (badge !== undefined) props.badge = badge;
+  const secret = secretBadge(session);
+  if (secret !== undefined) props.secretBadge = secret;
   if (error !== undefined) props.error = error;
   return <Topbar {...props} />;
 }

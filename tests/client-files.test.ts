@@ -229,6 +229,13 @@ describe("parsePanelPrefs", () => {
     expect(parsePanelPrefs('{"open":false,"tab":"git"}')).toEqual({ open: false, tab: "git" });
   });
 
+  test("membaca tab Rahasia", () => {
+    expect(parsePanelPrefs('{"open":true,"tab":"rahasia"}')).toEqual({
+      open: true,
+      tab: "rahasia",
+    });
+  });
+
   test("tab asing kembali ke Perubahan", () => {
     expect(parsePanelPrefs('{"open":true,"tab":"entah"}')).toEqual({ open: true, tab: "changes" });
   });

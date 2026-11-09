@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "../lib/api";
+import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
 import { Icon } from "./Icon";
 
@@ -43,6 +44,13 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
   const running = session.status === "berjalan";
   const usable = canSendToSession(session);
   const canSend = !busy && usable.allowed && text.trim() !== "";
+  const warning = useMemo(() => secretWarning(text), [text]);
+  const describedBy = [
+    usable.allowed ? undefined : "jk-reply-blocked",
+    warning === undefined ? undefined : "jk-reply-secret-warning",
+  ]
+    .filter((id): id is string => id !== undefined)
+    .join(" ");
 
   const submit = async (): Promise<void> => {
     if (!canSend) return;
@@ -98,7 +106,7 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
             onInput={onInput}
             onKeyDown={onKeyDown}
             disabled={!usable.allowed || busy}
-            aria-describedby={usable.allowed ? undefined : "jk-reply-blocked"}
+            aria-describedby={describedBy === "" ? undefined : describedBy}
           />
 
           <div class="jk-comp-bar">
@@ -116,6 +124,12 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
             </button>
           </div>
         </div>
+
+        {warning !== undefined && (
+          <p class="jk-secret-warning" id="jk-reply-secret-warning" role="status">
+            {warning.message}
+          </p>
+        )}
 
         {!usable.allowed && usable.reason !== undefined && (
           <p class="jk-note" id="jk-reply-blocked" role="status">

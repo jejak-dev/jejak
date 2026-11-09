@@ -27,7 +27,7 @@ import { createApiClient } from "./lib/api";
 import { buildCommands, type CommandId } from "./lib/commands";
 import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
-import { readPanelPrefs, writePanelPrefs } from "./lib/panel-prefs";
+import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 
@@ -72,7 +72,7 @@ export function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => readPanelPrefs().open);
   const [panelTabRequest, setPanelTabRequest] = useState<
-    { tab: "git"; nonce: number } | undefined
+    { tab: PanelTab; nonce: number } | undefined
   >(undefined);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -137,6 +137,13 @@ export function App() {
     setPanelOpen(true);
     writePanelPrefs({ open: true, tab: "git" });
     setPanelTabRequest((current) => ({ tab: "git", nonce: (current?.nonce ?? 0) + 1 }));
+  }, []);
+
+  // Palette "Buka tab Rahasia": pola sama dengan tab Git.
+  const openSecretsTab = useCallback((): void => {
+    setPanelOpen(true);
+    writePanelPrefs({ open: true, tab: "rahasia" });
+    setPanelTabRequest((current) => ({ tab: "rahasia", nonce: (current?.nonce ?? 0) + 1 }));
   }, []);
 
   const onSaved = useCallback((): void => {
@@ -278,6 +285,9 @@ export function App() {
         case "open-git":
           openGitPanel();
           return;
+        case "open-secrets-tab":
+          openSecretsTab();
+          return;
         case "focus-search":
           document.getElementById("jk-session-search")?.focus();
           return;
@@ -286,7 +296,7 @@ export function App() {
           return;
       }
     },
-    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, openGitPanel, togglePanel],
+    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, openGitPanel, openSecretsTab, togglePanel],
   );
 
   const commands = useMemo(

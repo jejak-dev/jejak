@@ -15,6 +15,7 @@ import { CheckpointsTab } from "./CheckpointsTab";
 import { FilesTab } from "./FilesTab";
 import { GitTab } from "./GitTab";
 import { Icon } from "./Icon";
+import { SecretsTab } from "./SecretsTab";
 
 export interface PanelProps {
   api: ApiClient;
@@ -36,6 +37,7 @@ const TABS: { id: PanelTab; label: string }[] = [
   { id: "files", label: "Berkas" },
   { id: "git", label: "Git" },
   { id: "checkpoints", label: "Titik" },
+  { id: "rahasia", label: "Rahasia" },
 ];
 
 export function Panel({
@@ -94,9 +96,9 @@ export function Panel({
   };
 
   return (
-    <aside class="jk-panel" aria-label="Perubahan, berkas, git, dan titik">
+    <aside class="jk-panel" aria-label="Perubahan, berkas, git, titik, dan rahasia">
       <div class="jk-panel-head">
-        <div class="jk-panel-tabs" role="tablist" aria-label="Perubahan, berkas, git, dan titik">
+        <div class="jk-panel-tabs" role="tablist" aria-label="Perubahan, berkas, git, titik, dan rahasia">
           {TABS.map((entry, index) => (
             <button
               key={entry.id}
@@ -211,6 +213,8 @@ export function Panel({
             onChanged={() => setRefreshToken((value) => value + 1)}
             onSessionChanged={onSessionChanged}
           />
+        ) : tab === "rahasia" ? (
+          <SecretsTab api={api} sessionId={sessionId} />
         ) : (
           <FilesTab
             api={api}

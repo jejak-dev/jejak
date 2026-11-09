@@ -1,4 +1,4 @@
-export type PanelTab = "changes" | "files" | "git" | "checkpoints";
+export type PanelTab = "changes" | "files" | "git" | "checkpoints" | "rahasia";
 
 export interface PanelPrefs {
   open: boolean;
@@ -7,7 +7,13 @@ export interface PanelPrefs {
 
 const STORAGE_KEY = "jejak.panel";
 const DEFAULT_PREFS: PanelPrefs = { open: false, tab: "changes" };
-const TABS: readonly PanelTab[] = ["changes", "files", "git", "checkpoints"];
+const TABS: readonly PanelTab[] = [
+  "changes",
+  "files",
+  "git",
+  "checkpoints",
+  "rahasia",
+];
 
 function isTab(value: unknown): value is PanelTab {
   return typeof value === "string" && (TABS as readonly string[]).includes(value);

@@ -60,6 +60,7 @@ export type CommandId =
   | "open-providers"
   | "toggle-panel"
   | "open-git"
+  | "open-secrets-tab"
   | "focus-search"
   | "show-shortcuts";
 
@@ -111,6 +112,12 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
       label: "Buka panel Git",
       group: "aksi",
       run: "open-git",
+    });
+    commands.push({
+      id: "open-secrets-tab",
+      label: "Buka tab Rahasia",
+      group: "aksi",
+      run: "open-secrets-tab",
     });
   }
 

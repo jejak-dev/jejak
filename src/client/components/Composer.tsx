@@ -11,6 +11,7 @@ import {
   type ComposerPermissionMode,
 } from "../lib/permission-mode";
 import { defaultRepoPath, workspaceRepoOptions } from "../lib/workspace";
+import { secretWarning } from "../lib/secret-warning";
 import { FolderPicker } from "./FolderPicker";
 import { Icon } from "./Icon";
 
@@ -274,6 +275,13 @@ export function Composer({
   const suggestions = selectedWorkspace === undefined
     ? recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4)
     : [];
+  const warning = useMemo(() => secretWarning(prompt), [prompt]);
+  const promptDescribedBy = [
+    promptError === undefined ? undefined : "jk-prompt-error",
+    warning === undefined ? undefined : "jk-prompt-secret-warning",
+  ]
+    .filter((id): id is string => id !== undefined)
+    .join(" ");
 
   return (
     <form class="jk-composer" onSubmit={onSubmit} aria-busy={busy}>
@@ -292,7 +300,7 @@ export function Composer({
           onKeyDown={onPromptKeyDown}
           disabled={busy}
           aria-invalid={promptError !== undefined}
-          aria-describedby={promptError !== undefined ? "jk-prompt-error" : undefined}
+          aria-describedby={promptDescribedBy === "" ? undefined : promptDescribedBy}
         />
 
         <div class="jk-comp-bar">
@@ -465,6 +473,12 @@ export function Composer({
           </button>
         </div>
       </div>
+
+      {warning !== undefined && (
+        <p class="jk-secret-warning" id="jk-prompt-secret-warning" role="status">
+          {warning.message}
+        </p>
+      )}
 
       {selectedWorkspace === undefined && (
         <div class="jk-worktree-option">

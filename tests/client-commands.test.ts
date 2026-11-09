@@ -93,6 +93,17 @@ describe("buildCommands", () => {
     expect(withoutSession.some((c) => c.id === "open-git")).toBe(false);
   });
 
+  test("perintah Buka tab Rahasia hanya bila ada sesi terbuka", () => {
+    const withSession = buildCommands({ sessions: [makeSession()], hasSession: true, panelOpen: false });
+    const secrets = withSession.find((c) => c.id === "open-secrets-tab");
+    expect(secrets?.label).toBe("Buka tab Rahasia");
+    expect(secrets?.run).toBe("open-secrets-tab");
+    expect(secrets?.group).toBe("aksi");
+
+    const withoutSession = buildCommands({ sessions: [], hasSession: false, panelOpen: false });
+    expect(withoutSession.some((c) => c.id === "open-secrets-tab")).toBe(false);
+  });
+
   test("sesi terarsip tidak ikut termasuk", () => {
     const active = makeSession({ id: "a", title: "Aktif" });
     const arch = makeSession({ id: "b", title: "Arsip", archivedAt: "2026-01-01T00:00:00.000Z" });

@@ -262,6 +262,17 @@ export interface GitShowResult {
   truncated: boolean;
 }
 
+export interface SecretAllowState {
+  root: string;
+  allowed: string[];
+}
+
+export interface SecretAllowAddResult {
+  path: string;
+  rule: string;
+  allowed: string[];
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
@@ -344,6 +355,12 @@ export interface ApiClient {
   testMcpServer(id: string): Promise<McpTestOutcome>;
   listAudit(query?: AuditQueryInput): Promise<AuditListResult>;
   getAuditSummary(): Promise<AuditSummaryResult>;
+  getSecretAllow(sessionId: string): Promise<SecretAllowState>;
+  addSecretAllow(sessionId: string, path: string): Promise<SecretAllowAddResult>;
+  removeSecretAllow(
+    sessionId: string,
+    path: string,
+  ): Promise<{ removed: boolean; allowed: string[] }>;
 }
 
 export interface ApiClientOptions {
@@ -487,6 +504,32 @@ function auditSummaryFrom(payload: unknown): AuditSummaryResult {
     throw invalidResponse();
   }
   return payload as unknown as AuditSummaryResult;
+}
+
+function secretAllowStateFrom(payload: unknown): SecretAllowState {
+  if (!isRecord(payload) || typeof payload.root !== "string" || !Array.isArray(payload.allowed)) {
+    throw invalidResponse();
+  }
+  return { root: payload.root, allowed: payload.allowed as string[] };
+}
+
+function secretAllowAddFrom(payload: unknown): SecretAllowAddResult {
+  if (
+    !isRecord(payload) ||
+    typeof payload.path !== "string" ||
+    typeof payload.rule !== "string" ||
+    !Array.isArray(payload.allowed)
+  ) {
+    throw invalidResponse();
+  }
+  return { path: payload.path, rule: payload.rule, allowed: payload.allowed as string[] };
+}
+
+function secretAllowRemoveFrom(payload: unknown): { removed: boolean; allowed: string[] } {
+  if (!isRecord(payload) || typeof payload.removed !== "boolean" || !Array.isArray(payload.allowed)) {
+    throw invalidResponse();
+  }
+  return { removed: payload.removed, allowed: payload.allowed as string[] };
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {
@@ -1121,6 +1164,35 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async getAuditSummary() {
       return auditSummaryFrom(await request("GET", "/api/audit/summary"));
+    },
+
+    async getSecretAllow(sessionId) {
+      return secretAllowStateFrom(
+        await request(
+          "GET",
+          `/api/sessions/${encodeURIComponent(sessionId)}/secret-allow`,
+        ),
+      );
+    },
+
+    async addSecretAllow(sessionId, path) {
+      return secretAllowAddFrom(
+        await request(
+          "POST",
+          `/api/sessions/${encodeURIComponent(sessionId)}/secret-allow`,
+          { path },
+        ),
+      );
+    },
+
+    async removeSecretAllow(sessionId, path) {
+      return secretAllowRemoveFrom(
+        await request(
+          "DELETE",
+          `/api/sessions/${encodeURIComponent(sessionId)}/secret-allow`,
+          { path },
+        ),
+      );
     },
   };
 }
