@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import {
@@ -19,6 +19,7 @@ import { estimateCostUsd } from "../pricing";
 import { redactSecrets } from "../security/redact";
 import { redactEvent } from "../security/redact-event";
 import { SECRET_BLOCK_REASON, checkSecretAccess } from "../security/secret-paths";
+import type { SecretAllowStore } from "../security/secret-allow-store";
 import { WorktreeError, type WorktreeInfo, type WorktreeService } from "../git/worktree-service";
 import type { SessionStore, StoredSession } from "./session-store";
 
@@ -136,6 +137,8 @@ export interface SessionManagerOptions {
     loadEnvValues?: (cwd: string) => readonly string[];
     /** Tolak akses tool ke berkas rahasia; default `true` kecuali mode `off`. */
     blockPaths?: boolean;
+    /** Daftar izin eksplisit per proyek; tanpa opsi ini semua jalur rahasia diblokir. */
+    allow?: SecretAllowStore;
   };
 }
 
@@ -320,6 +323,7 @@ export class SessionManager {
   private readonly secretsMode: SessionSecretsMode;
   private readonly loadEnvValues: ((cwd: string) => readonly string[]) | undefined;
   private readonly blockSecretPaths: boolean;
+  private readonly secretAllow: SecretAllowStore | undefined;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
@@ -352,6 +356,7 @@ export class SessionManager {
     this.loadEnvValues = options.secrets?.loadEnvValues;
     this.blockSecretPaths =
       this.secretsMode !== "off" && options.secrets?.blockPaths !== false;
+    this.secretAllow = options.secrets?.allow;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -681,6 +686,20 @@ export class SessionManager {
   get(id: string): SessionInfo | undefined {
     const record = this.sessions.get(id);
     return record === undefined ? undefined : this.viewInfo(record.info);
+  }
+
+  /**
+   * Akar proyek untuk daftar izin rahasia: repo asli + subdir untuk sesi
+   * worktree, cwd untuk sesi biasa; di-realpath bila ada.
+   */
+  secretProjectRoot(id: string): string {
+    const record = this.requireRecord(id);
+    const root = this.cwdForMemory(record);
+    try {
+      return realpathSync(root);
+    } catch {
+      return root;
+    }
   }
 
   /** Salinan info untuk tampilan; `worktree.missing` dihitung di sini. */
@@ -1339,12 +1358,19 @@ export class SessionManager {
     }
 
     if (this.blockSecretPaths) {
+      const allow = this.secretAllow;
+      const root = allow === undefined ? undefined : this.cwdForMemory(record);
       input.secretGuard = (call) => {
-        const verdict = checkSecretAccess({
-          toolName: call.toolName,
-          toolInput: call.toolInput,
-          cwd: record.info.cwd,
-        });
+        const verdict = checkSecretAccess(
+          {
+            toolName: call.toolName,
+            toolInput: call.toolInput,
+            cwd: record.info.cwd,
+          },
+          allow === undefined || root === undefined
+            ? {}
+            : { isAllowed: (abs) => allow.isAllowed(root, abs) },
+        );
         if (!verdict.blocked) return undefined;
         const rule = verdict.rule ?? "";
         this.audit(

@@ -27,6 +27,7 @@ const PLAIN_NAMES: ReadonlyArray<{ name: string; rule: string }> = [
   { name: ".netrc", rule: ".netrc" },
   { name: ".pgpass", rule: ".pgpass" },
   { name: ".git-credentials", rule: ".git-credentials" },
+  { name: "secret-allow.json", rule: "secret-allow.json" },
 ];
 
 /** Ekstensi berkas yang selalu rahasia. */
@@ -255,6 +256,11 @@ export function checkSecretAccess(
         const command = stringField(toolInput, "command");
         if (command === undefined) return { blocked: false };
         for (const token of tokenizeCommand(command)) {
+          // Agent tidak boleh mengubah daftar izinnya sendiri lewat API.
+          // `/secret-allow` mencakup rute nyata `/api/sessions/:id/secret-allow`.
+          if (token.includes("/api/secret-allow") || token.includes("/secret-allow")) {
+            return { blocked: true, rule: "secret-allow-api", reason: SECRET_BLOCK_REASON };
+          }
           if (!tokenMayBeSecret(token)) continue;
           const verdict = blockedByPath(token);
           if (verdict.blocked) return verdict;

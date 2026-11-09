@@ -13,6 +13,10 @@ import type { McpServerService } from "./mcp/mcp-service";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
 import { jejakHome, loadRegistry, providersPath } from "./provider-store";
 import { loadEnvValuesFromDir } from "./security/env-values";
+import {
+  defaultSecretAllowStore,
+  type SecretAllowStore,
+} from "./security/secret-allow-store";
 import { checkpointRoutes } from "./routes/checkpoints";
 import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
@@ -20,6 +24,7 @@ import { fileRoutes } from "./routes/files";
 import { fsRoutes } from "./routes/fs";
 import { gitRoutes } from "./routes/git";
 import { worktreeRoutes } from "./routes/worktree";
+import { secretAllowRoutes } from "./routes/secret-allow";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
@@ -65,6 +70,8 @@ export interface CreateAppOptions {
   fsHome?: string;
   /** Penyimpanan log audit; tanpa opsi ini semua rute `/api/audit*` menjawab 503. */
   audit?: AuditStore;
+  /** Daftar izin berkas rahasia; tanpa opsi ini rute `secret-allow` menjawab 503. */
+  secretAllow?: SecretAllowStore;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -130,6 +137,7 @@ export function createApp(options: CreateAppOptions = {}) {
       secrets: {
         mode: secretsMode === "off" || secretsMode === "warn" ? secretsMode : "redact",
         blockPaths: env.JEJAK_SECRET_BLOCK?.trim() !== "0",
+        ...(options.secretAllow === undefined ? {} : { allow: options.secretAllow }),
         ...(env.JEJAK_SECRETS_ENV?.trim() === "1"
           ? { loadEnvValues: loadEnvValuesFromDir }
           : {}),
@@ -146,6 +154,13 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch, audit: options.audit }))
     .use(sessionRoutes({ manager, workspaces: workspaceResolver, audit: options.audit }))
     .use(worktreeRoutes({ manager, service: worktrees, audit: options.audit }))
+    .use(
+      secretAllowRoutes({
+        manager,
+        store: options.secretAllow,
+        audit: options.audit,
+      }),
+    )
     .use(
       fileRoutes({
         manager,
@@ -217,6 +232,7 @@ export function startServer(options: ServeOptions = {}) {
   const workspaces = defaultWorkspaceService(process.env);
   const mcpServers = defaultMcpServerService(process.env);
   const audit = defaultAuditStore(process.env);
+  const secretAllow = defaultSecretAllowStore(process.env);
   const app = createApp({
     sessionStore: store,
     memory,
@@ -225,6 +241,7 @@ export function startServer(options: ServeOptions = {}) {
     workspaces,
     ...(mcpServers === undefined ? {} : { mcpServers }),
     ...(audit === undefined ? {} : { audit }),
+    ...(secretAllow === undefined ? {} : { secretAllow }),
   }).listen({
     hostname: host,
     port,
