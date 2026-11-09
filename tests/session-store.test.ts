@@ -109,6 +109,22 @@ describe("SqliteSessionStore", () => {
     store.close();
   });
 
+  test("worktree bertahan lewat penyimpanan ulang", () => {
+    const store = new SqliteSessionStore(":memory:");
+    const worktree = {
+      repoRoot: "/tmp/repo",
+      path: "/tmp/home/worktrees/s_1",
+      branch: "jejak/uji-s_1",
+      baseCommit: "a".repeat(40),
+      subdir: "paket",
+      removed: true,
+    };
+    store.saveSession(info("s_1", { cwd: worktree.path, worktree }), undefined);
+    const loaded = store.loadSessions()[0]?.info.worktree;
+    expect(loaded).toEqual(worktree);
+    store.close();
+  });
+
   test("workspaceId dan workspaceName bertahan lewat penyimpanan ulang", () => {
     const store = new SqliteSessionStore(":memory:");
     store.saveSession(info("s_1", { workspaceId: "ws-1", workspaceName: "Kantor" }), undefined);

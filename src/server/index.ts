@@ -16,6 +16,7 @@ import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { fileRoutes } from "./routes/files";
 import { fsRoutes } from "./routes/fs";
 import { gitRoutes } from "./routes/git";
+import { worktreeRoutes } from "./routes/worktree";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
@@ -24,6 +25,7 @@ import { sessionRoutes } from "./routes/sessions";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import { SessionManager, type WorkspaceResolver } from "./sessions/session-manager";
 import { defaultSessionStore, type SessionStore } from "./sessions/session-store";
+import { WorktreeService } from "./git/worktree-service";
 import type { WorkspaceService } from "./workspaces/workspace-service";
 
 export interface ServeOptions {
@@ -54,6 +56,8 @@ export interface CreateAppOptions {
   workspaces?: WorkspaceService;
   /** Layanan server MCP; tanpa opsi ini semua rute `/api/mcp-servers*` menjawab 503. */
   mcpServers?: McpServerService;
+  /** Layanan worktree; default dibuat kecuali `JEJAK_WORKTREES=0`. */
+  worktrees?: WorktreeService;
   /** Folder awal penelusur folder; default `os.homedir()`. */
   fsHome?: string;
 }
@@ -97,6 +101,12 @@ export function createApp(options: CreateAppOptions = {}) {
           },
         };
 
+  const worktrees =
+    options.worktrees ??
+    (env.JEJAK_WORKTREES?.trim() === "0"
+      ? undefined
+      : new WorktreeService({ root: join(jejakHome(env), "worktrees") }));
+
   const manager =
     options.sessions ??
     new SessionManager({
@@ -108,6 +118,7 @@ export function createApp(options: CreateAppOptions = {}) {
       checkpoints,
       workspaces: workspaceResolver,
       mcpServers: options.mcpServers,
+      worktrees,
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
       onSessionDeleted: (id) =>
         removeSessionUndo(
@@ -120,6 +131,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(localGuard())
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
     .use(sessionRoutes({ manager, workspaces: workspaceResolver }))
+    .use(worktreeRoutes({ manager, service: worktrees }))
     .use(
       fileRoutes({
         manager,

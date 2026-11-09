@@ -3,6 +3,7 @@ import { findSecret } from "../memory/secret-guard";
 import { runGit, type GitOptions } from "../files/changes";
 import { FileError, normalizeRelative } from "../files/path";
 import { GitError, gitStatus, type GitState } from "./git-read";
+import { withLock } from "./lock";
 
 const MAX_PATHS = 200;
 const MAX_MESSAGE = 2000;
@@ -31,9 +32,6 @@ export interface GitCommitResult {
   subject: string;
 }
 
-/** Kunci per akar repo agar mutasi ke repo yang sama berjalan berurutan. */
-const locks = new Map<string, Promise<void>>();
-
 function invalid(message: string): GitError {
   return new GitError(message, "tidak-valid");
 }
@@ -47,23 +45,6 @@ function withLiteralPathspecs(options: GitOptions): GitOptions {
     ...options,
     env: { ...options.env, GIT_LITERAL_PATHSPECS: "1" },
   };
-}
-
-async function withLock<T>(root: string, task: () => Promise<T>): Promise<T> {
-  const previous = locks.get(root) ?? Promise.resolve();
-  let release!: () => void;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  const queued = previous.then(() => gate);
-  locks.set(root, queued);
-  try {
-    await previous;
-    return await task();
-  } finally {
-    release();
-    if (locks.get(root) === queued) locks.delete(root);
-  }
 }
 
 function validatePath(value: unknown): string {

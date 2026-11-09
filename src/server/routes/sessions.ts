@@ -91,6 +91,12 @@ function parseCreateBody(body: unknown): CreateSessionInput {
     }
     input.confirmBypass = record.confirmBypass;
   }
+  if (record.worktree !== undefined) {
+    if (typeof record.worktree !== "boolean") {
+      throw invalid("Field worktree harus berupa boolean.");
+    }
+    input.worktree = record.worktree;
+  }
   return input;
 }
 

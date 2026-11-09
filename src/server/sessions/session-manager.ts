@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute } from "node:path";
+import { isAbsolute, join } from "node:path";
 import {
   PERMISSION_EXPIRED_MESSAGE,
   PERMISSION_STOPPED_MESSAGE,
@@ -14,6 +15,7 @@ import {
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
 import type { MemoryBridge } from "../memory/memory-bridge";
 import { estimateCostUsd } from "../pricing";
+import { WorktreeError, type WorktreeInfo, type WorktreeService } from "../git/worktree-service";
 import type { SessionStore, StoredSession } from "./session-store";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
@@ -40,6 +42,10 @@ export interface SessionInfo {
   archivedAt?: string;
   /** Hanya dihitung saat `GET /api/sessions/:id`; tidak disimpan di store. */
   workspaceRepos?: Array<{ name: string; primary: boolean; missing: boolean }>;
+  /** Worktree terisolasi sesi; `missing` dihitung saat dibaca, tidak disimpan. */
+  worktree?: WorktreeInfo;
+  /** Hanya pada respons pembuatan sesi (bila worktree dibuat); tidak disimpan. */
+  dirtyInSource?: boolean;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
 }
 
@@ -58,6 +64,8 @@ export interface CreateSessionInput {
   /** Wajib `true` untuk `permissionMode: "bypassPermissions"`; tidak disimpan di info. */
   confirmBypass?: boolean;
   workspaceId?: string;
+  /** `true` -> sesi memakai worktree terisolasi pada cabang baru. */
+  worktree?: boolean;
 }
 
 export interface WorkspaceResolverRepo {
@@ -107,6 +115,8 @@ export interface SessionManagerOptions {
   workspaces?: WorkspaceResolver;
   /** Server MCP eksternal; dibaca ulang tiap giliran. */
   mcpServers?: McpServerResolver;
+  /** Layanan worktree; tanpa opsi ini `worktree: true` ditolak. */
+  worktrees?: WorktreeService;
   /** Default `true`; `false` menolak semua sesi bermode bypass. */
   allowBypass?: boolean;
   /** Dipanggil setelah sesi dibuang (hapus manual maupun eviksi). Galatnya ditelan. */
@@ -114,12 +124,19 @@ export interface SessionManagerOptions {
 }
 
 export class SessionError extends Error {
+  /** Angka pendukung penolakan worktree (dipakai rute DELETE). */
+  readonly dirtyFiles?: number;
+  readonly commitsAhead?: number;
+
   constructor(
     message: string,
     public readonly code: "tidak-valid" | "tidak-ditemukan" | "penuh" | "konflik",
+    numbers: { dirtyFiles?: number; commitsAhead?: number } = {},
   ) {
     super(message);
     this.name = "SessionError";
+    if (numbers.dirtyFiles !== undefined) this.dirtyFiles = numbers.dirtyFiles;
+    if (numbers.commitsAhead !== undefined) this.commitsAhead = numbers.commitsAhead;
   }
 }
 
@@ -246,6 +263,7 @@ export class SessionManager {
   private readonly checkpoints: SessionManagerCheckpoints | undefined;
   private readonly workspaces: WorkspaceResolver | undefined;
   private readonly mcpServers: McpServerResolver | undefined;
+  private readonly worktrees: WorktreeService | undefined;
   private readonly allowBypass: boolean;
   private readonly onSessionDeleted: ((id: string) => void | Promise<void>) | undefined;
   private storeWarned = false;
@@ -268,6 +286,7 @@ export class SessionManager {
     this.checkpoints = options.checkpoints;
     this.workspaces = options.workspaces;
     this.mcpServers = options.mcpServers;
+    this.worktrees = options.worktrees;
     this.allowBypass = options.allowBypass ?? true;
     this.onSessionDeleted = options.onSessionDeleted;
     if (this.store !== undefined) {
@@ -441,67 +460,119 @@ export class SessionManager {
     this.ensureCapacity();
 
     const timestamp = this.now().toISOString();
-    const info: SessionInfo = {
-      id: `s_${crypto.randomUUID().slice(0, 8)}`,
-      title: validated.title,
-      prompt: validated.prompt,
-      cwd: validated.cwd,
-      profileId: resolved.profileId,
-      permissionMode: validated.permissionMode,
-      status: "berjalan",
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      eventCount: 0,
-      pendingPermissions: 0,
-      queued: 0,
-    };
-    if (resolved.model !== undefined) {
-      info.model = resolved.model;
-    }
-    if (validated.workspaceId !== undefined) {
-      info.workspaceId = validated.workspaceId;
-      info.workspaceName = validated.workspaceName;
+    const id = `s_${crypto.randomUUID().slice(0, 8)}`;
+
+    let created: { info: WorktreeInfo; dirtyInSource: boolean } | undefined;
+    if (validated.worktree === true) {
+      const worktrees = this.worktrees!;
+      try {
+        created = await worktrees.create({
+          sessionId: id,
+          title: validated.title,
+          cwd: validated.cwd,
+        });
+      } catch (error) {
+        if (error instanceof WorktreeError) {
+          throw new SessionError(error.message, "tidak-valid");
+        }
+        throw error;
+      }
     }
 
-    let settle: () => void = () => {};
-    const done = new Promise<void>((resolve) => {
-      settle = resolve;
-    });
+    try {
+      // Batas bisa berubah setelah worktree dibuat; bila gagal, worktree dibuang.
+      this.ensureCapacity();
 
-    const record: SessionRecord = {
-      info,
-      apiKey: resolved.apiKey,
-      controller: new AbortController(),
-      buffer: [],
-      nextSeq: 1,
-      version: 0,
-      listeners: new Set(),
-      done,
-      settle,
-      pending: new Map(),
-      permissionTimeoutMs: this.permissionTimeoutMs,
-      price: resolved.price,
-      resolved,
-      queue: [],
-      turns: 0,
-    };
-    this.sessions.set(info.id, record);
-    this.persistSession(record);
+      const info: SessionInfo = {
+        id,
+        title: validated.title,
+        prompt: validated.prompt,
+        cwd:
+          created === undefined
+            ? validated.cwd
+            : created.info.subdir === undefined
+              ? created.info.path
+              : join(created.info.path, created.info.subdir),
+        profileId: resolved.profileId,
+        permissionMode: validated.permissionMode,
+        status: "berjalan",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        eventCount: 0,
+        pendingPermissions: 0,
+        queued: 0,
+      };
+      if (resolved.model !== undefined) {
+        info.model = resolved.model;
+      }
+      if (validated.workspaceId !== undefined) {
+        info.workspaceId = validated.workspaceId;
+        info.workspaceName = validated.workspaceName;
+      }
+      if (created !== undefined) {
+        info.worktree = { ...created.info };
+      }
 
-    this.startTurn(record, validated.prompt, false);
+      let settle: () => void = () => {};
+      const done = new Promise<void>((resolve) => {
+        settle = resolve;
+      });
 
-    return { ...info };
+      const record: SessionRecord = {
+        info,
+        apiKey: resolved.apiKey,
+        controller: new AbortController(),
+        buffer: [],
+        nextSeq: 1,
+        version: 0,
+        listeners: new Set(),
+        done,
+        settle,
+        pending: new Map(),
+        permissionTimeoutMs: this.permissionTimeoutMs,
+        price: resolved.price,
+        resolved,
+        queue: [],
+        turns: 0,
+      };
+      this.sessions.set(info.id, record);
+      this.persistSession(record);
+
+      this.startTurn(record, validated.prompt, false);
+
+      // `dirtyInSource` hanya untuk respons pembuatan, tidak disimpan.
+      const result: SessionInfo = { ...info };
+      if (created !== undefined) result.dirtyInSource = created.dirtyInSource;
+      return result;
+    } catch (error) {
+      if (created !== undefined) {
+        await this.worktrees!.remove(created.info, { force: true }).catch(() => undefined);
+      }
+      throw error;
+    }
   }
 
   list(): SessionInfo[] {
     return Array.from(this.sessions.values())
       .reverse()
-      .map((record) => ({ ...record.info }));
+      .map((record) => this.viewInfo(record.info));
   }
 
   get(id: string): SessionInfo | undefined {
     const record = this.sessions.get(id);
-    return record === undefined ? undefined : { ...record.info };
+    return record === undefined ? undefined : this.viewInfo(record.info);
+  }
+
+  /** Salinan info untuk tampilan; `worktree.missing` dihitung di sini. */
+  private viewInfo(info: SessionInfo): SessionInfo {
+    const copy: SessionInfo = { ...info };
+    if (info.worktree !== undefined) {
+      copy.worktree = {
+        ...info.worktree,
+        missing: !existsSync(info.worktree.path),
+      };
+    }
+    return copy;
   }
 
   /** Ganti judul; `updatedAt` sengaja tidak diubah agar urutan daftar stabil. */
@@ -540,6 +611,91 @@ export class SessionManager {
       throw new SessionError("Hentikan sesi dulu.", "konflik");
     }
     this.dropSession(record);
+  }
+
+  /** Pesan lanjutan ditolak bila worktree sesi sudah dihapus atau foldernya hilang. */
+  private assertWorktreeUsable(record: SessionRecord): void {
+    const worktree = record.info.worktree;
+    if (worktree === undefined) return;
+    if (worktree.removed === true) {
+      throw new SessionError("Worktree sesi sudah dihapus.", "konflik");
+    }
+    if (!existsSync(worktree.path)) {
+      throw new SessionError("Folder worktree hilang; pulihkan dulu.", "konflik");
+    }
+  }
+
+  private requireWorktreeRecord(id: string): SessionRecord {
+    const record = this.requireRecord(id);
+    if (record.info.worktree === undefined) {
+      throw new SessionError("Sesi ini tidak punya worktree.", "tidak-ditemukan");
+    }
+    if (record.info.status === "berjalan") {
+      throw new SessionError("Hentikan sesi dulu.", "konflik");
+    }
+    return record;
+  }
+
+  /** Hapus worktree sesi; cabang `jejak/...` sengaja tidak dihapus. */
+  async removeWorktree(id: string, options: { force?: boolean } = {}): Promise<void> {
+    const record = this.requireWorktreeRecord(id);
+    const worktrees = this.worktrees;
+    if (worktrees === undefined) {
+      throw new SessionError("Worktree dimatikan.", "tidak-valid");
+    }
+    const info = record.info.worktree!;
+    try {
+      await worktrees.remove(info, { force: options.force === true });
+    } catch (error) {
+      if (error instanceof WorktreeError) {
+        throw new SessionError(
+          error.message,
+          error.code === "konflik"
+            ? "konflik"
+            : error.code === "tidak-ditemukan"
+              ? "tidak-ditemukan"
+              : "tidak-valid",
+          { dirtyFiles: error.dirtyFiles, commitsAhead: error.commitsAhead },
+        );
+      }
+      throw error;
+    }
+    record.info.worktree = { ...info, removed: true };
+    this.persistSession(record);
+    this.notify(record);
+  }
+
+  /** Pulihkan folder worktree dari cabang yang sama. */
+  async restoreWorktree(id: string): Promise<WorktreeInfo> {
+    const record = this.requireWorktreeRecord(id);
+    const worktrees = this.worktrees;
+    if (worktrees === undefined) {
+      throw new SessionError("Worktree dimatikan.", "tidak-valid");
+    }
+    const info = record.info.worktree!;
+    try {
+      await worktrees.restore(info);
+    } catch (error) {
+      if (error instanceof WorktreeError) {
+        throw new SessionError(
+          error.message,
+          error.code === "konflik"
+            ? "konflik"
+            : error.code === "tidak-ditemukan"
+              ? "tidak-ditemukan"
+              : "tidak-valid",
+        );
+      }
+      throw error;
+    }
+    record.info.worktree = { ...info, removed: false };
+    this.persistSession(record);
+    this.notify(record);
+    return this.worktreeView(record.info.worktree!);
+  }
+
+  private worktreeView(info: WorktreeInfo): WorktreeInfo {
+    return { ...info, missing: !existsSync(info.path) };
   }
 
   private requireRecord(id: string): SessionRecord {
@@ -601,6 +757,7 @@ export class SessionManager {
     }
 
     const message = this.validateMessage(text);
+    this.assertWorktreeUsable(record);
 
     if (record.info.status === "berjalan") {
       if (record.queue.length >= MAX_QUEUED_MESSAGES) {
@@ -665,6 +822,7 @@ export class SessionManager {
     permissionMode: SessionPermissionMode;
     workspaceId?: string;
     workspaceName?: string;
+    worktree?: boolean;
   }> {
     if (typeof input.prompt !== "string") {
       throw new SessionError("Prompt harus berupa teks.", "tidak-valid");
@@ -678,6 +836,17 @@ export class SessionManager {
         `Prompt terlalu panjang; maksimal ${this.maxPromptLength} karakter.`,
         "tidak-valid",
       );
+    }
+
+    if (input.worktree !== undefined && typeof input.worktree !== "boolean") {
+      throw new SessionError("Field worktree harus berupa boolean.", "tidak-valid");
+    }
+    const wantsWorktree = input.worktree === true;
+    if (wantsWorktree && this.worktrees === undefined) {
+      throw new SessionError("Worktree dimatikan.", "tidak-valid");
+    }
+    if (wantsWorktree && input.workspaceId !== undefined) {
+      throw new SessionError("Worktree belum didukung untuk sesi workspace.", "tidak-valid");
     }
 
     const workspace = await this.resolveWorkspaceForCreate(input.workspaceId);
@@ -754,11 +923,13 @@ export class SessionManager {
       permissionMode: SessionPermissionMode;
       workspaceId?: string;
       workspaceName?: string;
+      worktree?: boolean;
     } = { prompt, cwd, title, permissionMode };
     if (workspace !== undefined) {
       result.workspaceId = workspace.view.id;
       result.workspaceName = workspace.view.name;
     }
+    if (wantsWorktree) result.worktree = true;
     return result;
   }
 
@@ -1060,7 +1231,11 @@ export class SessionManager {
       try {
         const opened = await bridge.open({
           sessionId: record.info.id,
-          cwd: record.info.cwd,
+          // Memory proyek memakai repo asli + subdir asal agar sesi worktree berbagi memory.
+          cwd:
+            record.info.worktree === undefined
+              ? record.info.cwd
+              : join(record.info.worktree.repoRoot, record.info.worktree.subdir ?? ""),
           ...(record.info.workspaceId === undefined
             ? {}
             : { workspaceId: record.info.workspaceId }),
