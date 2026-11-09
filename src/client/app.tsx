@@ -68,6 +68,9 @@ export function App() {
   const [interrupting, setInterrupting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [panelOpen, setPanelOpen] = useState(() => readPanelPrefs().open);
+  const [panelTabRequest, setPanelTabRequest] = useState<
+    { tab: "git"; nonce: number } | undefined
+  >(undefined);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const previousFocusRef = useRef<Element | null>(null);
@@ -119,6 +122,13 @@ export function App() {
     setPanelOpen(next);
     writePanelPrefs({ open: next });
   }, [panelOpen]);
+
+  // Palette "Buka panel Git": buka panel lalu minta tab Git; preferensi ikut disimpan.
+  const openGitPanel = useCallback((): void => {
+    setPanelOpen(true);
+    writePanelPrefs({ open: true, tab: "git" });
+    setPanelTabRequest((current) => ({ tab: "git", nonce: (current?.nonce ?? 0) + 1 }));
+  }, []);
 
   const onSaved = useCallback((): void => {
     void reload();
@@ -246,6 +256,9 @@ export function App() {
         case "toggle-panel":
           togglePanel();
           return;
+        case "open-git":
+          openGitPanel();
+          return;
         case "focus-search":
           document.getElementById("jk-session-search")?.focus();
           return;
@@ -254,7 +267,7 @@ export function App() {
           return;
       }
     },
-    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, togglePanel],
+    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, openGitPanel, togglePanel],
   );
 
   const commands = useMemo(
@@ -454,6 +467,7 @@ export function App() {
                   status={timeline.status ?? selected.status}
                   open={panelOpen}
                   onOpenChange={onPanelOpenChange}
+                  tabRequest={panelTabRequest}
                 />
               )}
             </div>

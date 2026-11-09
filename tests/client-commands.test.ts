@@ -73,6 +73,18 @@ describe("buildCommands", () => {
     expect(withoutSession.some((c) => c.group === "aksi" && c.run === "toggle-panel")).toBe(false);
   });
 
+  test("perintah Buka panel Git hanya bila ada sesi terbuka", () => {
+    const withSession = buildCommands({ sessions: [makeSession()], hasSession: true, panelOpen: false });
+    const git = withSession.find((c) => c.id === "open-git");
+    expect(git?.label).toBe("Buka panel Git");
+    expect(git?.run).toBe("open-git");
+    expect(git?.group).toBe("aksi");
+    expect(git?.hint).toBeUndefined();
+
+    const withoutSession = buildCommands({ sessions: [], hasSession: false, panelOpen: false });
+    expect(withoutSession.some((c) => c.id === "open-git")).toBe(false);
+  });
+
   test("sesi terarsip tidak ikut termasuk", () => {
     const active = makeSession({ id: "a", title: "Aktif" });
     const arch = makeSession({ id: "b", title: "Arsip", archivedAt: "2026-01-01T00:00:00.000Z" });

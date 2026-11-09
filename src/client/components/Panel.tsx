@@ -12,6 +12,7 @@ import { useSessionRepos } from "../hooks";
 import { ChangesTab } from "./ChangesTab";
 import { CheckpointsTab } from "./CheckpointsTab";
 import { FilesTab } from "./FilesTab";
+import { GitTab } from "./GitTab";
 import { Icon } from "./Icon";
 
 export interface PanelProps {
@@ -21,19 +22,33 @@ export interface PanelProps {
   status: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Permintaan pindah tab dari luar (palette); `nonce` memaksa ulang. */
+  tabRequest?: { tab: PanelTab; nonce: number };
 }
 
 const TABS: { id: PanelTab; label: string }[] = [
   { id: "changes", label: "Perubahan" },
   { id: "files", label: "Berkas" },
+  { id: "git", label: "Git" },
   { id: "checkpoints", label: "Titik" },
 ];
 
-export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }: PanelProps) {
+export function Panel({
+  api,
+  sessionId,
+  eventCount,
+  status,
+  open,
+  onOpenChange,
+  tabRequest,
+}: PanelProps) {
   const [tab, setTab] = useState<PanelTab>(() => readPanelPrefs().tab);
   const [fileCount, setFileCount] = useState<number | undefined>(undefined);
+  const [gitCount, setGitCount] = useState<number | undefined>(undefined);
   const [checkpointCount, setCheckpointCount] = useState<number | undefined>(undefined);
   const [refreshToken, setRefreshToken] = useState(0);
+  // Draf pesan commit bertahan saat pindah tab selama panel (per sesi) hidup.
+  const [commitDraft, setCommitDraft] = useState("");
   // Pilihan repo hanya disimpan di state; panel dipasang ulang per sesi, jadi
   // pindah sesi kembali ke repo utama.
   const [repoChoice, setRepoChoice] = useState<string | undefined>(undefined);
@@ -55,6 +70,11 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
     if (open) closeRef.current?.focus();
   }, [open]);
 
+  useEffect(() => {
+    if (tabRequest === undefined) return;
+    setTab(tabRequest.tab);
+  }, [tabRequest?.nonce]);
+
   const select = (next: PanelTab): void => setTab(next);
 
   const onTabKeyDown = (event: KeyboardEvent, index: number): void => {
@@ -67,9 +87,9 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
   };
 
   return (
-    <aside class="jk-panel" aria-label="Perubahan, berkas, dan titik">
+    <aside class="jk-panel" aria-label="Perubahan, berkas, git, dan titik">
       <div class="jk-panel-head">
-        <div class="jk-panel-tabs" role="tablist" aria-label="Perubahan, berkas, dan titik">
+        <div class="jk-panel-tabs" role="tablist" aria-label="Perubahan, berkas, git, dan titik">
           {TABS.map((entry, index) => (
             <button
               key={entry.id}
@@ -89,6 +109,9 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
               {entry.label}
               {entry.id === "changes" && fileCount !== undefined && fileCount > 0 && (
                 <span class="jk-panel-count">{formatCount(fileCount)}</span>
+              )}
+              {entry.id === "git" && gitCount !== undefined && gitCount > 0 && (
+                <span class="jk-panel-count">{formatCount(gitCount)}</span>
               )}
               {entry.id === "checkpoints" && checkpointCount !== undefined && checkpointCount > 0 && (
                 <span class="jk-panel-count">{formatCount(checkpointCount)}</span>
@@ -162,6 +185,21 @@ export function Panel({ api, sessionId, eventCount, status, open, onOpenChange }
             refreshToken={refreshToken}
             repoNote={checkpointNote}
             onCount={setCheckpointCount}
+            onChanged={() => setRefreshToken((value) => value + 1)}
+          />
+        ) : tab === "git" ? (
+          <GitTab
+            api={api}
+            sessionId={sessionId}
+            open={open}
+            eventCount={eventCount}
+            status={status}
+            refreshToken={refreshToken}
+            repo={repo}
+            draft={commitDraft}
+            onDraftChange={setCommitDraft}
+            onOpenChanges={() => select("changes")}
+            onCount={setGitCount}
             onChanged={() => setRefreshToken((value) => value + 1)}
           />
         ) : (

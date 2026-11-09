@@ -58,6 +58,7 @@ export type CommandId =
   | "open-memory"
   | "open-providers"
   | "toggle-panel"
+  | "open-git"
   | "focus-search"
   | "show-shortcuts";
 
@@ -102,6 +103,12 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
       hint: "p",
       group: "aksi",
       run: "toggle-panel",
+    });
+    commands.push({
+      id: "open-git",
+      label: "Buka panel Git",
+      group: "aksi",
+      run: "open-git",
     });
   }
 

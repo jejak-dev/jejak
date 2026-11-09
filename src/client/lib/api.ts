@@ -12,6 +12,8 @@ import type { Changes } from "../../server/files/changes";
 import type { DirectoryListing } from "../../server/files/list";
 import type { FileContent } from "../../server/files/read";
 import type { SearchResult } from "../../server/files/search";
+import type { GitCommit, GitStatus } from "../../server/git/git-read";
+import type { GitCommitResult } from "../../server/git/git-write";
 import type { McpProblem, McpServerView, McpTransport } from "../../server/mcp/mcp-config";
 import type { McpTestResult } from "../../server/mcp/mcp-tester";
 import type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
@@ -41,6 +43,8 @@ export type CheckpointList = ListCheckpointsResult;
 export type CheckpointPreview = PreviewResult;
 
 export type { ChangedFile, ChangeStatus, Changes, DiffLine, Hunk } from "../../server/files/changes";
+export type { GitCommit, GitFile, GitFileStatus, GitState, GitStatus } from "../../server/git/git-read";
+export type { GitCommitResult } from "../../server/git/git-write";
 export type { BrowseEntry, BrowseResult } from "../../server/files/browse";
 export type { DirEntry, DirectoryListing } from "../../server/files/list";
 export type { FileContent } from "../../server/files/read";
@@ -209,6 +213,25 @@ export interface RejectChangeResult {
   scope: RejectScope;
 }
 
+export interface GitLogOptions {
+  /** Nama repo workspace; hanya diisi bila bukan repo utama. */
+  repo?: string;
+  limit?: number;
+}
+
+export interface GitStageInput {
+  /** Path relatif (1..200); saling eksklusif dengan `all`. */
+  paths?: string[];
+  all?: boolean;
+  /** Nama repo workspace; hanya diisi bila bukan repo utama. */
+  repo?: string;
+}
+
+export interface GitShowResult {
+  text: string;
+  truncated: boolean;
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
@@ -239,6 +262,12 @@ export interface ApiClient {
   ): Promise<SearchResult>;
   saveFile(id: string, input: SaveFileInput): Promise<SaveFileResult>;
   getChanges(id: string, repo?: string): Promise<Changes>;
+  gitStatus(id: string, repo?: string): Promise<GitStatus>;
+  gitLog(id: string, options?: GitLogOptions): Promise<{ commits: GitCommit[] }>;
+  gitShow(id: string, hash: string, repo?: string): Promise<GitShowResult>;
+  gitStage(id: string, input: GitStageInput): Promise<void>;
+  gitUnstage(id: string, input: GitStageInput): Promise<void>;
+  gitCommit(id: string, message: string, repo?: string): Promise<GitCommitResult>;
   browseDirs(path?: string): Promise<BrowseResult>;
   rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
   undoChange(id: string, undoId: string, repo?: string): Promise<{ path: string }>;
@@ -473,6 +502,20 @@ function rewindResultFrom(payload: unknown): RewindResult {
   return { safetyId, restored: restored as number, recreated: recreated as number, removed: removed as number };
 }
 
+function gitShowFrom(payload: unknown): GitShowResult {
+  if (!isRecord(payload) || typeof payload.text !== "string") throw invalidResponse();
+  return { text: payload.text, truncated: payload.truncated === true };
+}
+
+/** Body stage/unstage: `paths` atau `all`, plus `repo` bila ada. */
+function stageBody(input: GitStageInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {};
+  if (input.all === true) body.all = true;
+  if (input.paths !== undefined) body.paths = input.paths;
+  if (input.repo !== undefined) body.repo = input.repo;
+  return body;
+}
+
 function connectionTestFrom(payload: unknown): ConnectionTestView {
   const result = field(payload, "result");
   if (!isRecord(result)) {
@@ -673,6 +716,75 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         "GET",
         `/api/sessions/${encodeURIComponent(id)}/changes${query}`,
       )) as Changes;
+    },
+
+    async gitStatus(id, repo) {
+      const query = queryString([["repo", repo]]);
+      return (await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/git/status${query}`,
+      )) as GitStatus;
+    },
+
+    async gitLog(id, options) {
+      const query = queryString([
+        ["repo", options?.repo],
+        ["limit", options?.limit === undefined ? undefined : String(options.limit)],
+      ]);
+      const data = await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/git/log${query}`,
+      );
+      const commits = field(data, "commits");
+      if (!Array.isArray(commits)) {
+        throw new ApiError("respons server tidak valid", 200);
+      }
+      return { commits: commits as GitCommit[] };
+    },
+
+    async gitShow(id, hash, repo) {
+      const query = queryString([
+        ["repo", repo],
+        ["hash", hash],
+      ]);
+      const data = await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/git/show${query}`,
+      );
+      return gitShowFrom(data);
+    },
+
+    async gitStage(id, input) {
+      await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/git/stage`,
+        stageBody(input),
+      );
+    },
+
+    async gitUnstage(id, input) {
+      await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/git/unstage`,
+        stageBody(input),
+      );
+    },
+
+    async gitCommit(id, message, repo) {
+      const body: { message: string; repo?: string } = { message };
+      if (repo !== undefined) body.repo = repo;
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/git/commit`,
+        body,
+      );
+      const hash = field(data, "hash");
+      const short = field(data, "short");
+      const subject = field(data, "subject");
+      if (typeof hash !== "string" || typeof short !== "string" || typeof subject !== "string") {
+        throw new ApiError("respons server tidak valid", 200);
+      }
+      return { hash, short, subject };
     },
 
     async browseDirs(path) {

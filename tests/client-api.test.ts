@@ -1568,4 +1568,157 @@ describe("server MCP", () => {
       expect((caught as ApiError).message).toBe("Server MCP dimatikan.");
     }
   });
+
+  describe("metode git", () => {
+    const GIT_STATUS = {
+      isRepo: true,
+      branch: "main",
+      detached: false,
+      head: "a".repeat(40),
+      state: "normal" as const,
+      staged: [],
+      unstaged: [],
+      untracked: [],
+      truncated: false,
+    };
+    const GIT_COMMIT = {
+      hash: "b".repeat(40),
+      short: "bbbbbbb",
+      subject: "perbaiki bug",
+      author: "Boy",
+      date: "2026-01-01T00:00:00.000Z",
+    };
+
+    test("gitStatus GET path sesi ter-encode, tanpa query tanpa repo", async () => {
+      const { fetch, calls } = fakeFetch(() => jsonResponse(GIT_STATUS));
+      const api = createApiClient({ fetch });
+
+      expect(await api.gitStatus("a/b c")).toEqual(GIT_STATUS);
+      expect(calls[0]?.url).toBe("/api/sessions/a%2Fb%20c/git/status");
+      expect(calls[0]?.init.method).toBe("GET");
+      expect(calls[0]?.init.body).toBeUndefined();
+    });
+
+    test("gitStatus dengan repo menambahkan query repo", async () => {
+      const { fetch, calls } = fakeFetch(() => jsonResponse(GIT_STATUS));
+      const api = createApiClient({ fetch });
+
+      await api.gitStatus("s1", "api utama");
+      expect(calls[0]?.url).toBe("/api/sessions/s1/git/status?repo=api%20utama");
+    });
+
+    test("gitLog mengirim query repo dan limit", async () => {
+      const { fetch, calls } = fakeFetch(() => jsonResponse({ commits: [GIT_COMMIT] }));
+      const api = createApiClient({ fetch });
+
+      expect(await api.gitLog("s1", { repo: "web", limit: 30 })).toEqual({
+        commits: [GIT_COMMIT],
+      });
+      expect(calls[0]?.url).toBe("/api/sessions/s1/git/log?repo=web&limit=30");
+      expect(calls[0]?.init.method).toBe("GET");
+    });
+
+    test("gitLog tanpa opsi tidak memakai query", async () => {
+      const { fetch, calls } = fakeFetch(() => jsonResponse({ commits: [] }));
+      const api = createApiClient({ fetch });
+
+      expect(await api.gitLog("s1")).toEqual({ commits: [] });
+      expect(calls[0]?.url).toBe("/api/sessions/s1/git/log");
+    });
+
+    test("gitLog menolak respons tanpa commits", async () => {
+      const { fetch } = fakeFetch(() => jsonResponse({ items: [] }));
+      const api = createApiClient({ fetch });
+
+      await expect(api.gitLog("s1")).rejects.toBeInstanceOf(ApiError);
+    });
+
+    test("gitShow mengirim query hash dan repo ter-encode", async () => {
+      const payload = { text: "commit …", truncated: true };
+      const { fetch, calls } = fakeFetch(() => jsonResponse(payload));
+      const api = createApiClient({ fetch });
+
+      expect(await api.gitShow("s1", "abc1234", "api utama")).toEqual(payload);
+      expect(calls[0]?.url).toBe(
+        "/api/sessions/s1/git/show?repo=api%20utama&hash=abc1234",
+      );
+      expect(calls[0]?.init.method).toBe("GET");
+    });
+
+    test("gitShow menolak respons tanpa text", async () => {
+      const { fetch } = fakeFetch(() => jsonResponse({ truncated: false }));
+      const api = createApiClient({ fetch });
+
+      await expect(api.gitShow("s1", "abc1234")).rejects.toBeInstanceOf(ApiError);
+    });
+
+    test("gitStage POST body paths saja", async () => {
+      const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+      const api = createApiClient({ fetch });
+
+      expect(await api.gitStage("s 1", { paths: ["a.ts", "b.ts"] })).toBeUndefined();
+      expect(calls[0]?.url).toBe("/api/sessions/s%201/git/stage");
+      expect(calls[0]?.init.method).toBe("POST");
+      expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+      expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ paths: ["a.ts", "b.ts"] });
+    });
+
+    test("gitUnstage POST body all dan repo", async () => {
+      const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+      const api = createApiClient({ fetch });
+
+      await api.gitUnstage("s1", { all: true, repo: "api" });
+      expect(calls[0]?.url).toBe("/api/sessions/s1/git/unstage");
+      expect(calls[0]?.init.method).toBe("POST");
+      expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ all: true, repo: "api" });
+    });
+
+    test("gitCommit POST message dan repo, mengembalikan hasil", async () => {
+      const result = { hash: "c".repeat(40), short: "ccccccc", subject: "fitur" };
+      const { fetch, calls } = fakeFetch(() => jsonResponse(result));
+      const api = createApiClient({ fetch });
+
+      expect(await api.gitCommit("s1", "fitur", "web")).toEqual(result);
+      expect(calls[0]?.url).toBe("/api/sessions/s1/git/commit");
+      expect(calls[0]?.init.method).toBe("POST");
+      expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ message: "fitur", repo: "web" });
+    });
+
+    test("gitCommit tanpa repo tidak mengirim key repo", async () => {
+      const result = { hash: "c".repeat(40), short: "ccccccc", subject: "fitur" };
+      const { fetch, calls } = fakeFetch(() => jsonResponse(result));
+      const api = createApiClient({ fetch });
+
+      await api.gitCommit("s1", "fitur");
+      expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ message: "fitur" });
+    });
+
+    test("galat 503/403/409 dipetakan ke ApiError dengan status", async () => {
+      const cases: Array<[number, string, (api: ReturnType<typeof createApiClient>) => Promise<unknown>]> = [
+        [503, "Panel git dimatikan.", (api) => api.gitStatus("s1")],
+        [503, "Panel git dimatikan.", (api) => api.gitLog("s1")],
+        [403, "Penulisan git dimatikan.", (api) => api.gitStage("s1", { all: true })],
+        [403, "Penulisan git dimatikan.", (api) => api.gitUnstage("s1", { paths: ["a"] })],
+        [403, "Penulisan git dimatikan.", (api) => api.gitCommit("s1", "halo")],
+        [409, "Sesi sedang berjalan.", (api) => api.gitCommit("s1", "halo")],
+        [409, "Sedang ada merge.", (api) => api.gitStage("s1", { all: true })],
+      ];
+
+      for (const [status, message, call] of cases) {
+        const { fetch } = fakeFetch(() => jsonResponse({ error: message }, status));
+        const api = createApiClient({ fetch });
+
+        let caught: unknown;
+        try {
+          await call(api);
+        } catch (error) {
+          caught = error;
+        }
+
+        expect(caught).toBeInstanceOf(ApiError);
+        expect((caught as ApiError).status).toBe(status);
+        expect((caught as ApiError).message).toBe(message);
+      }
+    });
+  });
 });

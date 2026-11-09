@@ -224,6 +224,11 @@ describe("parsePanelPrefs", () => {
     });
   });
 
+  test("membaca tab Git", () => {
+    expect(parsePanelPrefs('{"open":true,"tab":"git"}')).toEqual({ open: true, tab: "git" });
+    expect(parsePanelPrefs('{"open":false,"tab":"git"}')).toEqual({ open: false, tab: "git" });
+  });
+
   test("tab asing kembali ke Perubahan", () => {
     expect(parsePanelPrefs('{"open":true,"tab":"entah"}')).toEqual({ open: true, tab: "changes" });
   });
