@@ -4,6 +4,9 @@ import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
 import { defaultAuditStore, type AuditStore } from "./audit/audit-store";
 import { CheckpointService } from "./checkpoints/checkpoint-service";
+import type { BudgetStore } from "./budget/budget-store";
+import { defaultBudgetStore } from "./budget/budget-store";
+import { defaultUsageLedger, type UsageLedger } from "./budget/usage-ledger";
 import { removeSessionUndo } from "./files/revert";
 import { localGuard } from "./guard";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
@@ -25,6 +28,7 @@ import { fsRoutes } from "./routes/fs";
 import { gitRoutes } from "./routes/git";
 import { worktreeRoutes } from "./routes/worktree";
 import { secretAllowRoutes } from "./routes/secret-allow";
+import { budgetRoutes } from "./routes/budget";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
@@ -72,6 +76,10 @@ export interface CreateAppOptions {
   audit?: AuditStore;
   /** Daftar izin berkas rahasia; tanpa opsi ini rute `secret-allow` menjawab 503. */
   secretAllow?: SecretAllowStore;
+  /** Pengaturan anggaran; tanpa opsi ini semua rute `/api/budget*` menjawab 503. */
+  budget?: BudgetStore;
+  /** Buku pemakaian biaya untuk status anggaran dan peringatan sesi. */
+  usageLedger?: UsageLedger;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -134,6 +142,14 @@ export function createApp(options: CreateAppOptions = {}) {
       worktrees,
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
       audit: options.audit,
+      ...(options.budget === undefined
+        ? {}
+        : {
+            budget: {
+              ...(options.usageLedger === undefined ? {} : { ledger: options.usageLedger }),
+              store: options.budget,
+            },
+          }),
       secrets: {
         mode: secretsMode === "off" || secretsMode === "warn" ? secretsMode : "redact",
         blockPaths: env.JEJAK_SECRET_BLOCK?.trim() !== "0",
@@ -191,6 +207,13 @@ export function createApp(options: CreateAppOptions = {}) {
     )
     .use(mcpServerRoutes({ service: options.mcpServers, fetch: options.fetch, audit: options.audit }))
     .use(auditRoutes({ store: options.audit }))
+    .use(
+      budgetRoutes({
+        store: options.budget,
+        ledger: options.usageLedger,
+        audit: options.audit,
+      }),
+    )
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({
@@ -233,6 +256,8 @@ export function startServer(options: ServeOptions = {}) {
   const mcpServers = defaultMcpServerService(process.env);
   const audit = defaultAuditStore(process.env);
   const secretAllow = defaultSecretAllowStore(process.env);
+  const budget = defaultBudgetStore(process.env);
+  const usageLedger = defaultUsageLedger(process.env);
   const app = createApp({
     sessionStore: store,
     memory,
@@ -242,6 +267,8 @@ export function startServer(options: ServeOptions = {}) {
     ...(mcpServers === undefined ? {} : { mcpServers }),
     ...(audit === undefined ? {} : { audit }),
     ...(secretAllow === undefined ? {} : { secretAllow }),
+    ...(budget === undefined ? {} : { budget }),
+    ...(usageLedger === undefined ? {} : { usageLedger }),
   }).listen({
     hostname: host,
     port,
@@ -251,6 +278,7 @@ export function startServer(options: ServeOptions = {}) {
   if (store !== undefined) closers.push(() => store.close());
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
   if (audit !== undefined) closers.push(() => audit.close());
+  if (usageLedger !== undefined) closers.push(() => usageLedger.close());
   if (closers.length > 0) {
     const close = (): void => {
       for (const closer of closers) closer();

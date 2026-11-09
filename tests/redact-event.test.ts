@@ -74,4 +74,16 @@ describe("redactEvent", () => {
     expect((result.event as { text: string }).text).not.toContain("rahasia-env-1234");
     expect(result.hits).toEqual([{ kind: "nilai .env", count: 1 }]);
   });
+
+  test("teks notice disamarkan seperti text dan level tetap", () => {
+    const event: AgentEvent = {
+      type: "notice",
+      level: "warn",
+      text: "Anggaran habis untuk sk-abcdefgh12345678",
+    };
+    const result = redactEvent(event);
+    expect((result.event as { text: string }).text).not.toContain("abcdefgh12345678");
+    expect((result.event as { level: string }).level).toBe("warn");
+    expect(result.hits).toEqual([{ kind: "kunci API", count: 1 }]);
+  });
 });

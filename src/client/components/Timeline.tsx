@@ -280,6 +280,17 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
                   </div>
                 );
 
+              case "notice":
+                return (
+                  <p
+                    class={`jk-notice${item.level === "warn" ? " jk-notice-warn" : ""}`}
+                    key={index}
+                    role="status"
+                  >
+                    {item.text}
+                  </p>
+                );
+
               case "result":
                 return (
                   <footer class="jk-result" key={index}>

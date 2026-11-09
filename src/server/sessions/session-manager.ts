@@ -14,6 +14,14 @@ import {
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
 import type { AuditKind, AuditMeta, AuditStore } from "../audit/audit-store";
+import {
+  evaluateBudget,
+  formatUsd,
+  localDayStartIso,
+  type BudgetLevel,
+} from "../budget/budget";
+import type { BudgetStore } from "../budget/budget-store";
+import type { UsageLedger } from "../budget/usage-ledger";
 import type { MemoryBridge } from "../memory/memory-bridge";
 import { estimateCostUsd } from "../pricing";
 import { redactSecrets } from "../security/redact";
@@ -52,6 +60,8 @@ export interface SessionInfo {
   /** Hanya pada respons pembuatan sesi (bila worktree dibuat); tidak disimpan. */
   dirtyInSource?: boolean;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
+  /** Tingkat anggaran terakhir; tidak ada bila tidak ada batas yang berlaku. */
+  budget?: { session?: BudgetLevel; day?: BudgetLevel };
   /** Jumlah event yang mengandung rahasia; tidak ada bila 0. */
   redactedEvents?: number;
 }
@@ -130,6 +140,8 @@ export interface SessionManagerOptions {
   onSessionDeleted?: (id: string) => void | Promise<void>;
   /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan audit. */
   audit?: AuditStore;
+  /** Anggaran peringatan; tanpa store fitur dimatikan. */
+  budget?: { ledger?: UsageLedger; store: BudgetStore };
   /** Kebijakan penyamaran rahasia pada event sesi. */
   secrets?: {
     mode?: "off" | "warn" | "redact";
@@ -275,6 +287,13 @@ function describeHits(hits: ReadonlyArray<{ kind: string; count: number }>): str
   return hits.map((hit) => `${hit.kind}×${hit.count}`).join(", ");
 }
 
+const BUDGET_RANK: Record<BudgetLevel, number> = { ok: 0, warn: 1, over: 2 };
+
+/** Kenaikan tingkat: ok→warn, ok/warn→over. Tingkat sebelumnya kosong = ok. */
+function isBudgetRise(previous: BudgetLevel | undefined, next: BudgetLevel): boolean {
+  return BUDGET_RANK[next] > BUDGET_RANK[previous ?? "ok"];
+}
+
 function isAborted(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
@@ -320,6 +339,13 @@ export class SessionManager {
   private readonly allowBypass: boolean;
   private readonly onSessionDeleted: ((id: string) => void | Promise<void>) | undefined;
   private readonly auditStore: AuditStore | undefined;
+  private readonly budgetLedger: UsageLedger | undefined;
+  private readonly budgetStore: BudgetStore | undefined;
+  /**
+   * Tingkat harian di memori, direset saat hari lokal berganti. Setelah restart
+   * server, state ini kosong sehingga satu peringatan harian boleh muncul ulang.
+   */
+  private budgetDay: { key: string; level?: BudgetLevel } | undefined;
   private readonly secretsMode: SessionSecretsMode;
   private readonly loadEnvValues: ((cwd: string) => readonly string[]) | undefined;
   private readonly blockSecretPaths: boolean;
@@ -348,6 +374,8 @@ export class SessionManager {
     this.allowBypass = options.allowBypass ?? true;
     this.onSessionDeleted = options.onSessionDeleted;
     this.auditStore = options.audit;
+    this.budgetLedger = options.budget?.ledger;
+    this.budgetStore = options.budget?.store;
     const requestedMode = options.secrets?.mode;
     this.secretsMode =
       requestedMode !== undefined && SECRETS_MODES.includes(requestedMode)
@@ -394,6 +422,107 @@ export class SessionManager {
     } catch {
       // Audit tidak boleh merusak sesi.
     }
+  }
+
+  /**
+   * Evaluasi anggaran setelah satu `result`. Tidak pernah menghentikan sesi;
+   * seluruh galat ditelan agar anggaran tidak menggagalkan giliran.
+   */
+  private applyBudget(
+    record: SessionRecord,
+    event: Extract<AgentEvent, { type: "result" }>,
+  ): void {
+    const store = this.budgetStore;
+    if (store === undefined) return;
+    try {
+      const ledger = this.budgetLedger;
+      const cost = event.estimatedCostUsd;
+      if (
+        ledger !== undefined &&
+        typeof cost === "number" &&
+        Number.isFinite(cost) &&
+        cost > 0
+      ) {
+        ledger.record({
+          ts: this.now().toISOString(),
+          sessionId: record.info.id,
+          profileId: record.info.profileId,
+          ...(record.info.model === undefined ? {} : { model: record.info.model }),
+          costUsd: cost,
+          ...(event.inputTokens === undefined ? {} : { inputTokens: event.inputTokens }),
+          ...(event.outputTokens === undefined ? {} : { outputTokens: event.outputTokens }),
+        });
+      }
+
+      const config = store.get();
+      const sessionUsd =
+        ledger !== undefined
+          ? ledger.sumForSession(record.info.id)
+          : (record.info.usage?.estimatedCostUsd ?? 0);
+      const dayStart = localDayStartIso(this.now());
+      const dayUsd = ledger !== undefined ? ledger.sumSince(dayStart) : 0;
+      const levels = evaluateBudget({ config, sessionUsd, dayUsd });
+
+      const previousSession = record.info.budget?.session;
+      const previousDay =
+        this.budgetDay?.key === dayStart ? this.budgetDay.level : undefined;
+
+      if (levels.session === undefined && levels.day === undefined) {
+        delete record.info.budget;
+      } else {
+        record.info.budget = levels;
+      }
+      this.budgetDay = { key: dayStart, level: levels.day };
+
+      this.maybeBudgetNotice(
+        record,
+        "sesi",
+        previousSession,
+        levels.session,
+        config.sessionUsd,
+        config.warnAt,
+        sessionUsd,
+      );
+      this.maybeBudgetNotice(
+        record,
+        "hari",
+        previousDay,
+        levels.day,
+        config.dailyUsd,
+        config.warnAt,
+        dayUsd,
+      );
+    } catch {
+      // Galat anggaran tidak boleh menggagalkan sesi.
+    }
+  }
+
+  /** Satu notice + satu audit per kenaikan tingkat untuk satu cakupan. */
+  private maybeBudgetNotice(
+    record: SessionRecord,
+    scope: "sesi" | "hari",
+    previous: BudgetLevel | undefined,
+    next: BudgetLevel | undefined,
+    limit: number | undefined,
+    warnAt: number,
+    spent: number,
+  ): void {
+    if (next === undefined || limit === undefined || !isBudgetRise(previous, next)) return;
+    const percent = Math.round(warnAt * 100);
+    const text =
+      next === "warn"
+        ? `Anggaran ${scope} ${percent}% terpakai (${formatUsd(spent)} dari ${formatUsd(limit)}).`
+        : `Anggaran ${scope} terlewati (${formatUsd(spent)} dari ${formatUsd(limit)}). Sesi tidak dihentikan.`;
+    this.append(record, { type: "notice", text, level: "warn" });
+    const summary =
+      next === "warn"
+        ? `Anggaran ${scope} ${percent}% terpakai`
+        : `Anggaran ${scope} terlewati. Sesi tidak dihentikan.`;
+    this.audit("anggaran", summary, record.info.id, {
+      cakupan: scope,
+      tingkat: next,
+      batas: limit,
+    });
   }
 
   /** cwd yang sama dengan pembukaan memory: repo asli + subdir untuk sesi worktree. */
@@ -1561,6 +1690,7 @@ export class SessionManager {
           record.info.usage.sdkCostUsd += event.costUsd;
         }
       }
+      this.applyBudget(record, event);
     }
 
     this.persistSession(record);

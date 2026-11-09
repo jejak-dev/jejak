@@ -32,6 +32,7 @@ export type AgentEvent =
       expiresAt?: string;
     }
   | { type: "permission_resolved"; id: string; decision: "allow" | "deny"; message?: string }
+  | { type: "notice"; text: string; level?: "info" | "warn" }
   | { type: "user_message"; text: string };
 
 export const PERMISSION_EXPIRED_MESSAGE = "waktu izin habis";

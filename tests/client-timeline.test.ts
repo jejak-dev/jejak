@@ -313,3 +313,23 @@ describe("reduceTimeline: izin", () => {
     expect(items[0]).toMatchObject({ status: "menunggu" });
   });
 });
+
+describe("reduceTimeline: notice", () => {
+  test("notice menambah baris dengan level default info", () => {
+    const next = reduceAll([{ type: "notice", text: "Anggaran sesi 80% terpakai." }]);
+    expect(next).toEqual([
+      { kind: "notice", text: "Anggaran sesi 80% terpakai.", level: "info" },
+    ]);
+  });
+
+  test("notice warn mempertahankan level dan tidak memengaruhi item lain", () => {
+    const items = reduceAll([
+      { type: "text", text: "jawaban" },
+      { type: "notice", text: "Anggaran terlewati.", level: "warn" },
+    ]);
+    expect(items).toEqual([
+      { kind: "text", text: "jawaban", depth: 0 },
+      { kind: "notice", text: "Anggaran terlewati.", level: "warn" },
+    ]);
+  });
+});

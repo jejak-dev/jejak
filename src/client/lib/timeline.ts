@@ -32,6 +32,7 @@ export type TimelineItem =
       message?: string;
     }
   | { kind: "error"; message: string }
+  | { kind: "notice"; text: string; level: "info" | "warn" }
   | {
       kind: "result";
       ok: boolean;
@@ -200,6 +201,12 @@ export function reduceTimeline(
 
     case "error":
       return [...items, { kind: "error", message: event.message }];
+
+    case "notice":
+      return [
+        ...items,
+        { kind: "notice", text: event.text, level: event.level ?? "info" },
+      ];
 
     case "result": {
       const result: TimelineItem = { kind: "result", ok: event.ok };

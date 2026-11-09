@@ -15,6 +15,7 @@ export const AUDIT_KINDS = [
   "rahasia-diblokir",
   "mcp",
   "pengaturan",
+  "anggaran",
 ] as const;
 export type AuditKind = (typeof AUDIT_KINDS)[number];
 
