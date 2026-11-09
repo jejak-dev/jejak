@@ -9,11 +9,15 @@ import {
   type ProviderSelection,
 } from "../provider";
 import { loadRegistry, providersPath, saveRegistry } from "../provider-store";
+import type { AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 
 export interface ProviderRoutesOptions {
   path?: string;
   env?: Record<string, string | undefined>;
   fetch?: typeof fetch;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const REDACTED_KEY = "***";
@@ -88,6 +92,7 @@ function parseTestBody(body: unknown): ProviderSelection {
 export function providerRoutes(options: ProviderRoutesOptions = {}): Elysia {
   const env = options.env ?? process.env;
   const path = options.path ?? providersPath(env);
+  const audit = options.audit;
 
   const load = () => loadRegistry(path, env);
 
@@ -124,6 +129,11 @@ export function providerRoutes(options: ProviderRoutesOptions = {}): Elysia {
           }
 
           await saveRegistry(parsed, path);
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Provider diperbarui",
+            meta: { aksi: "perbarui" },
+          });
           return { registry: redactRegistry(parsed) };
         } catch (error) {
           return errorResponse(error);
@@ -139,6 +149,11 @@ export function providerRoutes(options: ProviderRoutesOptions = {}): Elysia {
           const registry = await load();
           const updated = setActiveProfile(registry, profileId);
           await saveRegistry(updated, path);
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Provider aktif diganti",
+            meta: { aksi: "aktif" },
+          });
           return { registry: redactRegistry(updated) };
         } catch (error) {
           return errorResponse(error);

@@ -1,5 +1,7 @@
 import { Elysia } from "elysia";
 import type { SessionInfo, SessionManager, WorkspaceResolver } from "../sessions/session-manager";
+import type { AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 import type { GitOptions } from "../files/changes";
 import { FileError } from "../files/path";
 import { resolveRepoRoot } from "../files/repo-root";
@@ -15,6 +17,8 @@ export interface GitRoutesOptions {
   enabled?: boolean;
   /** false -> rute stage/unstage/commit menjawab 403. */
   writeEnabled?: boolean;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const DISABLED = "Panel git dimatikan.";
@@ -106,6 +110,7 @@ export function gitRoutes(options: GitRoutesOptions): Elysia {
   const gitOptions = options.git ?? {};
   const enabled = options.enabled ?? true;
   const writeEnabled = options.writeEnabled ?? true;
+  const audit = options.audit;
 
   /**
    * Penjaga bersama rute tulis: 503 (git mati), 403 (tulis mati), 404 (sesi
@@ -192,6 +197,20 @@ export function gitRoutes(options: GitRoutesOptions): Elysia {
             all?: boolean;
           };
           await gitStage(root, input, gitOptions);
+          recordAudit(audit, {
+            kind: "git",
+            sessionId: guard.session.id,
+            summary: "Stage",
+            meta: {
+              aksi: "stage",
+              jumlah:
+                input.all === true
+                  ? "semua"
+                  : Array.isArray(input.paths)
+                    ? input.paths.length
+                    : 0,
+            },
+          });
           return jsonResponse(200, { ok: true });
         } catch (error) {
           return errorResponse(error);
@@ -212,6 +231,20 @@ export function gitRoutes(options: GitRoutesOptions): Elysia {
             all?: boolean;
           };
           await gitUnstage(root, input, gitOptions);
+          recordAudit(audit, {
+            kind: "git",
+            sessionId: guard.session.id,
+            summary: "Unstage",
+            meta: {
+              aksi: "unstage",
+              jumlah:
+                input.all === true
+                  ? "semua"
+                  : Array.isArray(input.paths)
+                    ? input.paths.length
+                    : 0,
+            },
+          });
           return jsonResponse(200, { ok: true });
         } catch (error) {
           return errorResponse(error);
@@ -228,6 +261,21 @@ export function gitRoutes(options: GitRoutesOptions): Elysia {
           const record = parseObjectBody(body, COMMIT_KEYS);
           const root = await resolveRepoRoot(guard.session, record.repo, workspaces);
           const result = await gitCommit(root, record.message as string, gitOptions);
+          const hash =
+            typeof result?.short === "string" && result.short !== ""
+              ? result.short
+              : typeof result?.hash === "string" && result.hash !== ""
+                ? result.hash.slice(0, 7)
+                : undefined;
+          recordAudit(audit, {
+            kind: "git",
+            sessionId: guard.session.id,
+            summary: "Commit dibuat",
+            meta: {
+              aksi: "commit",
+              ...(hash === undefined ? {} : { hash }),
+            },
+          });
           return jsonResponse(200, result);
         } catch (error) {
           return errorResponse(error);

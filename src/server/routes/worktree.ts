@@ -1,11 +1,15 @@
 import { Elysia } from "elysia";
 import type { SessionManager } from "../sessions/session-manager";
 import type { WorktreeService } from "../git/worktree-service";
+import type { AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 
 export interface WorktreeRoutesOptions {
   manager: SessionManager;
   /** Tanpa layanan ini semua rute menjawab 503. */
   service?: WorktreeService;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const DISABLED = "Worktree dimatikan.";
@@ -61,6 +65,7 @@ function parseObjectBody(body: unknown, allowed: readonly string[]): Record<stri
 export function worktreeRoutes(options: WorktreeRoutesOptions): Elysia {
   const manager = options.manager;
   const service = options.service;
+  const audit = options.audit;
 
   const plugin = new Elysia({ name: "jejak-worktree-routes" });
   if (service === undefined) {
@@ -93,6 +98,12 @@ export function worktreeRoutes(options: WorktreeRoutesOptions): Elysia {
           await manager.removeWorktree(params.id, {
             force: record.force === true,
           });
+          recordAudit(audit, {
+            kind: "git",
+            sessionId: params.id,
+            summary: "Worktree dihapus",
+            meta: { aksi: "worktree-hapus", paksa: record.force === true },
+          });
           return { ok: true };
         } catch (error) {
           return errorResponse(error);
@@ -106,6 +117,12 @@ export function worktreeRoutes(options: WorktreeRoutesOptions): Elysia {
         try {
           parseObjectBody(body ?? "{}", []);
           const worktree = await manager.restoreWorktree(params.id);
+          recordAudit(audit, {
+            kind: "git",
+            sessionId: params.id,
+            summary: "Worktree dipulihkan",
+            meta: { aksi: "worktree-pulihkan" },
+          });
           return { worktree };
         } catch (error) {
           return errorResponse(error);

@@ -11,9 +11,13 @@ import {
   workspacesDir,
   type WorkspaceProblem,
 } from "../workspaces/workspace-files";
+import type { AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 
 export interface WorkspaceRoutesOptions {
   service?: WorkspaceService;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const DISABLED = "Workspace dimatikan.";
@@ -99,6 +103,7 @@ const CARD_KEYS = ["description", "kind", "tables", "queues", "calls"] as const;
 
 export function workspaceRoutes(options: WorkspaceRoutesOptions = {}): Elysia {
   const service = options.service;
+  const audit = options.audit;
 
   const plugin = new Elysia({ name: "jejak-workspace-routes" });
   if (service === undefined) {
@@ -131,6 +136,11 @@ export function workspaceRoutes(options: WorkspaceRoutesOptions = {}): Elysia {
             name: input.name,
             repos: input.repos,
           } satisfies CreateWorkspaceInput);
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Workspace ditambah",
+            meta: { aksi: "tambah", id: item.id },
+          });
           return jsonResponse(201, { item });
         } catch (error) {
           return errorResponse(error);
@@ -148,6 +158,11 @@ export function workspaceRoutes(options: WorkspaceRoutesOptions = {}): Elysia {
             name: input.name,
             repos: input.repos,
           } satisfies UpdateWorkspaceInput);
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Workspace diubah",
+            meta: { aksi: "ubah", id: item.id },
+          });
           return { item };
         } catch (error) {
           return errorResponse(error);
@@ -168,6 +183,11 @@ export function workspaceRoutes(options: WorkspaceRoutesOptions = {}): Elysia {
             queues: input.queues,
             calls: input.calls,
           } satisfies SetCardInput);
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Kartu service diubah",
+            meta: { aksi: "kartu", id: item.id },
+          });
           return { item };
         } catch (error) {
           return errorResponse(error);
@@ -179,6 +199,11 @@ export function workspaceRoutes(options: WorkspaceRoutesOptions = {}): Elysia {
       try {
         checkId(params.id);
         await service.delete(params.id);
+        recordAudit(audit, {
+          kind: "pengaturan",
+          summary: "Workspace dihapus",
+          meta: { aksi: "hapus", id: params.id },
+        });
         return { ok: true };
       } catch (error) {
         return errorResponse(error);

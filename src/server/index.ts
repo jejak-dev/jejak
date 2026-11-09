@@ -142,9 +142,9 @@ export function createApp(options: CreateAppOptions = {}) {
 
   let app = new Elysia()
     .use(localGuard())
-    .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch }))
-    .use(sessionRoutes({ manager, workspaces: workspaceResolver }))
-    .use(worktreeRoutes({ manager, service: worktrees }))
+    .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch, audit: options.audit }))
+    .use(sessionRoutes({ manager, workspaces: workspaceResolver, audit: options.audit }))
+    .use(worktreeRoutes({ manager, service: worktrees, audit: options.audit }))
     .use(
       fileRoutes({
         manager,
@@ -152,26 +152,28 @@ export function createApp(options: CreateAppOptions = {}) {
         env: options.env,
         undoDir: options.undoDir,
         editEnabled: env.JEJAK_FILE_EDIT?.trim() !== "0",
+        audit: options.audit,
       }),
     )
-    .use(checkpointRoutes({ manager, service: checkpoints }))
+    .use(checkpointRoutes({ manager, service: checkpoints, audit: options.audit }))
     .use(
       gitRoutes({
         manager,
         workspaces: workspaceResolver,
         enabled: env.JEJAK_GIT?.trim() !== "0",
         writeEnabled: env.JEJAK_GIT_WRITE?.trim() !== "0",
+        audit: options.audit,
       }),
     )
-    .use(memoryRoutes({ service: options.memory }))
-    .use(workspaceRoutes({ service: options.workspaces }))
+    .use(memoryRoutes({ service: options.memory, audit: options.audit }))
+    .use(workspaceRoutes({ service: options.workspaces, audit: options.audit }))
     .use(
       fsRoutes({
         ...(options.fsHome === undefined ? {} : { home: options.fsHome }),
         enabled: env.JEJAK_FS_BROWSE?.trim() !== "0",
       }),
     )
-    .use(mcpServerRoutes({ service: options.mcpServers, fetch: options.fetch }))
+    .use(mcpServerRoutes({ service: options.mcpServers, fetch: options.fetch, audit: options.audit }))
     .use(auditRoutes({ store: options.audit }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(

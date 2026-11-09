@@ -11,10 +11,14 @@ import {
   type UpdateMcpServerInput,
 } from "../mcp/mcp-service";
 import { testMcpServer, testTargetOf, type McpTestResult } from "../mcp/mcp-tester";
+import type { AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 
 export interface McpServerRoutesOptions {
   service?: McpServerService;
   fetch?: typeof fetch;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const DISABLED = "Server MCP dimatikan.";
@@ -107,6 +111,7 @@ function checkId(id: string): void {
 
 export function mcpServerRoutes(options: McpServerRoutesOptions = {}): Elysia {
   const service = options.service;
+  const audit = options.audit;
 
   const plugin = new Elysia({ name: "jejak-mcp-server-routes" });
   if (service === undefined) {
@@ -136,6 +141,11 @@ export function mcpServerRoutes(options: McpServerRoutesOptions = {}): Elysia {
         try {
           const input = parseObjectBody(body, CREATE_KEYS);
           const item = await service.create(input satisfies CreateMcpServerInput);
+          recordAudit(audit, {
+            kind: "mcp",
+            summary: "Server MCP ditambah",
+            meta: { aksi: "tambah", id: item.id, nama: item.name },
+          });
           return jsonResponse(201, { item });
         } catch (error) {
           return errorResponse(error);
@@ -150,6 +160,11 @@ export function mcpServerRoutes(options: McpServerRoutesOptions = {}): Elysia {
           checkId(params.id);
           const input = parseObjectBody(body, UPDATE_KEYS);
           const item = await service.update(params.id, input satisfies UpdateMcpServerInput);
+          recordAudit(audit, {
+            kind: "mcp",
+            summary: "Server MCP diubah",
+            meta: { aksi: "ubah", id: item.id, nama: item.name },
+          });
           return { item };
         } catch (error) {
           return errorResponse(error);
@@ -161,6 +176,11 @@ export function mcpServerRoutes(options: McpServerRoutesOptions = {}): Elysia {
       try {
         checkId(params.id);
         await service.delete(params.id);
+        recordAudit(audit, {
+          kind: "mcp",
+          summary: "Server MCP dihapus",
+          meta: { aksi: "hapus", id: params.id },
+        });
         return { ok: true };
       } catch (error) {
         return errorResponse(error);

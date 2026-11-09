@@ -1,8 +1,12 @@
 import { Elysia } from "elysia";
 import { MemoryError, type MemoryService } from "../memory/memory-service";
+import type { AuditEntryInput, AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 
 export interface MemoryRoutesOptions {
   service?: MemoryService;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const DISABLED = "Memory dimatikan.";
@@ -54,6 +58,15 @@ function parseObjectBody(body: unknown): Record<string, unknown> {
 
 export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
   const service = options.service;
+  const audit = options.audit;
+  const auditAction = (aksi: string, id: unknown): void => {
+    const entry: AuditEntryInput = {
+      kind: "pengaturan",
+      summary: `Memory ${aksi}`,
+      meta: typeof id === "string" ? { aksi, id } : { aksi },
+    };
+    recordAudit(audit, entry);
+  };
 
   const plugin = new Elysia({ name: "jejak-memory-routes" });
   if (service === undefined) {
@@ -99,6 +112,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
             title: input.title,
             body: input.body,
           });
+          auditAction("ditambah", item.id);
           return jsonResponse(201, { item });
         } catch (error) {
           return errorResponse(error);
@@ -115,7 +129,9 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
           if (typeof projectKey !== "string") {
             throw new MemoryError("Folder proyek tidak ditemukan.", "tidak-valid");
           }
-          return jsonResponse(200, await service.importProjectDocs(projectKey));
+          const result = await service.importProjectDocs(projectKey);
+          auditAction("impor", undefined);
+          return jsonResponse(200, result);
         } catch (error) {
           return errorResponse(error);
         }
@@ -131,6 +147,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
             title: input.title,
             body: input.body,
           });
+          auditAction("diubah", item.id);
           return { item };
         } catch (error) {
           return errorResponse(error);
@@ -142,7 +159,9 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
       "/api/memory/:id/accept",
       async ({ params }) => {
         try {
-          return { item: await service.accept(params.id) };
+          const item = await service.accept(params.id);
+          auditAction("diterima", item.id);
+          return { item };
         } catch (error) {
           return errorResponse(error);
         }
@@ -153,7 +172,9 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
       "/api/memory/:id/reject",
       async ({ params }) => {
         try {
-          return { item: await service.reject(params.id) };
+          const item = await service.reject(params.id);
+          auditAction("ditolak", item.id);
+          return { item };
         } catch (error) {
           return errorResponse(error);
         }
@@ -164,7 +185,9 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
       "/api/memory/:id/archive",
       async ({ params }) => {
         try {
-          return { item: await service.archive(params.id) };
+          const item = await service.archive(params.id);
+          auditAction("diarsipkan", item.id);
+          return { item };
         } catch (error) {
           return errorResponse(error);
         }
@@ -174,6 +197,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
     .delete("/api/memory/:id", async ({ params }) => {
       try {
         await service.delete(params.id);
+        auditAction("dihapus", params.id);
         return { ok: true };
       } catch (error) {
         return errorResponse(error);

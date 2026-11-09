@@ -1,5 +1,7 @@
 import { Elysia } from "elysia";
 import type { SessionManager, SessionInfo } from "../sessions/session-manager";
+import type { AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 import {
   CheckpointError,
   type CheckpointService,
@@ -9,6 +11,8 @@ export interface CheckpointRoutesOptions {
   manager: SessionManager;
   /** Tanpa layanan ini semua rute checkpoint menjawab 503. */
   service?: CheckpointService;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const DISABLED = "Checkpoint dimatikan.";
@@ -69,6 +73,7 @@ function confirmed(body: unknown): boolean {
 export function checkpointRoutes(options: CheckpointRoutesOptions): Elysia {
   const manager = options.manager;
   const service = options.service;
+  const audit = options.audit;
 
   const plugin = new Elysia({ name: "jejak-checkpoint-routes" });
   if (service === undefined) {
@@ -118,6 +123,12 @@ export function checkpointRoutes(options: CheckpointRoutesOptions): Elysia {
           if (!result.enabled) {
             return jsonResponse(409, { error: result.reason });
           }
+          recordAudit(audit, {
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Checkpoint manual dibuat",
+            meta: { aksi: "checkpoint" },
+          });
           return jsonResponse(201, { ok: true, item: result.item });
         } catch (error) {
           return errorResponse(error);
@@ -158,6 +169,12 @@ export function checkpointRoutes(options: CheckpointRoutesOptions): Elysia {
             throw new CheckpointError("Rewind butuh konfirmasi (confirm: true).", 400);
           }
           const result = await service.rewind(session.id, session.cwd, params.cid);
+          recordAudit(audit, {
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Rewind ke checkpoint",
+            meta: { checkpoint: params.cid.slice(0, 12), aksi: "rewind" },
+          });
           return jsonResponse(200, { ok: true, ...result });
         } catch (error) {
           return errorResponse(error);

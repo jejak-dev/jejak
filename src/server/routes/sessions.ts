@@ -1,6 +1,8 @@
 import { Elysia } from "elysia";
 import { realpath } from "node:fs/promises";
 import type { ProviderSelection } from "../provider";
+import type { AuditStore } from "../audit/audit-store";
+import { recordAudit } from "../audit/record";
 import {
   SessionError,
   type CreateSessionInput,
@@ -13,6 +15,8 @@ export interface SessionRoutesOptions {
   manager: SessionManager;
   /** Dipakai untuk menghitung `workspaceRepos` saat satu sesi dibaca. */
   workspaces?: WorkspaceResolver;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 const KEEP_ALIVE_MS = 15_000;
@@ -203,6 +207,7 @@ function endFrame(status: string): Uint8Array {
 
 export function sessionRoutes(options: SessionRoutesOptions): Elysia {
   const manager = options.manager;
+  const audit = options.audit;
 
   const plugin = new Elysia({ name: "jejak-session-routes" })
     .post(
@@ -211,6 +216,14 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
         try {
           const input = parseCreateBody(body);
           const session = await manager.create(input);
+          if (session.worktree !== undefined) {
+            recordAudit(audit, {
+              kind: "git",
+              sessionId: session.id,
+              summary: "Worktree dibuat",
+              meta: { aksi: "worktree-buat" },
+            });
+          }
           return jsonResponse(201, { session });
         } catch (error) {
           return errorResponse(error);
@@ -245,9 +258,21 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
           let session = current;
           if (update.title !== undefined) {
             session = manager.rename(params.id, update.title);
+            recordAudit(audit, {
+              kind: "pengaturan",
+              sessionId: params.id,
+              summary: "Sesi diganti nama",
+              meta: { aksi: "ganti-nama" },
+            });
           }
           if (update.archived !== undefined) {
             session = manager.setArchived(params.id, update.archived);
+            recordAudit(audit, {
+              kind: "pengaturan",
+              sessionId: params.id,
+              summary: "Sesi diarsipkan",
+              meta: { aksi: update.archived ? "arsip" : "buka-arsip" },
+            });
           }
           return { session };
         } catch (error) {
@@ -261,6 +286,12 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
       ({ params }) => {
         try {
           manager.delete(params.id);
+          recordAudit(audit, {
+            kind: "pengaturan",
+            sessionId: params.id,
+            summary: "Sesi dihapus",
+            meta: { aksi: "hapus" },
+          });
           return { ok: true };
         } catch (error) {
           return errorResponse(error);

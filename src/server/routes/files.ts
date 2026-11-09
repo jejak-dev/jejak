@@ -18,6 +18,8 @@ import {
   type RevertOptions,
 } from "../files/revert";
 import { jejakHome } from "../provider-store";
+import { recordAudit } from "../audit/record";
+import type { AuditEntryInput, AuditStore } from "../audit/audit-store";
 
 export interface FileRoutesOptions {
   manager: SessionManager;
@@ -30,6 +32,8 @@ export interface FileRoutesOptions {
   now?: () => Date;
   /** false -> PUT /api/sessions/:id/file menjawab 403. */
   editEnabled?: boolean;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
+  audit?: AuditStore;
 }
 
 function jsonResponse(status: number, payload: unknown): Response {
@@ -109,6 +113,8 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
   const revertOptions: RevertOptions = { undoDir };
   if (options.git !== undefined) revertOptions.git = options.git;
   if (options.now !== undefined) revertOptions.now = options.now;
+  const audit = options.audit;
+  const auditEntry = (entry: AuditEntryInput): void => recordAudit(audit, entry);
 
   const plugin = new Elysia({ name: "jejak-file-routes" })
     .get("/api/sessions/:id/files", async ({ params, query }) => {
@@ -175,6 +181,16 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
             content: record.content,
             baseVersion: record.baseVersion,
           });
+          const path = typeof record.path === "string" ? record.path : undefined;
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Berkas disimpan lewat editor",
+            meta: {
+              ...(path === undefined ? {} : { path }),
+              aksi: "simpan",
+            },
+          });
           return jsonResponse(200, { ok: true, version: result.version, size: result.size });
         } catch (error) {
           return errorResponse(error);
@@ -215,6 +231,12 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
           const snapshotRepo = await repoSnapshotName(session, repoParam, root);
           const input = parseRejectInput(body);
           const result = await rejectChange(session.id, root, input, revertOptions, snapshotRepo);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Perubahan ditolak",
+            meta: { path: result.path, scope: result.scope, aksi: "tolak" },
+          });
           return jsonResponse(200, {
             ok: true,
             undoId: result.undoId,
@@ -243,6 +265,12 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
           const snapshotRepo = await repoSnapshotName(session, repoParam, root);
           const undoId = parseUndoInput(body);
           const result = await undoChange(session.id, root, undoId, revertOptions, snapshotRepo);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Penolakan diurungkan",
+            meta: { path: result.path, aksi: "urungkan" },
+          });
           return jsonResponse(200, { ok: true, path: result.path });
         } catch (error) {
           return errorResponse(error);
