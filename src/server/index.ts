@@ -12,6 +12,7 @@ import { MemoryService } from "./memory/memory-service";
 import type { McpServerService } from "./mcp/mcp-service";
 import { resolveProvider as resolveRegistryProvider } from "./provider";
 import { jejakHome, loadRegistry, providersPath } from "./provider-store";
+import { loadEnvValuesFromDir } from "./security/env-values";
 import { checkpointRoutes } from "./routes/checkpoints";
 import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
@@ -111,6 +112,7 @@ export function createApp(options: CreateAppOptions = {}) {
       ? undefined
       : new WorktreeService({ root: join(jejakHome(env), "worktrees") }));
 
+  const secretsMode = env.JEJAK_SECRETS?.trim();
   const manager =
     options.sessions ??
     new SessionManager({
@@ -124,6 +126,13 @@ export function createApp(options: CreateAppOptions = {}) {
       mcpServers: options.mcpServers,
       worktrees,
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
+      audit: options.audit,
+      secrets: {
+        mode: secretsMode === "off" || secretsMode === "warn" ? secretsMode : "redact",
+        ...(env.JEJAK_SECRETS_ENV?.trim() === "1"
+          ? { loadEnvValues: loadEnvValuesFromDir }
+          : {}),
+      },
       onSessionDeleted: (id) =>
         removeSessionUndo(
           options.undoDir ?? join(jejakHome(env), "undo"),

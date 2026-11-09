@@ -13,8 +13,11 @@ import {
   type RunWorkspace,
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
+import type { AuditKind, AuditMeta, AuditStore } from "../audit/audit-store";
 import type { MemoryBridge } from "../memory/memory-bridge";
 import { estimateCostUsd } from "../pricing";
+import { redactSecrets } from "../security/redact";
+import { redactEvent } from "../security/redact-event";
 import { WorktreeError, type WorktreeInfo, type WorktreeService } from "../git/worktree-service";
 import type { SessionStore, StoredSession } from "./session-store";
 
@@ -47,6 +50,8 @@ export interface SessionInfo {
   /** Hanya pada respons pembuatan sesi (bila worktree dibuat); tidak disimpan. */
   dirtyInSource?: boolean;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
+  /** Jumlah event yang mengandung rahasia; tidak ada bila 0. */
+  redactedEvents?: number;
 }
 
 export interface SequencedEvent {
@@ -121,6 +126,14 @@ export interface SessionManagerOptions {
   allowBypass?: boolean;
   /** Dipanggil setelah sesi dibuang (hapus manual maupun eviksi). Galatnya ditelan. */
   onSessionDeleted?: (id: string) => void | Promise<void>;
+  /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan audit. */
+  audit?: AuditStore;
+  /** Kebijakan penyamaran rahasia pada event sesi. */
+  secrets?: {
+    mode?: "off" | "warn" | "redact";
+    /** Nilai literal rahasia untuk cwd sesi (mis. isi .env); dipanggil sekali per sesi. */
+    loadEnvValues?: (cwd: string) => readonly string[];
+  };
 }
 
 export class SessionError extends Error {
@@ -165,6 +178,8 @@ interface SessionRecord {
   turns: number;
   /** Peringatan workspace tak tersedia hanya sekali per sesi. */
   workspaceWarned?: boolean;
+  /** Nilai rahasia dari `.env` sesi; dimuat malas dan tidak dipersist. */
+  envValues?: readonly string[];
 }
 
 const CHECKPOINT_TIMEOUT_MS = 30_000;
@@ -222,6 +237,38 @@ function collapseWhitespace(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
+export type SessionSecretsMode = "off" | "warn" | "redact";
+
+const SECRETS_MODES: readonly SessionSecretsMode[] = ["off", "warn", "redact"];
+
+/** Ringkasan input tool untuk audit: nilai string pertama dari kunci yang dikenal. */
+const TOOL_SUMMARY_KEYS = [
+  "file_path",
+  "path",
+  "notebook_path",
+  "pattern",
+  "command",
+  "url",
+  "query",
+  "description",
+] as const;
+
+function toolSummary(input: unknown): string {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return "";
+  const record = input as Record<string, unknown>;
+  for (const key of TOOL_SUMMARY_KEYS) {
+    const value = record[key];
+    if (typeof value === "string") {
+      return collapseWhitespace(value).slice(0, 200);
+    }
+  }
+  return "";
+}
+
+function describeHits(hits: ReadonlyArray<{ kind: string; count: number }>): string {
+  return hits.map((hit) => `${hit.kind}×${hit.count}`).join(", ");
+}
+
 function isAborted(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
@@ -266,6 +313,9 @@ export class SessionManager {
   private readonly worktrees: WorktreeService | undefined;
   private readonly allowBypass: boolean;
   private readonly onSessionDeleted: ((id: string) => void | Promise<void>) | undefined;
+  private readonly auditStore: AuditStore | undefined;
+  private readonly secretsMode: SessionSecretsMode;
+  private readonly loadEnvValues: ((cwd: string) => readonly string[]) | undefined;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
@@ -289,6 +339,13 @@ export class SessionManager {
     this.worktrees = options.worktrees;
     this.allowBypass = options.allowBypass ?? true;
     this.onSessionDeleted = options.onSessionDeleted;
+    this.auditStore = options.audit;
+    const requestedMode = options.secrets?.mode;
+    this.secretsMode =
+      requestedMode !== undefined && SECRETS_MODES.includes(requestedMode)
+        ? requestedMode
+        : "redact";
+    this.loadEnvValues = options.secrets?.loadEnvValues;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -310,6 +367,56 @@ export class SessionManager {
     const info = { ...record.info };
     const sdkSessionId = record.sdkSessionId;
     this.storeGuard(() => this.store?.saveSession(info, sdkSessionId));
+  }
+
+  /** Satu-satunya pintu catatan audit; tidak pernah melempar dan no-op tanpa store. */
+  private audit(
+    kind: AuditKind,
+    summary: string,
+    sessionId: string,
+    meta?: AuditMeta,
+  ): void {
+    const store = this.auditStore;
+    if (store === undefined) return;
+    try {
+      store.append({ kind, summary, sessionId, meta });
+    } catch {
+      // Audit tidak boleh merusak sesi.
+    }
+  }
+
+  /** cwd yang sama dengan pembukaan memory: repo asli + subdir untuk sesi worktree. */
+  private cwdForMemory(record: SessionRecord): string {
+    const worktree = record.info.worktree;
+    return worktree === undefined
+      ? record.info.cwd
+      : join(worktree.repoRoot, worktree.subdir ?? "");
+  }
+
+  /** Nilai rahasia untuk sesi; dimuat malas sekali dan tidak pernah melempar. */
+  private envValuesFor(record: SessionRecord): readonly string[] {
+    if (record.envValues !== undefined) return record.envValues;
+    let values: readonly string[] = [];
+    const loader = this.loadEnvValues;
+    if (loader !== undefined) {
+      try {
+        values = loader(this.cwdForMemory(record));
+      } catch {
+        values = [];
+      }
+    }
+    record.envValues = values;
+    return values;
+  }
+
+  /** Samarkan teks untuk tampilan (`info`); mode warn/off tidak mengubah apa pun. */
+  private redactText(text: string): string {
+    if (this.secretsMode !== "redact") return text;
+    try {
+      return redactSecrets(text).text;
+    } catch {
+      return text;
+    }
   }
 
   private restore(): void {
@@ -485,8 +592,9 @@ export class SessionManager {
 
       const info: SessionInfo = {
         id,
-        title: validated.title,
-        prompt: validated.prompt,
+        // `info` dipakai untuk tampilan/persistensi; prompt asli tetap dikirim ke agent.
+        title: this.redactText(validated.title),
+        prompt: this.redactText(validated.prompt),
         cwd:
           created === undefined
             ? validated.cwd
@@ -537,6 +645,12 @@ export class SessionManager {
       };
       this.sessions.set(info.id, record);
       this.persistSession(record);
+      this.audit("sesi-mulai", "Sesi dimulai", info.id, {
+        permissionMode: info.permissionMode,
+        worktree: info.worktree !== undefined,
+        workspace: info.workspaceId !== undefined,
+        model: info.model ?? null,
+      });
 
       this.startTurn(record, validated.prompt, false);
 
@@ -1232,10 +1346,7 @@ export class SessionManager {
         const opened = await bridge.open({
           sessionId: record.info.id,
           // Memory proyek memakai repo asli + subdir asal agar sesi worktree berbagi memory.
-          cwd:
-            record.info.worktree === undefined
-              ? record.info.cwd
-              : join(record.info.worktree.repoRoot, record.info.worktree.subdir ?? ""),
+          cwd: this.cwdForMemory(record),
           ...(record.info.workspaceId === undefined
             ? {}
             : { workspaceId: record.info.workspaceId }),
@@ -1310,9 +1421,37 @@ export class SessionManager {
   }
 
   private append(record: SessionRecord, event: AgentEvent): void {
+    const sanitized = sanitizeEvent(event, record.apiKey);
+
+    // Penyamaran hanya untuk yang disimpan/disiarkan; `event` asli tetap dipakai
+    // untuk akumulasi usage di bawah agar perilaku lama tidak berubah.
+    let storedEvent = sanitized;
+    if (this.secretsMode !== "off") {
+      try {
+        const redacted = redactEvent(sanitized, this.envValuesFor(record));
+        if (this.secretsMode === "redact") {
+          storedEvent = redacted.event;
+        }
+        if (redacted.hits.length > 0) {
+          record.info.redactedEvents = (record.info.redactedEvents ?? 0) + 1;
+          const jenis = describeHits(redacted.hits);
+          this.audit(
+            "rahasia-disamarkan",
+            this.secretsMode === "redact"
+              ? `Rahasia disamarkan pada event ${sanitized.type}`
+              : `Rahasia terdeteksi pada event ${sanitized.type} (tidak disamarkan)`,
+            record.info.id,
+            { eventType: sanitized.type, mode: this.secretsMode, jenis },
+          );
+        }
+      } catch {
+        // Penyamaran gagal tidak boleh menggagalkan sesi.
+      }
+    }
+
     const stored: SequencedEvent = {
       seq: record.nextSeq,
-      event: sanitizeEvent(event, record.apiKey),
+      event: storedEvent,
     };
     record.nextSeq += 1;
     record.buffer.push(stored);
@@ -1326,6 +1465,13 @@ export class SessionManager {
     if (trimmed) {
       const oldest = record.buffer[0]?.seq ?? record.nextSeq;
       this.storeGuard(() => this.store?.trimEvents(record.info.id, oldest));
+    }
+
+    if (event.type === "tool_call") {
+      this.audit("tool", `${event.name}: ${toolSummary(event.input)}`, record.info.id, {
+        tool: event.name,
+        sub: event.parentToolUseId !== undefined,
+      });
     }
 
     // Accumulate usage for result events
@@ -1371,7 +1517,14 @@ export class SessionManager {
   }
 
   private setStatus(record: SessionRecord, status: SessionStatus): void {
+    const previous = record.info.status;
     record.info.status = status;
+    if (previous === "berjalan" && status !== "berjalan") {
+      this.audit("sesi-berhenti", "Sesi berhenti", record.info.id, {
+        status,
+        turns: record.turns,
+      });
+    }
     this.persistSession(record);
     this.notify(record);
   }
@@ -1421,6 +1574,10 @@ export class SessionManager {
     };
 
     this.append(record, permissionRequestEvent);
+    this.audit("izin", `Izin diminta: ${request.name}`, record.info.id, {
+      tool: request.name,
+      decision: "diminta",
+    });
 
     // Set up timeout
     const timeoutId = setTimeout(() => {
@@ -1439,6 +1596,11 @@ export class SessionManager {
         this.notify(record);
 
         this.append(record, denyEvent);
+        this.audit("izin", `Izin ditolak: ${pending.name}`, record.info.id, {
+          tool: pending.name,
+          decision: "ditolak",
+          alasan: "kedaluwarsa",
+        });
 
         pending.resolve({ behavior: "deny", message: PERMISSION_EXPIRED_MESSAGE });
       }
@@ -1461,6 +1623,11 @@ export class SessionManager {
         this.notify(record);
 
         this.append(record, denyEvent);
+        this.audit("izin", `Izin ditolak: ${pending.name}`, record.info.id, {
+          tool: pending.name,
+          decision: "ditolak",
+          alasan: "dihentikan",
+        });
 
         pending.resolve({ behavior: "deny", message: PERMISSION_STOPPED_MESSAGE });
       }
@@ -1512,6 +1679,12 @@ export class SessionManager {
     };
 
     this.append(record, resolvedEvent);
+    this.audit(
+      "izin",
+      `Izin ${decision === "allow" ? "diizinkan" : "ditolak"}: ${pending.name}`,
+      record.info.id,
+      { tool: pending.name, decision: decision === "allow" ? "diizinkan" : "ditolak" },
+    );
 
     // Resolve the pending promise
     if (decision === "allow") {
