@@ -15,6 +15,7 @@ import { checkpointRoutes } from "./routes/checkpoints";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { fileRoutes } from "./routes/files";
 import { fsRoutes } from "./routes/fs";
+import { gitRoutes } from "./routes/git";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
@@ -129,6 +130,13 @@ export function createApp(options: CreateAppOptions = {}) {
       }),
     )
     .use(checkpointRoutes({ manager, service: checkpoints }))
+    .use(
+      gitRoutes({
+        manager,
+        workspaces: workspaceResolver,
+        enabled: env.JEJAK_GIT?.trim() !== "0",
+      }),
+    )
     .use(memoryRoutes({ service: options.memory }))
     .use(workspaceRoutes({ service: options.workspaces }))
     .use(
