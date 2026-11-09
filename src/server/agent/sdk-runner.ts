@@ -96,6 +96,7 @@ function mcpSecretValues(servers: readonly ResolvedMcpServer[] | undefined): str
 
 const EXTERNAL_MCP_PREFIX = "ext-";
 
+// alwaysLoad menghindari satu putaran ToolSearch per sesi; konsekuensinya skema semua tool server ikut di prompt dan startup menunggu koneksi server (maks ~5 dtk).
 function externalMcpServers(
   servers: readonly ResolvedMcpServer[] | undefined,
 ): Record<string, unknown> | undefined {
@@ -110,12 +111,14 @@ function externalMcpServers(
         command: server.command,
         args: [...server.args],
         env: { ...server.env },
+        alwaysLoad: true,
       };
     } else {
       result[`${EXTERNAL_MCP_PREFIX}${server.name}`] = {
         type: "http",
         url: server.url,
         headers: { ...server.headers },
+        alwaysLoad: true,
       };
     }
   }
@@ -235,6 +238,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           type: "http",
           url: memory.url,
           headers: { Authorization: `Bearer ${memory.token}` },
+          alwaysLoad: true,
         };
       }
       const external = externalMcpServers(input.mcpServers);

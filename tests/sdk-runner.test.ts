@@ -428,6 +428,7 @@ test("memory dengan url menambahkan mcpServers, allowedTools, dan indexLine", as
       type: "http",
       url: "http://127.0.0.1:3000/mcp",
       headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+      alwaysLoad: true,
     },
   });
   expect(received?.allowedTools).toEqual([
@@ -632,6 +633,7 @@ test("allowedTools berisi tool workspace hanya bila input.workspace ada", async 
       type: "http",
       url: "http://127.0.0.1:3000/mcp",
       headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+      alwaysLoad: true,
     },
   });
 });
@@ -800,17 +802,20 @@ test("server MCP eksternal digabung dengan jejak-memory tanpa menambah allowedTo
       type: "http",
       url: "http://127.0.0.1:3000/mcp",
       headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+      alwaysLoad: true,
     },
     "ext-github": {
       type: "stdio",
       command: "npx",
       args: ["-y", "server"],
       env: { GITHUB_TOKEN: STDIO_SECRET },
+      alwaysLoad: true,
     },
     "ext-remote": {
       type: "http",
       url: "https://mcp.test/sse",
       headers: { Authorization: `Bearer ${HTTP_SECRET}` },
+      alwaysLoad: true,
     },
   });
   expect(received?.allowedTools).toEqual([
@@ -835,6 +840,7 @@ test("tanpa memory, mcpServers hanya berisi server eksternal dan tanpa allowedTo
       command: "npx",
       args: ["-y", "server"],
       env: { GITHUB_TOKEN: STDIO_SECRET },
+      alwaysLoad: true,
     },
   });
   expect("allowedTools" in (received ?? {})).toBe(false);
@@ -856,6 +862,7 @@ test("tanpa server eksternal opsi persis seperti sebelumnya", async () => {
       type: "http",
       url: "http://127.0.0.1:3000/mcp",
       headers: { Authorization: `Bearer ${MEMORY_TOKEN}` },
+      alwaysLoad: true,
     },
   });
 });
@@ -880,5 +887,22 @@ test("pesan galat membersihkan sentinel env/header server eksternal", async () =
   expect(error?.type).toBe("error");
   if (error?.type === "error") {
     expect(error.message).toContain("***");
+  }
+});
+
+test("semua server MCP (memory dan eksternal) memakai alwaysLoad", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({ mcpServers: [externalStdio(), externalHttp()] }),
+    ),
+  );
+
+  const servers = received?.mcpServers as Record<string, Record<string, unknown>>;
+  expect(Object.keys(servers).sort()).toEqual(["ext-github", "ext-remote", "jejak-memory"]);
+  for (const server of Object.values(servers)) {
+    expect(server.alwaysLoad).toBe(true);
   }
 });
