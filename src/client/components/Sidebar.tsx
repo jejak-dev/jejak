@@ -4,6 +4,7 @@ import { formatAgo, groupSessions } from "../lib/format";
 import { showsBypassMarker } from "../lib/permission-mode";
 import { canMutate, filterSessions, splitArchived, validateTitle } from "../lib/sessions";
 import { notificationSupport, type NotifyPrefs } from "../lib/notify";
+import { applyTheme, loadTheme, nextTheme, saveTheme, themeLabel, type ThemePref } from "../lib/theme";
 import { Icon } from "./Icon";
 
 export interface SidebarProps {
@@ -81,6 +82,23 @@ export function Sidebar({
   const [rowError, setRowError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemePref>(() => {
+    try {
+      return loadTheme(window.localStorage);
+    } catch {
+      return "system";
+    }
+  });
+  const cycleTheme = (): void => {
+    const next = nextTheme(theme);
+    setTheme(next);
+    applyTheme(document.documentElement, next);
+    try {
+      saveTheme(window.localStorage, next);
+    } catch {
+      // penyimpanan tidak tersedia
+    }
+  };
   const [notifyError, setNotifyError] = useState<string | undefined>(undefined);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -582,6 +600,16 @@ export function Sidebar({
           <span class="jk-foot-text">{activeProfileLabel ?? "Set up provider"}</span>
           <Icon name="gear" />
         </a>
+        <button
+          type="button"
+          class="jk-foot-link jk-foot-btn"
+          aria-label={`Tema: ${themeLabel(theme)}. Klik untuk mengganti.`}
+          onClick={cycleTheme}
+        >
+          <Icon name={theme === "light" ? "sun" : theme === "dark" ? "moon" : "monitor"} />
+          <span class="jk-foot-text">Tema</span>
+          <span class="jk-foot-count">{themeLabel(theme)}</span>
+        </button>
         <button
           type="button"
           class={`jk-foot-link jk-foot-btn${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
