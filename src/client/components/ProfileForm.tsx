@@ -477,7 +477,7 @@ export function ProfileForm({
 
       <div class="jk-form-actions">
         <button type="submit" class="jk-button jk-button-primary" disabled={!dirty || !valid || busy}>
-          {saving ? "Menyimpan…" : "Simpan perubahan"}
+          {saving ? "Menyimpan…" : profile.isNew ? "Simpan profil" : "Simpan perubahan"}
         </button>
 
         {!profile.isNew && activeProfileId !== profile.id && (
@@ -491,24 +491,32 @@ export function ProfileForm({
           </button>
         )}
 
-        <button
-          type="button"
-          class="jk-button jk-button-secondary jk-button-danger"
-          onClick={onRemove}
-          disabled={busy}
-        >
-          Hapus profil
-        </button>
+        {profile.isNew ? (
+          <button type="button" class="jk-button jk-button-secondary" onClick={onRemove} disabled={busy}>
+            Batal
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              class="jk-button jk-button-secondary jk-button-danger"
+              onClick={onRemove}
+              disabled={busy}
+            >
+              Hapus profil
+            </button>
 
-        <button
-          type="button"
-          class="jk-button jk-button-secondary"
-          onClick={onTest}
-          disabled={busy}
-          aria-busy={testing}
-        >
-          {testing ? "Menguji…" : "Tes koneksi"}
-        </button>
+            <button
+              type="button"
+              class="jk-button jk-button-secondary"
+              onClick={onTest}
+              disabled={busy}
+              aria-busy={testing}
+            >
+              {testing ? "Menguji…" : "Tes koneksi"}
+            </button>
+          </>
+        )}
       </div>
 
       {testError !== undefined && (

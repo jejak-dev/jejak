@@ -42,6 +42,7 @@ export function McpForm({ initial, busy, serverError, onSubmit, onCancel }: McpF
   const [args, setArgs] = useState((initial?.args ?? []).join("\n"));
   const [env, setEnv] = useState("");
   const [url, setUrl] = useState(initial?.url ?? "");
+  const [touched, setTouched] = useState({ command: false, url: false });
   const [headers, setHeaders] = useState("");
   const [removedEnvKeys, setRemovedEnvKeys] = useState<string[]>([]);
   const [removedHeaderNames, setRemovedHeaderNames] = useState<string[]>([]);
@@ -123,7 +124,8 @@ export function McpForm({ initial, busy, serverError, onSubmit, onCancel }: McpF
               type="text"
               value={command}
               autoComplete="off"
-              aria-invalid={command.trim() === ""}
+              aria-invalid={touched.command && command.trim() === ""}
+              onBlur={() => setTouched((value) => ({ ...value, command: true }))}
               onInput={(event) => setCommand((event.currentTarget as HTMLInputElement).value)}
             />
             <p class="jk-help">Dijalankan tanpa shell; spasi tidak diperbolehkan.</p>
@@ -190,7 +192,8 @@ export function McpForm({ initial, busy, serverError, onSubmit, onCancel }: McpF
               type="url"
               value={url}
               autoComplete="off"
-              aria-invalid={url.trim() === ""}
+              aria-invalid={touched.url && url.trim() === ""}
+              onBlur={() => setTouched((value) => ({ ...value, url: true }))}
               onInput={(event) => setUrl((event.currentTarget as HTMLInputElement).value)}
             />
           </div>

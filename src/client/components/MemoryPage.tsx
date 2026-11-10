@@ -477,7 +477,7 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
           aria-labelledby={`jk-memory-tab-${tab}`}
         >
           {visible.length === 0 ? (
-            <p class="jk-note">{emptyMessage}</p>
+            adding ? null : <p class="jk-note">{emptyMessage}</p>
           ) : (
             visible.map((item) => (
               <MemoryRow

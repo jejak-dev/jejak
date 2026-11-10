@@ -219,7 +219,7 @@ export function McpPage({ api }: McpPageProps) {
       {!loading && !disabled && loadError === undefined && (
         <div class="jk-mcp-list">
           {items.length === 0 ? (
-            <p class="jk-empty-state">Belum ada server MCP. Pakai tombol Tambah server untuk menghubungkan tool eksternal.</p>
+            adding ? null : <p class="jk-empty-state">Belum ada server MCP. Pakai tombol Tambah server untuk menghubungkan tool eksternal.</p>
           ) : (
             items.map((mcp) => (
               <McpRow

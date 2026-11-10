@@ -232,7 +232,7 @@ export function WorkspacePage({ api, projects }: WorkspacePageProps) {
       {!loading && !disabled && loadError === undefined && (
         <div class="jk-workspace-list">
           {items.length === 0 ? (
-            <p class="jk-empty-state">Belum ada workspace. Pakai tombol Tambah untuk mengelompokkan beberapa repo.</p>
+            adding ? null : <p class="jk-empty-state">Belum ada workspace. Pakai tombol Tambah untuk mengelompokkan beberapa repo.</p>
           ) : (
             items.map((workspace) => {
               const prefix = `${workspace.id}\0`;
