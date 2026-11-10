@@ -670,6 +670,7 @@ export class SessionManager {
     record: SessionRecord,
     provider: ResolvedProvider,
     workspace: RunWorkspace | undefined,
+    fallbackProvider?: ResolvedProvider,
   ): Record<string, unknown> | undefined {
     const store = this.sandboxStore;
     if (store === undefined) return undefined;
@@ -707,7 +708,10 @@ export class SessionManager {
       jejakHome: defaultJejakHome(),
       projectRoots,
       extraWriteDirs,
-      providerHosts: providerHostsFrom(provider.baseUrl),
+      providerHosts: [
+        ...providerHostsFrom(provider.baseUrl),
+        ...providerHostsFrom(fallbackProvider?.baseUrl),
+      ],
     });
   }
 
@@ -1699,13 +1703,25 @@ export class SessionManager {
       }
     }
 
+    // Profil cadangan dicek di depan: membatasi retry SDK dan menambah host
+    // cadangan ke allowlist jaringan Bash.
+    let plannedFallback: ResolvedProvider | undefined;
+    if (this.fallback !== undefined) {
+      try {
+        plannedFallback = await this.fallback(provider.profileId);
+      } catch {
+        plannedFallback = undefined;
+      }
+      if (plannedFallback?.profileId === provider.profileId) plannedFallback = undefined;
+    }
+
     // Sandbox gagal-tertutup: bila opsi tak bisa dibangun, giliran gagal alih-alih
     // berjalan tanpa sandbox (kecuali mode `mati` yang memang tanpa opsi).
     if (this.sandboxStore !== undefined) {
       const mode = this.effectiveSandboxMode(record);
       if (mode === "standar") {
         try {
-          const sandbox = this.sandboxForRun(record, provider, workspace);
+          const sandbox = this.sandboxForRun(record, provider, workspace, plannedFallback);
           if (sandbox !== undefined) input.sandbox = sandbox;
         } catch (error) {
           const message = `Sandbox gagal disiapkan: ${errorMessage(error)}`;
@@ -1778,7 +1794,7 @@ export class SessionManager {
       if (this.fallback === undefined) {
         await this.runPlain(record, input);
       } else {
-        await this.runWithFallback(record, input, provider);
+        await this.runWithFallback(record, input, provider, plannedFallback);
       }
     } finally {
       try {
@@ -2007,16 +2023,10 @@ export class SessionManager {
     record: SessionRecord,
     input: Parameters<AgentRunner["run"]>[0],
     provider: ResolvedProvider,
+    planned: ResolvedProvider | undefined,
   ): Promise<void> {
-    // Profil cadangan diperiksa di depan agar retry SDK dipersingkat; bila ada,
-    // fallback tidak menunggu belasan retry sebelum beralih.
-    let planned: ResolvedProvider | undefined;
-    try {
-      planned = await this.fallback!(provider.profileId);
-    } catch {
-      planned = undefined;
-    }
-    const hasFallback = planned !== undefined && planned.profileId !== provider.profileId;
+    // Bila ada profil cadangan, retry SDK dipersingkat agar fallback cepat.
+    const hasFallback = planned !== undefined;
     const attempt = await this.runAttempt(
       record,
       hasFallback ? { ...input, maxRetries: FALLBACK_SDK_RETRIES } : input,

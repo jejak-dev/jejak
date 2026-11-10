@@ -172,6 +172,18 @@ describe("SessionManager + sandbox", () => {
     expect(capture.inputs[0]?.sandbox).toBeUndefined();
   });
 
+  test("host profil cadangan ikut masuk allowlist jaringan Bash", async () => {
+    const capture = captureRunner();
+    const mgr = manager(capture.runner, {
+      sandbox: { store: sandboxStore(), home: HOME },
+      fallback: async () => ({ profileId: "cadangan", baseUrl: "https://cadangan.example.net/v1" }),
+    });
+    const info = await mgr.create({ prompt: "Halo", cwd: project });
+    await mgr.done(info.id);
+    const sandbox = capture.inputs[0]?.sandbox as SandboxOptions;
+    expect(sandbox.network.allowedDomains).toContain("cadangan.example.net");
+  });
+
   test("worktree memuat repoRoot dan worktree di allowWrite serta denyWrite", async () => {
     await initRepo();
     const capture = captureRunner();
