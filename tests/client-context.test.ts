@@ -55,3 +55,13 @@ describe("pemetaan konteks SDK", () => {
     expect(contextWindowOf({ type: "result" })).toBeUndefined();
   });
 });
+
+describe("perintah compact di palette", () => {
+  test("hanya ada saat ada sesi terpilih", async () => {
+    const { buildCommands } = await import("../src/client/lib/commands");
+    const withSession = buildCommands({ sessions: [], hasSession: true, panelOpen: false });
+    const without = buildCommands({ sessions: [], hasSession: false, panelOpen: false });
+    expect(withSession.some((command) => command.run === "compact")).toBe(true);
+    expect(without.some((command) => command.run === "compact")).toBe(false);
+  });
+});

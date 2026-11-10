@@ -27,6 +27,7 @@ import {
 } from "./hooks";
 import { createApiClient } from "./lib/api";
 import { buildCommands, type CommandId } from "./lib/commands";
+import { contextUsage } from "./lib/context";
 import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
@@ -326,9 +327,14 @@ export function App() {
         case "show-shortcuts":
           setHelpOpen(true);
           return;
+        case "compact":
+          if (selected !== undefined && selected.status !== "berjalan") {
+            void api.sendMessage(selected.id, "/compact").then(() => refresh()).catch(() => undefined);
+          }
+          return;
       }
     },
-    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, openGitPanel, openSecretsTab, togglePanel],
+    [api, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, openGitPanel, openSecretsTab, togglePanel],
   );
 
   const commands = useMemo(
@@ -586,7 +592,13 @@ export function App() {
                   cwd={selected.cwd}
                   onDecide={onDecide}
                 />
-                <ReplyBar key={selected.id} api={api} session={selected} refresh={refresh} />
+                <ReplyBar
+                  key={selected.id}
+                  api={api}
+                  session={selected}
+                  refresh={refresh}
+                  context={contextUsage(timeline.items)}
+                />
               </div>
               {panelOpen && (
                 <Panel

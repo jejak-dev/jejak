@@ -3,12 +3,15 @@ import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "../lib/api";
 import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
+import { formatTokens, type ContextUsage } from "../lib/context";
 import { Icon } from "./Icon";
 
 export interface ReplyBarProps {
   api: ApiClient;
   session: SessionInfo;
   refresh: () => Promise<void>;
+  /** Penggunaan konteks dari hasil terakhir; kosong bila belum diketahui. */
+  context?: ContextUsage;
 }
 
 const MAX_TEXTAREA_PX = 8 * 24;
@@ -24,7 +27,7 @@ function autosize(element: HTMLTextAreaElement): void {
   element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_PX)}px`;
 }
 
-export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
+export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -67,6 +70,27 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
       setError(caught instanceof ApiError ? caught.message : "gagal mengganti mode izin");
     }
   };
+
+  const compact = async (): Promise<void> => {
+    if (busy || running || !usable.allowed) return;
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.sendMessage(sessionId, "/compact");
+      void refresh();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "gagal memadatkan percakapan");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const contextTitle =
+    context === undefined
+      ? undefined
+      : context.window === undefined
+        ? `Konteks: ${formatTokens(context.tokens)} token`
+        : `Konteks: ${formatTokens(context.tokens)} dari ${formatTokens(context.window)} token (jendela menurut SDK, perkiraan untuk model non-Claude)`;
 
   const bypass = session.permissionMode === "bypassPermissions";
   const modeLabel = bypass
@@ -159,6 +183,29 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
                 {bypass && <option value="bypassPermissions">Bypass permissions</option>}
               </select>
             </label>
+            {context !== undefined && (
+              <span class={`jk-ctx jk-ctx-${context.level}`} title={contextTitle}>
+                {context.percent !== undefined && (
+                  <span class="jk-ctx-bar" aria-hidden="true">
+                    <i style={{ width: `${context.percent}%` }} />
+                  </span>
+                )}
+                <span>
+                  {context.percent !== undefined
+                    ? `${context.percent}%`
+                    : `${formatTokens(context.tokens)} token`}
+                </span>
+                <button
+                  type="button"
+                  class="jk-link-btn jk-ctx-compact"
+                  disabled={busy || running || !usable.allowed}
+                  onClick={() => void compact()}
+                  title="Padatkan percakapan (/compact) agar konteks lebih kecil"
+                >
+                  Compact
+                </button>
+              </span>
+            )}
             {session.queued > 0 && (
               <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
             )}

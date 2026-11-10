@@ -63,7 +63,8 @@ export type CommandId =
   | "open-git"
   | "open-secrets-tab"
   | "focus-search"
-  | "show-shortcuts";
+  | "show-shortcuts"
+  | "compact";
 
 export interface Command {
   id: string;
@@ -108,6 +109,12 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
       hint: "p",
       group: "aksi",
       run: "toggle-panel",
+    });
+    commands.push({
+      id: "compact",
+      label: "Compact percakapan",
+      group: "aksi",
+      run: "compact",
     });
     commands.push({
       id: "open-git",
