@@ -14,7 +14,10 @@ import {
 import { defaultRepoPath, workspaceRepoOptions } from "../lib/workspace";
 import { secretWarning } from "../lib/secret-warning";
 import { FolderPicker } from "./FolderPicker";
+import { appendAttachments } from "../lib/attachments";
+import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
 import { Icon } from "./Icon";
+import { useAttachments } from "./useAttachments";
 
 export interface ComposerProps {
   api: ApiClient;
@@ -102,6 +105,7 @@ export function Composer({
   const [apiError, setApiError] = useState<string | undefined>(undefined);
 
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const att = useAttachments(api);
   const cwdRef = useRef<HTMLInputElement | null>(null);
 
   const profiles = useMemo(() => registry?.profiles ?? [], [registry]);
@@ -241,11 +245,16 @@ export function Composer({
     const trimmedCwd = cwd.trim();
     const usingWorkspace = selectedWorkspace !== undefined;
 
-    setPromptError(trimmedPrompt === "" ? "Tulis tugasnya dulu" : undefined);
+    const hasAttachments = att.items.length > 0;
+    if (att.pending > 0) {
+      setApiError("Tunggu lampiran selesai diunggah.");
+      return;
+    }
+    setPromptError(trimmedPrompt === "" && !hasAttachments ? "Tulis tugasnya dulu" : undefined);
     setCwdError(!usingWorkspace && trimmedCwd === "" ? "Isi folder kerja" : undefined);
     setApiError(undefined);
 
-    if (trimmedPrompt === "") {
+    if (trimmedPrompt === "" && !hasAttachments) {
       promptRef.current?.focus();
       return;
     }
@@ -262,10 +271,14 @@ export function Composer({
     setBusy(true);
     try {
       const input: Parameters<ApiClient["createSession"]>[0] = {
-        prompt: briefMode ? buildImpactBriefPrompt(trimmedPrompt) : trimmedPrompt,
+        prompt: appendAttachments(
+          briefMode ? buildImpactBriefPrompt(trimmedPrompt) : trimmedPrompt,
+          att.items,
+        ),
         permissionMode: effectiveMode,
       };
       if (briefMode) input.title = impactBriefTitle(trimmedPrompt);
+      else if (hasAttachments) input.title = (trimmedPrompt === "" ? "Lampiran" : trimmedPrompt).slice(0, 60);
       if (usingWorkspace) {
         input.workspaceId = selectedWorkspace.id;
         if (repoPath !== "") input.cwd = repoPath;
@@ -289,6 +302,7 @@ export function Composer({
       if (remembered !== undefined) writeStorage(STORAGE_MODE, remembered);
 
       setPrompt("");
+      att.clear();
       setBriefMode(false);
       if (promptRef.current !== null) autosize(promptRef.current);
       onCreated(session);
@@ -329,7 +343,8 @@ export function Composer({
   const bypassSelected = !briefMode && permissionMode === "bypassPermissions";
   const canSend =
     !busy &&
-    prompt.trim() !== "" &&
+    att.pending === 0 &&
+    (prompt.trim() !== "" || att.items.length > 0) &&
     canSubmitMode(briefMode ? "plan" : permissionMode, bypassAcknowledged);
   const suggestions = selectedWorkspace === undefined
     ? recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4)
@@ -344,7 +359,9 @@ export function Composer({
 
   return (
     <form class="jk-composer" onSubmit={onSubmit} aria-busy={busy}>
-      <div class="jk-comp-card">
+      <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
+        {att.dragging && <DropHint />}
+        <AttachmentTray items={att.items} pending={att.pending} error={att.error} onRemove={att.remove} />
         <label class="jk-visually-hidden" for="jk-prompt">
           Tugas
         </label>
@@ -357,12 +374,14 @@ export function Composer({
           value={prompt}
           onInput={onPromptInput}
           onKeyDown={onPromptKeyDown}
+          onPaste={att.onPaste}
           disabled={busy}
           aria-invalid={promptError !== undefined}
           aria-describedby={promptDescribedBy === "" ? undefined : promptDescribedBy}
         />
 
         <div class="jk-comp-bar">
+          <AttachButton onFiles={(files) => void att.add(files)} disabled={busy} />
           {workspaces.length > 0 && (
             <label class="jk-chip" title="Workspace">
               <Icon name="workspace" />

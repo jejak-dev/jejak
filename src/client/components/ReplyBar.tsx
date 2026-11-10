@@ -4,7 +4,10 @@ import { ApiError, type ApiClient } from "../lib/api";
 import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
 import { formatTokens, type ContextUsage } from "../lib/context";
+import { appendAttachments } from "../lib/attachments";
+import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
 import { Icon } from "./Icon";
+import { useAttachments } from "./useAttachments";
 
 export interface ReplyBarProps {
   api: ApiClient;
@@ -32,6 +35,7 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const att = useAttachments(api);
 
   const sessionId = session.id;
 
@@ -52,7 +56,11 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
 
   const running = session.status === "berjalan";
   const usable = canSendToSession(session);
-  const canSend = !busy && usable.allowed && text.trim() !== "";
+  const canSend =
+    !busy &&
+    usable.allowed &&
+    att.pending === 0 &&
+    (text.trim() !== "" || att.items.length > 0);
   const warning = useMemo(() => secretWarning(text), [text]);
   const describedBy = [
     usable.allowed ? undefined : "jk-reply-blocked",
@@ -99,12 +107,13 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
 
   const submit = async (): Promise<void> => {
     if (!canSend) return;
-    const trimmed = text.trim();
+    const trimmed = appendAttachments(text, att.items);
     setBusy(true);
     setError(undefined);
     try {
       await api.sendMessage(sessionId, trimmed);
       setText("");
+      att.clear();
       if (textareaRef.current !== null) {
         autosize(textareaRef.current);
         textareaRef.current.focus();
@@ -137,7 +146,9 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
   return (
     <form class="jk-reply" onSubmit={onSubmit} aria-busy={busy}>
       <div class="jk-reply-inner">
-        <div class="jk-comp-card">
+        <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
+          {att.dragging && <DropHint />}
+          <AttachmentTray items={att.items} pending={att.pending} error={att.error} onRemove={att.remove} />
           <label class="jk-visually-hidden" for="jk-reply">
             Pesan lanjutan
           </label>
@@ -150,11 +161,13 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
             value={text}
             onInput={onInput}
             onKeyDown={onKeyDown}
+            onPaste={att.onPaste}
             disabled={!usable.allowed || busy}
             aria-describedby={describedBy === "" ? undefined : describedBy}
           />
 
           <div class="jk-comp-bar">
+            <AttachButton onFiles={(files) => void att.add(files)} disabled={!usable.allowed || busy} />
             <label
               class="jk-chip"
               title={running ? "Berlaku mulai balasan berikutnya" : "Mode izin sesi"}

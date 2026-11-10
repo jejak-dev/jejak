@@ -5194,3 +5194,147 @@ h2.jk-md-heading {
 .jk-ctx-compact {
   font-size: 12px;
 }
+
+/* Lampiran pesan */
+
+.jk-comp-card {
+  position: relative;
+}
+
+.jk-att-tray {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.jk-att {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 220px;
+  height: 40px;
+  padding: 0 4px 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  font-size: 12.5px;
+}
+
+.jk-att-thumb {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+.jk-att-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: var(--t3);
+}
+
+.jk-att-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t2);
+}
+
+.jk-att-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--t3);
+}
+
+.jk-att-remove:hover {
+  color: var(--t1);
+  background: var(--hover, var(--line));
+}
+
+.jk-att-pending {
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-att-error {
+  color: var(--bad);
+  font-size: 12px;
+}
+
+.jk-attach-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin-right: 2px;
+  border-radius: 8px;
+  color: var(--t2);
+  cursor: pointer;
+}
+
+.jk-attach-btn:hover,
+.jk-attach-btn:focus-within {
+  color: var(--t1);
+  background: var(--hover, var(--line));
+}
+
+.jk-attach-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.jk-dropping {
+  border-color: var(--t3);
+  border-style: dashed;
+}
+
+.jk-drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--t1);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.jk-user-atts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.jk-user-att-img {
+  display: block;
+  max-width: 220px;
+  max-height: 160px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.jk-user-att-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--line-2, var(--line));
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: inherit;
+  text-decoration: none;
+}

@@ -380,6 +380,10 @@ export interface ApiClient {
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
+  uploadAttachment(file: {
+    name: string;
+    data: string;
+  }): Promise<{ id: string; name: string; path: string; size: number; image: boolean }>;
   getFiles(id: string, path?: string, repo?: string): Promise<DirectoryListing>;
   getFile(id: string, path: string, repo?: string): Promise<FileContent>;
   searchFiles(
@@ -1067,6 +1071,22 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         {},
       );
       return { interrupted: field(data, "interrupted") === true };
+    },
+
+    async uploadAttachment(file) {
+      const data = await request("POST", "/api/attachments", file);
+      const attachment = field(data, "attachment");
+      if (typeof attachment !== "object" || attachment === null) {
+        throw new ApiError("Respons lampiran tidak valid.", 500);
+      }
+      const record = attachment as Record<string, unknown>;
+      return {
+        id: String(record.id),
+        name: String(record.name),
+        path: String(record.path),
+        size: Number(record.size),
+        image: record.image === true,
+      };
     },
 
     async sendMessage(id, text) {

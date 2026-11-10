@@ -4,6 +4,7 @@ import { CANCELLED_MESSAGE, dedupeToolPermission, type TimelineItem } from "../l
 import { groupSteps, stepsStatus, summarizeSteps, type StepItem } from "../lib/step-groups";
 import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
 import { formatCost, formatCount } from "../lib/format";
+import { attachmentUrl, splitAttachments } from "../lib/attachments";
 import { CopyButton } from "./CopyButton";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
@@ -329,12 +330,36 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
             const item = block.item;
             const index = block.index;
             switch (item.kind) {
-              case "user":
+              case "user": {
+                const parsed = splitAttachments(item.text);
                 return (
                   <div class="jk-user" key={index}>
-                    {item.text}
+                    {parsed.body}
+                    {parsed.files.length > 0 && (
+                      <div class="jk-user-atts">
+                        {parsed.files.map((file) =>
+                          file.image ? (
+                            <a key={file.path} href={attachmentUrl(file)} target="_blank" rel="noreferrer">
+                              <img class="jk-user-att-img" src={attachmentUrl(file)} alt={file.name} />
+                            </a>
+                          ) : (
+                            <a
+                              key={file.path}
+                              class="jk-user-att-file"
+                              href={attachmentUrl(file)}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              <Icon name="file" />
+                              {file.name}
+                            </a>
+                          ),
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
+              }
 
 
               case "text":
