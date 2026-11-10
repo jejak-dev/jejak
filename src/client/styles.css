@@ -1374,6 +1374,12 @@ h2.jk-md-heading {
   color: var(--t3);
 }
 
+.jk-step-desc {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--t2);
+}
+
 .jk-step-status {
   font-size: 12px;
   color: var(--t3);

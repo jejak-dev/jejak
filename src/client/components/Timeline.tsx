@@ -242,7 +242,13 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
                       <Icon name="chevron" />
                     </span>
                     <span class="jk-step-name">{item.name}</span>
-                    {item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>}
+                    {view.kind === "command" && view.description !== undefined && view.description !== "" ? (
+                      <span class="jk-step-arg jk-step-desc" title={item.summary}>
+                        {view.description}
+                      </span>
+                    ) : (
+                      item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>
+                    )}
                     {sandboxed === true && item.name === "Bash" && (
                       <span
                         class="jk-step-tag"
