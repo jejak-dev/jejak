@@ -38,6 +38,10 @@ import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
+import { indexerRoutes } from "./routes/indexer";
+import { defaultGitProviderStore, type GitProviderStore } from "./gitprovider/provider-store";
+import type { AdapterDeps } from "./gitprovider/adapters";
+import { RepoIndexer, indexRoot } from "./indexer/repo-indexer";
 import { questionRoutes } from "./routes/questions";
 import { QuestionService } from "./questions/question-service";
 import { defaultQuestionStore, type QuestionStore } from "./questions/question-store";
@@ -96,6 +100,11 @@ export interface CreateAppOptions {
   sandbox?: SandboxStore;
   /** Antrean pertanyaan wawancara; tanpa store rute 503 dan tool question_ask tidak ada. */
   questions?: QuestionStore;
+  /** Penyedia git dan indexer repo; tanpa keduanya rute 503 dan tool index_* tidak ada. */
+  gitProviders?: GitProviderStore;
+  indexer?: RepoIndexer;
+  /** Dependensi adapter git (mis. fetch palsu untuk tes). */
+  gitAdapterDeps?: AdapterDeps;
   /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
   home?: string;
 }
@@ -119,6 +128,7 @@ export function createApp(options: CreateAppOptions = {}) {
           ...(options.memory === undefined ? {} : { service: options.memory }),
           ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
           ...(questionService === undefined ? {} : { questions: questionService }),
+          ...(options.indexer === undefined ? {} : { indexer: options.indexer }),
           mcpUrl: options.mcpUrl,
         });
 
@@ -243,6 +253,14 @@ export function createApp(options: CreateAppOptions = {}) {
     )
     .use(memoryRoutes({ service: options.memory, audit: options.audit }))
     .use(questionRoutes({ service: questionService, audit: options.audit }))
+    .use(
+      indexerRoutes({
+        providers: options.gitProviders,
+        indexer: options.indexer,
+        audit: options.audit,
+        adapterDeps: options.gitAdapterDeps,
+      }),
+    )
     .use(workspaceRoutes({ service: options.workspaces, audit: options.audit }))
     .use(
       fsRoutes({
@@ -314,6 +332,9 @@ export function startServer(options: ServeOptions = {}) {
   const claudeConfig = defaultClaudeConfigStore(process.env);
   const sandbox = defaultSandboxStore(process.env);
   const questions = defaultQuestionStore(process.env);
+  const gitProviders = defaultGitProviderStore(process.env);
+  const indexer =
+    gitProviders === undefined ? undefined : new RepoIndexer({ root: indexRoot(process.env) });
   const app = createApp({
     sessionStore: store,
     memory,
@@ -328,6 +349,7 @@ export function startServer(options: ServeOptions = {}) {
     ...(claudeConfig === undefined ? {} : { claudeConfig }),
     ...(sandbox === undefined ? {} : { sandbox }),
     ...(questions === undefined ? {} : { questions }),
+    ...(gitProviders === undefined || indexer === undefined ? {} : { gitProviders, indexer }),
   }).listen({
     hostname: host,
     port,

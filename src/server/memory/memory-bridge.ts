@@ -8,6 +8,8 @@ import {
 } from "./mcp-http";
 import { MemoryTools, projectKeyFor } from "./memory-tools";
 import type { MemoryService } from "./memory-service";
+import { IndexTools } from "../indexer/index-tools";
+import type { RepoIndexer } from "../indexer/repo-indexer";
 import { QuestionTools } from "../questions/question-tools";
 import type { QuestionService } from "../questions/question-service";
 import { WorkspaceTools, type WorkspaceToolSource } from "../workspaces/workspace-tools";
@@ -34,8 +36,13 @@ export interface MemoryBridgeOptions {
   workspaces?: WorkspaceToolSource;
   /** Tanpa `questions`, tool `question_ask` tidak ada. */
   questions?: QuestionService;
+  /** Tanpa `indexer`, tool index_* tidak ada. */
+  indexer?: RepoIndexer;
   mcpUrl?: string;
 }
+
+const INDEX_INDEX_LINE =
+  " Repo yang tidak ada di mesin bisa dibaca dari indeks (clone dangkal, hanya baca, mungkin tertinggal): gunakan index_repos, index_search, dan index_file; sebut bahwa jawabannya dari indeks.";
 
 const QUESTION_INDEX_LINE =
   " Untuk pengetahuan yang tidak ada di kode (mis. tabel X ditulis service mana), ajukan pertanyaan terarah dengan question_ask; jawabannya dikonfirmasi manusia dan dicatat sebagai memory, jangan menebak.";
@@ -48,6 +55,7 @@ function composeTools(
   memoryTools: MemoryTools | undefined,
   workspaceTools: WorkspaceTools | undefined,
   questionTools: QuestionTools | undefined,
+  indexTools: IndexTools | undefined,
 ): McpToolSet {
   return {
     definitionsFor(ctx: McpToolContext): McpToolDefinition[] {
@@ -57,6 +65,7 @@ function composeTools(
         definitions.push(...workspaceTools.definitions);
       }
       if (questionTools !== undefined) definitions.push(...questionTools.definitions);
+      if (indexTools !== undefined) definitions.push(...indexTools.definitions);
       return definitions;
     },
     async call(ctx: McpToolContext, name: string, args: unknown) {
@@ -85,6 +94,16 @@ function composeTools(
         );
       }
       if (
+        indexTools !== undefined &&
+        indexTools.definitions.some((tool) => tool.name === name)
+      ) {
+        return indexTools.call(
+          { sessionId: ctx.sessionId, projectKey: ctx.projectKey, cwd: ctx.cwd },
+          name,
+          args,
+        );
+      }
+      if (
         workspaceTools !== undefined &&
         workspaceTools.definitions.some((tool) => tool.name === name)
       ) {
@@ -105,7 +124,8 @@ export function createMemoryBridge(options: MemoryBridgeOptions): {
     options.workspaces === undefined ? undefined : new WorkspaceTools(options.workspaces);
   const questionTools =
     options.questions === undefined ? undefined : new QuestionTools(options.questions);
-  const tools = composeTools(memoryTools, workspaceTools, questionTools);
+  const indexTools = options.indexer === undefined ? undefined : new IndexTools(options.indexer);
+  const tools = composeTools(memoryTools, workspaceTools, questionTools, indexTools);
   const registry = new McpTokenRegistry();
 
   const bridge: MemoryBridge = {
@@ -123,6 +143,9 @@ export function createMemoryBridge(options: MemoryBridgeOptions): {
       if (memoryTools !== undefined) {
         indexLine = await memoryTools.indexLine(ctx);
       }
+      if (indexTools !== undefined) {
+        indexLine = `${indexLine}${INDEX_INDEX_LINE}`.trim();
+      }
       if (questionTools !== undefined) {
         indexLine = `${indexLine}${QUESTION_INDEX_LINE}`.trim();
       }
@@ -135,6 +158,9 @@ export function createMemoryBridge(options: MemoryBridgeOptions): {
       const available: string[] = [];
       if (memoryTools !== undefined) {
         available.push(...memoryTools.definitions.map((tool) => tool.name));
+      }
+      if (indexTools !== undefined) {
+        available.push(...indexTools.definitions.map((tool) => tool.name));
       }
       if (questionTools !== undefined) {
         available.push(...questionTools.definitions.map((tool) => tool.name));

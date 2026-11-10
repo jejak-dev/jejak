@@ -75,6 +75,11 @@ function normalizePath(raw: string, cwd: string, home: string): string {
   return absolute;
 }
 
+/** Apakah jalur (relatif atau absolut) tampak berkas rahasia; dipakai indexer untuk menyaring. */
+export function isSecretFilePath(path: string): boolean {
+  return ruleForPath(path) !== undefined;
+}
+
 /** Nama aturan yang cocok untuk jalur absolut, atau undefined. */
 function ruleForPath(absPath: string): string | undefined {
   const name = basename(absPath);
@@ -267,6 +272,9 @@ export function checkSecretAccess(
           }
           // Agent tidak boleh mematikan sandbox-nya sendiri lewat API.
           // Agent tidak boleh menjawab pertanyaannya sendiri (menjadi memory "dikonfirmasi").
+          if (token.includes("/api/git-providers")) {
+            return { blocked: true, rule: "git-providers-api", reason: SECRET_BLOCK_REASON };
+          }
           if (token.includes("/api/questions")) {
             return { blocked: true, rule: "questions-api", reason: SECRET_BLOCK_REASON };
           }
