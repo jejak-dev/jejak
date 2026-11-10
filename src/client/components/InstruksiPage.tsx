@@ -418,7 +418,7 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
           tabIndex={-1}
           class="jk-settings-title"
         >
-          Instructions and skills
+          Instructions dan skills
         </h2>
         <p class="jk-privacy-note">
           Instruksi, skills, dan hooks mengarahkan agent. Perubahan berlaku di giliran

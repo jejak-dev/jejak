@@ -456,7 +456,7 @@ export function ProfileForm({
           aria-invalid={invalid("fallback")}
           aria-describedby={describedBy("jk-pf-fallback-help", errorId("fallback"))}
         >
-          <option value="">No fallback</option>
+          <option value="">Tanpa cadangan</option>
           {fallbackOptions.map((option) => (
             <option key={option.id} value={option.id}>
               {option.name}

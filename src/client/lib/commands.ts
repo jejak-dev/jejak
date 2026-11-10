@@ -126,7 +126,7 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
   commands.push({ id: "focus-search", label: "Cari sesi", hint: "/", group: "aksi", run: "focus-search" });
   commands.push({
     id: "show-shortcuts",
-    label: "Keyboard shortcuts",
+    label: "Pintasan keyboard",
     hint: "?",
     group: "aksi",
     run: "show-shortcuts",

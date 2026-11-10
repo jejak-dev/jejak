@@ -18,7 +18,7 @@ import {
 } from "../lib/indexer";
 
 const NOTE =
-  "Indexer membuat clone dangkal hanya-baca ke cache Jejak (tidak mengubah repo aslinya). Token disimpan di server (izin 0600) dan tidak pernah dikirim ke model atau tampil lagi. Agent membaca indeks lewat index_repos, index_search, dan index_file; hasilnya diberi label mungkin tertinggal.";
+  "Membuat salinan dangkal hanya-baca di cache Jejak; repo aslinya tidak diubah. Token tetap di server dan tidak dikirim ke model. Hasil indeks diberi label mungkin tertinggal.";
 
 function errorMessage(caught: unknown): string {
   if (caught instanceof ApiError) return caught.message;
