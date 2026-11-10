@@ -79,7 +79,7 @@ describe("SqliteAuditStore", () => {
 
   test("summary 7 hari terakhir dan redactedSessions", () => {
     const store = open();
-    const now = new Date("2026-11-09T12:00:00.000Z");
+    const now = new Date();
     store.append({
       kind: "tool",
       sessionId: "s1",
@@ -120,7 +120,7 @@ describe("SqliteAuditStore", () => {
 
   test("prune memakai retensi dan mengembalikan jumlah", () => {
     const store = open({ retentionDays: 2 });
-    const now = new Date("2026-11-09T12:00:00.000Z");
+    const now = new Date();
     store.append({
       kind: "tool",
       summary: "tua",
@@ -218,7 +218,7 @@ describe("defaultAuditStore", () => {
   });
 
   test("membaca JEJAK_AUDIT_DAYS lewat perilaku prune", () => {
-    const now = new Date("2026-11-09T12:00:00.000Z");
+    const now = new Date();
     const old = new Date(now.getTime() - 91 * DAY).toISOString();
     const fresh = new Date(now.getTime() - 12 * 60 * 60 * 1000).toISOString();
 
