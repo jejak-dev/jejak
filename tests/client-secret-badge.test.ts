@@ -14,7 +14,7 @@ describe("secretBadge", () => {
     const badge = secretBadge({ redactedEvents: 3 });
     expect(badge?.label).toBe("Rahasia disamarkan");
     expect(badge?.title).toBe(
-      "3 event disamarkan di sesi ini. Lihat Log audit untuk rinciannya.",
+      "3 event disamarkan di sesi ini. Lihat Audit log untuk rinciannya.",
     );
   });
 });

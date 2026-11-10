@@ -24,7 +24,7 @@ export const SHORTCUT_LIST: readonly { label: string; keys: string }[] = [
   { label: "Palette perintah", keys: "Ctrl K / ⌘K" },
   { label: "Bantuan pintasan", keys: "?" },
   { label: "Cari sesi", keys: "/" },
-  { label: "Sesi baru", keys: "n" },
+  { label: "New session", keys: "n" },
   { label: "Tampilkan/sembunyikan panel", keys: "p" },
   { label: "Sesi sebelumnya", keys: "Alt ↑" },
   { label: "Sesi berikutnya", keys: "Alt ↓" },

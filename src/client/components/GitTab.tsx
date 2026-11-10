@@ -573,9 +573,9 @@ export function GitTab({
                 )}
               </div>
 
-              <section class="jk-git-section" aria-label="Riwayat commit">
+              <section class="jk-git-section" aria-label="Commit history">
                 <div class="jk-git-section-head">
-                  <h3 class="jk-git-section-title">Riwayat</h3>
+                  <h3 class="jk-git-section-title">History</h3>
                 </div>
                 {commits.length === 0 ? (
                   <p class="jk-panel-note">Belum ada commit.</p>

@@ -33,7 +33,7 @@ interface TabSpec {
 }
 
 const TABS: TabSpec[] = [
-  { id: "proposed", label: "Usulan" },
+  { id: "proposed", label: "Proposed" },
   { id: "active", label: "Aktif" },
 ];
 
@@ -249,7 +249,7 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
           aria-selected={section === "pertanyaan"}
           onClick={() => setSection("pertanyaan")}
         >
-          Pertanyaan
+          Questions
         </button>
       </div>
 

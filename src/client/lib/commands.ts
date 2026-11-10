@@ -92,7 +92,7 @@ export interface BuildCommandsInput {
 /** Aksi tetap dulu, lalu sesi tidak terarsip terbaru (maks 50). */
 export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommandsInput): Command[] {
   const commands: Command[] = [
-    { id: "new-session", label: "Sesi baru", group: "aksi", run: "new-session" },
+    { id: "new-session", label: "New session", group: "aksi", run: "new-session" },
     { id: "open-workspace", label: "Buka Workspace", group: "aksi", run: "open-workspace" },
     { id: "open-mcp", label: "Buka Server MCP", group: "aksi", run: "open-mcp" },
     { id: "open-audit", label: "Buka log audit", group: "aksi", run: "open-audit" },
@@ -126,7 +126,7 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
   commands.push({ id: "focus-search", label: "Cari sesi", hint: "/", group: "aksi", run: "focus-search" });
   commands.push({
     id: "show-shortcuts",
-    label: "Pintasan keyboard",
+    label: "Keyboard shortcuts",
     hint: "?",
     group: "aksi",
     run: "show-shortcuts",

@@ -73,7 +73,7 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
           </span>
         )}
       </div>
-      {bypass === true && <span class="jk-bypass-marker">Tanpa izin</span>}
+      {bypass === true && <span class="jk-bypass-marker">Bypass</span>}
       {state !== undefined && (
         <span class="jk-state" role="status">
           <span class={`jk-dot${state.dot === "" ? "" : ` jk-dot-${state.dot}`}`} aria-hidden="true" />

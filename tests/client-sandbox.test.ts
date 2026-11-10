@@ -31,11 +31,11 @@ describe("sandboxBadge", () => {
     expect(sandboxBadge({ sandbox: "standar" })).toBeUndefined();
   });
 
-  test("sesi mati memakai nada warn dan menyebut Log audit", () => {
+  test("sesi mati memakai nada warn dan menyebut Audit log", () => {
     const badge = sandboxBadge({ sandbox: "mati" });
     expect(badge?.label).toBe("Tanpa sandbox");
     expect(badge?.tone).toBe("warn");
-    expect(badge?.title).toContain("Log audit");
+    expect(badge?.title).toContain("Audit log");
   });
 });
 

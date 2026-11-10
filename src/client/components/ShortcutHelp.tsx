@@ -47,11 +47,11 @@ export function ShortcutHelp({ onClose }: ShortcutHelpProps) {
         class="jk-palette jk-shortcut-help"
         role="dialog"
         aria-modal="true"
-        aria-label="Pintasan keyboard"
+        aria-label="Keyboard shortcuts"
         onKeyDown={onKeyDown}
       >
         <header class="jk-shortcut-head">
-          <h2 class="jk-shortcut-title">Pintasan keyboard</h2>
+          <h2 class="jk-shortcut-title">Keyboard shortcuts</h2>
           <button
             ref={closeRef}
             type="button"

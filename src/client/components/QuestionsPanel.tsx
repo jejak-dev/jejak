@@ -18,9 +18,9 @@ export interface QuestionsPanelProps {
 }
 
 const FILTERS: { id: QuestionStatusFilter; label: string }[] = [
-  { id: "open", label: "Terbuka" },
-  { id: "answered", label: "Dijawab" },
-  { id: "dismissed", label: "Ditutup" },
+  { id: "open", label: "Open" },
+  { id: "answered", label: "Answered" },
+  { id: "dismissed", label: "Dismissed" },
 ];
 
 const NOTE =

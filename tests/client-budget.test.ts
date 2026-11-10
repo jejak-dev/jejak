@@ -100,7 +100,7 @@ describe("budgetBadge", () => {
 
   test("warn sesi", () => {
     const badge = budgetBadge({ budget: { session: "warn" } });
-    expect(badge?.label).toBe("Anggaran hampir habis");
+    expect(badge?.label).toBe("Budget almost used");
     expect(badge?.tone).toBe("warn");
     expect(badge?.title).toContain("sesi");
     expect(badge?.title).toContain("tidak dihentikan");
@@ -108,7 +108,7 @@ describe("budgetBadge", () => {
 
   test("over dihari menang dan nada bad", () => {
     const badge = budgetBadge({ budget: { session: "ok", day: "over" } });
-    expect(badge?.label).toBe("Anggaran terlewati");
+    expect(badge?.label).toBe("Budget exceeded");
     expect(badge?.tone).toBe("bad");
     expect(badge?.title).toContain("hari");
   });
@@ -122,7 +122,7 @@ describe("budgetBadge", () => {
   test("over sesi saat hari warn memakai bad", () => {
     const badge = budgetBadge({ budget: { session: "over", day: "warn" } });
     expect(badge?.tone).toBe("bad");
-    expect(badge?.label).toBe("Anggaran terlewati");
+    expect(badge?.label).toBe("Budget exceeded");
     expect(badge?.title).toContain("sesi");
   });
 });

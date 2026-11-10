@@ -89,7 +89,7 @@ export function budgetBadge(
   if (rank === 0) return undefined;
 
   const tone: "warn" | "bad" = rank === 2 ? "bad" : "warn";
-  const label = rank === 2 ? "Anggaran terlewati" : "Anggaran hampir habis";
+  const label = rank === 2 ? "Budget exceeded" : "Budget almost used";
 
   const scopes: string[] = [];
   if (sessionRank === rank) scopes.push("sesi");

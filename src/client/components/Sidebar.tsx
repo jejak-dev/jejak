@@ -307,7 +307,7 @@ export function Sidebar({
               />
               <span class="jk-session-title">{session.title}</span>
               {showsBypassMarker(session.permissionMode) && (
-                <span class="jk-session-bypass">Tanpa izin</span>
+                <span class="jk-session-bypass">Bypass</span>
               )}
               <time class="jk-session-time" dateTime={session.updatedAt}>
                 {formatAgo(session.updatedAt, now)}
@@ -472,7 +472,7 @@ export function Sidebar({
 
       <button type="button" class="jk-button jk-button-primary jk-new" onClick={onNew}>
         <Icon name="plus" />
-        Sesi baru
+        New session
       </button>
 
       <nav class="jk-groups" aria-label="Daftar sesi">
@@ -563,7 +563,7 @@ export function Sidebar({
           aria-current={instruksiActive ? "page" : undefined}
         >
           <Icon name="doc" />
-          <span class="jk-foot-text">Instruksi</span>
+          <span class="jk-foot-text">Instructions</span>
         </a>
         <a
           class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
@@ -571,7 +571,7 @@ export function Sidebar({
           aria-current={auditActive ? "page" : undefined}
         >
           <Icon name="audit" />
-          <span class="jk-foot-text">Log audit</span>
+          <span class="jk-foot-text">Audit log</span>
         </a>
         <a
           class={`jk-foot-link${providersActive ? " jk-foot-link-active" : ""}`}
@@ -579,7 +579,7 @@ export function Sidebar({
           aria-current={providersActive ? "page" : undefined}
         >
           <Icon name="cube" />
-          <span class="jk-foot-text">{activeProfileLabel ?? "Atur provider"}</span>
+          <span class="jk-foot-text">{activeProfileLabel ?? "Set up provider"}</span>
           <Icon name="gear" />
         </a>
         <button
@@ -592,7 +592,7 @@ export function Sidebar({
           }}
         >
           <Icon name="bell" />
-          <span class="jk-foot-text">Notifikasi</span>
+          <span class="jk-foot-text">Notifications</span>
           <span class="jk-foot-count">{notifyPrefs.enabled ? "Aktif" : "Mati"}</span>
         </button>
         {notifyOpen && (

@@ -206,7 +206,7 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
 
             {mode === "mati" && (
               <p class="jk-secret-warning" role="status">
-                Sesi baru berjalan tanpa batas sandbox. Perubahan tercatat di Log audit.
+                Sesi baru berjalan tanpa batas sandbox. Perubahan tercatat di Audit log.
               </p>
             )}
 

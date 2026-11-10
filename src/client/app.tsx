@@ -106,9 +106,9 @@ export function App() {
           : showingMcp
             ? "Server MCP · Jejak"
             : showingAudit
-              ? "Log audit · Jejak"
+              ? "Audit log · Jejak"
               : showingInstruksi
-                ? "Instruksi · Jejak"
+                ? "Instructions · Jejak"
                 : selected !== undefined
                   ? `${selected.title} · Jejak`
                   : "Jejak";
@@ -155,7 +155,7 @@ export function App() {
     void reload();
   }, [reload]);
 
-  // Pintasan keyboard global (Ctrl/Cmd+K, ?, /, n, p, Alt↑↓).
+  // Keyboard shortcuts global (Ctrl/Cmd+K, ?, /, n, p, Alt↑↓).
   // Saat overlay terbuka, tombol ditangani komponen overlay itu sendiri.
   useEffect(() => {
     if (paletteOpen || helpOpen) return;
@@ -234,7 +234,7 @@ export function App() {
     togglePanel,
   ]);
 
-  // Fokus ke textarea tugas setelah "Sesi baru" lewat pintasan.
+  // Fokus ke textarea tugas setelah "New session" lewat pintasan.
   const handledPromptFocusRef = useRef(0);
   useEffect(() => {
     if (promptFocusTick === 0 || handledPromptFocusRef.current === promptFocusTick) return;

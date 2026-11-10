@@ -44,7 +44,7 @@ const WORKTREE_NOTE =
   "Sesi bekerja di cabang baru jejak/… dalam folder terpisah; repo asli tidak tersentuh. " +
   "Perubahan yang belum di-commit tidak ikut.";
 
-const SANDBOX_OFF_NOTE = "Bash agent berjalan tanpa batas berkas dan jaringan. Tercatat di Log audit.";
+const SANDBOX_OFF_NOTE = "Bash agent berjalan tanpa batas berkas dan jaringan. Tercatat di Audit log.";
 
 const MAX_TEXTAREA_PX = 8 * 24;
 
@@ -408,9 +408,9 @@ export function Composer({
             </label>
           ) : (
             <>
-              <label class="jk-chip jk-chip-cwd" title="Folder kerja">
+              <label class="jk-chip jk-chip-cwd" title="Working directory">
                 <Icon name="folder" />
-                <span class="jk-visually-hidden">Folder kerja</span>
+                <span class="jk-visually-hidden">Working directory</span>
                 <input
                   id="jk-cwd"
                   ref={cwdRef}

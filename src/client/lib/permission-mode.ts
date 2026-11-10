@@ -22,7 +22,7 @@ export function storedModeFrom(raw: string | null | undefined): StoredPermission
   return raw === "acceptEdits" || raw === "plan" ? raw : "default";
 }
 
-/** Penanda "Tanpa izin" ditampilkan untuk sesi bermode bypass. */
+/** Penanda "Bypass" ditampilkan untuk sesi bermode bypass. */
 export function showsBypassMarker(mode: string | undefined): boolean {
   return mode === "bypassPermissions";
 }

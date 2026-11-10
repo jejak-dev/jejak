@@ -135,14 +135,14 @@ export function BudgetSettings({ api }: BudgetSettingsProps) {
   return (
     <section class="jk-budget" aria-labelledby="jk-budget-title">
       <h2 class="jk-budget-title" id="jk-budget-title">
-        Anggaran
+        Budget
       </h2>
       <p class="jk-help">{NOTE}</p>
 
       {loading && <p class="jk-note">Memuat anggaran…</p>}
 
       {!loading && disabled && (
-        <p class="jk-note">Anggaran dimatikan (JEJAK_BUDGET=0).</p>
+        <p class="jk-note">Budget dimatikan (JEJAK_BUDGET=0).</p>
       )}
 
       {!loading && !disabled && loadError !== undefined && (

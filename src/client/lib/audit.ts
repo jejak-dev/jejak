@@ -15,8 +15,8 @@ export const AUDIT_KIND_LABELS: Record<string, string> = {
   "rahasia-disamarkan": "Rahasia disamarkan",
   "rahasia-diblokir": "Rahasia diblokir",
   mcp: "MCP",
-  pengaturan: "Pengaturan",
-  anggaran: "Anggaran",
+  pengaturan: "Settings",
+  anggaran: "Budget",
   provider: "Provider",
   sandbox: "Sandbox",
 };

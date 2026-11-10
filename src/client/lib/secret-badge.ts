@@ -12,6 +12,6 @@ export function secretBadge(session: { redactedEvents?: number }): SecretBadge |
   if (count === undefined || !Number.isFinite(count) || count <= 0) return undefined;
   return {
     label: "Rahasia disamarkan",
-    title: `${count} event disamarkan di sesi ini. Lihat Log audit untuk rinciannya.`,
+    title: `${count} event disamarkan di sesi ini. Lihat Audit log untuk rinciannya.`,
   };
 }

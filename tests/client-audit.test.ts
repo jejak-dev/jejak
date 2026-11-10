@@ -36,8 +36,8 @@ describe("label dan nada jenis", () => {
     expect(kindLabel("rahasia-disamarkan")).toBe("Rahasia disamarkan");
     expect(kindLabel("rahasia-diblokir")).toBe("Rahasia diblokir");
     expect(kindLabel("mcp")).toBe("MCP");
-    expect(kindLabel("pengaturan")).toBe("Pengaturan");
-    expect(kindLabel("anggaran")).toBe("Anggaran");
+    expect(kindLabel("pengaturan")).toBe("Settings");
+    expect(kindLabel("anggaran")).toBe("Budget");
     expect(kindLabel("provider")).toBe("Provider");
     expect(kindLabel("sandbox")).toBe("Sandbox");
   });
