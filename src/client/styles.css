@@ -568,12 +568,38 @@ code {
 }
 
 .jk-session-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  padding: 2px 8px 8px 22px;
-  font-size: 12px;
+  display: grid;
+  gap: 1px;
+  margin: 2px 8px 8px 8px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+
+.jk-session-actions > .jk-link-btn,
+.jk-session-actions > button {
+  display: block;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  text-decoration: none;
+  color: var(--t1);
+}
+
+.jk-session-actions > button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.jk-session-actions > .jk-session-danger {
+  margin-top: 3px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+  padding-top: 8px;
+  color: var(--bad);
 }
 
 .jk-session-danger {
@@ -2066,8 +2092,8 @@ h2.jk-md-heading {
 }
 
 .jk-radio-group {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 6px 18px;
 }
 
@@ -2218,17 +2244,19 @@ h2.jk-md-heading {
   gap: 8px;
   flex: none;
   min-height: 46px;
-  padding: 0 10px 0 14px;
+  padding: 0 6px 0 12px;
   border-bottom: 1px solid var(--line);
 }
 
 .jk-panel-tabs {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 10px;
   flex: 1;
   min-width: 0;
 }
+
+.jk-panel-tab { flex: none; white-space: nowrap; font-size: 12px; }
 
 .jk-panel-tab {
   display: inline-flex;
@@ -5025,10 +5053,13 @@ h2.jk-md-heading {
 
 /* Muat ulang panel dipisah dari deretan tab */
 .jk-panel-refresh {
-  margin-left: 4px;
+  flex: none;
+  margin-left: 2px;
   padding-left: 8px;
   border-left: 1px solid var(--line);
   border-radius: 0;
 }
 
 .jk-chip-btn { background: none; font-family: inherit; }
+
+.jk-indexer .jk-workspace-head { border-bottom: 0; padding-bottom: 8px; }

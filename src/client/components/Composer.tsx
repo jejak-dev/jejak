@@ -417,7 +417,7 @@ export function Composer({
                   type="text"
                   class="jk-chip-input"
                   value={cwd}
-                  size={Math.min(Math.max(cwd.length, 12), 34)}
+                  size={Math.min(Math.max(cwd.length, 12), 26)}
                   spellcheck={false}
                   onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
                   disabled={busy}
