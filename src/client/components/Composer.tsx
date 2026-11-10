@@ -1,3 +1,4 @@
+import { buildImpactBriefPrompt, impactBriefTitle } from "../../shared/impact-brief";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient, type SandboxState, type WorkspaceItem } from "../lib/api";
@@ -87,6 +88,7 @@ export function Composer({
   const [profileId, setProfileId] = useState("");
   const [model, setModel] = useState("");
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(readStoredMode);
+  const [briefMode, setBriefMode] = useState(false);
   const [bypassAcknowledged, setBypassAcknowledged] = useState(false);
   const [useWorktree, setUseWorktree] = useState(() => readStorage(STORAGE_WORKTREE) === "1");
   const [sandboxState, setSandboxState] = useState<SandboxState | undefined>(undefined);
@@ -220,7 +222,8 @@ export function Composer({
       cwdRef.current?.focus();
       return;
     }
-    if (!canSubmitMode(permissionMode, bypassAcknowledged)) {
+    const effectiveMode: PermissionMode = briefMode ? "plan" : permissionMode;
+    if (!canSubmitMode(effectiveMode, bypassAcknowledged)) {
       setApiError("Centang pernyataan risiko dulu untuk memakai mode tanpa izin.");
       return;
     }
@@ -228,9 +231,10 @@ export function Composer({
     setBusy(true);
     try {
       const input: Parameters<ApiClient["createSession"]>[0] = {
-        prompt: trimmedPrompt,
-        permissionMode,
+        prompt: briefMode ? buildImpactBriefPrompt(trimmedPrompt) : trimmedPrompt,
+        permissionMode: effectiveMode,
       };
+      if (briefMode) input.title = impactBriefTitle(trimmedPrompt);
       if (usingWorkspace) {
         input.workspaceId = selectedWorkspace.id;
         if (repoPath !== "") input.cwd = repoPath;
@@ -239,7 +243,7 @@ export function Composer({
       }
       if (profileId !== "") input.profileId = profileId;
       if (model !== "") input.model = model;
-      if (permissionMode === "bypassPermissions") input.confirmBypass = true;
+      if (effectiveMode === "bypassPermissions") input.confirmBypass = true;
       if (!usingWorkspace && useWorktree) input.worktree = true;
       if (noSandbox && sandboxState?.config.mode === "standar") input.sandbox = "mati";
 
@@ -249,10 +253,12 @@ export function Composer({
       writeStorage(STORAGE_WORKSPACE, usingWorkspace ? selectedWorkspace.id : "");
       writeStorage(STORAGE_WORKTREE, useWorktree ? "1" : "0");
       writeStorage(STORAGE_PROVIDER, profileId);
-      const remembered = storableMode(permissionMode);
+      // Mode rencana paksaan brief tidak menjadi pilihan awal berikutnya.
+      const remembered = briefMode ? undefined : storableMode(permissionMode);
       if (remembered !== undefined) writeStorage(STORAGE_MODE, remembered);
 
       setPrompt("");
+      setBriefMode(false);
       if (promptRef.current !== null) autosize(promptRef.current);
       onCreated(session);
     } catch (caught) {
@@ -287,12 +293,13 @@ export function Composer({
       ? "Model bawaan"
       : (modelEntry?.label ?? model)
     : undefined;
-  const modeLabel = PERMISSION_OPTIONS.find((option) => option.value === permissionMode)?.label ?? "";
-  const bypassSelected = permissionMode === "bypassPermissions";
+  const modeLabel =
+    PERMISSION_OPTIONS.find((option) => option.value === (briefMode ? "plan" : permissionMode))?.label ?? "";
+  const bypassSelected = !briefMode && permissionMode === "bypassPermissions";
   const canSend =
     !busy &&
     prompt.trim() !== "" &&
-    canSubmitMode(permissionMode, bypassAcknowledged);
+    canSubmitMode(briefMode ? "plan" : permissionMode, bypassAcknowledged);
   const suggestions = selectedWorkspace === undefined
     ? recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4)
     : [];
@@ -474,12 +481,12 @@ export function Composer({
               id="jk-mode"
               class="jk-chip-select"
               aria-label="Mode izin"
-              value={permissionMode}
+              value={briefMode ? "plan" : permissionMode}
               onChange={(event) => {
                 setPermissionMode((event.currentTarget as HTMLSelectElement).value as PermissionMode);
                 setBypassAcknowledged(false);
               }}
-              disabled={busy}
+              disabled={busy || briefMode}
             >
               {PERMISSION_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -521,6 +528,25 @@ export function Composer({
           </p>
         </div>
       )}
+
+      <div class="jk-worktree-option jk-brief-option">
+        <label class="jk-bypass-check">
+          <input
+            id="jk-brief"
+            type="checkbox"
+            checked={briefMode}
+            aria-describedby="jk-brief-note"
+            onChange={(event) => setBriefMode((event.currentTarget as HTMLInputElement).checked)}
+            disabled={busy}
+          />
+          <span>Brief dampak dulu</span>
+        </label>
+        <p class="jk-note" id="jk-brief-note">
+          {briefMode
+            ? "Agent hanya menyelidiki (mode rencana, tanpa mengubah berkas) dan menyusun daftar service, tabel, dan queue yang terdampak, lalu mengajukan pertanyaan terbuka. Tugasmu dibungkus templat brief."
+            : "Untuk tugas lintas repo: minta daftar dampak dulu sebelum mengerjakan."}
+        </p>
+      </div>
 
       {sandboxState !== undefined && sandboxState.config.mode === "mati" && (
         <p class="jk-note">Sandbox mati secara global (lihat Pengaturan).</p>
