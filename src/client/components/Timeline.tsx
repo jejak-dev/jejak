@@ -13,6 +13,8 @@ export interface TimelineProps {
   connection: string;
   /** Sesi sedang bekerja: tampilkan indikator aktivitas di dasar timeline. */
   running?: boolean;
+  /** Bash berjalan dalam sandbox (diizinkan otomatis di dalam batasnya). */
+  sandboxed?: boolean;
   cwd: string;
   onDecide: (
     requestId: string,
@@ -139,7 +141,7 @@ function depthStyle(depth: number): Record<string, string> | undefined {
   return depth > 0 ? { marginLeft: `${Math.min(depth, 3) * 16}px` } : undefined;
 }
 
-export function Timeline({ items: rawItems, connection, running, cwd, onDecide }: TimelineProps) {
+export function Timeline({ items: rawItems, connection, running, sandboxed, cwd, onDecide }: TimelineProps) {
   // Sesi sudah berhenti (gagal, selesai, server restart): izin yang masih "menunggu"
   // tidak bisa diputuskan lagi, jadi tampilkan sebagai dihentikan.
   const items =
@@ -266,6 +268,14 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
                       </span>
                       <span class="jk-step-name">{item.name}</span>
                       {item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>}
+                      {sandboxed === true && item.name === "Bash" && (
+                        <span
+                          class="jk-step-tag"
+                          title="Berjalan dalam sandbox: tulis hanya di folder kerja, jaringan dibatasi, tanpa kartu izin."
+                        >
+                          sandbox
+                        </span>
+                      )}
                       {running === false && item.status === "berjalan" ? (
                         // Sesi sudah berhenti (mis. server restart): jangan berputar selamanya.
                         <span class="jk-step-status">terhenti</span>

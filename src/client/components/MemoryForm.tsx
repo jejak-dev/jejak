@@ -97,11 +97,11 @@ export function MemoryForm({
       )}
 
       <div class="jk-field">
-        <label class="jk-label" for="jk-memory-title">
+        <label class="jk-label" for="jk-memory-field-title">
           Judul
         </label>
         <input
-          id="jk-memory-title"
+          id="jk-memory-field-title"
           class="jk-input"
           type="text"
           value={draft.title}

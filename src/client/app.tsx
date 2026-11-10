@@ -535,6 +535,7 @@ export function App() {
                   items={timeline.items}
                   connection={timeline.connection}
                   running={selected.status === "berjalan"}
+                  sandboxed={selected.sandbox === "standar"}
                   cwd={selected.cwd}
                   onDecide={onDecide}
                 />

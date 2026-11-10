@@ -70,7 +70,7 @@ export function groupStatus(status: GitStatus): GitGroup[] {
     conflict: false,
   }));
   return [
-    { id: "staged", title: "Ter-stage", files: staged, count: staged.length },
+    { id: "staged", title: "Staged", files: staged, count: staged.length },
     { id: "unstaged", title: "Belum di-stage", files: unstaged, count: unstaged.length },
     { id: "untracked", title: "Tak terlacak", files: untracked, count: untracked.length },
   ];
