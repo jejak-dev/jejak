@@ -266,6 +266,10 @@ export function checkSecretAccess(
             return { blocked: true, rule: "claude-config-api", reason: SECRET_BLOCK_REASON };
           }
           // Agent tidak boleh mematikan sandbox-nya sendiri lewat API.
+          // Agent tidak boleh menjawab pertanyaannya sendiri (menjadi memory "dikonfirmasi").
+          if (token.includes("/api/questions")) {
+            return { blocked: true, rule: "questions-api", reason: SECRET_BLOCK_REASON };
+          }
           if (token.includes("/api/sandbox")) {
             return { blocked: true, rule: "sandbox-api", reason: SECRET_BLOCK_REASON };
           }

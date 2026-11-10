@@ -68,6 +68,11 @@ export function originLabel(origin: MemoryOrigin): string {
   if (origin.kind === "file" && origin.file !== undefined) {
     return `Dari berkas ${origin.file}`;
   }
+  if (origin.kind === "interview") {
+    const date = formatDate(origin.at);
+    const by = origin.by === undefined ? "" : ` oleh ${origin.by}`;
+    return date === "" ? `Dikonfirmasi${by}` : `Dikonfirmasi${by} · ${date}`;
+  }
   return "Dari sesi";
 }
 

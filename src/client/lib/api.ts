@@ -27,6 +27,7 @@ import type {
 import type { ImportResult } from "../../server/memory/memory-service";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
+import type { Question } from "../../server/questions/question-store";
 import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
 import type { SessionInfo } from "../../server/sessions/session-manager";
@@ -139,6 +140,8 @@ export type ClaudeConfigItem = { userSettings: boolean; hooksEnabled: boolean };
 export type ClaudeInstructions = InstructionFile;
 export type ClaudeSkillItem = SkillInfo;
 export type ClaudeSkillFile = ClaudeSkillItem & { content: string };
+export type QuestionItem = Question;
+export type QuestionStatusFilter = "open" | "answered" | "dismissed" | "all";
 export type ClaudeAgentItem = AgentInfo;
 export type ClaudeAgentFile = ClaudeAgentItem & { content: string };
 export type ClaudeHookItem = HookInfo;
@@ -395,6 +398,10 @@ export interface ApiClient {
   listMemory(params?: MemoryQuery): Promise<MemoryList>;
   createMemory(input: MemoryCreateInput): Promise<MemoryItem>;
   updateMemory(id: string, input: MemoryUpdateInput): Promise<MemoryItem>;
+  listQuestions(status?: QuestionStatusFilter): Promise<{ items: QuestionItem[]; open: number }>;
+  assignQuestion(id: string, assignee: string): Promise<QuestionItem>;
+  answerQuestion(id: string, answer: string, by: string): Promise<QuestionItem>;
+  dismissQuestion(id: string): Promise<QuestionItem>;
   acceptMemory(id: string): Promise<MemoryItem>;
   rejectMemory(id: string): Promise<MemoryItem>;
   archiveMemory(id: string): Promise<MemoryItem>;
@@ -860,6 +867,18 @@ function skillFileFrom(payload: unknown): ClaudeSkillFile {
   return payload as unknown as ClaudeSkillFile;
 }
 
+function questionFrom(payload: unknown): QuestionItem {
+  if (
+    !isRecord(payload) ||
+    typeof payload.id !== "string" ||
+    typeof payload.question !== "string" ||
+    typeof payload.status !== "string"
+  ) {
+    throw invalidResponse();
+  }
+  return payload as unknown as QuestionItem;
+}
+
 function agentListFrom(payload: unknown): ClaudeAgentItem[] {
   if (!isRecord(payload) || !Array.isArray(payload.agents)) throw invalidResponse();
   return payload.agents as ClaudeAgentItem[];
@@ -1310,6 +1329,36 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async updateMemory(id, input) {
       return memoryFrom(await request("PATCH", `/api/memory/${encodeURIComponent(id)}`, input));
+    },
+
+    async listQuestions(status) {
+      const data = await request(
+        "GET",
+        `/api/questions${status === undefined ? "" : `?status=${encodeURIComponent(status)}`}`,
+      );
+      if (!isRecord(data) || !Array.isArray(data.items)) throw invalidResponse();
+      return {
+        items: data.items.map(questionFrom),
+        open: typeof data.open === "number" ? data.open : 0,
+      };
+    },
+
+    async assignQuestion(id, assignee) {
+      return questionFrom(
+        await request("PATCH", `/api/questions/${encodeURIComponent(id)}`, { assignee }),
+      );
+    },
+
+    async answerQuestion(id, answer, by) {
+      return questionFrom(
+        await request("POST", `/api/questions/${encodeURIComponent(id)}/answer`, { answer, by }),
+      );
+    },
+
+    async dismissQuestion(id) {
+      return questionFrom(
+        await request("POST", `/api/questions/${encodeURIComponent(id)}/dismiss`, {}),
+      );
     },
 
     async acceptMemory(id) {

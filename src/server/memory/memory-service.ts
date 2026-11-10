@@ -280,6 +280,35 @@ export class MemoryService {
     }
   }
 
+  /**
+   * Jawaban wawancara dari manusia: langsung `active` + `confirmed` dengan asal
+   * `interview` (nama pengonfirmasi dan tanggal tercatat di origin).
+   */
+  async createInterview(input: CreateMemoryInput & { by: string }): Promise<Memory> {
+    const layer = this.normalizeLayer(input.layer);
+    const projectKey = this.normalizeProjectKey(layer, input.projectKey);
+    const title = this.normalizeText(input.title, "title", MEMORY_TITLE_MAX);
+    const body = this.normalizeText(input.body, "body", MEMORY_BODY_MAX);
+    const by = this.normalizeText(input.by, "by", 60);
+    await this.enforceLimits(layer, projectKey);
+    const at = this.clock();
+    const memory: Memory = {
+      id: crypto.randomUUID(),
+      layer,
+      projectKey,
+      title,
+      body,
+      status: "active",
+      confidence: "confirmed",
+      origin: { kind: "interview", by, at },
+      staleReason: null,
+      createdAt: at,
+      updatedAt: at,
+      decidedAt: null,
+    };
+    return this.store.create(memory);
+  }
+
   async create(input: CreateMemoryInput): Promise<Memory> {
     const layer = this.normalizeLayer(input.layer);
     const projectKey = this.normalizeProjectKey(layer, input.projectKey);

@@ -4733,3 +4733,18 @@ h2.jk-md-heading {
 .jk-instruksi-note {
   margin-top: 4px;
 }
+
+/* Pertanyaan wawancara */
+.jk-memory-sections { margin-bottom: 12px; }
+.jk-questions-name { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.jk-questions-name .jk-input { width: 180px; max-width: 100%; }
+.jk-questions-list { display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none; }
+.jk-question { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; }
+.jk-question-text { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.jk-question-answer { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.jk-question-form { display: flex; flex-direction: column; gap: 8px; }
+.jk-question-assign { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jk-question-assign .jk-input { width: 200px; max-width: 100%; }
+@media (max-width: 640px) {
+  .jk-questions-name { margin-left: 0; width: 100%; }
+}

@@ -176,7 +176,7 @@ function allowedToolsFor(input: RunInput): string[] {
   if (memory?.tools !== undefined) {
     const allowed: string[] = [];
     for (const tool of memory.tools) {
-      if (tool === "memory_search" || tool === "memory_propose") {
+      if (tool === "memory_search" || tool === "memory_propose" || tool === "question_ask") {
         allowed.push(`${MCP_SERVER_NAME}${tool}`);
       } else if (hasWorkspace && (tool === "workspace_overview" || tool === "workspace_service")) {
         allowed.push(`${MCP_SERVER_NAME}${tool}`);

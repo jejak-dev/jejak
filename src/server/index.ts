@@ -38,6 +38,9 @@ import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
+import { questionRoutes } from "./routes/questions";
+import { QuestionService } from "./questions/question-service";
+import { defaultQuestionStore, type QuestionStore } from "./questions/question-store";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
@@ -91,6 +94,8 @@ export interface CreateAppOptions {
   claudeConfig?: ClaudeConfigStore;
   /** Sandbox Bash; tanpa store rute 503 dan `input.sandbox` tidak diisi. */
   sandbox?: SandboxStore;
+  /** Antrean pertanyaan wawancara; tanpa store rute 503 dan tool question_ask tidak ada. */
+  questions?: QuestionStore;
   /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
   home?: string;
 }
@@ -99,12 +104,21 @@ export function createApp(options: CreateAppOptions = {}) {
   const env = options.env ?? process.env;
   const path = options.providersPath ?? providersPath(env);
 
+  const questionService =
+    options.questions === undefined
+      ? undefined
+      : new QuestionService({
+          store: options.questions,
+          ...(options.memory === undefined ? {} : { memory: options.memory }),
+        });
+
   const memoryBridge =
     options.memory === undefined && options.workspaces === undefined
       ? undefined
       : createMemoryBridge({
           ...(options.memory === undefined ? {} : { service: options.memory }),
           ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
+          ...(questionService === undefined ? {} : { questions: questionService }),
           mcpUrl: options.mcpUrl,
         });
 
@@ -228,6 +242,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }),
     )
     .use(memoryRoutes({ service: options.memory, audit: options.audit }))
+    .use(questionRoutes({ service: questionService, audit: options.audit }))
     .use(workspaceRoutes({ service: options.workspaces, audit: options.audit }))
     .use(
       fsRoutes({
@@ -298,6 +313,7 @@ export function startServer(options: ServeOptions = {}) {
   const usageLedger = defaultUsageLedger(process.env);
   const claudeConfig = defaultClaudeConfigStore(process.env);
   const sandbox = defaultSandboxStore(process.env);
+  const questions = defaultQuestionStore(process.env);
   const app = createApp({
     sessionStore: store,
     memory,
@@ -311,6 +327,7 @@ export function startServer(options: ServeOptions = {}) {
     ...(usageLedger === undefined ? {} : { usageLedger }),
     ...(claudeConfig === undefined ? {} : { claudeConfig }),
     ...(sandbox === undefined ? {} : { sandbox }),
+    ...(questions === undefined ? {} : { questions }),
   }).listen({
     hostname: host,
     port,

@@ -42,6 +42,9 @@ describe("frontmatter", () => {
     expect(parseTools(SAMPLE)).toEqual(["Read", "Grep"]);
     expect(parseTools("---\ntools: [Read, 'Bash']\n---\n")).toEqual(["Read", "Bash"]);
     expect(parseTools("---\nname: x\n---\n")).toEqual([]);
+    const folded = "---\nname: x\ndescription: >\n  Baris satu\n  baris dua\ntools: Read\n---\nisi";
+    expect(frontmatterValue(folded, "description")).toBe("Baris satu baris dua");
+    expect(frontmatterValue(folded, "tools")).toBe("Read");
   });
 });
 

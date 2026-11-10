@@ -17,6 +17,7 @@ import {
 } from "../lib/memory";
 import { MemoryForm } from "./MemoryForm";
 import { MemoryRow } from "./MemoryRow";
+import { QuestionsPanel } from "./QuestionsPanel";
 
 export interface MemoryPageProps {
   api: ApiClient;
@@ -55,6 +56,7 @@ function isDisabled(caught: unknown): boolean {
 }
 
 export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
+  const [section, setSection] = useState<"memory" | "pertanyaan">("memory");
   const [tab, setTab] = useState<MemoryStatus>("proposed");
   const [layerFilter, setLayerFilter] = useState<MemoryLayerFilter>("semua");
   const [items, setItems] = useState<MemoryItem[]>([]);
@@ -230,6 +232,31 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
         </p>
       </header>
 
+      <div class="jk-panel-tabs jk-memory-sections" role="tablist" aria-label="Bagian halaman">
+        <button
+          type="button"
+          role="tab"
+          class={`jk-panel-tab${section === "memory" ? " jk-panel-tab-active" : ""}`}
+          aria-selected={section === "memory"}
+          onClick={() => setSection("memory")}
+        >
+          Memory
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class={`jk-panel-tab${section === "pertanyaan" ? " jk-panel-tab-active" : ""}`}
+          aria-selected={section === "pertanyaan"}
+          onClick={() => setSection("pertanyaan")}
+        >
+          Pertanyaan
+        </button>
+      </div>
+
+      {section === "pertanyaan" ? (
+        <QuestionsPanel api={api} onChanged={onChanged} />
+      ) : (
+      <>
       <div class="jk-memory-head">
         <div class="jk-panel-tabs" role="tablist" aria-label="Daftar memory">
           {TABS.map((entry, index) => (
@@ -498,6 +525,8 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
       <p class="jk-note jk-memory-privacy">
         Memory yang dibaca agent ikut terkirim ke penyedia model.
       </p>
+      </>
+      )}
     </section>
   );
 }

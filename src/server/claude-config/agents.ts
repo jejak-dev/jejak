@@ -117,6 +117,16 @@ export function frontmatterValue(content: string, key: string): string {
     const match = pattern.exec(line);
     if (match === null) continue;
     let value = (match[1] ?? "").trim();
+    // Skalar blok YAML (`>`/`|`): gabungkan baris berikutnya yang menjorok.
+    if (/^[>|][+-]?$/.test(value)) {
+      const parts: string[] = [];
+      for (let next = index + 1; next < lines.length; next += 1) {
+        const following = lines[next] ?? "";
+        if (following.trim() === "---" || !/^\s+\S/.test(following)) break;
+        parts.push(following.trim());
+      }
+      return parts.join(" ");
+    }
     if (value.length >= 2) {
       const first = value.charAt(0);
       const last = value.charAt(value.length - 1);

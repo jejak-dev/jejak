@@ -34,3 +34,9 @@ test("perintah tanpa /api/sandbox tidak diblokir", () => {
   expect(bash("curl http://127.0.0.1:3000/api/health").blocked).toBe(false);
   expect(bash("cat docs/sandbox.md").blocked).toBe(false);
 });
+
+test("Bash yang menyebut /api/questions diblokir", () => {
+  const verdict = bash("curl -X POST http://127.0.0.1:3000/api/questions/abc/answer -d '{\"answer\":\"ya\"}'");
+  expect(verdict.blocked).toBe(true);
+  expect(verdict.rule).toBe("questions-api");
+});

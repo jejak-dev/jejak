@@ -16,7 +16,7 @@ import { findSecret } from "./secret-guard";
 export type MemoryLayer = "profile" | "project";
 export type MemoryStatus = "proposed" | "active" | "rejected" | "archived";
 export type MemoryConfidence = "confirmed" | "from_code" | "inferred";
-export type MemoryOriginKind = "manual" | "session" | "file";
+export type MemoryOriginKind = "manual" | "session" | "file" | "interview";
 
 export interface MemoryOrigin {
   kind: MemoryOriginKind;
@@ -24,6 +24,8 @@ export interface MemoryOrigin {
   file?: string;
   fileSha256?: string;
   commit?: string;
+  /** Nama orang yang mengonfirmasi (kind `interview`). */
+  by?: string;
   at: string;
 }
 
@@ -136,7 +138,7 @@ function parseOrigin(raw: string): MemoryOrigin | null {
   }
   const record = parsed as Record<string, unknown>;
   const kind = record.kind;
-  if (kind !== "manual" && kind !== "session" && kind !== "file") {
+  if (kind !== "manual" && kind !== "session" && kind !== "file" && kind !== "interview") {
     return null;
   }
   const at = record.at;
@@ -144,7 +146,7 @@ function parseOrigin(raw: string): MemoryOrigin | null {
     return null;
   }
   const origin: MemoryOrigin = { kind, at };
-  for (const key of ["sessionId", "file", "fileSha256", "commit"] as const) {
+  for (const key of ["sessionId", "file", "fileSha256", "commit", "by"] as const) {
     const value = record[key];
     if (value === undefined) continue;
     if (typeof value !== "string") return null;
@@ -153,6 +155,7 @@ function parseOrigin(raw: string): MemoryOrigin | null {
   if (kind === "file" && (origin.file === undefined || origin.fileSha256 === undefined)) {
     return null;
   }
+  if (kind === "interview" && (origin.by === undefined || origin.by.length > 60)) return null;
   if (origin.file !== undefined) {
     if (origin.file.includes("\0") || origin.file.length > MEMORY_PROJECT_KEY_MAX) return null;
   }
