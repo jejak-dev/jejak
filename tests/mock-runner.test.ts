@@ -26,6 +26,7 @@ test("skrip default menghasilkan urutan event demo dengan satu result", async ()
     "tool_call",
     "tool_result",
     "text",
+    "context",
     "result",
   ]);
 
@@ -212,6 +213,7 @@ test("penanda tanpa memory memakai perilaku lama", async () => {
     "tool_call",
     "tool_result",
     "text",
+    "context",
     "result",
   ]);
 });
@@ -381,6 +383,7 @@ test("[ws] tanpa memory memakai perilaku lama", async () => {
     "tool_call",
     "tool_result",
     "text",
+    "context",
     "result",
   ]);
 });

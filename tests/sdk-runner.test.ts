@@ -971,6 +971,13 @@ test("result memuat contextTokens dari panggilan terakhir dan contextWindow dari
   );
   const result = events.find((event) => event.type === "result");
   expect(result).toMatchObject({ contextTokens: 1350, contextWindow: 200000 });
+  // Satu event context per panggilan model, di tengah giliran (sebelum hasil).
+  const contexts = events.filter((event) => event.type === "context");
+  expect(contexts).toEqual([
+    { type: "context", tokens: 1150 },
+    { type: "context", tokens: 1350 },
+  ]);
+  expect(events.indexOf(contexts[1]!)).toBeLessThan(events.indexOf(result!));
 });
 
 test("extraDirectories masuk additionalDirectories bersama folder workspace", async () => {

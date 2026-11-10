@@ -8,6 +8,8 @@ export type AgentEvent =
   | { type: "thinking"; text: string; parentToolUseId?: string }
   /** Potongan teks yang sedang mengalir; transien (tidak disimpan), digantikan event `text` final. */
   | { type: "text_delta"; text: string; parentToolUseId?: string }
+  /** Ukuran konteks (token) setelah satu panggilan model; tampil sebagai cincin penggunaan. */
+  | { type: "context"; tokens: number }
   | { type: "tool_call"; id: string; name: string; input: unknown; parentToolUseId?: string }
   | { type: "tool_result"; id: string; output: string; isError: boolean }
   | {

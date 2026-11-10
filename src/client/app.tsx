@@ -597,7 +597,7 @@ export function App() {
                   api={api}
                   session={selected}
                   refresh={refresh}
-                  context={contextUsage(timeline.items)}
+                  context={contextUsage(timeline.context)}
                 />
               </div>
               {panelOpen && (

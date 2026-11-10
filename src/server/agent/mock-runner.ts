@@ -7,6 +7,7 @@ const DEFAULT_SCRIPT: AgentEvent[] = [
   { type: "tool_call", id: "tool-1", name: "Read", input: { file_path: "README.md" } },
   { type: "tool_result", id: "tool-1", output: "# Jejak\n\nWorkbench agent coding.", isError: false },
   { type: "text", text: "Berkas berhasil dibaca. Ringkasannya: Jejak adalah workbench agent coding." },
+  { type: "context", tokens: 38_000 },
   {
     type: "result",
     ok: true,

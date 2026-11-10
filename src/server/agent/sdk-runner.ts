@@ -382,7 +382,8 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         let lastFlush = 0;
         let contextTokens: number | undefined;
         for await (const message of query) {
-          contextTokens = contextTokensOf(message) ?? contextTokens;
+          const callContext = contextTokensOf(message);
+          contextTokens = callContext ?? contextTokens;
           for (const event of mapSdkMessage(message)) {
             if (event.type === "text_delta") {
               if (pendingParent !== event.parentToolUseId && pendingDelta !== "") {
@@ -410,6 +411,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
             }
             yield event;
           }
+          if (callContext !== undefined) yield { type: "context", tokens: callContext };
         }
 
         if (!sawResult) {

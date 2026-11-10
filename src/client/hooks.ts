@@ -21,6 +21,7 @@ import {
   type NotifyPrefs,
 } from "./lib/notify";
 import { followSession } from "./lib/sse";
+import { reduceContext, type ContextState } from "./lib/context";
 import { reduceTimeline, startTimeline, type TimelineItem } from "./lib/timeline";
 
 function messageOf(error: unknown): string {
@@ -234,6 +235,8 @@ export interface TimelineState {
   connection: TimelineConnection;
   status?: string;
   error?: string;
+  /** Ukuran konteks terbaru (diperbarui di tengah giliran). */
+  context?: ContextState;
 }
 
 const IDLE_TIMELINE: TimelineState = { items: [], connection: "idle" };
@@ -294,6 +297,7 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
                 ...previous,
                 connection: previous.connection === "menyambung" ? "terhubung" : previous.connection,
                 items: reduceTimeline(previous.items, item.event),
+                context: reduceContext(previous.context, item.event),
               }));
             } else {
               endedForRef.current = id;

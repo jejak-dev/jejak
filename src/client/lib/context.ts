@@ -1,5 +1,3 @@
-import type { TimelineItem } from "./timeline";
-
 export interface ContextUsage {
   tokens: number;
   /** Jendela konteks bila diketahui; `undefined` berarti hanya jumlah token yang tampil. */
@@ -9,20 +7,37 @@ export interface ContextUsage {
   level: "ok" | "warn" | "high";
 }
 
-/** Penggunaan konteks dari event hasil terakhir yang memuatnya. */
-export function contextUsage(items: readonly TimelineItem[]): ContextUsage | undefined {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item?.kind !== "result" || item.contextTokens === undefined) continue;
-    const usage: ContextUsage = { tokens: item.contextTokens, level: "ok" };
-    if (item.contextWindow !== undefined && item.contextWindow > 0) {
-      usage.window = item.contextWindow;
-      usage.percent = Math.min(100, Math.round((item.contextTokens / item.contextWindow) * 100));
-      usage.level = usage.percent >= 90 ? "high" : usage.percent >= 70 ? "warn" : "ok";
-    }
-    return usage;
+/** Keadaan konteks mentah dari aliran event; `window` bertahan dari hasil sebelumnya. */
+export interface ContextState {
+  tokens: number;
+  window?: number;
+}
+
+/** Perbarui keadaan konteks dari satu event (`context` di tengah giliran, `result` di akhir). */
+export function reduceContext(
+  previous: ContextState | undefined,
+  event: { type: string; tokens?: number; contextTokens?: number; contextWindow?: number },
+): ContextState | undefined {
+  let tokens: number | undefined;
+  if (event.type === "context") tokens = event.tokens;
+  else if (event.type === "result") tokens = event.contextTokens;
+  const window = event.type === "result" ? event.contextWindow : undefined;
+  if (tokens === undefined && window === undefined) return previous;
+  const next: ContextState = { tokens: tokens ?? previous?.tokens ?? 0 };
+  const keptWindow = window ?? previous?.window;
+  if (keptWindow !== undefined) next.window = keptWindow;
+  return next.tokens > 0 ? next : previous;
+}
+
+export function contextUsage(state: ContextState | undefined): ContextUsage | undefined {
+  if (state === undefined) return undefined;
+  const usage: ContextUsage = { tokens: state.tokens, level: "ok" };
+  if (state.window !== undefined && state.window > 0) {
+    usage.window = state.window;
+    usage.percent = Math.min(100, Math.round((state.tokens / state.window) * 100));
+    usage.level = usage.percent >= 90 ? "high" : usage.percent >= 70 ? "warn" : "ok";
   }
-  return undefined;
+  return usage;
 }
 
 /** 950 -> "950", 1.234 -> "1,2 rb", 42.000 -> "42 rb", 1.500.000 -> "1,5 jt". */

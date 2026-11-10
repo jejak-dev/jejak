@@ -1,29 +1,33 @@
 import { describe, expect, test } from "bun:test";
-import { contextUsage, formatTokens } from "../src/client/lib/context";
-import type { TimelineItem } from "../src/client/lib/timeline";
+import { contextUsage, formatTokens, reduceContext } from "../src/client/lib/context";
 import { contextTokensOf, contextWindowOf } from "../src/server/agent/sdk-mapper";
 
-const result = (extra: Partial<Extract<TimelineItem, { kind: "result" }>>): TimelineItem => ({
-  kind: "result",
-  ok: true,
-  ...extra,
-});
-
-describe("contextUsage", () => {
-  test("memakai hasil terakhir yang punya data konteks", () => {
-    const items: TimelineItem[] = [
-      result({ contextTokens: 1000, contextWindow: 200000 }),
-      { kind: "text", text: "x", depth: 0 },
-      result({}),
-    ];
-    expect(contextUsage(items)).toEqual({ tokens: 1000, window: 200000, percent: 1, level: "ok" });
+describe("reduceContext dan contextUsage", () => {
+  test("event context di tengah giliran memperbarui token dan mempertahankan jendela", () => {
+    let state = reduceContext(undefined, { type: "result", contextTokens: 1000, contextWindow: 200000 });
+    expect(state).toEqual({ tokens: 1000, window: 200000 });
+    state = reduceContext(state, { type: "context", tokens: 5000 });
+    expect(state).toEqual({ tokens: 5000, window: 200000 });
+    expect(reduceContext(state, { type: "text" })).toBe(state);
+    expect(reduceContext(state, { type: "result" })).toBe(state);
   });
 
-  test("tingkat peringatan dan tanpa jendela", () => {
-    expect(contextUsage([result({ contextTokens: 150000, contextWindow: 200000 })])?.level).toBe("warn");
-    expect(contextUsage([result({ contextTokens: 190000, contextWindow: 200000 })])?.level).toBe("high");
-    expect(contextUsage([result({ contextTokens: 5000 })])).toEqual({ tokens: 5000, level: "ok" });
-    expect(contextUsage([])).toBeUndefined();
+  test("sebelum ada jendela hanya token; token nol diabaikan", () => {
+    const state = reduceContext(undefined, { type: "context", tokens: 4200 });
+    expect(contextUsage(state)).toEqual({ tokens: 4200, level: "ok" });
+    expect(reduceContext(undefined, { type: "context", tokens: 0 })).toBeUndefined();
+    expect(contextUsage(undefined)).toBeUndefined();
+  });
+
+  test("persen dan tingkat peringatan", () => {
+    expect(contextUsage({ tokens: 1000, window: 200000 })).toEqual({
+      tokens: 1000,
+      window: 200000,
+      percent: 1,
+      level: "ok",
+    });
+    expect(contextUsage({ tokens: 150000, window: 200000 })?.level).toBe("warn");
+    expect(contextUsage({ tokens: 190000, window: 200000 })?.level).toBe("high");
   });
 
   test("format token", () => {
