@@ -127,3 +127,11 @@ describe("hitung mundur", () => {
     expect(formatCountdown(9)).toBe("0:09");
   });
 });
+
+describe("isOutsideCwd dengan symlink macOS", () => {
+  test("/tmp dan /private/tmp dianggap folder yang sama", async () => {
+    const { isOutsideCwd } = await import("../src/client/lib/permission");
+    expect(isOutsideCwd("/tmp/proj", "/private/tmp/proj/a.txt")).toBe(false);
+    expect(isOutsideCwd("/tmp/proj", "/private/tmp/lain/a.txt")).toBe(true);
+  });
+});

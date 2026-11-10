@@ -211,3 +211,28 @@ describe("rute MCP", () => {
     expect(parseHashRoute("#/mcp-servers")).toEqual({});
   });
 });
+
+describe("canonicalPath dan pengelompokan worktree", () => {
+  test("/private/tmp disamakan dengan /tmp, jalur lain tetap", async () => {
+    const { canonicalPath } = await import("../src/client/lib/format");
+    expect(canonicalPath("/private/tmp/x/a.ts")).toBe("/tmp/x/a.ts");
+    expect(canonicalPath("/private/var/folders/a")).toBe("/var/folders/a");
+    expect(canonicalPath("/private/other")).toBe("/private/other");
+    expect(canonicalPath("/Users/me/proj")).toBe("/Users/me/proj");
+  });
+
+  test("sesi worktree dikelompokkan di bawah repo asal", async () => {
+    const { groupSessions } = await import("../src/client/lib/format");
+    const groups = groupSessions([
+      { cwd: "/tmp/repo", updatedAt: "2026-11-10T10:00:00Z" },
+      {
+        cwd: "/home/u/.jejak/worktrees/s_1",
+        updatedAt: "2026-11-10T11:00:00Z",
+        worktree: { repoRoot: "/private/tmp/repo" },
+      },
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.label).toBe("repo");
+    expect(groups[0]?.items).toHaveLength(2);
+  });
+});

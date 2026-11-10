@@ -1,4 +1,5 @@
 import { splitLines } from "./files";
+import { canonicalPath } from "./format";
 
 export type PermissionIcon = "file" | "edit" | "terminal" | "eye" | "cube";
 
@@ -51,8 +52,8 @@ function normalize(path: string): string[] {
 /** True bila path (absolut atau relatif terhadap cwd) jatuh di luar folder kerja. */
 export function isOutsideCwd(cwd: string, target: string): boolean {
   if (target === "" || cwd === "") return false;
-  const base = normalize(cwd);
-  const resolved = normalize(target.startsWith("/") ? target : `${cwd}/${target}`);
+  const base = normalize(canonicalPath(cwd));
+  const resolved = normalize(canonicalPath(target.startsWith("/") ? target : `${cwd}/${target}`));
   if (resolved.length < base.length) return true;
   return base.some((segment, index) => resolved[index] !== segment);
 }

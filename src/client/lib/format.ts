@@ -70,13 +70,20 @@ export interface SessionGroup<T> {
 }
 
 /** Kelompokkan sesi per folder kerja; kelompok dan isinya diurutkan dari yang terbaru. */
-export function groupSessions<T extends { cwd: string; updatedAt: string }>(
+/** macOS memetakan /tmp, /var, /etc ke /private/...: samakan agar dua tulisan jalur itu dianggap sama. */
+export function canonicalPath(path: string): string {
+  return path.replace(/^\/private(\/(?:tmp|var|etc)(?:\/|$))/, "$1");
+}
+
+export function groupSessions<T extends { cwd: string; updatedAt: string; worktree?: { repoRoot: string } }>(
   sessions: readonly T[],
 ): SessionGroup<T>[] {
   const byCwd = new Map<string, T[]>();
   for (const session of sessions) {
-    const list = byCwd.get(session.cwd);
-    if (list === undefined) byCwd.set(session.cwd, [session]);
+    // Sesi worktree dikelompokkan di bawah repo asalnya, bukan folder worktree.
+    const key = canonicalPath(session.worktree?.repoRoot ?? session.cwd);
+    const list = byCwd.get(key);
+    if (list === undefined) byCwd.set(key, [session]);
     else list.push(session);
   }
 
