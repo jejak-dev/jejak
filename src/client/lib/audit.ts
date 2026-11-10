@@ -4,7 +4,7 @@ import type {
   AuditSummaryResult,
 } from "./api";
 
-/** Label tampilan untuk 12 jenis audit; server tetap sumber kebenaran. */
+/** Label tampilan untuk 13 jenis audit; server tetap sumber kebenaran. */
 export const AUDIT_KIND_LABELS: Record<string, string> = {
   "sesi-mulai": "Sesi mulai",
   "sesi-berhenti": "Sesi berhenti",
@@ -18,6 +18,7 @@ export const AUDIT_KIND_LABELS: Record<string, string> = {
   pengaturan: "Pengaturan",
   anggaran: "Anggaran",
   provider: "Provider",
+  sandbox: "Sandbox",
 };
 
 export const AUDIT_META_MAX_PAIRS = 6;
@@ -35,6 +36,7 @@ export function kindTone(kind: string): AuditTone {
   if (kind === "rahasia-diblokir") return "bad";
   if (kind === "rahasia-disamarkan") return "warn";
   if (kind === "anggaran") return "warn";
+  if (kind === "sandbox") return "warn";
   return "";
 }
 

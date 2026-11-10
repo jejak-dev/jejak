@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
-import { ApiError, type ApiClient, type WorkspaceItem } from "../lib/api";
+import { ApiError, type ApiClient, type SandboxState, type WorkspaceItem } from "../lib/api";
 import type { RegistryView } from "../lib/registry-view";
 import { folderName } from "../lib/format";
 import {
@@ -42,6 +42,8 @@ const STORAGE_WORKTREE = "jejak.worktree";
 const WORKTREE_NOTE =
   "Sesi bekerja di cabang baru jejak/… dalam folder terpisah; repo asli tidak tersentuh. " +
   "Perubahan yang belum di-commit tidak ikut.";
+
+const SANDBOX_OFF_NOTE = "Bash agent berjalan tanpa batas berkas dan jaringan. Tercatat di Log audit.";
 
 const MAX_TEXTAREA_PX = 8 * 24;
 
@@ -87,6 +89,8 @@ export function Composer({
   const [permissionMode, setPermissionMode] = useState<PermissionMode>(readStoredMode);
   const [bypassAcknowledged, setBypassAcknowledged] = useState(false);
   const [useWorktree, setUseWorktree] = useState(() => readStorage(STORAGE_WORKTREE) === "1");
+  const [sandboxState, setSandboxState] = useState<SandboxState | undefined>(undefined);
+  const [noSandbox, setNoSandbox] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [promptError, setPromptError] = useState<string | undefined>(undefined);
@@ -133,6 +137,22 @@ export function Composer({
     if (defaultCwd === undefined || defaultCwd === "") return;
     setCwd((current) => (current.trim() === "" ? defaultCwd : current));
   }, [defaultCwd]);
+
+  // Status sandbox hanya untuk menampilkan opsi; galat/503 berarti opsi disembunyikan.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const next = await api.getSandbox();
+        if (active) setSandboxState(next);
+      } catch {
+        // Opsi sandbox tidak tampil; sesi memakai default server.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [api]);
 
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === workspaceId);
 
@@ -221,6 +241,7 @@ export function Composer({
       if (model !== "") input.model = model;
       if (permissionMode === "bypassPermissions") input.confirmBypass = true;
       if (!usingWorkspace && useWorktree) input.worktree = true;
+      if (noSandbox && sandboxState?.config.mode === "standar") input.sandbox = "mati";
 
       const session = await api.createSession(input);
 
@@ -498,6 +519,39 @@ export function Composer({
           <p class="jk-note" id="jk-worktree-note">
             {WORKTREE_NOTE}
           </p>
+        </div>
+      )}
+
+      {sandboxState !== undefined && sandboxState.config.mode === "mati" && (
+        <p class="jk-note">Sandbox mati secara global (lihat Pengaturan).</p>
+      )}
+
+      {sandboxState !== undefined && sandboxState.config.mode === "standar" && (
+        <div class="jk-sandbox-option">
+          <label class="jk-bypass-check">
+            <input
+              id="jk-no-sandbox"
+              type="checkbox"
+              checked={noSandbox}
+              aria-describedby={noSandbox ? "jk-sandbox-off-note" : undefined}
+              onChange={(event) =>
+                setNoSandbox((event.currentTarget as HTMLInputElement).checked)
+              }
+              disabled={busy}
+            />
+            <span>Tanpa sandbox untuk sesi ini</span>
+          </label>
+          {!sandboxState.available.ok && (
+            <p class="jk-secret-warning" id="jk-sandbox-unavailable" role="status">
+              Sandbox belum tersedia; sesi baru akan gagal. Lihat Pengaturan atau jalankan jejak
+              doctor.
+            </p>
+          )}
+          {noSandbox && (
+            <p class="jk-secret-warning" id="jk-sandbox-off-note" role="status">
+              {SANDBOX_OFF_NOTE}
+            </p>
+          )}
         </div>
       )}
 

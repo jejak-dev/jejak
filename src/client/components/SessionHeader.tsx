@@ -1,6 +1,7 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { budgetBadge } from "../lib/budget";
 import { showsBypassMarker } from "../lib/permission-mode";
+import { sandboxBadge } from "../lib/sandbox";
 import { secretBadge } from "../lib/secret-badge";
 import { sessionContextLabel } from "../lib/workspace";
 import { worktreeBadge } from "../lib/worktree";
@@ -16,12 +17,13 @@ export interface TopbarProps {
   badge?: { label: string; title: string; tone: "" | "warn" | "bad" };
   secretBadge?: { label: string; title: string };
   budgetBadge?: { label: string; title: string; tone: "warn" | "bad" };
+  sandboxBadge?: { label: string; title: string; tone: "warn" };
   action?: { label: string; onClick: () => void; disabled?: boolean };
   panel?: { open: boolean; onToggle: () => void };
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, budgetBadge, action, panel, error }: TopbarProps) {
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, budgetBadge, sandboxBadge: sandbox, action, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
       <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
@@ -58,6 +60,16 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
           >
             <Icon name="alert" />
             <span>{budgetBadge.label}</span>
+          </span>
+        )}
+        {sandbox !== undefined && (
+          <span
+            class={`jk-sandbox-badge jk-sandbox-badge-${sandbox.tone}`}
+            title={sandbox.title}
+            aria-label={sandbox.label}
+          >
+            <Icon name="shield" />
+            <span>{sandbox.label}</span>
           </span>
         )}
       </div>
@@ -145,6 +157,8 @@ export function SessionHeader({
   if (secret !== undefined) props.secretBadge = secret;
   const budget = budgetBadge(session);
   if (budget !== undefined) props.budgetBadge = budget;
+  const sandbox = sandboxBadge(session);
+  if (sandbox !== undefined) props.sandboxBadge = sandbox;
   if (error !== undefined) props.error = error;
   return <Topbar {...props} />;
 }

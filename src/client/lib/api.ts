@@ -311,6 +311,24 @@ export interface BudgetPatch {
   warnAt?: number;
 }
 
+export type SandboxMode = "standar" | "mati";
+
+/** Pengaturan sandbox Bash per instalasi. */
+export interface SandboxConfigItem {
+  mode: SandboxMode;
+  allowedDomains: string[];
+  extraDenyRead: string[];
+  extraDenyWrite: string[];
+}
+
+export interface SandboxState {
+  config: SandboxConfigItem;
+  defaults: { allowedDomains: string[]; denyRead: string[]; denyWrite: string[] };
+  available: { ok: boolean; detail: string };
+}
+
+export type SandboxPatch = Partial<SandboxConfigItem>;
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
@@ -331,6 +349,8 @@ export interface ApiClient {
     workspaceId?: string;
     /** Sesi bekerja di worktree terpisah pada cabang baru. */
     worktree?: boolean;
+    /** Hanya dikirim saat pengguna memilih sesi tanpa sandbox. */
+    sandbox?: SandboxMode;
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
@@ -403,6 +423,8 @@ export interface ApiClient {
   /** `null` pada batas berarti hapus batas. */
   putBudget(patch: BudgetPatch): Promise<BudgetConfigItem>;
   getBudgetStatus(sessionId?: string): Promise<BudgetStatusResult>;
+  getSandbox(): Promise<SandboxState>;
+  putSandbox(patch: SandboxPatch): Promise<SandboxConfigItem>;
   getClaudeConfig(): Promise<ClaudeConfigItem>;
   putClaudeConfig(patch: ClaudeConfigPatch): Promise<ClaudeConfigItem>;
   getInstructions(scope: ClaudeScope, cwd?: string): Promise<ClaudeInstructions>;
@@ -634,6 +656,40 @@ function budgetStatusFrom(payload: unknown): BudgetStatusResult {
   const sessionLevel = budgetLevel(payload.sessionLevel);
   if (sessionLevel !== undefined) result.sessionLevel = sessionLevel;
   return result;
+}
+
+function sandboxConfigFrom(payload: unknown): SandboxConfigItem {
+  if (!isRecord(payload)) throw invalidResponse();
+  return {
+    // Mode tak dikenal diperlakukan standar (default aman).
+    mode: payload.mode === "mati" ? "mati" : "standar",
+    allowedDomains: stringListFrom(payload.allowedDomains),
+    extraDenyRead: stringListFrom(payload.extraDenyRead),
+    extraDenyWrite: stringListFrom(payload.extraDenyWrite),
+  };
+}
+
+function stringListFrom(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is string => typeof entry === "string");
+}
+
+function sandboxStateFrom(payload: unknown): SandboxState {
+  if (!isRecord(payload)) throw invalidResponse();
+  const defaults = isRecord(payload.defaults) ? payload.defaults : {};
+  const available = isRecord(payload.available) ? payload.available : {};
+  return {
+    config: sandboxConfigFrom(payload.config),
+    defaults: {
+      allowedDomains: stringListFrom(defaults.allowedDomains),
+      denyRead: stringListFrom(defaults.denyRead),
+      denyWrite: stringListFrom(defaults.denyWrite),
+    },
+    available: {
+      ok: available.ok === true,
+      detail: typeof available.detail === "string" ? available.detail : "",
+    },
+  };
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {  if (params === undefined) return "";
@@ -913,6 +969,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const body: Parameters<ApiClient["createSession"]>[0] = { ...input };
       if (body.confirmBypass !== true) delete body.confirmBypass;
       if (body.worktree !== true) delete body.worktree;
+      if (body.sandbox !== "mati" && body.sandbox !== "standar") delete body.sandbox;
       return sessionFrom(await request("POST", "/api/sessions", body));
     },
 
@@ -1362,6 +1419,20 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         ? ""
         : `?session=${encodeURIComponent(sessionId)}`;
       return budgetStatusFrom(await request("GET", `/api/budget/status${search}`));
+    },
+
+    async getSandbox() {
+      return sandboxStateFrom(await request("GET", "/api/sandbox"));
+    },
+
+    async putSandbox(patch) {
+      const body: SandboxPatch = {};
+      if (patch.mode !== undefined) body.mode = patch.mode;
+      if (patch.allowedDomains !== undefined) body.allowedDomains = patch.allowedDomains;
+      if (patch.extraDenyRead !== undefined) body.extraDenyRead = patch.extraDenyRead;
+      if (patch.extraDenyWrite !== undefined) body.extraDenyWrite = patch.extraDenyWrite;
+      const data = await request("PUT", "/api/sandbox", body);
+      return sandboxConfigFrom(field(data, "config"));
     },
 
     async getClaudeConfig() {

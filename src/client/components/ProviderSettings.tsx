@@ -17,6 +17,7 @@ import {
 } from "../lib/registry-edit";
 import { BudgetSettings } from "./BudgetSettings";
 import { ProfileForm } from "./ProfileForm";
+import { SandboxSettings } from "./SandboxSettings";
 
 export interface ProviderSettingsProps {
   api: ApiClient;
@@ -314,6 +315,7 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
       )}
 
       <BudgetSettings api={api} />
+      <SandboxSettings api={api} />
     </section>
   );
 }
