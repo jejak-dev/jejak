@@ -89,6 +89,11 @@ export interface RunInput {
   /** Opsi `sandbox` SDK (opaque); tanpa field ini perilaku lama persis. */
   sandbox?: Record<string, unknown>;
   /**
+   * Batas percobaan ulang API di dalam SDK (`CLAUDE_CODE_MAX_RETRIES`). Diisi saat
+   * ada profil cadangan agar fallback tidak menunggu retry SDK yang panjang.
+   */
+  maxRetries?: number;
+  /**
    * Kebijakan penolakan akses berkas rahasia. Mengembalikan alasan bila tool harus
    * ditolak lewat hook `PreToolUse`; `undefined` berarti diteruskan.
    */

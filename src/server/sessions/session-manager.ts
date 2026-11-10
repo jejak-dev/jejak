@@ -253,6 +253,9 @@ type AttemptOutcome =
   | { kind: "selesai" }
   | { kind: "gagal"; failure: AttemptFailure };
 
+/** Retry API di SDK bila ada profil cadangan (bawaan SDK sampai 10 dengan backoff). */
+const FALLBACK_SDK_RETRIES = 2;
+
 const CHECKPOINT_TIMEOUT_MS = 30_000;
 
 const MAX_QUEUED_MESSAGES = 5;
@@ -2005,7 +2008,19 @@ export class SessionManager {
     input: Parameters<AgentRunner["run"]>[0],
     provider: ResolvedProvider,
   ): Promise<void> {
-    const attempt = await this.runAttempt(record, input);
+    // Profil cadangan diperiksa di depan agar retry SDK dipersingkat; bila ada,
+    // fallback tidak menunggu belasan retry sebelum beralih.
+    let planned: ResolvedProvider | undefined;
+    try {
+      planned = await this.fallback!(provider.profileId);
+    } catch {
+      planned = undefined;
+    }
+    const hasFallback = planned !== undefined && planned.profileId !== provider.profileId;
+    const attempt = await this.runAttempt(
+      record,
+      hasFallback ? { ...input, maxRetries: FALLBACK_SDK_RETRIES } : input,
+    );
     if (attempt.kind === "selesai") return;
 
     const failure = attempt.failure;
@@ -2019,12 +2034,7 @@ export class SessionManager {
       return;
     }
 
-    let fallbackProvider: ResolvedProvider | undefined;
-    try {
-      fallbackProvider = await this.fallback!(provider.profileId);
-    } catch {
-      fallbackProvider = undefined;
-    }
+    const fallbackProvider = planned;
     if (fallbackProvider === undefined || fallbackProvider.profileId === provider.profileId) {
       this.replayFailure(record, failure);
       return;

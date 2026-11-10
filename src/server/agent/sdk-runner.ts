@@ -200,6 +200,16 @@ export function buildSdkEnv(
   return { ...env, ...toSdkEnv(resolved) };
 }
 
+/** Menyetel batas retry SDK; nilai yang sudah diset pengguna di env tidak ditimpa. */
+export function withMaxRetries(
+  env: Record<string, string | undefined>,
+  maxRetries: number | undefined,
+): Record<string, string | undefined> {
+  if (maxRetries === undefined) return env;
+  if (env.CLAUDE_CODE_MAX_RETRIES !== undefined && env.CLAUDE_CODE_MAX_RETRIES !== "") return env;
+  return { ...env, CLAUDE_CODE_MAX_RETRIES: String(maxRetries) };
+}
+
 export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
   const load = options.load ?? defaultLoad;
   const baseEnv = options.baseEnv ?? process.env;
@@ -244,7 +254,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
 
       const sdkOptions: Record<string, unknown> = {
         cwd: input.cwd,
-        env: buildSdkEnv(baseEnv, input.provider),
+        env: withMaxRetries(buildSdkEnv(baseEnv, input.provider), input.maxRetries),
         permissionMode: input.permissionMode ?? "default",
         abortController,
         settingSources: ["project"],

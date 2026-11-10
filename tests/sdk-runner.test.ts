@@ -3,6 +3,7 @@ import { createRunner } from "../src/server/agent";
 import type { AgentEvent, RunInput } from "../src/server/agent/events";
 import {
   buildSdkEnv,
+  withMaxRetries,
   createSdkRunner,
   type SdkModule,
   type SdkQuery,
@@ -905,4 +906,14 @@ test("semua server MCP (memory dan eksternal) memakai alwaysLoad", async () => {
   for (const server of Object.values(servers)) {
     expect(server.alwaysLoad).toBe(true);
   }
+});
+
+test("withMaxRetries menyetel CLAUDE_CODE_MAX_RETRIES tanpa menimpa nilai pengguna", () => {
+  const base = { A: "1" };
+  expect(withMaxRetries(base, undefined)).toBe(base);
+  expect(withMaxRetries(base, 2)).toEqual({ A: "1", CLAUDE_CODE_MAX_RETRIES: "2" });
+  expect(base).toEqual({ A: "1" });
+  expect(withMaxRetries({ CLAUDE_CODE_MAX_RETRIES: "7" }, 2)).toEqual({
+    CLAUDE_CODE_MAX_RETRIES: "7",
+  });
 });

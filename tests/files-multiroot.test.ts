@@ -465,6 +465,12 @@ describe("tolak dan urungkan lintas repo", () => {
     });
     const created = await req(plain, "POST", "/api/sessions", { prompt: "Halo", cwd: repoA });
     const plainId = ((await created.json()) as { session: { id: string } }).session.id;
+    for (let i = 0; i < 100; i++) {
+      const view = await req(plain, "GET", `/api/sessions/${plainId}`);
+      const status = ((await view.json()) as { session?: { status?: string } }).session?.status;
+      if (status !== "berjalan") break;
+      await Bun.sleep(10);
+    }
     const plainReject = await req(plain, "POST", `/api/sessions/${plainId}/changes/reject`, {
       path: "a.txt",
       scope: "file",

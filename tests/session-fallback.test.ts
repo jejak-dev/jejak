@@ -200,6 +200,24 @@ describe("SessionManager fallback provider", () => {
     expect(mgr.get(info.id)?.status).toBe("gagal");
   });
 
+  test("retry SDK dibatasi hanya bila ada profil cadangan", async () => {
+    const seen: Array<number | undefined> = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        seen.push(input.maxRetries);
+        yield { type: "text", text: "ok" };
+        yield { type: "result", ok: true };
+      },
+    };
+    const withFb = manager(runner, { fallbackProvider: FALLBACK });
+    const a = await withFb.create({ prompt: "Halo", cwd: dir });
+    await withFb.done(a.id);
+    const withoutFb = manager(runner, { fallbackProvider: undefined });
+    const b = await withoutFb.create({ prompt: "Halo", cwd: dir });
+    await withoutFb.done(b.id);
+    expect(seen).toEqual([2, undefined]);
+  });
+
   test("(b) galat setelah teks pertama tidak memicu fallback", async () => {
     const calls: string[] = [];
     const runner: AgentRunner = {
@@ -217,7 +235,8 @@ describe("SessionManager fallback provider", () => {
     await mgr.done(info.id);
 
     expect(calls).toEqual(["asal"]);
-    expect(fallbackCalls).toEqual([]);
+    // Profil cadangan diperiksa di depan (untuk membatasi retry SDK) tetapi tidak dipakai.
+    expect(fallbackCalls).toEqual(["asal"]);
     expect(mgr.get(info.id)?.status).toBe("gagal");
     const events = eventsOf(await collect(mgr, info.id));
     expect(events.some((event) => event.type === "notice")).toBe(false);
@@ -240,7 +259,8 @@ describe("SessionManager fallback provider", () => {
     await mgr.done(info.id);
 
     expect(calls).toEqual(["asal"]);
-    expect(fallbackCalls).toEqual([]);
+    // Profil cadangan diperiksa di depan (untuk membatasi retry SDK) tetapi tidak dipakai.
+    expect(fallbackCalls).toEqual(["asal"]);
     expect(mgr.get(info.id)?.status).toBe("gagal");
   });
 
@@ -260,7 +280,8 @@ describe("SessionManager fallback provider", () => {
     await mgr.done(info.id);
 
     expect(calls).toEqual(["asal"]);
-    expect(fallbackCalls).toEqual([]);
+    // Profil cadangan diperiksa di depan (untuk membatasi retry SDK) tetapi tidak dipakai.
+    expect(fallbackCalls).toEqual(["asal"]);
     expect(mgr.get(info.id)?.status).toBe("dibatalkan");
   });
 
