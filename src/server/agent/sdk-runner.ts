@@ -315,8 +315,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       if (input.resumeSessionId !== undefined) {
         sdkOptions.resume = input.resumeSessionId;
       }
-      if (workspace !== undefined && workspace.additionalDirectories.length > 0) {
-        sdkOptions.additionalDirectories = workspace.additionalDirectories;
+      const directories = [
+        ...(workspace?.additionalDirectories ?? []),
+        ...(input.extraDirectories ?? []),
+      ];
+      if (directories.length > 0) {
+        sdkOptions.additionalDirectories = directories;
       }
       if (input.permissionMode === "bypassPermissions") {
         sdkOptions.allowDangerouslySkipPermissions = true;

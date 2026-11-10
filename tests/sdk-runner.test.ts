@@ -972,3 +972,21 @@ test("result memuat contextTokens dari panggilan terakhir dan contextWindow dari
   const result = events.find((event) => event.type === "result");
   expect(result).toMatchObject({ contextTokens: 1350, contextWindow: 200000 });
 });
+
+test("extraDirectories masuk additionalDirectories bersama folder workspace", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ extraDirectories: ["/data/lampiran"] }),
+    ),
+  );
+  expect((received as Record<string, unknown> | undefined)?.additionalDirectories).toEqual([
+    "/data/lampiran",
+  ]);
+
+  received = undefined;
+  const plain = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+  await collect(createSdkRunner({ load: async () => plain.module, baseEnv: {} }).run(baseInput()));
+  expect((received as Record<string, unknown> | undefined)?.additionalDirectories).toBeUndefined();
+});

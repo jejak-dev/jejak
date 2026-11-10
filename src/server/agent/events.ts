@@ -101,6 +101,8 @@ export interface RunInput {
   mcpServers?: ResolvedMcpServer[];
   /** Pengaturan sumber Claude; tanpa field ini perilaku lama persis. */
   claude?: RunClaudeConfig;
+  /** Folder tambahan yang boleh dibaca agent tanpa kartu izin (mis. lampiran pesan). */
+  extraDirectories?: string[];
   /** Opsi `sandbox` SDK (opaque); tanpa field ini perilaku lama persis. */
   sandbox?: Record<string, unknown>;
   /**

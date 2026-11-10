@@ -162,6 +162,8 @@ export interface SessionManagerOptions {
   worktrees?: WorktreeService;
   /** Default `true`; `false` menolak semua sesi bermode bypass. */
   allowBypass?: boolean;
+  /** Folder tambahan untuk dibaca agent di setiap giliran (mis. lampiran). */
+  extraDirectories?: string[];
   /** Dipanggil setelah sesi dibuang (hapus manual maupun eviksi). Galatnya ditelan. */
   onSessionDeleted?: (id: string) => void | Promise<void>;
   /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan audit. */
@@ -427,6 +429,7 @@ export class SessionManager {
   private readonly mcpServers: McpServerResolver | undefined;
   private readonly worktrees: WorktreeService | undefined;
   private readonly allowBypass: boolean;
+  private readonly extraDirectories: string[];
   private readonly onSessionDeleted: ((id: string) => void | Promise<void>) | undefined;
   private readonly auditStore: AuditStore | undefined;
   private readonly claudeConfig: ClaudeConfigStore | undefined;
@@ -467,6 +470,7 @@ export class SessionManager {
     this.mcpServers = options.mcpServers;
     this.worktrees = options.worktrees;
     this.allowBypass = options.allowBypass ?? true;
+    this.extraDirectories = options.extraDirectories ?? [];
     this.onSessionDeleted = options.onSessionDeleted;
     this.auditStore = options.audit;
     this.claudeConfig = options.claude;
@@ -1715,6 +1719,9 @@ export class SessionManager {
     const claude = this.claudeForRun(record);
     if (claude !== undefined) {
       input.claude = claude;
+    }
+    if (this.extraDirectories.length > 0) {
+      input.extraDirectories = this.extraDirectories;
     }
     let workspace: RunWorkspace | undefined;
     if (record.info.workspaceId !== undefined && this.workspaces !== undefined) {

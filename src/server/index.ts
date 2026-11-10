@@ -24,6 +24,8 @@ import {
   defaultSecretAllowStore,
   type SecretAllowStore,
 } from "./security/secret-allow-store";
+import { AttachmentStore } from "./attachments/store";
+import { attachmentRoutes } from "./routes/attachments";
 import { checkpointRoutes } from "./routes/checkpoints";
 import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
@@ -76,6 +78,8 @@ export interface CreateAppOptions {
   memory?: MemoryService;
   /** URL publik `/mcp` yang dipakai agent untuk menjangkau tool memory. */
   mcpUrl?: string;
+  /** Folder lampiran pesan; default `<jejakHome(env)>/attachments`. */
+  attachmentsDir?: string;
   /** Layanan checkpoint; tanpa opsi ini rute checkpoint menjawab 503. */
   checkpoints?: CheckpointService;
   /** Direktori checkpoint; default `<jejakHome(env)>/checkpoints`. */
@@ -136,6 +140,10 @@ export function createApp(options: CreateAppOptions = {}) {
           mcpUrl: options.mcpUrl,
         });
 
+  const attachments = new AttachmentStore({
+    root: options.attachmentsDir ?? join(jejakHome(env), "attachments"),
+  });
+
   const checkpoints =
     options.checkpoints ??
     (options.checkpointDir === undefined
@@ -186,6 +194,7 @@ export function createApp(options: CreateAppOptions = {}) {
       memoryBridge: memoryBridge?.bridge,
       checkpoints,
       workspaces: workspaceResolver,
+      extraDirectories: [attachments.root],
       mcpServers: options.mcpServers,
       worktrees,
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
@@ -245,6 +254,7 @@ export function createApp(options: CreateAppOptions = {}) {
         audit: options.audit,
       }),
     )
+    .use(attachmentRoutes({ store: attachments }))
     .use(checkpointRoutes({ manager, service: checkpoints, audit: options.audit }))
     .use(
       gitRoutes({
