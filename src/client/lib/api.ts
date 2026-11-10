@@ -27,6 +27,9 @@ import type {
 import type { ImportResult } from "../../server/memory/memory-service";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
+import type { RemoteRepo } from "../../server/gitprovider/adapters";
+import type { GitProviderView } from "../../server/gitprovider/provider-store";
+import type { IndexedRepo } from "../../server/indexer/repo-indexer";
 import type { Question } from "../../server/questions/question-store";
 import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
@@ -140,6 +143,17 @@ export type ClaudeConfigItem = { userSettings: boolean; hooksEnabled: boolean };
 export type ClaudeInstructions = InstructionFile;
 export type ClaudeSkillItem = SkillInfo;
 export type ClaudeSkillFile = ClaudeSkillItem & { content: string };
+export type GitProviderItem = GitProviderView;
+export type RemoteRepoItem = RemoteRepo & { indexed: boolean };
+export type IndexedRepoItem = IndexedRepo;
+export interface GitProviderInput {
+  name: string;
+  kind: "gitlab" | "local";
+  baseUrl?: string;
+  root?: string;
+  /** String isi = ganti; "" = hapus; tanpa field = pertahankan. */
+  token?: string;
+}
 export type QuestionItem = Question;
 export type QuestionStatusFilter = "open" | "answered" | "dismissed" | "all";
 export type ClaudeAgentItem = AgentInfo;
@@ -398,6 +412,13 @@ export interface ApiClient {
   listMemory(params?: MemoryQuery): Promise<MemoryList>;
   createMemory(input: MemoryCreateInput): Promise<MemoryItem>;
   updateMemory(id: string, input: MemoryUpdateInput): Promise<MemoryItem>;
+  listGitProviders(): Promise<GitProviderItem[]>;
+  putGitProvider(id: string, input: GitProviderInput): Promise<GitProviderItem>;
+  deleteGitProvider(id: string): Promise<void>;
+  listProviderRepos(id: string): Promise<RemoteRepoItem[]>;
+  listIndexedRepos(): Promise<IndexedRepoItem[]>;
+  indexRepo(providerId: string, fullPath: string): Promise<IndexedRepoItem>;
+  deleteIndexedRepo(key: string): Promise<void>;
   listQuestions(status?: QuestionStatusFilter): Promise<{ items: QuestionItem[]; open: number }>;
   assignQuestion(id: string, assignee: string): Promise<QuestionItem>;
   answerQuestion(id: string, answer: string, by: string): Promise<QuestionItem>;
@@ -1329,6 +1350,44 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async updateMemory(id, input) {
       return memoryFrom(await request("PATCH", `/api/memory/${encodeURIComponent(id)}`, input));
+    },
+
+    async listGitProviders() {
+      const data = await request("GET", "/api/git-providers");
+      if (!isRecord(data) || !Array.isArray(data.providers)) throw invalidResponse();
+      return data.providers as GitProviderItem[];
+    },
+
+    async putGitProvider(id, input) {
+      const data = await request("PUT", `/api/git-providers/${encodeURIComponent(id)}`, input);
+      if (!isRecord(data) || typeof data.id !== "string") throw invalidResponse();
+      return data as unknown as GitProviderItem;
+    },
+
+    async deleteGitProvider(id) {
+      await request("DELETE", `/api/git-providers/${encodeURIComponent(id)}`, {});
+    },
+
+    async listProviderRepos(id) {
+      const data = await request("GET", `/api/git-providers/${encodeURIComponent(id)}/repos`);
+      if (!isRecord(data) || !Array.isArray(data.repos)) throw invalidResponse();
+      return data.repos as RemoteRepoItem[];
+    },
+
+    async listIndexedRepos() {
+      const data = await request("GET", "/api/index/repos");
+      if (!isRecord(data) || !Array.isArray(data.repos)) throw invalidResponse();
+      return data.repos as IndexedRepoItem[];
+    },
+
+    async indexRepo(providerId, fullPath) {
+      const data = await request("POST", "/api/index/repos", { providerId, fullPath });
+      if (!isRecord(data) || typeof data.key !== "string") throw invalidResponse();
+      return data as unknown as IndexedRepoItem;
+    },
+
+    async deleteIndexedRepo(key) {
+      await request("DELETE", `/api/index/repos/${encodeURIComponent(key)}`, {});
     },
 
     async listQuestions(status) {

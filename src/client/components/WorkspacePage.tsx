@@ -1,3 +1,4 @@
+import { IndexerPanel } from "./IndexerPanel";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ApiClient, type WorkspaceItem } from "../lib/api";
 import type { WorkspaceDraft } from "../lib/workspace";
@@ -288,6 +289,8 @@ export function WorkspacePage({ api, projects }: WorkspacePageProps) {
           )}
         </div>
       )}
+
+      <IndexerPanel api={api} />
     </section>
   );
 }

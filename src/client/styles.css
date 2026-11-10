@@ -4748,3 +4748,10 @@ h2.jk-md-heading {
 @media (max-width: 640px) {
   .jk-questions-name { margin-left: 0; width: 100%; }
 }
+
+/* Indexer */
+.jk-indexer { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line); }
+.jk-indexer-title { font-size: 1.05rem; }
+.jk-indexer-provider { list-style: none; }
+.jk-indexer-remote { margin: 6px 0 10px 12px; }
+.jk-indexer-sub { margin: 16px 0 6px; }
