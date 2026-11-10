@@ -8,6 +8,12 @@
   "bin": {
     "jejak": "src/cli/index.ts"
   },
+  "files": [
+    "src/",
+    "LICENSE",
+    "README.md",
+    "docs/PASANG.md"
+  ],
   "workspaces": [
     "packages/*"
   ],

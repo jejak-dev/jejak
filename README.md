@@ -23,10 +23,14 @@ Perintah CLI (setelah `bun link`):
 ```bash
 jejak doctor
 jejak serve
+jejak serve --port 3001        # atau --port=3001
+jejak serve --mock             # agent tiruan, tanpa SDK
 jejak --version
 ```
 
 Server hanya mendengarkan `127.0.0.1` secara default. Ubah dengan `HOST` dan `PORT`.
+
+Petunjuk pasang lengkap (clone, tarball, git) ada di [docs/PASANG.md](docs/PASANG.md).
 
 ## Struktur
 

@@ -657,3 +657,28 @@ test("server MCP: dimatikan lewat JEJAK_MCP_SERVERS=0 dan tetap exit 0", async (
   expect(code).toBe(0);
   expect(logged.some((line) => line.includes("PERINGATAN  Server MCP"))).toBe(true);
 });
+
+test("pemasangan: root paket dengan bin ditemukan berstatus ok", async () => {
+  const checks = await collectChecks({
+    env: {},
+    providersPath: providersFile,
+    resolveSdk: () => "/opt/sdk/index.js",
+  });
+  const install = find(checks, "Pemasangan");
+  expect(install.status).toBe("ok");
+  expect(install.detail).toContain("src/cli/index.ts");
+  expect(install.detail).toContain(`Bun ${Bun.version}`);
+  expect(install.detail).toContain("SDK terpasang");
+});
+
+test("pemasangan: package.json tidak terbaca memberi peringatan", async () => {
+  const checks = await collectChecks({
+    env: {},
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    packageRoot: join(root, "tidak-ada"),
+  });
+  const install = find(checks, "Pemasangan");
+  expect(install.status).toBe("peringatan");
+  expect(install.detail).toContain("tidak terbaca");
+});

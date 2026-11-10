@@ -300,7 +300,7 @@ export function startServer(options: ServeOptions = {}) {
     hostname: host,
     port,
   });
-  console.log(`Jejak berjalan di http://${host}:${port}`);
+  console.log(`Jejak ${VERSION} siap di http://${host}:${port}`);
   const closers: Array<() => void> = [];
   if (store !== undefined) closers.push(() => store.close());
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());

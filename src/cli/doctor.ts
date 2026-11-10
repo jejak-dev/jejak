@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile, readdir, stat } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 import { listSessionDirs } from "../server/checkpoints/checkpoint-service";
 import { readMcpConfig, mcpServersPath } from "../server/mcp/mcp-config";
 import { readMemoryFile, scanMemoryFiles } from "../server/memory/memory-files";
@@ -23,6 +23,8 @@ export interface DoctorContext {
   providersPath?: string;
   resolveSdk?: () => string | null;
   log?: (line: string) => void;
+  /** Direktori root paket; default dua tingkat di atas `src/cli`. */
+  packageRoot?: string;
 }
 
 function parseMajorMinor(v: string): [number, number] {
@@ -93,6 +95,44 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
     status: "ok",
     detail: `${env.HOST ?? "127.0.0.1"}:${env.PORT ?? 3000}`,
   });
+
+  let sdkLocation: string | null;
+  try {
+    sdkLocation = resolveSdk();
+  } catch {
+    sdkLocation = null;
+  }
+
+  const packageRoot = ctx.packageRoot ?? join(import.meta.dir, "..", "..");
+  try {
+    const raw = await readFile(join(packageRoot, "package.json"), "utf8");
+    const manifest = JSON.parse(raw) as {
+      bin?: Record<string, unknown>;
+      engines?: { bun?: unknown };
+    };
+    const binPath = typeof manifest.bin?.jejak === "string" ? manifest.bin.jejak : null;
+    let binExists = false;
+    if (binPath !== null) {
+      try {
+        binExists = (await stat(resolve(packageRoot, binPath))).isFile();
+      } catch {
+        binExists = false;
+      }
+    }
+    const bunRange =
+      typeof manifest.engines?.bun === "string" ? manifest.engines.bun : "tidak dicantumkan";
+    checks.push({
+      name: "Pemasangan",
+      status: binExists ? "ok" : "peringatan",
+      detail: `${packageRoot}; bin jejak ${binExists ? binPath : "tidak ditemukan"}; Bun ${Bun.version} (butuh ${bunRange}); SDK ${sdkLocation === null ? "belum terpasang" : "terpasang"}`,
+    });
+  } catch (error) {
+    checks.push({
+      name: "Pemasangan",
+      status: "peringatan",
+      detail: `${packageRoot}; package.json tidak terbaca (${errorMessage(error)})`,
+    });
+  }
 
   let fileMode: number | null = null;
   try {
@@ -358,11 +398,6 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
     });
   }
 
-  let sdkLocation: string | null;  try {
-    sdkLocation = resolveSdk();
-  } catch {
-    sdkLocation = null;
-  }
   checks.push(
     sdkLocation === null
       ? {
