@@ -28,10 +28,10 @@ export interface ComposerProps {
 type PermissionMode = ComposerPermissionMode;
 
 const PERMISSION_OPTIONS: { value: PermissionMode; label: string }[] = [
-  { value: "default", label: "Tanya dulu" },
-  { value: "acceptEdits", label: "Setujui edit" },
-  { value: "plan", label: "Hanya rencana" },
-  { value: "bypassPermissions", label: "Tanpa izin (berbahaya)" },
+  { value: "default", label: "Ask permissions" },
+  { value: "acceptEdits", label: "Accept edits" },
+  { value: "plan", label: "Plan mode" },
+  { value: "bypassPermissions", label: "Bypass permissions (dangerous)" },
 ];
 
 const STORAGE_CWD = "jejak.cwd";
@@ -290,7 +290,7 @@ export function Composer({
   const modelEntry = models.find((entry) => entry.id === model);
   const modelLabel = hasModelList
     ? model === ""
-      ? "Model bawaan"
+      ? "Default model"
       : (modelEntry?.label ?? model)
     : undefined;
   const modeLabel =
@@ -397,7 +397,7 @@ export function Composer({
               <button
                 type="button"
                 class="jk-icon-btn"
-                aria-label="Telusuri folder"
+                aria-label="Browse folder"
                 title="Telusuri…"
                 data-folder-opener
                 disabled={busy}
@@ -450,7 +450,7 @@ export function Composer({
                 onChange={(event) => setModel((event.currentTarget as HTMLSelectElement).value)}
                 disabled={busy}
               >
-                <option value="">Model bawaan</option>
+                <option value="">Default model</option>
                 {models.map((entry) => (
                   <option key={entry.id} value={entry.id}>
                     {entry.label ?? entry.id}
@@ -465,7 +465,7 @@ export function Composer({
                 id="jk-model"
                 type="text"
                 class="jk-chip-input"
-                placeholder="Model bawaan"
+                placeholder="Default model"
                 size={14}
                 value={model}
                 onInput={(event) => setModel((event.currentTarget as HTMLInputElement).value)}
@@ -521,7 +521,7 @@ export function Composer({
               }
               disabled={busy}
             />
-            <span>Worktree terisolasi</span>
+            <span>Isolated worktree</span>
           </label>
           <p class="jk-note" id="jk-worktree-note">
             {WORKTREE_NOTE}
@@ -539,7 +539,7 @@ export function Composer({
             onChange={(event) => setBriefMode((event.currentTarget as HTMLInputElement).checked)}
             disabled={busy}
           />
-          <span>Brief dampak dulu</span>
+          <span>Impact brief first</span>
         </label>
         <p class="jk-note" id="jk-brief-note">
           {briefMode

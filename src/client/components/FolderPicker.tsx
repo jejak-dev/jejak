@@ -86,7 +86,7 @@ export function FolderPicker({ api, initialPath, onPick, onClose }: FolderPicker
     <div
       class="jk-picker"
       role="dialog"
-      aria-label="Telusuri folder"
+      aria-label="Browse folder"
       tabIndex={-1}
       ref={panelRef}
     >
@@ -97,8 +97,8 @@ export function FolderPicker({ api, initialPath, onPick, onClose }: FolderPicker
         <button
           type="button"
           class="jk-icon-btn jk-picker-nav"
-          aria-label="Folder induk"
-          title="Folder induk"
+          aria-label="Parent folder"
+          title="Parent folder"
           disabled={current === null || current.parent === null}
           onClick={() => {
             if (current?.parent != null) void load(current.parent);
@@ -114,7 +114,7 @@ export function FolderPicker({ api, initialPath, onPick, onClose }: FolderPicker
             if (current !== null) void load(current.home);
           }}
         >
-          Rumah
+          Home
         </button>
       </div>
 

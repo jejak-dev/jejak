@@ -34,11 +34,11 @@ export interface PanelProps {
 }
 
 const TABS: { id: PanelTab; label: string }[] = [
-  { id: "changes", label: "Perubahan" },
-  { id: "files", label: "Berkas" },
+  { id: "changes", label: "Changes" },
+  { id: "files", label: "Files" },
   { id: "git", label: "Git" },
-  { id: "checkpoints", label: "Titik" },
-  { id: "rahasia", label: "Rahasia" },
+  { id: "checkpoints", label: "Checkpoints" },
+  { id: "rahasia", label: "Secrets" },
   { id: "terminal", label: "Terminal" },
 ];
 
@@ -98,9 +98,9 @@ export function Panel({
   };
 
   return (
-    <aside class="jk-panel" aria-label="Perubahan, berkas, git, titik, dan rahasia">
+    <aside class="jk-panel" aria-label="Changes, files, git, checkpoints, and secrets">
       <div class="jk-panel-head">
-        <div class="jk-panel-tabs" role="tablist" aria-label="Perubahan, berkas, git, titik, dan rahasia">
+        <div class="jk-panel-tabs" role="tablist" aria-label="Changes, files, git, checkpoints, and secrets">
           {TABS.map((entry, index) => (
             <button
               key={entry.id}
