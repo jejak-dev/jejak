@@ -4947,3 +4947,18 @@ h2.jk-md-heading {
   margin: 0;
   padding-left: 18px;
 }
+
+/* Persetujuan rencana (ExitPlanMode) */
+.jk-plan-body {
+  margin: 10px 14px 0;
+  padding: 10px 14px;
+  max-height: 52vh;
+  overflow-y: auto;
+  border-radius: 10px;
+  background: var(--code);
+  line-height: 1.55;
+}
+
+.jk-step-body .jk-plan-body {
+  margin: 0;
+}

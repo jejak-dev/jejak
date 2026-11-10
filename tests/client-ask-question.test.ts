@@ -61,3 +61,14 @@ describe("pilihan jawaban", () => {
     expect(buildAnswers(qs, sel)).toEqual({ "Mau lanjut ke mana?": "Push", "Fitur?": "A" });
   });
 });
+
+import { parsePlan } from "../src/client/lib/ask-question";
+
+describe("parsePlan", () => {
+  test("mengambil teks plan, menolak kosong dan bentuk lain", () => {
+    expect(parsePlan({ plan: "  # Rencana\n1. a " })).toBe("# Rencana\n1. a");
+    expect(parsePlan({ plan: "   " })).toBeUndefined();
+    expect(parsePlan({ plan: 3 })).toBeUndefined();
+    expect(parsePlan("x")).toBeUndefined();
+  });
+});

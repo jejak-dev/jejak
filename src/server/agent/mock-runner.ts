@@ -74,6 +74,26 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
         };
       }
 
+      if (input.requestPermission !== undefined && input.prompt.includes("[rencana]")) {
+        let reply = "Rencana ditolak.";
+        try {
+          const decision = await input.requestPermission(
+            {
+              name: "ExitPlanMode",
+              input: { plan: "# Rencana\n\n1. Tulis **skema** awal\n2. Buat tes\n3. Jalankan `bun test`" },
+            },
+            signal ?? new AbortController().signal,
+          );
+          if (decision.behavior === "allow") reply = "Rencana disetujui.";
+          else reply = `Rencana ditolak: ${decision.message}`;
+        } catch {
+          // dibatalkan
+        }
+        yield { type: "text", text: reply };
+        yield { type: "result", ok: true };
+        return;
+      }
+
       if (input.requestPermission !== undefined && input.prompt.includes("[tanya]")) {
         let reply = "Pertanyaan dilewati.";
         try {

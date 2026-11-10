@@ -6,7 +6,9 @@ import {
   type PermissionPreview,
 } from "../lib/permission";
 import type { PermissionStatus, TimelineItem } from "../lib/timeline";
-import { parseAskQuestions } from "../lib/ask-question";
+import { parseAskQuestions, parsePlan } from "../lib/ask-question";
+import { Markdown } from "./Markdown";
+import { PlanCard } from "./PlanCard";
 import { AskQuestionCard, AskQuestionSummary } from "./AskQuestionCard";
 import { Icon } from "./Icon";
 
@@ -141,6 +143,7 @@ function useCountdown(expiresAt: string | undefined, active: boolean): number | 
 export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
   const view = describePermission(item.name, item.input, cwd);
   const asks = item.name === "AskUserQuestion" ? parseAskQuestions(item.input) : undefined;
+  const plan = item.name === "ExitPlanMode" ? parsePlan(item.input) : undefined;
   const pending = item.status === "menunggu";
   const remaining = useCountdown(item.expiresAt, pending);
 
@@ -189,11 +192,27 @@ export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
           )}
           {asks !== undefined ? (
             <AskQuestionSummary questions={asks} />
+          ) : plan !== undefined ? (
+            <div class="jk-plan-body">
+              <Markdown text={plan} />
+            </div>
           ) : (
             <Preview preview={view.preview} cwd={cwd} />
           )}
         </div>
       </details>
+    );
+  }
+
+  if (plan !== undefined) {
+    return (
+      <PlanCard
+        id={item.id}
+        plan={plan}
+        remaining={remaining}
+        onApprove={() => onDecide(item.id, "allow")}
+        onRevise={(feedback) => onDecide(item.id, "deny", feedback)}
+      />
     );
   }
 

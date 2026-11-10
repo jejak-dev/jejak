@@ -252,7 +252,7 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
 
               case "tool": {
                 // Pertanyaan agent ditampilkan oleh kartu izin; baris tool-nya dobel.
-                if (item.name === "AskUserQuestion") return null;
+                if (item.name === "AskUserQuestion" || item.name === "ExitPlanMode") return null;
                 const view = toolView(item.name, item.input);
                 const input = prettyInput(item.input);
                 return (

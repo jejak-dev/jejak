@@ -99,3 +99,10 @@ export function buildAnswers(
   });
   return answers;
 }
+
+/** Rencana (markdown) dari input tool ExitPlanMode; undefined bila kosong/tak dikenal. */
+export function parsePlan(input: unknown): string | undefined {
+  if (!isRecord(input)) return undefined;
+  const plan = typeof input.plan === "string" ? input.plan.trim() : "";
+  return plan === "" ? undefined : plan;
+}
