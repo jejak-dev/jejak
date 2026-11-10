@@ -538,8 +538,7 @@ code {
 /* Cari dan kelola sesi */
 
 .jk-session-search {
-  padding: 0 4px;
-  margin: -4px 0 -6px;
+  padding: 3px 4px 4px;
 }
 
 .jk-session-search .jk-input {
