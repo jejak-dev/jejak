@@ -12,6 +12,7 @@ import { ReplyBar } from "./components/ReplyBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { Sidebar } from "./components/Sidebar";
+import { SidebarResizer } from "./components/SidebarResizer";
 import { Timeline } from "./components/Timeline";
 import { WorkspacePage } from "./components/WorkspacePage";
 import {
@@ -29,6 +30,7 @@ import { buildCommands, type CommandId } from "./lib/commands";
 import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
+import { loadSidebarWidth, saveSidebarWidth } from "./lib/sidebar-width";
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 
@@ -72,6 +74,13 @@ export function App() {
   const [interruptError, setInterruptError] = useState<string | undefined>(undefined);
   const [interrupting, setInterrupting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sideWidth, setSideWidth] = useState(() => {
+    try {
+      return loadSidebarWidth(window.localStorage);
+    } catch {
+      return loadSidebarWidth(undefined);
+    }
+  });
   const [panelOpen, setPanelOpen] = useState(() => readPanelPrefs().open);
   const [panelTabRequest, setPanelTabRequest] = useState<
     { tab: PanelTab; nonce: number } | undefined
@@ -432,7 +441,10 @@ export function App() {
       : "jk-main jk-main-home";
 
   return (
-    <div class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}`}>
+    <div
+      class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}`}
+      style={{ "--side-w": `${sideWidth}px` }}
+    >
       <Sidebar
         info={info}
         sessions={sessions}
@@ -460,6 +472,18 @@ export function App() {
         onOpenPalette={openPalette}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
+      <SidebarResizer
+        width={sideWidth}
+        onChange={setSideWidth}
+        onCommit={(width) => {
+          setSideWidth(width);
+          try {
+            saveSidebarWidth(window.localStorage, width);
+          } catch {
+            // penyimpanan tidak tersedia
+          }
+        }}
+      />
 
       <main class={mainClass}>
         {showingProviders ? (

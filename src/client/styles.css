@@ -356,7 +356,7 @@ code {
 .jk-app {
   position: relative;
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: var(--side-w, 264px) minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
 }
@@ -382,6 +382,42 @@ code {
 }
 
 /* Sidebar */
+
+.jk-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 7;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.jk-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s;
+}
+
+.jk-resizer:hover::after,
+.jk-resizer:focus-visible::after,
+.jk-resizer-active::after {
+  background: var(--accent, var(--t3));
+}
+
+.jk-resizer:focus-visible {
+  outline: none;
+}
+
+.jk-app:has(.jk-resizer-active) {
+  cursor: col-resize;
+  user-select: none;
+}
 
 .jk-sidebar {
   display: flex;
@@ -3895,6 +3931,10 @@ h2.jk-md-heading {
 @media (max-width: 760px) {
   .jk-app {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .jk-resizer {
+    display: none;
   }
 
   .jk-sidebar {
