@@ -542,6 +542,8 @@ export function Composer({
         </p>
       )}
 
+      <details class="jk-advanced" open={useWorktree || briefMode || noSandbox}>
+        <summary>Opsi lanjutan</summary>
       {selectedWorkspace === undefined && (
         <div class="jk-worktree-option">
           <label class="jk-bypass-check">
@@ -614,6 +616,8 @@ export function Composer({
           )}
         </div>
       )}
+
+      </details>
 
       {bypassSelected && (
         <div class="jk-bypass-warn" role="note">

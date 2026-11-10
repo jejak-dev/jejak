@@ -4962,3 +4962,17 @@ h2.jk-md-heading {
 .jk-step-body .jk-plan-body {
   margin: 0;
 }
+
+.jk-ask-answer { color: var(--t1); }
+
+.jk-advanced { margin-top: 10px; }
+.jk-advanced > summary {
+  cursor: pointer;
+  color: var(--t3);
+  font-size: 12.5px;
+  list-style: none;
+  padding: 4px 0;
+}
+.jk-advanced > summary::-webkit-details-marker { display: none; }
+.jk-advanced > summary:hover { color: var(--t1); }
+.jk-advanced[open] > summary { margin-bottom: 4px; }

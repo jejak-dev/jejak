@@ -320,20 +320,10 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
 
               case "result":
                 return (
-                  <footer class="jk-result" key={index}>
+                  <footer class="jk-result" key={index} title={resultDetail(item)}>
                     <span class={`jk-result-mark ${item.ok ? "jk-ok" : "jk-bad"}`}>
                       {item.ok ? "Selesai" : "Gagal"}
                     </span>
-                    {item.inputTokens !== undefined && (
-                      <span>{formatCount(item.inputTokens)} token masuk</span>
-                    )}
-                    {item.outputTokens !== undefined && (
-                      <span>{formatCount(item.outputTokens)} keluar</span>
-                    )}
-                    {item.cacheReadTokens !== undefined && item.cacheReadTokens > 0 && (
-                      <span>{formatCount(item.cacheReadTokens)} dari cache</span>
-                    )}
-                    {item.numTurns !== undefined && <span>{formatCount(item.numTurns)} giliran</span>}
                     {item.estimatedCostUsd !== undefined && (
                       <span title="Perkiraan dari tarif di profil provider">{formatCost(item.estimatedCostUsd)}</span>
                     )}
@@ -386,4 +376,21 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
       </div>
     </div>
   );
+}
+
+/** Rincian token/giliran untuk tooltip baris hasil (tidak ditampilkan terbuka). */
+function resultDetail(item: {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  numTurns?: number;
+}): string | undefined {
+  const parts: string[] = [];
+  if (item.inputTokens !== undefined) parts.push(`${formatCount(item.inputTokens)} token masuk`);
+  if (item.outputTokens !== undefined) parts.push(`${formatCount(item.outputTokens)} keluar`);
+  if (item.cacheReadTokens !== undefined && item.cacheReadTokens > 0) {
+    parts.push(`${formatCount(item.cacheReadTokens)} dari cache`);
+  }
+  if (item.numTurns !== undefined) parts.push(`${formatCount(item.numTurns)} giliran`);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
