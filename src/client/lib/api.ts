@@ -27,6 +27,7 @@ import type {
 import type { ImportResult } from "../../server/memory/memory-service";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
+import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type {
@@ -138,6 +139,8 @@ export type ClaudeConfigItem = { userSettings: boolean; hooksEnabled: boolean };
 export type ClaudeInstructions = InstructionFile;
 export type ClaudeSkillItem = SkillInfo;
 export type ClaudeSkillFile = ClaudeSkillItem & { content: string };
+export type ClaudeAgentItem = AgentInfo;
+export type ClaudeAgentFile = ClaudeAgentItem & { content: string };
 export type ClaudeHookItem = HookInfo;
 export type ClaudeScope = "user" | "project";
 
@@ -447,6 +450,14 @@ export interface ApiClient {
     enabled: boolean,
     cwd?: string,
   ): Promise<{ scope: ClaudeScope; name: string; enabled: boolean }>;
+  listAgents(cwd?: string): Promise<ClaudeAgentItem[]>;
+  getAgent(scope: ClaudeScope, name: string, cwd?: string): Promise<ClaudeAgentFile>;
+  putAgent(
+    scope: ClaudeScope,
+    name: string,
+    content: string,
+    cwd?: string,
+  ): Promise<ClaudeAgentFile>;
   listHooks(cwd?: string): Promise<ClaudeHookItem[]>;
 }
 
@@ -847,6 +858,22 @@ function skillFileFrom(payload: unknown): ClaudeSkillFile {
     throw invalidResponse();
   }
   return payload as unknown as ClaudeSkillFile;
+}
+
+function agentListFrom(payload: unknown): ClaudeAgentItem[] {
+  if (!isRecord(payload) || !Array.isArray(payload.agents)) throw invalidResponse();
+  return payload.agents as ClaudeAgentItem[];
+}
+
+function agentFileFrom(payload: unknown): ClaudeAgentFile {
+  if (
+    !isRecord(payload) ||
+    typeof payload.name !== "string" ||
+    typeof payload.content !== "string"
+  ) {
+    throw invalidResponse();
+  }
+  return payload as unknown as ClaudeAgentFile;
 }
 
 function hookListFrom(payload: unknown): ClaudeHookItem[] {
@@ -1482,6 +1509,29 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         await request(
           "PUT",
           `/api/claude/skills/${encodeURIComponent(scope)}/${encodeURIComponent(name)}${claudeQuery(cwd)}`,
+          { content },
+        ),
+      );
+    },
+
+    async listAgents(cwd) {
+      return agentListFrom(await request("GET", `/api/claude/agents${claudeQuery(cwd)}`));
+    },
+
+    async getAgent(scope, name, cwd) {
+      return agentFileFrom(
+        await request(
+          "GET",
+          `/api/claude/agents/${encodeURIComponent(scope)}/${encodeURIComponent(name)}${claudeQuery(cwd)}`,
+        ),
+      );
+    },
+
+    async putAgent(scope, name, content, cwd) {
+      return agentFileFrom(
+        await request(
+          "PUT",
+          `/api/claude/agents/${encodeURIComponent(scope)}/${encodeURIComponent(name)}${claudeQuery(cwd)}`,
           { content },
         ),
       );

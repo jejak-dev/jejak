@@ -1,4 +1,4 @@
-import type { ClaudeHookItem, ClaudeScope, ClaudeSkillItem } from "./api";
+import type { ClaudeAgentItem, ClaudeHookItem, ClaudeScope, ClaudeSkillItem } from "./api";
 import { shortPath } from "./format";
 
 /** Batas isi CLAUDE.md/SKILL.md yang sama dengan server. */
@@ -70,4 +70,16 @@ export function skillBadge(skill: ClaudeSkillItem): string {
     return `tidak valid: ${skill.invalid}`;
   }
   return skill.enabled ? "aktif" : "nonaktif";
+}
+
+/** Kerangka berkas subagent baru: frontmatter minimal dan prompt sistem kosong. */
+export function agentTemplate(name: string): string {
+  return `---\nname: ${name}\ndescription: \ntools: Read, Grep, Glob\n---\n\n`;
+}
+
+/** Ringkasan satu baris subagent: model dan tool, atau alasan tidak valid. */
+export function agentSummary(agent: ClaudeAgentItem): string {
+  if (agent.invalid !== undefined && agent.invalid !== "") return `tidak valid: ${agent.invalid}`;
+  const tools = agent.tools.length === 0 ? "semua tool" : agent.tools.join(", ");
+  return agent.model === "" ? tools : `${agent.model} · ${tools}`;
 }

@@ -14,6 +14,7 @@ import {
   type InstructionScope,
 } from "../claude-config/instructions";
 import { SkillError, listSkills, readSkill, writeSkill, type SkillScope } from "../claude-config/skills";
+import { AgentError, listAgents, readAgent, writeAgent } from "../claude-config/agents";
 import { listHooks } from "../claude-config/hooks";
 
 export interface ClaudeConfigRoutesOptions {
@@ -61,6 +62,9 @@ function errorResponse(error: unknown): Response {
     const status =
       error.code === "tidak-ditemukan" ? 404 : error.code === "terlalu-besar" ? 400 : 400;
     return jsonResponse(status, { error: error.message });
+  }
+  if (error instanceof AgentError) {
+    return jsonResponse(error.code === "tidak-ditemukan" ? 404 : 400, { error: error.message });
   }
   if (error instanceof InstructionsError) {
     return jsonResponse(400, { error: error.message });
@@ -190,6 +194,9 @@ export function claudeConfigRoutes(options: ClaudeConfigRoutesOptions = {}): Ely
       .get("/api/claude/skills/:scope/:name", () => disabledResponse())
       .put("/api/claude/skills/:scope/:name", () => disabledResponse())
       .put("/api/claude/skills/:scope/:name/enabled", () => disabledResponse())
+      .get("/api/claude/agents", () => disabledResponse())
+      .get("/api/claude/agents/:scope/:name", () => disabledResponse())
+      .put("/api/claude/agents/:scope/:name", () => disabledResponse())
       .get("/api/claude/hooks", () => disabledResponse()) as unknown as Elysia;
   }
 
@@ -273,6 +280,54 @@ export function claudeConfigRoutes(options: ClaudeConfigRoutesOptions = {}): Ely
         return errorResponse(error);
       }
     })
+    .get("/api/claude/agents", ({ query }) => {
+      try {
+        return { agents: listAgents(queryCwd(query, true), home) };
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .get("/api/claude/agents/:scope/:name", ({ params, query }) => {
+      try {
+        const scope = parseScope(params.scope);
+        return readAgent(scope, params.name, queryCwd(query, scope === "project"), home);
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .put(
+      "/api/claude/agents/:scope/:name",
+      ({ params, query, body }) => {
+        try {
+          const scope = parseScope(params.scope);
+          const cwd = queryCwd(query, scope === "project");
+          const record = parseObjectBody(body, SKILL_BODY_KEYS);
+          if (typeof record.content !== "string") {
+            throw new RequestError('Field "content" harus berupa teks.');
+          }
+          const existed = (() => {
+            try {
+              readAgent(scope, params.name, cwd, home);
+              return true;
+            } catch (error) {
+              if (error instanceof AgentError && error.code === "tidak-ditemukan") return false;
+              throw error;
+            }
+          })();
+          const written = writeAgent(scope, params.name, record.content, cwd, home);
+          audit(auditStore, existed ? "Subagent diubah" : "Subagent dibuat", {
+            aksi: existed ? "ubah-subagent" : "buat-subagent",
+            scope,
+            nama: written.name,
+            ukuran: sizeOf(record.content),
+          });
+          return written;
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
     .get("/api/claude/skills/:scope/:name", ({ params, query }) => {
       try {
         const scope = parseScope(params.scope);
