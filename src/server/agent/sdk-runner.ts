@@ -6,7 +6,7 @@ import type {
   PermissionRequest,
   ResolvedMcpServer,
 } from "./events";
-import { mapSdkMessage } from "./sdk-mapper";
+import { contextTokensOf, contextWindowOf, mapSdkMessage } from "./sdk-mapper";
 
 const SDK_MODULE: string = "@anthropic-ai/claude-agent-sdk";
 
@@ -376,7 +376,9 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         let pendingDelta = "";
         let pendingParent: string | undefined;
         let lastFlush = 0;
+        let contextTokens: number | undefined;
         for await (const message of query) {
+          contextTokens = contextTokensOf(message) ?? contextTokens;
           for (const event of mapSdkMessage(message)) {
             if (event.type === "text_delta") {
               if (pendingParent !== event.parentToolUseId && pendingDelta !== "") {
@@ -396,7 +398,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
               continue;
             }
             pendingDelta = "";
-            if (event.type === "result") sawResult = true;
+            if (event.type === "result") {
+              sawResult = true;
+              if (contextTokens !== undefined) event.contextTokens = contextTokens;
+              const window = contextWindowOf(message);
+              if (window !== undefined) event.contextWindow = window;
+            }
             yield event;
           }
         }

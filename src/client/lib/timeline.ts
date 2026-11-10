@@ -47,6 +47,8 @@ export type TimelineItem =
       cacheWriteTokens?: number;
       estimatedCostUsd?: number;
       numTurns?: number;
+      contextTokens?: number;
+      contextWindow?: number;
     };
 
 const MAX_SUMMARY = 80;
@@ -256,6 +258,8 @@ export function reduceTimeline(
       if (event.cacheWriteTokens !== undefined) result.cacheWriteTokens = event.cacheWriteTokens;
       if (event.estimatedCostUsd !== undefined) result.estimatedCostUsd = event.estimatedCostUsd;
       if (event.numTurns !== undefined) result.numTurns = event.numTurns;
+      if (event.contextTokens !== undefined) result.contextTokens = event.contextTokens;
+      if (event.contextWindow !== undefined) result.contextWindow = event.contextWindow;
 
       const closed = markRunningToolsFailed(settleStreaming([...items]));
       if (closed.at(-1)?.kind === "result") {

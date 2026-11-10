@@ -947,3 +947,28 @@ test("runner SDK meminta pesan parsial dan meneruskan delta teks, final menggant
   expect(types).toContain("text");
   expect(events.filter((event) => event.type === "text_delta").length).toBeLessThanOrEqual(2);
 });
+
+test("result memuat contextTokens dari panggilan terakhir dan contextWindow dari modelUsage", async () => {
+  const withUsage = (input: number) => ({
+    type: "assistant",
+    parent_tool_use_id: null,
+    message: {
+      content: [{ type: "text", text: "halo" }],
+      usage: { input_tokens: input, cache_read_input_tokens: 1000, output_tokens: 50 },
+    },
+  });
+  const sdk = fakeSdk({
+    messages: [
+      INIT,
+      withUsage(100),
+      withUsage(300),
+      { ...RESULT_OK, modelUsage: { "model-profil": { contextWindow: 200000 } } },
+    ],
+  });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+  const result = events.find((event) => event.type === "result");
+  expect(result).toMatchObject({ contextTokens: 1350, contextWindow: 200000 });
+});

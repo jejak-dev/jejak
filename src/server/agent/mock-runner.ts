@@ -14,6 +14,8 @@ const DEFAULT_SCRIPT: AgentEvent[] = [
     costUsd: 0,
     inputTokens: 12,
     outputTokens: 24,
+    contextTokens: 38_000,
+    contextWindow: 200_000,
     cacheReadTokens: 100,
     cacheWriteTokens: 0,
     numTurns: 1,
@@ -67,6 +69,11 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
   return {
     async *run(input) {
       const signal = input.signal;
+      if (input.prompt.trim() === "/compact") {
+        yield { type: "text", text: "Percakapan dipadatkan." };
+        yield { type: "result", ok: true, contextTokens: 4_200, contextWindow: 200_000 };
+        return;
+      }
       let hasResult = false;
 
       if (input.workspace !== undefined) {

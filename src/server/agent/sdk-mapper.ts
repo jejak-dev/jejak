@@ -168,3 +168,38 @@ export function mapSdkMessage(message: unknown): AgentEvent[] {
       return [];
   }
 }
+
+/**
+ * Ukuran konteks dari pesan assistant agent utama (bukan subagent): token masuk,
+ * cache, dan keluaran pada panggilan model itu. `undefined` bila tak ada usage.
+ */
+export function contextTokensOf(message: unknown): number | undefined {
+  if (!isRecord(message) || message.type !== "assistant") return undefined;
+  if (readParentToolUseId(message) !== undefined) return undefined;
+  const inner = message.message;
+  if (!isRecord(inner) || !isRecord(inner.usage)) return undefined;
+  const usage = inner.usage;
+  const part = (key: string): number => (typeof usage[key] === "number" ? (usage[key] as number) : 0);
+  const total =
+    part("input_tokens") +
+    part("cache_read_input_tokens") +
+    part("cache_creation_input_tokens") +
+    part("output_tokens");
+  return total > 0 ? total : undefined;
+}
+
+/** Jendela konteks terbesar dari `modelUsage` pesan hasil SDK. */
+export function contextWindowOf(message: unknown): number | undefined {
+  if (!isRecord(message) || message.type !== "result" || !isRecord(message.modelUsage)) {
+    return undefined;
+  }
+  let best: number | undefined;
+  for (const entry of Object.values(message.modelUsage)) {
+    if (!isRecord(entry)) continue;
+    const window = entry.contextWindow;
+    if (typeof window === "number" && window > 0 && (best === undefined || window > best)) {
+      best = window;
+    }
+  }
+  return best;
+}
