@@ -1,4 +1,4 @@
-export type PanelTab = "changes" | "files" | "git" | "checkpoints" | "rahasia";
+export type PanelTab = "changes" | "files" | "git" | "checkpoints" | "rahasia" | "terminal";
 
 export interface PanelPrefs {
   open: boolean;
@@ -13,6 +13,7 @@ const TABS: readonly PanelTab[] = [
   "git",
   "checkpoints",
   "rahasia",
+  "terminal",
 ];
 
 function isTab(value: unknown): value is PanelTab {

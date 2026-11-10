@@ -27,6 +27,7 @@ import type {
 import type { ImportResult } from "../../server/memory/memory-service";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
+import type { TerminalInfo } from "../../server/terminal/terminal-manager";
 import type { RemoteRepo } from "../../server/gitprovider/adapters";
 import type { GitProviderView } from "../../server/gitprovider/provider-store";
 import type { IndexedRepo } from "../../server/indexer/repo-indexer";
@@ -143,6 +144,7 @@ export type ClaudeConfigItem = { userSettings: boolean; hooksEnabled: boolean };
 export type ClaudeInstructions = InstructionFile;
 export type ClaudeSkillItem = SkillInfo;
 export type ClaudeSkillFile = ClaudeSkillItem & { content: string };
+export type TerminalItem = TerminalInfo;
 export type GitProviderItem = GitProviderView;
 export type RemoteRepoItem = RemoteRepo & { indexed: boolean };
 export type IndexedRepoItem = IndexedRepo;
@@ -412,6 +414,10 @@ export interface ApiClient {
   listMemory(params?: MemoryQuery): Promise<MemoryList>;
   createMemory(input: MemoryCreateInput): Promise<MemoryItem>;
   updateMemory(id: string, input: MemoryUpdateInput): Promise<MemoryItem>;
+  createTerminal(cwd: string, size?: { cols: number; rows: number }): Promise<TerminalItem>;
+  sendTerminalInput(id: string, data: string): Promise<void>;
+  resizeTerminal(id: string, cols: number, rows: number): Promise<void>;
+  closeTerminal(id: string): Promise<void>;
   listGitProviders(): Promise<GitProviderItem[]>;
   putGitProvider(id: string, input: GitProviderInput): Promise<GitProviderItem>;
   deleteGitProvider(id: string): Promise<void>;
@@ -1350,6 +1356,24 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async updateMemory(id, input) {
       return memoryFrom(await request("PATCH", `/api/memory/${encodeURIComponent(id)}`, input));
+    },
+
+    async createTerminal(cwd, size) {
+      const data = await request("POST", "/api/terminal", { cwd, ...(size ?? {}) });
+      if (!isRecord(data) || typeof data.id !== "string") throw invalidResponse();
+      return data as unknown as TerminalItem;
+    },
+
+    async sendTerminalInput(id, data) {
+      await request("POST", `/api/terminal/${encodeURIComponent(id)}/input`, { data });
+    },
+
+    async resizeTerminal(id, cols, rows) {
+      await request("POST", `/api/terminal/${encodeURIComponent(id)}/resize`, { cols, rows });
+    },
+
+    async closeTerminal(id) {
+      await request("DELETE", `/api/terminal/${encodeURIComponent(id)}`, {});
     },
 
     async listGitProviders() {

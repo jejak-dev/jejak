@@ -16,6 +16,7 @@ import { FilesTab } from "./FilesTab";
 import { GitTab } from "./GitTab";
 import { Icon } from "./Icon";
 import { SecretsTab } from "./SecretsTab";
+import { TerminalTab } from "./TerminalTab";
 
 export interface PanelProps {
   api: ApiClient;
@@ -38,6 +39,7 @@ const TABS: { id: PanelTab; label: string }[] = [
   { id: "git", label: "Git" },
   { id: "checkpoints", label: "Titik" },
   { id: "rahasia", label: "Rahasia" },
+  { id: "terminal", label: "Terminal" },
 ];
 
 export function Panel({
@@ -215,6 +217,8 @@ export function Panel({
           />
         ) : tab === "rahasia" ? (
           <SecretsTab api={api} sessionId={sessionId} />
+        ) : tab === "terminal" ? (
+          <TerminalTab api={api} cwd={session?.cwd ?? ""} />
         ) : (
           <FilesTab
             api={api}

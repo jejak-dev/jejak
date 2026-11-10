@@ -272,6 +272,10 @@ export function checkSecretAccess(
           }
           // Agent tidak boleh mematikan sandbox-nya sendiri lewat API.
           // Agent tidak boleh menjawab pertanyaannya sendiri (menjadi memory "dikonfirmasi").
+          // Terminal PTY memberi shell tanpa sandbox: agent tidak boleh membukanya lewat API.
+          if (token.includes("/api/terminal")) {
+            return { blocked: true, rule: "terminal-api", reason: SECRET_BLOCK_REASON };
+          }
           if (token.includes("/api/git-providers")) {
             return { blocked: true, rule: "git-providers-api", reason: SECRET_BLOCK_REASON };
           }

@@ -4755,3 +4755,9 @@ h2.jk-md-heading {
 .jk-indexer-provider { list-style: none; }
 .jk-indexer-remote { margin: 6px 0 10px 12px; }
 .jk-indexer-sub { margin: 16px 0 6px; }
+
+/* Terminal */
+.jk-terminal { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
+.jk-terminal-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.jk-terminal-screen { margin: 0; min-height: 220px; max-height: 60vh; overflow: auto; background: var(--code); color: var(--t1); border: 1px solid var(--line); border-radius: 8px; padding: 10px; font-family: var(--mono); font-size: 12.5px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.jk-terminal-screen:focus-visible { outline: 2px solid var(--line-2); outline-offset: 1px; }

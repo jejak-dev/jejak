@@ -38,6 +38,8 @@ import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
+import { terminalRoutes } from "./routes/terminal";
+import { TerminalManager } from "./terminal/terminal-manager";
 import { indexerRoutes } from "./routes/indexer";
 import { defaultGitProviderStore, type GitProviderStore } from "./gitprovider/provider-store";
 import type { AdapterDeps } from "./gitprovider/adapters";
@@ -105,6 +107,8 @@ export interface CreateAppOptions {
   indexer?: RepoIndexer;
   /** Dependensi adapter git (mis. fetch palsu untuk tes). */
   gitAdapterDeps?: AdapterDeps;
+  /** Terminal PTY (akses shell penuh, tanpa sandbox); tanpa manajer rute 503. */
+  terminal?: TerminalManager;
   /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
   home?: string;
 }
@@ -252,6 +256,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }),
     )
     .use(memoryRoutes({ service: options.memory, audit: options.audit }))
+    .use(terminalRoutes({ manager: options.terminal, audit: options.audit }))
     .use(questionRoutes({ service: questionService, audit: options.audit }))
     .use(
       indexerRoutes({
@@ -332,6 +337,9 @@ export function startServer(options: ServeOptions = {}) {
   const claudeConfig = defaultClaudeConfigStore(process.env);
   const sandbox = defaultSandboxStore(process.env);
   const questions = defaultQuestionStore(process.env);
+  const terminal =
+    process.env.JEJAK_TERMINAL?.trim() === "1" ? new TerminalManager() : undefined;
+  terminal?.start();
   const gitProviders = defaultGitProviderStore(process.env);
   const indexer =
     gitProviders === undefined ? undefined : new RepoIndexer({ root: indexRoot(process.env) });
@@ -350,6 +358,7 @@ export function startServer(options: ServeOptions = {}) {
     ...(sandbox === undefined ? {} : { sandbox }),
     ...(questions === undefined ? {} : { questions }),
     ...(gitProviders === undefined || indexer === undefined ? {} : { gitProviders, indexer }),
+    ...(terminal === undefined ? {} : { terminal }),
   }).listen({
     hostname: host,
     port,
@@ -360,6 +369,7 @@ export function startServer(options: ServeOptions = {}) {
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
+  if (terminal !== undefined) closers.push(() => terminal.closeAll());
   if (closers.length > 0) {
     const close = (): void => {
       for (const closer of closers) closer();
