@@ -265,6 +265,10 @@ export function checkSecretAccess(
           if (token.includes("/api/claude")) {
             return { blocked: true, rule: "claude-config-api", reason: SECRET_BLOCK_REASON };
           }
+          // Agent tidak boleh mematikan sandbox-nya sendiri lewat API.
+          if (token.includes("/api/sandbox")) {
+            return { blocked: true, rule: "sandbox-api", reason: SECRET_BLOCK_REASON };
+          }
           if (!tokenMayBeSecret(token)) continue;
           const verdict = blockedByPath(token);
           if (verdict.blocked) return verdict;

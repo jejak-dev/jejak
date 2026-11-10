@@ -7,6 +7,7 @@ import { memoryDir } from "../server/memory/memory-store";
 import { redactResolved, resolveProvider, type ProviderRegistry } from "../server/provider";
 import { jejakHome, loadRegistry, providersPath } from "../server/provider-store";
 import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
+import { sandboxAvailable } from "../server/sandbox/build-options";
 import { scanWorkspaceFiles, workspacesDir } from "../server/workspaces/workspace-files";
 import { VERSION } from "../shared/version";
 
@@ -25,6 +26,8 @@ export interface DoctorContext {
   log?: (line: string) => void;
   /** Direktori root paket; default dua tingkat di atas `src/cli`. */
   packageRoot?: string;
+  /** Cek ketersediaan sandbox; default memakai platform dan PATH nyata. */
+  sandbox?: () => { ok: boolean; detail: string };
 }
 
 function parseMajorMinor(v: string): [number, number] {
@@ -395,6 +398,27 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
       name: "Server MCP",
       status: loose || read.problems.length > 0 ? "peringatan" : "ok",
       detail: issues.join("; "),
+    });
+  }
+
+  if (env.JEJAK_SANDBOX?.trim() === "0") {
+    checks.push({
+      name: "Sandbox",
+      status: "ok",
+      detail: "dimatikan (JEJAK_SANDBOX=0)",
+    });
+  } else {
+    const check = ctx.sandbox ?? (() => sandboxAvailable());
+    let availability: { ok: boolean; detail: string };
+    try {
+      availability = check();
+    } catch (error) {
+      availability = { ok: false, detail: errorMessage(error) };
+    }
+    checks.push({
+      name: "Sandbox",
+      status: availability.ok ? "ok" : "peringatan",
+      detail: availability.detail,
     });
   }
 

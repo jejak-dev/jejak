@@ -1,5 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
+import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
   PERMISSION_EXPIRED_MESSAGE,
@@ -32,6 +33,14 @@ import type { BudgetStore } from "../budget/budget-store";
 import type { UsageLedger } from "../budget/usage-ledger";
 import type { MemoryBridge } from "../memory/memory-bridge";
 import { estimateCostUsd } from "../pricing";
+import { jejakHome as defaultJejakHome } from "../provider-store";
+import {
+  buildSandboxOptions,
+  describeSandboxFailure,
+  extractSandboxViolations,
+  providerHostsFrom,
+} from "../sandbox/build-options";
+import type { SandboxMode, SandboxStore } from "../sandbox/sandbox-config";
 import { redactSecrets } from "../security/redact";
 import { redactEvent } from "../security/redact-event";
 import { SECRET_BLOCK_REASON, checkSecretAccess } from "../security/secret-paths";
@@ -65,6 +74,8 @@ export interface SessionInfo {
   workspaceRepos?: Array<{ name: string; primary: boolean; missing: boolean }>;
   /** Worktree terisolasi sesi; `missing` dihitung saat dibaca, tidak disimpan. */
   worktree?: WorktreeInfo;
+  /** Mode sandbox Bash sesi; disimpan saat pembuatan agar lencana konsisten. */
+  sandbox?: SandboxMode;
   /** Hanya pada respons pembuatan sesi (bila worktree dibuat); tidak disimpan. */
   dirtyInSource?: boolean;
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; estimatedCostUsd?: number; sdkCostUsd?: number };
@@ -91,6 +102,8 @@ export interface CreateSessionInput {
   workspaceId?: string;
   /** `true` -> sesi memakai worktree terisolasi pada cabang baru. */
   worktree?: boolean;
+  /** Mode sandbox per sesi; default dari pengaturan global saat pembuatan. */
+  sandbox?: SandboxMode;
 }
 
 export interface WorkspaceResolverRepo {
@@ -155,6 +168,8 @@ export interface SessionManagerOptions {
   audit?: AuditStore;
   /** Pengaturan sumber Claude; tanpa store `input.claude` tidak diisi. */
   claude?: ClaudeConfigStore;
+  /** Sandbox Bash; tanpa store `input.sandbox` tidak diisi. */
+  sandbox?: { store: SandboxStore; home?: string };
   /** Direktori home pengguna untuk skills `~/.claude`; default `os.homedir()`. */
   home?: string;
   /** Anggaran peringatan; tanpa store fitur dimatikan. */
@@ -405,6 +420,8 @@ export class SessionManager {
   private readonly onSessionDeleted: ((id: string) => void | Promise<void>) | undefined;
   private readonly auditStore: AuditStore | undefined;
   private readonly claudeConfig: ClaudeConfigStore | undefined;
+  private readonly sandboxStore: SandboxStore | undefined;
+  private readonly sandboxHome: string | undefined;
   private readonly home: string | undefined;
   private readonly budgetLedger: UsageLedger | undefined;
   private readonly budgetStore: BudgetStore | undefined;
@@ -443,6 +460,8 @@ export class SessionManager {
     this.onSessionDeleted = options.onSessionDeleted;
     this.auditStore = options.audit;
     this.claudeConfig = options.claude;
+    this.sandboxStore = options.sandbox?.store;
+    this.sandboxHome = options.sandbox?.home;
     this.home = options.home;
     this.budgetLedger = options.budget?.ledger;
     this.budgetStore = options.budget?.store;
@@ -632,6 +651,56 @@ export class SessionManager {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * Opsi sandbox untuk satu giliran. Mode efektif: pilihan sesi, lalu default
+   * global. Galat TIDAK ditelan: pemanggil menggagalkan giliran secara tertutup
+   * kecuali mode `mati`.
+   */
+  private sandboxForRun(
+    record: SessionRecord,
+    provider: ResolvedProvider,
+    workspace: RunWorkspace | undefined,
+  ): Record<string, unknown> | undefined {
+    const store = this.sandboxStore;
+    if (store === undefined) return undefined;
+
+    const config = store.get();
+    const mode: SandboxMode = record.info.sandbox ?? config.mode;
+    const home = this.sandboxHome ?? homedir();
+
+    const projectRoots: string[] = [];
+    const worktree = record.info.worktree;
+    if (worktree === undefined) {
+      projectRoots.push(record.info.cwd);
+    } else {
+      projectRoots.push(worktree.path);
+      projectRoots.push(worktree.repoRoot);
+    }
+
+    const extraWriteDirs: string[] = [];
+    if (worktree !== undefined) {
+      extraWriteDirs.push(worktree.repoRoot);
+    }
+    if (workspace !== undefined) {
+      for (const repo of workspace.repos) {
+        extraWriteDirs.push(repo.path);
+      }
+      for (const dir of workspace.additionalDirectories) {
+        extraWriteDirs.push(dir);
+      }
+    }
+
+    return buildSandboxOptions({
+      mode,
+      config,
+      home,
+      jejakHome: defaultJejakHome(),
+      projectRoots,
+      extraWriteDirs,
+      providerHosts: providerHostsFrom(provider.baseUrl),
+    });
   }
 
   /** Nilai rahasia untuk sesi; dimuat malas sekali dan tidak pernah melempar. */
@@ -861,6 +930,9 @@ export class SessionManager {
       if (created !== undefined) {
         info.worktree = { ...created.info };
       }
+      if (validated.sandbox !== undefined) {
+        info.sandbox = validated.sandbox;
+      }
 
       let settle: () => void = () => {};
       const done = new Promise<void>((resolve) => {
@@ -892,6 +964,11 @@ export class SessionManager {
         workspace: info.workspaceId !== undefined,
         model: info.model ?? null,
       });
+      if (info.sandbox === "mati") {
+        this.audit("pengaturan", "Sesi dibuat tanpa sandbox", info.id, {
+          aksi: "sandbox-mati",
+        });
+      }
 
       this.startTurn(record, validated.prompt, false);
 
@@ -1192,6 +1269,7 @@ export class SessionManager {
     workspaceId?: string;
     workspaceName?: string;
     worktree?: boolean;
+    sandbox?: SandboxMode;
   }> {
     if (typeof input.prompt !== "string") {
       throw new SessionError("Prompt harus berupa teks.", "tidak-valid");
@@ -1216,6 +1294,26 @@ export class SessionManager {
     }
     if (wantsWorktree && input.workspaceId !== undefined) {
       throw new SessionError("Worktree belum didukung untuk sesi workspace.", "tidak-valid");
+    }
+
+    if (input.sandbox !== undefined && input.sandbox !== "standar" && input.sandbox !== "mati") {
+      throw new SessionError('Field sandbox hanya "standar" atau "mati".', "tidak-valid");
+    }
+    let sandbox: SandboxMode | undefined;
+    if (this.sandboxStore === undefined) {
+      if (input.sandbox !== undefined) {
+        throw new SessionError("Sandbox dimatikan.", "tidak-valid");
+      }
+    } else {
+      if (input.sandbox !== undefined) {
+        sandbox = input.sandbox;
+      } else {
+        try {
+          sandbox = this.sandboxStore.get().mode;
+        } catch {
+          sandbox = "standar";
+        }
+      }
     }
 
     const workspace = await this.resolveWorkspaceForCreate(input.workspaceId);
@@ -1293,12 +1391,14 @@ export class SessionManager {
       workspaceId?: string;
       workspaceName?: string;
       worktree?: boolean;
+      sandbox?: SandboxMode;
     } = { prompt, cwd, title, permissionMode };
     if (workspace !== undefined) {
       result.workspaceId = workspace.view.id;
       result.workspaceName = workspace.view.name;
     }
     if (wantsWorktree) result.worktree = true;
+    if (sandbox !== undefined) result.sandbox = sandbox;
     return result;
   }
 
@@ -1583,10 +1683,31 @@ export class SessionManager {
     if (claude !== undefined) {
       input.claude = claude;
     }
+    let workspace: RunWorkspace | undefined;
     if (record.info.workspaceId !== undefined && this.workspaces !== undefined) {
-      const workspace = await this.workspaceForRun(record);
+      workspace = await this.workspaceForRun(record);
       if (workspace !== undefined) {
         input.workspace = workspace;
+      }
+    }
+
+    // Sandbox gagal-tertutup: bila opsi tak bisa dibangun, giliran gagal alih-alih
+    // berjalan tanpa sandbox (kecuali mode `mati` yang memang tanpa opsi).
+    if (this.sandboxStore !== undefined) {
+      const mode = this.effectiveSandboxMode(record);
+      if (mode === "standar") {
+        try {
+          const sandbox = this.sandboxForRun(record, provider, workspace);
+          if (sandbox !== undefined) input.sandbox = sandbox;
+        } catch (error) {
+          const message = `Sandbox gagal disiapkan: ${errorMessage(error)}`;
+          this.append(record, { type: "error", message });
+          this.append(record, { type: "result", ok: false, error: message });
+          this.setStatus(record, "gagal");
+          record.settle();
+          this.notify(record);
+          return;
+        }
       }
     }
 
@@ -1930,7 +2051,35 @@ export class SessionManager {
     }
   }
 
+  /** Mode sandbox efektif sesi: pilihan tersimpan, lalu default global. */
+  private effectiveSandboxMode(record: SessionRecord): SandboxMode {
+    const store = this.sandboxStore;
+    if (store === undefined) return "standar";
+    if (record.info.sandbox !== undefined) return record.info.sandbox;
+    try {
+      return store.get().mode;
+    } catch {
+      return "standar";
+    }
+  }
+
+  /** Petunjuk perbaikan bila giliran gagal karena sandbox tak tersedia. */
+  private withSandboxHint(record: SessionRecord, event: AgentEvent): AgentEvent {
+    if (this.sandboxStore === undefined) return event;
+    if (event.type !== "error" && event.type !== "result") return event;
+    if (this.effectiveSandboxMode(record) !== "standar") return event;
+    const hint = describeSandboxFailure(
+      event.type === "error" ? event.message : (event.error ?? ""),
+    );
+    if (hint === undefined) return event;
+    if (event.type === "error") {
+      return { ...event, message: `${event.message}${hint}` };
+    }
+    return { ...event, error: `${event.error ?? ""}${hint}` };
+  }
+
   private append(record: SessionRecord, event: AgentEvent): void {
+    event = this.withSandboxHint(record, event);
     const sanitized = sanitizeEventKeys(event, [
       record.apiKey,
       ...(record.extraApiKeys ?? []),
@@ -1985,6 +2134,19 @@ export class SessionManager {
         tool: event.name,
         sub: event.parentToolUseId !== undefined,
       });
+    }
+
+    // Pelanggaran sandbox dilaporkan SDK sebagai teks di hasil tool Bash.
+    if (event.type === "tool_result" && event.output.includes("<sandbox_violations>")) {
+      const violations = extractSandboxViolations(event.output);
+      if (violations.length > 0) {
+        this.audit(
+          "sandbox",
+          `Sandbox menolak: ${(violations[0] ?? "").slice(0, 200)}`,
+          record.info.id,
+          { jumlah: violations.length },
+        );
+      }
     }
 
     // Accumulate usage for result events

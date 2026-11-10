@@ -682,3 +682,40 @@ test("pemasangan: package.json tidak terbaca memberi peringatan", async () => {
   expect(install.status).toBe("peringatan");
   expect(install.detail).toContain("tidak terbaca");
 });
+
+test("sandbox: tersedia berstatus ok", async () => {
+  const checks = await collectChecks({
+    env: {},
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    sandbox: () => ({ ok: true, detail: "sandbox-exec tersedia" }),
+  });
+  const sandbox = find(checks, "Sandbox");
+  expect(sandbox.status).toBe("ok");
+  expect(sandbox.detail).toBe("sandbox-exec tersedia");
+});
+
+test("sandbox: tidak tersedia berstatus peringatan", async () => {
+  const checks = await collectChecks({
+    env: {},
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    sandbox: () => ({ ok: false, detail: "bwrap tidak ditemukan" }),
+  });
+  const sandbox = find(checks, "Sandbox");
+  expect(sandbox.status).toBe("peringatan");
+  expect(sandbox.detail).toContain("bwrap");
+});
+
+test("sandbox: JEJAK_SANDBOX=0 berstatus ok dimatikan", async () => {
+  const checks = await collectChecks({
+    env: { JEJAK_SANDBOX: "0" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    sandbox: () => ({ ok: false, detail: "tidak dipanggil" }),
+  });
+  const sandbox = find(checks, "Sandbox");
+  expect(sandbox.status).toBe("ok");
+  expect(sandbox.detail).toContain("dimatikan");
+  expect(sandbox.detail).not.toContain("tidak dipanggil");
+});

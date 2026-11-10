@@ -86,6 +86,8 @@ export interface RunInput {
   mcpServers?: ResolvedMcpServer[];
   /** Pengaturan sumber Claude; tanpa field ini perilaku lama persis. */
   claude?: RunClaudeConfig;
+  /** Opsi `sandbox` SDK (opaque); tanpa field ini perilaku lama persis. */
+  sandbox?: Record<string, unknown>;
   /**
    * Kebijakan penolakan akses berkas rahasia. Mengembalikan alasan bila tool harus
    * ditolak lewat hook `PreToolUse`; `undefined` berarti diteruskan.

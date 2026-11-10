@@ -101,6 +101,12 @@ function parseCreateBody(body: unknown): CreateSessionInput {
     }
     input.worktree = record.worktree;
   }
+  if (record.sandbox !== undefined) {
+    if (record.sandbox !== "standar" && record.sandbox !== "mati") {
+      throw invalid('Field sandbox hanya "standar" atau "mati".');
+    }
+    input.sandbox = record.sandbox;
+  }
   return input;
 }
 

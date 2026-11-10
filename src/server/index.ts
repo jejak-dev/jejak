@@ -34,6 +34,7 @@ import { worktreeRoutes } from "./routes/worktree";
 import { secretAllowRoutes } from "./routes/secret-allow";
 import { budgetRoutes } from "./routes/budget";
 import { claudeConfigRoutes } from "./routes/claude-config";
+import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
@@ -43,6 +44,7 @@ import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import { SessionManager, type WorkspaceResolver } from "./sessions/session-manager";
 import { defaultSessionStore, type SessionStore } from "./sessions/session-store";
 import { WorktreeService } from "./git/worktree-service";
+import { defaultSandboxStore, type SandboxStore } from "./sandbox/sandbox-config";
 import type { WorkspaceService } from "./workspaces/workspace-service";
 
 export interface ServeOptions {
@@ -87,6 +89,8 @@ export interface CreateAppOptions {
   usageLedger?: UsageLedger;
   /** Pengaturan sumber Claude (CLAUDE.md/skills/hooks); tanpa store rute 503. */
   claudeConfig?: ClaudeConfigStore;
+  /** Sandbox Bash; tanpa store rute 503 dan `input.sandbox` tidak diisi. */
+  sandbox?: SandboxStore;
   /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
   home?: string;
 }
@@ -159,6 +163,14 @@ export function createApp(options: CreateAppOptions = {}) {
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
       audit: options.audit,
       ...(options.claudeConfig === undefined ? {} : { claude: options.claudeConfig }),
+      ...(options.sandbox === undefined
+        ? {}
+        : {
+            sandbox: {
+              store: options.sandbox,
+              ...(options.home === undefined ? {} : { home: options.home }),
+            },
+          }),
       ...(options.home === undefined ? {} : { home: options.home }),
       ...(options.budget === undefined
         ? {}
@@ -239,6 +251,7 @@ export function createApp(options: CreateAppOptions = {}) {
         audit: options.audit,
       }),
     )
+    .use(sandboxRoutes({ store: options.sandbox, audit: options.audit }))
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({
@@ -284,6 +297,7 @@ export function startServer(options: ServeOptions = {}) {
   const budget = defaultBudgetStore(process.env);
   const usageLedger = defaultUsageLedger(process.env);
   const claudeConfig = defaultClaudeConfigStore(process.env);
+  const sandbox = defaultSandboxStore(process.env);
   const app = createApp({
     sessionStore: store,
     memory,
@@ -296,6 +310,7 @@ export function startServer(options: ServeOptions = {}) {
     ...(budget === undefined ? {} : { budget }),
     ...(usageLedger === undefined ? {} : { usageLedger }),
     ...(claudeConfig === undefined ? {} : { claudeConfig }),
+    ...(sandbox === undefined ? {} : { sandbox }),
   }).listen({
     hostname: host,
     port,

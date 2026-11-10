@@ -309,6 +309,11 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         sdkOptions.allowDangerouslySkipPermissions = true;
       }
 
+      // Tanpa `sandbox` perilaku lama persis; dengan `sandbox` opsi diteruskan apa adanya.
+      if (input.sandbox !== undefined) {
+        sdkOptions.sandbox = input.sandbox;
+      }
+
       const secretGuard = input.secretGuard;
       if (secretGuard !== undefined) {
         const existingHooks = isRecord(sdkOptions.hooks) ? sdkOptions.hooks : {};
