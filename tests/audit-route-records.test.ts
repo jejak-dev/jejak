@@ -464,7 +464,7 @@ describe("audit rute pengaturan", () => {
     expect(JSON.stringify(entries(store))).not.toContain(TITLE_SENTINEL);
   });
 
-  test("mode izin sesi diganti lewat PATCH, dicatat, dan bypass ditolak", async () => {
+  test("mode izin sesi diganti lewat PATCH, dicatat, dan bypass butuh konfirmasi", async () => {
     const store = auditStore();
     const mgr = manager();
     const app = makeApp(mgr, { audit: store });
@@ -479,6 +479,24 @@ describe("audit rute pengaturan", () => {
     expect(
       (await req(app, "PATCH", `/api/sessions/${id}`, { permissionMode: "bypassPermissions" })).status,
     ).toBe(400);
+    expect(
+      (
+        await req(app, "PATCH", `/api/sessions/${id}`, {
+          permissionMode: "bypassPermissions",
+          confirmBypass: "ya",
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await req(app, "PATCH", `/api/sessions/${id}`, {
+          permissionMode: "bypassPermissions",
+          confirmBypass: true,
+        })
+      ).status,
+    ).toBe(200);
+    expect(mgr.get(id)?.permissionMode).toBe("bypassPermissions");
+    await req(app, "PATCH", `/api/sessions/${id}`, { permissionMode: "plan" });
     expect((await req(app, "PATCH", `/api/sessions/${id}`, { permissionMode: 5 })).status).toBe(400);
     expect(mgr.get(id)?.permissionMode).toBe("plan");
   });

@@ -3,6 +3,7 @@ import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient } from "../lib/api";
 import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
+import { BYPASS_WARNING } from "../lib/permission-mode";
 import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
@@ -19,10 +20,13 @@ export interface ReplyBarProps {
 
 const MAX_TEXTAREA_PX = 8 * 24;
 
-const MODE_OPTIONS: { value: "default" | "acceptEdits" | "plan"; label: string }[] = [
+type LiveMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
+
+const MODE_OPTIONS: { value: LiveMode; label: string }[] = [
   { value: "default", label: "Ask permissions" },
   { value: "acceptEdits", label: "Accept edits" },
   { value: "plan", label: "Plan mode" },
+  { value: "bypassPermissions", label: "Lewati izin (berbahaya)" },
 ];
 
 function autosize(element: HTMLTextAreaElement): void {
@@ -69,10 +73,17 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
     .filter((id): id is string => id !== undefined)
     .join(" ");
 
-  const changeMode = async (mode: "default" | "acceptEdits" | "plan"): Promise<void> => {
+  const [confirmingBypass, setConfirmingBypass] = useState(false);
+
+  const changeMode = async (mode: LiveMode, confirmBypass?: boolean): Promise<void> => {
     setError(undefined);
+    if (mode === "bypassPermissions" && confirmBypass !== true) {
+      setConfirmingBypass(true);
+      return;
+    }
+    setConfirmingBypass(false);
     try {
-      await api.setSessionPermissionMode(sessionId, mode);
+      await api.setSessionPermissionMode(sessionId, mode, confirmBypass);
       void refresh();
     } catch (caught) {
       setError(caught instanceof ApiError ? caught.message : "gagal mengganti mode izin");
@@ -101,9 +112,11 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
         : `Konteks: ${formatTokens(context.tokens)} dari ${formatTokens(context.window)} token (jendela menurut SDK, perkiraan untuk model non-Claude)`;
 
   const bypass = session.permissionMode === "bypassPermissions";
-  const modeLabel = bypass
-    ? "Bypass permissions"
-    : (MODE_OPTIONS.find((option) => option.value === session.permissionMode)?.label ?? "");
+  const modeLabel =
+    MODE_OPTIONS.find((option) => option.value === session.permissionMode)?.label.replace(
+      " (berbahaya)",
+      "",
+    ) ?? "";
 
   const submit = async (): Promise<void> => {
     if (!canSend) return;
@@ -178,14 +191,8 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
                 class="jk-chip-select"
                 aria-label="Mode izin sesi"
                 value={session.permissionMode}
-                disabled={bypass}
                 onChange={(event) =>
-                  void changeMode(
-                    (event.currentTarget as HTMLSelectElement).value as
-                      | "default"
-                      | "acceptEdits"
-                      | "plan",
-                  )
+                  void changeMode((event.currentTarget as HTMLSelectElement).value as LiveMode)
                 }
               >
                 {MODE_OPTIONS.map((option) => (
@@ -193,7 +200,6 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
                     {option.label}
                   </option>
                 ))}
-                {bypass && <option value="bypassPermissions">Bypass permissions</option>}
               </select>
             </label>
             {context !== undefined && (
@@ -233,6 +239,24 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
             </button>
           </div>
         </div>
+
+        {confirmingBypass && (
+          <div class="jk-bypass-warn" role="alertdialog" aria-label="Konfirmasi lewati izin">
+            <p>{BYPASS_WARNING}</p>
+            <div class="jk-bypass-actions">
+              <button
+                type="button"
+                class="jk-button jk-button-danger"
+                onClick={() => void changeMode("bypassPermissions", true)}
+              >
+                Aktifkan lewati izin
+              </button>
+              <button type="button" class="jk-link-btn" onClick={() => setConfirmingBypass(false)}>
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
 
         {warning !== undefined && (
           <p class="jk-secret-warning" id="jk-reply-secret-warning" role="status">

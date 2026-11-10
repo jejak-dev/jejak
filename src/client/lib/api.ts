@@ -359,7 +359,8 @@ export interface ApiClient {
   archiveSession(id: string, archived: boolean): Promise<SessionInfo>;
   setSessionPermissionMode(
     id: string,
-    mode: "default" | "acceptEdits" | "plan",
+    mode: "default" | "acceptEdits" | "plan" | "bypassPermissions",
+    confirmBypass?: boolean,
   ): Promise<SessionInfo>;
   deleteSession(id: string): Promise<void>;
   createSession(input: {
@@ -1046,9 +1047,12 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       );
     },
 
-    async setSessionPermissionMode(id, mode) {
+    async setSessionPermissionMode(id, mode, confirmBypass) {
       return sessionFrom(
-        await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, { permissionMode: mode }),
+        await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, {
+          permissionMode: mode,
+          ...(confirmBypass === true ? { confirmBypass: true } : {}),
+        }),
       );
     },
 

@@ -5338,3 +5338,10 @@ h2.jk-md-heading {
   color: inherit;
   text-decoration: none;
 }
+
+.jk-bypass-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}

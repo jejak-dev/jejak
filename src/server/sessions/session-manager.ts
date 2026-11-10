@@ -1051,16 +1051,21 @@ export class SessionManager {
 
   /**
    * Ganti mode izin sesi; berlaku mulai giliran berikutnya (giliran yang sedang
-   * berjalan tetap memakai mode lamanya). Bypass hanya bisa dipilih saat membuat
-   * sesi karena butuh konfirmasi eksplisit.
+   * berjalan tetap memakai mode lamanya). Pindah ke bypass butuh konfirmasi
+   * eksplisit dan tidak boleh dimatikan oleh `allowBypass`.
    */
-  setPermissionMode(id: string, mode: unknown): SessionInfo {
+  setPermissionMode(id: string, mode: unknown, confirmBypass?: unknown): SessionInfo {
     const record = this.requireRecord(id);
     if (typeof mode !== "string" || !PERMISSION_MODES.includes(mode as SessionPermissionMode)) {
       throw new SessionError(`Mode izin "${String(mode)}" belum didukung.`, "tidak-valid");
     }
     if (mode === "bypassPermissions" && record.info.permissionMode !== "bypassPermissions") {
-      throw new SessionError("Mode bypass hanya bisa dipilih saat membuat sesi.", "tidak-valid");
+      if (!this.allowBypass) {
+        throw new SessionError("Mode bypass dimatikan.", "tidak-valid");
+      }
+      if (confirmBypass !== true) {
+        throw new SessionError("Mode bypass butuh konfirmasi eksplisit.", "tidak-valid");
+      }
     }
     record.info.permissionMode = mode as SessionPermissionMode;
     this.persistSession(record);

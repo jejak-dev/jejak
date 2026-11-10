@@ -1906,14 +1906,35 @@ describe("SessionManager.setPermissionMode", () => {
     store.close();
   });
 
-  test("mode tak dikenal dan pindah ke bypass ditolak; id tak ada ditolak", async () => {
+  test("mode tak dikenal ditolak; id tak ada ditolak", async () => {
     const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]) });
     const info = await createOk(mgr);
     await mgr.done(info.id);
     expect(() => mgr.setPermissionMode(info.id, "ngawur")).toThrow(SessionError);
     expect(() => mgr.setPermissionMode(info.id, 3)).toThrow(SessionError);
-    expect(() => mgr.setPermissionMode(info.id, "bypassPermissions")).toThrow(SessionError);
     expect(() => mgr.setPermissionMode("s_tidakada", "plan")).toThrow(SessionError);
+  });
+
+  test("pindah ke bypass butuh konfirmasi dan tunduk pada allowBypass", async () => {
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]) });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    expect(() => mgr.setPermissionMode(info.id, "bypassPermissions")).toThrow(SessionError);
+    expect(() => mgr.setPermissionMode(info.id, "bypassPermissions", "ya")).toThrow(SessionError);
+    expect(mgr.get(info.id)?.permissionMode).toBe("default");
+    expect(mgr.setPermissionMode(info.id, "bypassPermissions", true).permissionMode).toBe(
+      "bypassPermissions",
+    );
+    // keluar dari bypass tidak butuh konfirmasi
+    expect(mgr.setPermissionMode(info.id, "default").permissionMode).toBe("default");
+
+    const locked = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      allowBypass: false,
+    });
+    const other = await createOk(locked);
+    await locked.done(other.id);
+    expect(() => locked.setPermissionMode(other.id, "bypassPermissions", true)).toThrow(SessionError);
   });
 });
 

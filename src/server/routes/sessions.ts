@@ -126,6 +126,7 @@ function parseUpdateBody(body: unknown): {
   title?: string;
   archived?: boolean;
   permissionMode?: string;
+  confirmBypass?: boolean;
 } {
   const parsed = parseJsonBody(body);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
@@ -133,11 +134,21 @@ function parseUpdateBody(body: unknown): {
   }
   const record = parsed as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (key !== "title" && key !== "archived" && key !== "permissionMode") {
+    if (
+      key !== "title" &&
+      key !== "archived" &&
+      key !== "permissionMode" &&
+      key !== "confirmBypass"
+    ) {
       throw invalid(`Field ${key} tidak dikenal.`);
     }
   }
-  const update: { title?: string; archived?: boolean; permissionMode?: string } = {};
+  const update: {
+    title?: string;
+    archived?: boolean;
+    permissionMode?: string;
+    confirmBypass?: boolean;
+  } = {};
   if (record.title !== undefined) {
     if (typeof record.title !== "string") {
       throw invalid("Field title harus berupa string.");
@@ -155,6 +166,12 @@ function parseUpdateBody(body: unknown): {
       throw invalid("Field permissionMode harus berupa string.");
     }
     update.permissionMode = record.permissionMode;
+  }
+  if (record.confirmBypass !== undefined) {
+    if (typeof record.confirmBypass !== "boolean") {
+      throw invalid("Field confirmBypass harus berupa boolean.");
+    }
+    update.confirmBypass = record.confirmBypass;
   }
   if (
     update.title === undefined &&
@@ -312,7 +329,11 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
             });
           }
           if (update.permissionMode !== undefined) {
-            session = manager.setPermissionMode(params.id, update.permissionMode);
+            session = manager.setPermissionMode(
+              params.id,
+              update.permissionMode,
+              update.confirmBypass,
+            );
             recordAudit(audit, {
               kind: "pengaturan",
               sessionId: params.id,
