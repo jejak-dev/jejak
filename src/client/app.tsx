@@ -387,9 +387,14 @@ export function App() {
   }, [api, interruptId, refresh]);
 
   const onDecide = useCallback(
-    async (requestId: string, decision: "allow" | "deny", message?: string): Promise<void> => {
+    async (
+      requestId: string,
+      decision: "allow" | "deny",
+      message?: string,
+      answers?: Record<string, string>,
+    ): Promise<void> => {
       if (interruptId === undefined) return;
-      await api.decidePermission(interruptId, requestId, decision, message);
+      await api.decidePermission(interruptId, requestId, decision, message, answers);
       void refresh();
     },
     [api, interruptId, refresh],
@@ -529,6 +534,7 @@ export function App() {
                 <Timeline
                   items={timeline.items}
                   connection={timeline.connection}
+                  running={selected.status === "berjalan"}
                   cwd={selected.cwd}
                   onDecide={onDecide}
                 />

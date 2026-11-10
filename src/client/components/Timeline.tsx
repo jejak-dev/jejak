@@ -11,8 +11,15 @@ import { PermissionCard } from "./PermissionCard";
 export interface TimelineProps {
   items: TimelineItem[];
   connection: string;
+  /** Sesi sedang bekerja: tampilkan indikator aktivitas di dasar timeline. */
+  running?: boolean;
   cwd: string;
-  onDecide: (requestId: string, decision: "allow" | "deny", message?: string) => Promise<void>;
+  onDecide: (
+    requestId: string,
+    decision: "allow" | "deny",
+    message?: string,
+    answers?: Record<string, string>,
+  ) => Promise<void>;
 }
 
 const MAX_INPUT_CHARS = 2000;
@@ -132,7 +139,17 @@ function depthStyle(depth: number): Record<string, string> | undefined {
   return depth > 0 ? { marginLeft: `${Math.min(depth, 3) * 16}px` } : undefined;
 }
 
-export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
+export function Timeline({ items: rawItems, connection, running, cwd, onDecide }: TimelineProps) {
+  // Sesi sudah berhenti (gagal, selesai, server restart): izin yang masih "menunggu"
+  // tidak bisa diputuskan lagi, jadi tampilkan sebagai dihentikan.
+  const items =
+    running === false
+      ? rawItems.map((item) =>
+          item.kind === "permission" && item.status === "menunggu"
+            ? { ...item, status: "dihentikan" as const }
+            : item,
+        )
+      : rawItems;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pinned, setPinned] = useState(true);
 
@@ -234,6 +251,8 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
                 );
 
               case "tool": {
+                // Pertanyaan agent ditampilkan oleh kartu izin; baris tool-nya dobel.
+                if (item.name === "AskUserQuestion") return null;
                 const view = toolView(item.name, item.input);
                 const input = prettyInput(item.input);
                 return (
@@ -244,7 +263,10 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
                       </span>
                       <span class="jk-step-name">{item.name}</span>
                       {item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>}
-                      <span class={`jk-step-status jk-step-${item.status}`}>{item.status}</span>
+                      <span class={`jk-step-status jk-step-${item.status}`}>
+                        {item.status === "berjalan" && <span class="jk-spinner" aria-hidden="true" />}
+                        {item.status}
+                      </span>
                     </summary>
                     <div class="jk-step-body">
                       {view.kind === "generic"
@@ -323,6 +345,16 @@ export function Timeline({ items, connection, cwd, onDecide }: TimelineProps) {
                 return null;
             }
           })}
+          {running === true && pending.length === 0 && (
+            <div class="jk-working" role="status" aria-label="Agent sedang bekerja">
+              <span class="jk-working-dots" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </span>
+              <span class="jk-working-text">Working…</span>
+            </div>
+          )}
         </div>
       </div>
 
