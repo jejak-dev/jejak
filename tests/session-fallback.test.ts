@@ -154,6 +154,52 @@ describe("SessionManager fallback provider", () => {
     expect(entries[0]?.meta).toEqual({ dari: "asal", ke: "cadangan", alasan: "koneksi" });
   });
 
+  test("galat API dari SDK (teks sintetis + result generik) memicu fallback", async () => {
+    const calls: string[] = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        calls.push(input.provider.profileId);
+        if (calls.length === 1) {
+          yield {
+            type: "text",
+            text: "API Error: Connection refused — a firewall or proxy may be blocking it (ECONNREFUSED)",
+          };
+          yield { type: "result", ok: false, error: "eksekusi gagal (success)" };
+          return;
+        }
+        yield { type: "text", text: "ok" };
+        yield { type: "result", ok: true };
+      },
+    };
+    const mgr = manager(runner, { fallbackProvider: FALLBACK });
+
+    const info = await mgr.create({ prompt: "Halo", cwd: dir });
+    await mgr.done(info.id);
+
+    const events = eventsOf(await collect(mgr, info.id));
+    expect(calls).toEqual(["asal", "cadangan"]);
+    expect(
+      events.some((e) => e.type === "text" && e.text.startsWith("API Error")),
+    ).toBe(false);
+    expect(events.some((e) => e.type === "notice")).toBe(true);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+  });
+
+  test("teks 'API Error' tanpa fallback dikonfigurasi tetap tampil", async () => {
+    const runner: AgentRunner = {
+      async *run() {
+        yield { type: "text", text: "API Error: Connection refused (ECONNREFUSED)" };
+        yield { type: "result", ok: false, error: "eksekusi gagal (success)" };
+      },
+    };
+    const mgr = manager(runner, { fallbackProvider: undefined });
+    const info = await mgr.create({ prompt: "Halo", cwd: dir });
+    await mgr.done(info.id);
+    const events = eventsOf(await collect(mgr, info.id));
+    expect(events.some((e) => e.type === "text" && e.text.startsWith("API Error"))).toBe(true);
+    expect(mgr.get(info.id)?.status).toBe("gagal");
+  });
+
   test("(b) galat setelah teks pertama tidak memicu fallback", async () => {
     const calls: string[] = [];
     const runner: AgentRunner = {

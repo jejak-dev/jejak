@@ -321,6 +321,11 @@ function sanitizeTextKeys(text: string, apiKeys: readonly (string | undefined)[]
   return result;
 }
 
+/** Teks galat sintetis dari SDK (mis. koneksi ditolak), bukan keluaran model. */
+function isSdkApiErrorText(text: string): boolean {
+  return /^\s*API Error\b/i.test(text);
+}
+
 function isSubstantiveEvent(event: AgentEvent): boolean {
   return (
     event.type === "text" ||
@@ -1888,13 +1893,23 @@ export class SessionManager {
           return {
             kind: "gagal",
             failure: {
-              message: event.error ?? "",
+              message: [event.error, lastErrorMessage]
+                .filter((part): part is string => part !== undefined && part !== "")
+                .join(" | "),
               events: [...buffered, event],
               hasResult: true,
               synthetic: false,
               substantive,
             },
           };
+        }
+
+        // SDK melaporkan galat API sebagai teks sintetis "API Error: ..." diikuti
+        // result gagal generik; sebelum output nyata ini bukan jawaban model.
+        if (!substantive && event.type === "text" && isSdkApiErrorText(event.text)) {
+          lastErrorMessage = event.text;
+          buffered.push(event);
+          continue;
         }
 
         if (isSubstantiveEvent(event)) {
