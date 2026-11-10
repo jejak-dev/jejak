@@ -365,11 +365,13 @@ export function Composer({
         <label class="jk-visually-hidden" for="jk-prompt">
           Tugas
         </label>
+        <div class="jk-pill-row">
+          <AttachButton onFiles={(files) => void att.add(files)} disabled={busy} />
         <textarea
           id="jk-prompt"
           ref={promptRef}
           class="jk-comp-input"
-          rows={2}
+          rows={1}
           placeholder="Tulis tugas, mis. “jelaskan struktur proyek ini”"
           value={prompt}
           onInput={onPromptInput}
@@ -379,9 +381,13 @@ export function Composer({
           aria-invalid={promptError !== undefined}
           aria-describedby={promptDescribedBy === "" ? undefined : promptDescribedBy}
         />
+          <button type="submit" class="jk-send" disabled={!canSend} aria-label={busy ? "Memulai…" : "Mulai sesi"}>
+            <Icon name="send" />
+          </button>
+        </div>
+      </div>
 
-        <div class="jk-comp-bar">
-          <AttachButton onFiles={(files) => void att.add(files)} disabled={busy} />
+      <div class="jk-comp-meta">
           {workspaces.length > 0 && (
             <label class="jk-chip" title="Workspace">
               <Icon name="workspace" />
@@ -549,10 +555,6 @@ export function Composer({
             </select>
           </label>
 
-          <button type="submit" class="jk-send" disabled={!canSend} aria-label={busy ? "Memulai…" : "Mulai sesi"}>
-            <Icon name="send" />
-          </button>
-        </div>
       </div>
 
       {warning !== undefined && (

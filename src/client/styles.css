@@ -5149,52 +5149,6 @@ h2.jk-md-heading {
 @keyframes jk-caret { to { visibility: hidden; } }
 @media (prefers-reduced-motion: reduce) { .jk-text-streaming > :last-child::after { animation: none; } }
 
-/* Meter konteks di bar balasan */
-
-.jk-ctx {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-right: auto;
-  font-size: 12px;
-  color: var(--t3);
-}
-
-.jk-ctx-bar {
-  width: 38px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--line);
-  overflow: hidden;
-}
-
-.jk-ctx-bar i {
-  display: block;
-  height: 100%;
-  background: var(--t3);
-}
-
-.jk-ctx-warn .jk-ctx-bar i {
-  background: var(--warn, #c98a1b);
-}
-
-.jk-ctx-high .jk-ctx-bar i,
-.jk-ctx-high {
-  background-color: transparent;
-}
-
-.jk-ctx-high .jk-ctx-bar i {
-  background: var(--bad);
-}
-
-.jk-ctx-high > span:not(.jk-ctx-bar) {
-  color: var(--bad);
-}
-
-.jk-ctx-compact {
-  font-size: 12px;
-}
-
 /* Lampiran pesan */
 
 .jk-comp-card {
@@ -5344,4 +5298,143 @@ h2.jk-md-heading {
   align-items: center;
   gap: 12px;
   margin-top: 8px;
+}
+
+/* Tata letak komposer ala Claude: kartu satu baris, chip di bawahnya */
+
+.jk-comp-card {
+  padding: 10px 10px 10px 10px;
+  border-radius: 24px;
+}
+
+.jk-pill-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.jk-pill-row .jk-comp-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 6px 4px;
+}
+
+.jk-pill-row .jk-send {
+  flex: none;
+  margin-left: 0;
+  width: 32px;
+  height: 32px;
+}
+
+.jk-pill-row .jk-attach-btn {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  border-radius: 50%;
+}
+
+.jk-att-tray {
+  padding: 2px 4px 0;
+}
+
+.jk-comp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  margin-top: 8px;
+  padding: 0 8px;
+  font-size: 12.5px;
+}
+
+.jk-meta-end {
+  justify-content: flex-end;
+}
+
+.jk-comp-meta .jk-chip {
+  border-color: transparent;
+  background: transparent;
+}
+
+.jk-comp-meta .jk-chip:hover {
+  background: var(--hover);
+}
+
+.jk-comp-meta .jk-chip-cwd {
+  border-color: var(--line);
+}
+
+.jk-chip-plain {
+  padding: 0 8px;
+}
+
+/* Cincin penggunaan context */
+
+.jk-ctx-pop {
+  position: relative;
+}
+
+.jk-ctx-ring {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.jk-ctx-ring::-webkit-details-marker {
+  display: none;
+}
+
+.jk-ctx-ring:hover {
+  background: var(--hover);
+}
+
+.jk-ring-bg {
+  fill: none;
+  stroke: var(--line-2, var(--line));
+  stroke-width: 2.5;
+}
+
+.jk-ring-fg {
+  fill: none;
+  stroke: var(--t2);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.jk-ctx-warn .jk-ring-fg {
+  stroke: var(--warn, #c98a1b);
+}
+
+.jk-ctx-high .jk-ring-fg {
+  stroke: var(--bad);
+}
+
+.jk-ctx-card {
+  position: absolute;
+  right: 0;
+  bottom: 34px;
+  z-index: 8;
+  width: 250px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.jk-ctx-card p {
+  margin: 4px 0 8px;
+}
+
+.jk-ctx-card .jk-note {
+  color: var(--t3);
+  font-size: 11.5px;
 }

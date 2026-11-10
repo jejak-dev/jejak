@@ -165,69 +165,21 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
           <label class="jk-visually-hidden" for="jk-reply">
             Pesan lanjutan
           </label>
-          <textarea
-            id="jk-reply"
-            ref={textareaRef}
-            class="jk-comp-input"
-            rows={1}
-            placeholder={running ? "Tambahkan ke antrean…" : "Balas…"}
-            value={text}
-            onInput={onInput}
-            onKeyDown={onKeyDown}
-            onPaste={att.onPaste}
-            disabled={!usable.allowed || busy}
-            aria-describedby={describedBy === "" ? undefined : describedBy}
-          />
-
-          <div class="jk-comp-bar">
+          <div class="jk-pill-row">
             <AttachButton onFiles={(files) => void att.add(files)} disabled={!usable.allowed || busy} />
-            <label
-              class="jk-chip"
-              title={running ? "Berlaku mulai balasan berikutnya" : "Mode izin sesi"}
-            >
-              <Icon name="eye" />
-              <span>{modeLabel}</span>
-              <select
-                class="jk-chip-select"
-                aria-label="Mode izin sesi"
-                value={session.permissionMode}
-                onChange={(event) =>
-                  void changeMode((event.currentTarget as HTMLSelectElement).value as LiveMode)
-                }
-              >
-                {MODE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {context !== undefined && (
-              <span class={`jk-ctx jk-ctx-${context.level}`} title={contextTitle}>
-                {context.percent !== undefined && (
-                  <span class="jk-ctx-bar" aria-hidden="true">
-                    <i style={{ width: `${context.percent}%` }} />
-                  </span>
-                )}
-                <span>
-                  {context.percent !== undefined
-                    ? `${context.percent}%`
-                    : `${formatTokens(context.tokens)} token`}
-                </span>
-                <button
-                  type="button"
-                  class="jk-link-btn jk-ctx-compact"
-                  disabled={busy || running || !usable.allowed}
-                  onClick={() => void compact()}
-                  title="Padatkan percakapan (/compact) agar konteks lebih kecil"
-                >
-                  Compact
-                </button>
-              </span>
-            )}
-            {session.queued > 0 && (
-              <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
-            )}
+            <textarea
+              id="jk-reply"
+              ref={textareaRef}
+              class="jk-comp-input"
+              rows={1}
+              placeholder={running ? "Tambahkan ke antrean…" : "Balas…"}
+              value={text}
+              onInput={onInput}
+              onKeyDown={onKeyDown}
+              onPaste={att.onPaste}
+              disabled={!usable.allowed || busy}
+              aria-describedby={describedBy === "" ? undefined : describedBy}
+            />
             <button
               type="submit"
               class="jk-send"
@@ -238,6 +190,68 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
               <Icon name="send" />
             </button>
           </div>
+        </div>
+
+        <div class="jk-comp-meta jk-meta-end">
+          {session.queued > 0 && (
+            <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
+          )}
+          <label
+            class="jk-chip jk-chip-plain"
+            title={running ? "Berlaku mulai balasan berikutnya" : "Mode izin sesi"}
+          >
+            <span>{modeLabel}</span>
+            <select
+              class="jk-chip-select"
+              aria-label="Mode izin sesi"
+              value={session.permissionMode}
+              onChange={(event) =>
+                void changeMode((event.currentTarget as HTMLSelectElement).value as LiveMode)
+              }
+            >
+              {MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          {context !== undefined && (
+            <details class={`jk-ctx-pop jk-ctx-${context.level}`}>
+              <summary class="jk-ctx-ring" title={contextTitle} aria-label={contextTitle}>
+                <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
+                  <circle class="jk-ring-bg" cx="10" cy="10" r="7.5" />
+                  <circle
+                    class="jk-ring-fg"
+                    cx="10"
+                    cy="10"
+                    r="7.5"
+                    pathLength="100"
+                    stroke-dasharray={`${context.percent ?? 0} 100`}
+                    transform="rotate(-90 10 10)"
+                  />
+                </svg>
+              </summary>
+              <div class="jk-ctx-card">
+                <strong>Konteks</strong>
+                <p>
+                  {context.percent !== undefined
+                    ? `${context.percent}% terpakai`
+                    : `${formatTokens(context.tokens)} token`}
+                </p>
+                <p class="jk-note">{contextTitle}</p>
+                <button
+                  type="button"
+                  class="jk-button"
+                  disabled={busy || running || !usable.allowed}
+                  onClick={() => void compact()}
+                  title="Padatkan percakapan (/compact) agar konteks lebih kecil"
+                >
+                  Compact
+                </button>
+              </div>
+            </details>
+          )}
         </div>
 
         {confirmingBypass && (
