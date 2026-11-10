@@ -355,7 +355,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
             const decision = await requestPermission(request, ctx?.signal ?? abortController.signal);
 
             if (decision.behavior === "allow") {
-              return { behavior: "allow", updatedInput: toolInput };
+              return { behavior: "allow", updatedInput: decision.updatedInput ?? toolInput };
             } else {
               return { behavior: "deny", message: decision.message };
             }

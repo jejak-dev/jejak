@@ -74,6 +74,42 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
         };
       }
 
+      if (input.requestPermission !== undefined && input.prompt.includes("[tanya]")) {
+        let reply = "Pertanyaan dilewati.";
+        try {
+          const decision = await input.requestPermission(
+            {
+              name: "AskUserQuestion",
+              input: {
+                questions: [
+                  {
+                    question: "Mau lanjut ke bagian mana?",
+                    header: "Fokus",
+                    multiSelect: false,
+                    options: [
+                      { label: "Push", description: "Siapkan remote lalu push." },
+                      { label: "Rilis 3", description: "Baca roadmap dan usulkan irisan." },
+                    ],
+                  },
+                ],
+              },
+            },
+            signal ?? new AbortController().signal,
+          );
+          const updated = decision.behavior === "allow" ? decision.updatedInput : undefined;
+          const answers =
+            typeof updated === "object" && updated !== null
+              ? (updated as { answers?: unknown }).answers
+              : undefined;
+          if (answers !== undefined) reply = `Jawaban: ${JSON.stringify(answers)}`;
+        } catch {
+          // dibatalkan
+        }
+        yield { type: "text", text: reply };
+        yield { type: "result", ok: true };
+        return;
+      }
+
       if (input.requestPermission !== undefined && input.prompt.includes("[izin]")) {
         let allowed = false;
         try {

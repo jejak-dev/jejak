@@ -409,6 +409,7 @@ export interface ApiClient {
     requestId: string,
     decision: "allow" | "deny",
     message?: string,
+    answers?: Record<string, string>,
   ): Promise<{ ok: true }>;
   getProviders(): Promise<unknown>;
   saveProviders(registry: unknown): Promise<unknown>;
@@ -1347,8 +1348,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return connectionTestFrom(await request("POST", "/api/providers/test", selection ?? {}));
     },
 
-    async decidePermission(sessionId, requestId, decision, message) {
-      const body: { decision: "allow" | "deny"; message?: string } = { decision };
+    async decidePermission(sessionId, requestId, decision, message, answers) {
+      const body: {
+        decision: "allow" | "deny";
+        message?: string;
+        answers?: Record<string, string>;
+      } = { decision };
+      if (answers !== undefined) body.answers = answers;
       if (message !== undefined) {
         body.message = message;
       }

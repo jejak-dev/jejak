@@ -206,6 +206,7 @@ export class SessionError extends Error {
 interface Pending {
   resolve: (value: PermissionDecision) => void;
   name: string;
+  input?: unknown;
 }
 
 interface SessionRecord {
@@ -2264,6 +2265,7 @@ export class SessionManager {
     const pending: Pending = {
       resolve: () => {},
       name: request.name,
+      input: request.input,
     };
 
     const promise = new Promise<PermissionDecision>((resolve) => {
@@ -2364,6 +2366,7 @@ export class SessionManager {
     requestId: string,
     decision: "allow" | "deny",
     message?: string,
+    answers?: Record<string, string>,
   ): void {
     const record = this.sessions.get(sessionId);
     if (record === undefined) {
@@ -2402,7 +2405,16 @@ export class SessionManager {
 
     // Resolve the pending promise
     if (decision === "allow") {
-      pending.resolve({ behavior: "allow" });
+      if (pending.name === "AskUserQuestion" && answers !== undefined) {
+        // Jawaban pengguna dikembalikan ke SDK sebagai `answers` (pertanyaan -> label).
+        const base =
+          typeof pending.input === "object" && pending.input !== null && !Array.isArray(pending.input)
+            ? (pending.input as Record<string, unknown>)
+            : {};
+        pending.resolve({ behavior: "allow", updatedInput: { ...base, answers } });
+      } else {
+        pending.resolve({ behavior: "allow" });
+      }
     } else {
       pending.resolve({
         behavior: "deny",

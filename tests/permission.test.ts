@@ -112,6 +112,14 @@ describe("sdk-runner: canUseTool", () => {
     return captured?.canUseTool as CanUseTool | undefined;
   }
 
+  test("sdk-runner meneruskan updatedInput dari keputusan", async () => {
+    const canUseTool = await run(async () => ({ behavior: "allow", updatedInput: { a: 1 } }));
+    expect(await canUseTool?.("AskUserQuestion", { q: 1 })).toEqual({
+      behavior: "allow",
+      updatedInput: { a: 1 },
+    });
+  });
+
   test("tanpa handler, canUseTool tidak dipasang", async () => {
     expect(await run(undefined)).toBeUndefined();
   });
@@ -346,5 +354,50 @@ describe("klien: decidePermission", () => {
     expect(calls[0]?.url).toBe("/api/sessions/s%201/permissions/r%2F2");
     expect(calls[0]?.init.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ decision: "deny", message: "nanti" });
+  });
+});
+
+describe("AskUserQuestion: jawaban kembali ke SDK", () => {
+  function questionRunner(seen: { decision?: PermissionDecision }): AgentRunner {
+    return {
+      async *run(runInput: RunInput) {
+        seen.decision = await runInput.requestPermission?.(
+          {
+            toolUseId: "tu-q",
+            name: "AskUserQuestion",
+            input: { questions: [{ question: "Lanjut?", options: [{ label: "Ya" }] }] },
+          },
+          runInput.signal ?? new AbortController().signal,
+        );
+        yield { type: "result", ok: true };
+      },
+    };
+  }
+
+  test("allow dengan answers -> updatedInput memuat pertanyaan asli + answers", async () => {
+    const seen: { decision?: PermissionDecision } = {};
+    const mgr = manager(questionRunner(seen));
+    const info = await mgr.create({ prompt: "p", cwd: dir });
+    const requestId = await requestIdOf(mgr, info.id);
+    mgr.resolvePermission(info.id, requestId, "allow", undefined, { "Lanjut?": "Ya" });
+    await eventsOf(mgr, info.id);
+    expect(seen.decision).toEqual({
+      behavior: "allow",
+      updatedInput: {
+        questions: [{ question: "Lanjut?", options: [{ label: "Ya" }] }],
+        answers: { "Lanjut?": "Ya" },
+      },
+    });
+  });
+
+  test("tool lain mengabaikan answers", async () => {
+    const seen: { decision?: PermissionDecision } = {};
+    const mgr = manager(askingRunner());
+    const info = await mgr.create({ prompt: "p", cwd: dir });
+    const requestId = await requestIdOf(mgr, info.id);
+    mgr.resolvePermission(info.id, requestId, "allow", undefined, { x: "y" });
+    const events = await eventsOf(mgr, info.id);
+    expect(events).toContainEqual({ type: "text", text: "keputusan:allow:" });
+    expect(seen.decision).toBeUndefined();
   });
 });

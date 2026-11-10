@@ -6,6 +6,8 @@ import {
   type PermissionPreview,
 } from "../lib/permission";
 import type { PermissionStatus, TimelineItem } from "../lib/timeline";
+import { parseAskQuestions } from "../lib/ask-question";
+import { AskQuestionCard, AskQuestionSummary } from "./AskQuestionCard";
 import { Icon } from "./Icon";
 
 export type PermissionItem = Extract<TimelineItem, { kind: "permission" }>;
@@ -13,7 +15,12 @@ export type PermissionItem = Extract<TimelineItem, { kind: "permission" }>;
 export interface PermissionCardProps {
   item: PermissionItem;
   cwd: string;
-  onDecide: (requestId: string, decision: "allow" | "deny", message?: string) => Promise<void>;
+  onDecide: (
+    requestId: string,
+    decision: "allow" | "deny",
+    message?: string,
+    answers?: Record<string, string>,
+  ) => Promise<void>;
 }
 
 const PREVIEW_LINES = 7;
@@ -133,6 +140,7 @@ function useCountdown(expiresAt: string | undefined, active: boolean): number | 
 
 export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
   const view = describePermission(item.name, item.input, cwd);
+  const asks = item.name === "AskUserQuestion" ? parseAskQuestions(item.input) : undefined;
   const pending = item.status === "menunggu";
   const remaining = useCountdown(item.expiresAt, pending);
 
@@ -179,9 +187,25 @@ export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
           {item.status === "kedaluwarsa" && (
             <p class="jk-perm-note">Tidak ada keputusan sampai batas waktu, jadi ditolak otomatis.</p>
           )}
-          <Preview preview={view.preview} cwd={cwd} />
+          {asks !== undefined ? (
+            <AskQuestionSummary questions={asks} />
+          ) : (
+            <Preview preview={view.preview} cwd={cwd} />
+          )}
         </div>
       </details>
+    );
+  }
+
+  if (asks !== undefined) {
+    return (
+      <AskQuestionCard
+        id={item.id}
+        questions={asks}
+        remaining={remaining}
+        onSubmit={(answers) => onDecide(item.id, "allow", undefined, answers)}
+        onSkip={() => onDecide(item.id, "deny", "pengguna melewati pertanyaan")}
+      />
     );
   }
 

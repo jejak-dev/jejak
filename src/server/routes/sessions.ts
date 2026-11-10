@@ -211,6 +211,23 @@ function endFrame(status: string): Uint8Array {
   return encoder.encode(`event: end\ndata: ${JSON.stringify({ status })}\n\n`);
 }
 
+function parseAnswers(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw invalid("Field answers harus berupa objek.");
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 20) throw invalid("Terlalu banyak jawaban.");
+  const out: Record<string, string> = {};
+  for (const [question, answer] of entries) {
+    if (typeof answer !== "string" || question.length > 1000 || answer.length > 2000) {
+      throw invalid("Jawaban harus berupa teks yang tidak terlalu panjang.");
+    }
+    out[question] = answer;
+  }
+  return out;
+}
+
 export function sessionRoutes(options: SessionRoutesOptions): Elysia {
   const manager = options.manager;
   const audit = options.audit;
@@ -413,7 +430,15 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
 
           const message = typeof record.message === "string" ? record.message : undefined;
 
-          manager.resolvePermission(params.id, params.requestId, decision as "allow" | "deny", message);
+          const answers = parseAnswers(record.answers);
+
+          manager.resolvePermission(
+            params.id,
+            params.requestId,
+            decision as "allow" | "deny",
+            message,
+            answers,
+          );
 
           return jsonResponse(200, { ok: true });
         } catch (error) {
