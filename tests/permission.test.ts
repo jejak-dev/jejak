@@ -390,6 +390,21 @@ describe("AskUserQuestion: jawaban kembali ke SDK", () => {
     });
   });
 
+  test("event permission_resolved membawa answers agar riwayat bisa menampilkannya", async () => {
+    const seen: { decision?: PermissionDecision } = {};
+    const mgr = manager(questionRunner(seen));
+    const info = await mgr.create({ prompt: "p", cwd: dir });
+    const requestId = await requestIdOf(mgr, info.id);
+    mgr.resolvePermission(info.id, requestId, "allow", undefined, { "Lanjut?": "Ya" });
+    const events = await eventsOf(mgr, info.id);
+    expect(events).toContainEqual({
+      type: "permission_resolved",
+      id: requestId,
+      decision: "allow",
+      answers: { "Lanjut?": "Ya" },
+    });
+  });
+
   test("tool lain mengabaikan answers", async () => {
     const seen: { decision?: PermissionDecision } = {};
     const mgr = manager(askingRunner());

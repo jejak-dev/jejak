@@ -135,24 +135,25 @@ export function AskQuestionCard({ id, questions, remaining, onSubmit, onSkip }: 
       </fieldset>
 
       <div class="jk-perm-actions">
-        {step < last && (
+        {step < last ? (
           <button
             type="button"
-            class={`jk-button${ready ? "" : " jk-button-primary"}`}
+            class="jk-button jk-button-primary"
             disabled={busy || !answeredHere}
             onClick={() => setStep(step + 1)}
           >
             Next
           </button>
+        ) : (
+          <button
+            type="button"
+            class="jk-button jk-button-primary"
+            disabled={busy || !ready}
+            onClick={() => void run(() => onSubmit(buildAnswers(questions, selections)))}
+          >
+            {busy ? "Mengirim…" : "Kirim jawaban"}
+          </button>
         )}
-        <button
-          type="button"
-          class={`jk-button${step < last && !ready ? "" : " jk-button-primary"}`}
-          disabled={busy || !ready}
-          onClick={() => void run(() => onSubmit(buildAnswers(questions, selections)))}
-        >
-          {busy ? "Mengirim…" : "Kirim jawaban"}
-        </button>
         <span class="jk-perm-spacer" />
         <button type="button" class="jk-link-btn" disabled={busy} onClick={() => void run(onSkip)}>
           Lewati
@@ -168,18 +169,31 @@ export function AskQuestionCard({ id, questions, remaining, onSubmit, onSkip }: 
   );
 }
 
-/** Ringkasan read-only pertanyaan (kartu yang sudah diputuskan). */
-export function AskQuestionSummary({ questions }: { questions: AskQuestion[] }) {
+/** Ringkasan read-only pertanyaan (kartu yang sudah diputuskan), dengan jawaban bila ada. */
+export function AskQuestionSummary({
+  questions,
+  answers,
+}: {
+  questions: AskQuestion[];
+  answers?: Record<string, string>;
+}) {
   return (
     <ul class="jk-ask-summary">
-      {questions.map((question) => (
-        <li key={question.question}>
-          <strong>{question.question}</strong>
-          {question.options.length > 0 && (
-            <span class="jk-help"> · {question.options.map((option) => option.label).join(" / ")}</span>
-          )}
-        </li>
-      ))}
+      {questions.map((question) => {
+        const answer = answers?.[question.question];
+        return (
+          <li key={question.question}>
+            <strong>{question.question}</strong>
+            {answer !== undefined && answer !== "" ? (
+              <span class="jk-ask-answer"> → {answer}</span>
+            ) : (
+              question.options.length > 0 && (
+                <span class="jk-help"> · {question.options.map((option) => option.label).join(" / ")}</span>
+              )
+            )}
+          </li>
+        );
+      })}
     </ul>
   );
 }

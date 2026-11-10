@@ -31,7 +31,14 @@ export type AgentEvent =
       /** Batas waktu keputusan (ISO); setelah itu izin ditolak otomatis. */
       expiresAt?: string;
     }
-  | { type: "permission_resolved"; id: string; decision: "allow" | "deny"; message?: string }
+  | {
+      type: "permission_resolved";
+      id: string;
+      decision: "allow" | "deny";
+      message?: string;
+      /** Jawaban pengguna untuk AskUserQuestion (pertanyaan -> jawaban). */
+      answers?: Record<string, string>;
+    }
   | { type: "notice"; text: string; level?: "info" | "warn" }
   | { type: "user_message"; text: string };
 

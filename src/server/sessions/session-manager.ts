@@ -2388,12 +2388,15 @@ export class SessionManager {
     this.notify(record);
 
     // Create resolved event
-    const resolvedEvent: AgentEvent = {
+    const resolvedEvent: Extract<AgentEvent, { type: "permission_resolved" }> = {
       type: "permission_resolved",
       id: requestId,
       decision,
       message: message ? collapseWhitespace(message).substring(0, 200) : undefined,
     };
+    if (decision === "allow" && pending.name === "AskUserQuestion" && answers !== undefined) {
+      resolvedEvent.answers = answers;
+    }
 
     this.append(record, resolvedEvent);
     this.audit(

@@ -285,6 +285,14 @@ describe("reduceTimeline: izin", () => {
     expect(items[0]).toMatchObject({ kind: "permission", status: "diizinkan" });
   });
 
+  test("allow membawa jawaban pertanyaan agent", () => {
+    const items = reduceAll([
+      request,
+      { type: "permission_resolved", id: "p1", decision: "allow", answers: { "Lanjut?": "Ya" } },
+    ]);
+    expect(items[0]).toMatchObject({ status: "diizinkan", answers: { "Lanjut?": "Ya" } });
+  });
+
   test("deny membawa alasan pengguna", () => {
     const items = reduceAll([
       request,

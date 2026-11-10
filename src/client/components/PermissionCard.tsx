@@ -172,13 +172,15 @@ export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
     const label = DONE_LABELS[item.status];
     const arg = view.target !== "" ? view.target : view.preview.kind === "command" ? view.preview.command : "";
     return (
-      <details class="jk-step" data-permission-id={item.id}>
+      <details class="jk-step" data-permission-id={item.id} open={asks !== undefined || plan !== undefined}>
         <summary>
           <span class="jk-chev">
             <Icon name="chevron" />
           </span>
-          <span class="jk-step-name">{view.tool}</span>
-          {arg !== "" && <span class="jk-step-arg">{arg}</span>}
+          <span class="jk-step-name">
+            {asks !== undefined ? "Pertanyaan agent" : plan !== undefined ? "Rencana" : view.tool}
+          </span>
+          {arg !== "" && asks === undefined && plan === undefined && <span class="jk-step-arg">{arg}</span>}
           <span class={`jk-step-status ${label.tone}`}>{label.text}</span>
         </summary>
         <div class="jk-step-body">
@@ -191,7 +193,7 @@ export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
             <p class="jk-perm-note">Tidak ada keputusan sampai batas waktu, jadi ditolak otomatis.</p>
           )}
           {asks !== undefined ? (
-            <AskQuestionSummary questions={asks} />
+            <AskQuestionSummary questions={asks} answers={item.answers} />
           ) : plan !== undefined ? (
             <div class="jk-plan-body">
               <Markdown text={plan} />

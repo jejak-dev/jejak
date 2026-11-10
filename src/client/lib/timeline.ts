@@ -30,6 +30,7 @@ export type TimelineItem =
       expiresAt?: string;
       status: PermissionStatus;
       message?: string;
+      answers?: Record<string, string>;
     }
   | { kind: "error"; message: string }
   | { kind: "notice"; text: string; level: "info" | "warn" }
@@ -192,6 +193,7 @@ export function reduceTimeline(
         if (item.kind !== "permission" || item.id !== event.id) return item;
         const next: TimelineItem = { ...item, status };
         if (showMessage) next.message = event.message;
+        if (event.answers !== undefined) next.answers = event.answers;
         return next;
       });
     }
