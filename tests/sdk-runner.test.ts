@@ -917,3 +917,33 @@ test("withMaxRetries menyetel CLAUDE_CODE_MAX_RETRIES tanpa menimpa nilai penggu
     CLAUDE_CODE_MAX_RETRIES: "7",
   });
 });
+
+test("runner SDK meminta pesan parsial dan meneruskan delta teks, final menggantikan sisanya", async () => {
+  const delta = (text: string) => ({
+    type: "stream_event",
+    event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
+  });
+  const FINAL = {
+    type: "assistant",
+    parent_tool_use_id: null,
+    message: { content: [{ type: "text", text: "halo dunia" }] },
+  };
+  let seen: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({
+    messages: [INIT, delta("halo"), delta(" dunia"), FINAL, RESULT_OK],
+    onOptions: (options) => {
+      seen = options;
+    },
+  });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+
+  expect(seen?.includePartialMessages).toBe(true);
+  const types = events.map((event) => event.type);
+  // Delta pertama langsung diteruskan; sisanya (<50 ms) digabung lalu digantikan teks final.
+  expect(types[1]).toBe("text_delta");
+  expect(types).toContain("text");
+  expect(events.filter((event) => event.type === "text_delta").length).toBeLessThanOrEqual(2);
+});

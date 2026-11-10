@@ -376,3 +376,40 @@ describe("penghentian dan baris dobel", () => {
     expect(kinds([call, { ...ask, toolUseId: undefined }])).toEqual(["tool", "permission"]);
   });
 });
+
+describe("teks mengalir", () => {
+  test("delta digabung, teks final menggantikannya", () => {
+    const mid = reduceAll([
+      { type: "text_delta", text: "ha" },
+      { type: "text_delta", text: "lo" },
+    ]);
+    expect(mid).toEqual([{ kind: "text", text: "halo", depth: 0, streaming: true }]);
+    const done = reduceAll([{ type: "text", text: "halo dunia" }], mid);
+    expect(done).toEqual([{ kind: "text", text: "halo dunia", depth: 0 }]);
+  });
+
+  test("delta setelah item lain memulai teks baru", () => {
+    const items = reduceAll([
+      { type: "text", text: "satu" },
+      { type: "text_delta", text: "dua" },
+    ]);
+    expect(items).toEqual([
+      { kind: "text", text: "satu", depth: 0 },
+      { kind: "text", text: "dua", depth: 0, streaming: true },
+    ]);
+  });
+
+  test("result dan error menghentikan status mengalir tanpa membuang teks", () => {
+    const streaming = reduceAll([{ type: "text_delta", text: "setengah" }]);
+    expect(reduceAll([{ type: "result", ok: false, error: "x" }], streaming)[0]).toEqual({
+      kind: "text",
+      text: "setengah",
+      depth: 0,
+    });
+    expect(reduceAll([{ type: "error", message: "putus" }], streaming)[0]).toEqual({
+      kind: "text",
+      text: "setengah",
+      depth: 0,
+    });
+  });
+});

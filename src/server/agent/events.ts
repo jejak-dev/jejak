@@ -6,6 +6,8 @@ export type AgentEvent =
   | { type: "session"; sessionId: string; model?: string }
   | { type: "text"; text: string; parentToolUseId?: string }
   | { type: "thinking"; text: string; parentToolUseId?: string }
+  /** Potongan teks yang sedang mengalir; transien (tidak disimpan), digantikan event `text` final. */
+  | { type: "text_delta"; text: string; parentToolUseId?: string }
   | { type: "tool_call"; id: string; name: string; input: unknown; parentToolUseId?: string }
   | { type: "tool_result"; id: string; output: string; isError: boolean }
   | {

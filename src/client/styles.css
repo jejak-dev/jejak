@@ -5072,3 +5072,17 @@ h2.jk-md-heading {
   font-size: 11px;
   line-height: 16px;
 }
+
+.jk-text-streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 2px;
+  vertical-align: -2px;
+  border-radius: 2px;
+  background: var(--t2);
+  animation: jk-caret 1s steps(2, start) infinite;
+}
+@keyframes jk-caret { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .jk-text-streaming > :last-child::after { animation: none; } }

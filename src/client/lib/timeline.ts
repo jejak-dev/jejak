@@ -11,7 +11,7 @@ export type PermissionStatus = "menunggu" | "diizinkan" | "ditolak" | "kedaluwar
 export type TimelineItem =
   | { kind: "user"; text: string }
   | { kind: "thinking"; text: string; depth: number }
-  | { kind: "text"; text: string; depth: number }
+  | { kind: "text"; text: string; depth: number; streaming?: boolean }
   | {
       kind: "tool";
       id: string;
@@ -103,6 +103,17 @@ function depthOf(parentToolUseId: string | undefined): number {
 /** Pesan yang dikirim server saat giliran dibatalkan pengguna. */
 export const CANCELLED_MESSAGE = "dibatalkan";
 
+/** Potongan teks yang tak sempat digantikan teks final dibiarkan apa adanya, tetapi tak lagi "mengalir". */
+function settleStreaming(items: TimelineItem[]): TimelineItem[] {
+  return items.map((item) => {
+    if (item.kind === "text" && item.streaming === true) {
+      const { streaming: _streaming, ...rest } = item;
+      return rest;
+    }
+    return item;
+  });
+}
+
 function markRunningToolsFailed(items: TimelineItem[]): TimelineItem[] {
   return items.map((item) =>
     item.kind === "tool" && item.status === "berjalan" ? { ...item, status: "gagal" } : item,
@@ -117,11 +128,25 @@ export function reduceTimeline(
     case "session":
       return [...items];
 
-    case "text":
-      return [
-        ...items,
-        { kind: "text", text: event.text, depth: depthOf(event.parentToolUseId) },
-      ];
+    case "text_delta": {
+      const depth = depthOf(event.parentToolUseId);
+      const last = items[items.length - 1];
+      if (last !== undefined && last.kind === "text" && last.streaming === true && last.depth === depth) {
+        return [...items.slice(0, -1), { ...last, text: last.text + event.text }];
+      }
+      return [...items, { kind: "text", text: event.text, depth, streaming: true }];
+    }
+
+    case "text": {
+      const depth = depthOf(event.parentToolUseId);
+      const last = items[items.length - 1];
+      const final: TimelineItem = { kind: "text", text: event.text, depth };
+      // Teks final menggantikan potongan yang sedang mengalir.
+      if (last !== undefined && last.kind === "text" && last.streaming === true) {
+        return [...items.slice(0, -1), final];
+      }
+      return [...items, final];
+    }
 
     case "thinking":
       return [
@@ -207,6 +232,7 @@ export function reduceTimeline(
       return [...items, { kind: "user", text: event.text }];
 
     case "error":
+      items = settleStreaming([...items]);
       // Penghentian oleh pengguna bukan galat: tampil sebagai catatan netral.
       if (event.message === CANCELLED_MESSAGE) {
         return [...items, { kind: "notice", text: "Sesi dihentikan.", level: "info" }];
@@ -231,7 +257,7 @@ export function reduceTimeline(
       if (event.estimatedCostUsd !== undefined) result.estimatedCostUsd = event.estimatedCostUsd;
       if (event.numTurns !== undefined) result.numTurns = event.numTurns;
 
-      const closed = markRunningToolsFailed([...items]);
+      const closed = markRunningToolsFailed(settleStreaming([...items]));
       if (closed.at(-1)?.kind === "result") {
         return [...closed.slice(0, -1), result];
       }

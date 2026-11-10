@@ -21,7 +21,7 @@ function readParentToolUseId(source: Record<string, unknown>): string | undefine
   return typeof value === "string" ? value : undefined;
 }
 
-type ChildEvent = Extract<AgentEvent, { type: "text" | "thinking" | "tool_call" }>;
+type ChildEvent = Extract<AgentEvent, { type: "text" | "text_delta" | "thinking" | "tool_call" }>;
 
 function withParent(event: ChildEvent, parentToolUseId: string | undefined): ChildEvent {
   return parentToolUseId === undefined ? event : { ...event, parentToolUseId };
@@ -80,6 +80,15 @@ function mapAssistant(message: Record<string, unknown>): AgentEvent[] {
     if (event !== null) events.push(event);
   }
   return events;
+}
+
+/** Potongan teks dari `includePartialMessages`; hanya delta teks yang dipakai. */
+function mapStreamEvent(message: Record<string, unknown>): AgentEvent[] {
+  const event = message.event;
+  if (!isRecord(event) || event.type !== "content_block_delta") return [];
+  const delta = event.delta;
+  if (!isRecord(delta) || delta.type !== "text_delta" || !isNonEmptyString(delta.text)) return [];
+  return [withParent({ type: "text_delta", text: delta.text }, readParentToolUseId(message))];
 }
 
 function mapUser(message: Record<string, unknown>): AgentEvent[] {
@@ -147,6 +156,8 @@ export function mapSdkMessage(message: unknown): AgentEvent[] {
       };
       if (typeof message.model === "string" && message.model !== "") session.model = message.model;
       return [session];
+    case "stream_event":
+      return mapStreamEvent(message);
     case "assistant":
       return mapAssistant(message);
     case "user":

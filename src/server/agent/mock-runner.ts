@@ -23,6 +23,8 @@ const DEFAULT_SCRIPT: AgentEvent[] = [
 export interface MockRunnerOptions {
   script?: AgentEvent[];
   delayMs?: number;
+  /** Pecah teks jadi potongan `text_delta` bertahap (untuk menguji teks mengalir). */
+  streamDelta?: boolean;
 }
 
 function wait(ms: number, signal?: AbortSignal): Promise<void> {
@@ -252,6 +254,12 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
         }
         const event = script[index]!;
         if (event.type === "result") hasResult = true;
+        if (options.streamDelta === true && event.type === "text") {
+          for (let at = 0; at < event.text.length; at += 6) {
+            yield { type: "text_delta", text: event.text.slice(at, at + 6) };
+            await wait(40, signal);
+          }
+        }
         yield event;
       }
     },

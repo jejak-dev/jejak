@@ -25,6 +25,8 @@ const PROFILE_ENV_KEYS = [
   "CLAUDE_CODE_USE_VERTEX",
 ] as const;
 
+const DELTA_FLUSH_MS = 50;
+
 export interface SdkQuery extends AsyncIterable<unknown> {
   close?(): void;
 }
@@ -257,6 +259,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         env: withMaxRetries(buildSdkEnv(baseEnv, input.provider), input.maxRetries),
         permissionMode: input.permissionMode ?? "default",
         abortController,
+        includePartialMessages: true,
         settingSources: ["project"],
         systemPrompt: {
           type: "preset",
@@ -369,8 +372,30 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       let sawResult = false;
       try {
         query = sdk.query({ prompt: input.prompt, options: sdkOptions });
+        // Delta teks digabung ~50 ms agar tidak membanjiri SSE; event final menggantikannya.
+        let pendingDelta = "";
+        let pendingParent: string | undefined;
+        let lastFlush = 0;
         for await (const message of query) {
           for (const event of mapSdkMessage(message)) {
+            if (event.type === "text_delta") {
+              if (pendingParent !== event.parentToolUseId && pendingDelta !== "") {
+                pendingDelta = "";
+              }
+              pendingParent = event.parentToolUseId;
+              pendingDelta += event.text;
+              const now = Date.now();
+              if (now - lastFlush >= DELTA_FLUSH_MS) {
+                lastFlush = now;
+                const text = pendingDelta;
+                pendingDelta = "";
+                yield pendingParent === undefined
+                  ? { type: "text_delta", text }
+                  : { type: "text_delta", text, parentToolUseId: pendingParent };
+              }
+              continue;
+            }
+            pendingDelta = "";
             if (event.type === "result") sawResult = true;
             yield event;
           }

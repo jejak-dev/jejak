@@ -155,6 +155,8 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
   const visibleItems = dedupeToolPermission(items);
   // Setelah baris hasil, giliran sudah selesai walau status sesi belum diperbarui.
   const finished = items[items.length - 1]?.kind === "result";
+  const lastItem = items[items.length - 1];
+  const streamingNow = lastItem?.kind === "text" && lastItem.streaming === true;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pinned, setPinned] = useState(true);
 
@@ -250,7 +252,11 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
 
               case "text":
                 return (
-                  <div class="jk-text" key={index} style={depthStyle(item.depth)}>
+                  <div
+                    class={`jk-text${item.streaming === true ? " jk-text-streaming" : ""}`}
+                    key={index}
+                    style={depthStyle(item.depth)}
+                  >
                     <Markdown text={item.text} />
                   </div>
                 );
@@ -353,7 +359,7 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
                 return null;
             }
           })}
-          {running === true && !finished && pending.length === 0 && (
+          {running === true && !finished && !streamingNow && pending.length === 0 && (
             <div class="jk-working" role="status" aria-label="Agent sedang bekerja">
               <span class="jk-working-dots" aria-hidden="true">
                 <i />

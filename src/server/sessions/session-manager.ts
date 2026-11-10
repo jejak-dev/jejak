@@ -333,6 +333,7 @@ function isSdkApiErrorText(text: string): boolean {
 function isSubstantiveEvent(event: AgentEvent): boolean {
   return (
     event.type === "text" ||
+    event.type === "text_delta" ||
     event.type === "thinking" ||
     event.type === "tool_call" ||
     event.type === "permission_request"
@@ -2145,6 +2146,18 @@ export class SessionManager {
       } catch {
         // Penyamaran gagal tidak boleh menggagalkan sesi.
       }
+    }
+
+    if (event.type === "text_delta") {
+      // Transien: disiarkan ke pelanggan tetapi tidak disimpan ke DB maupun dihitung.
+      record.buffer.push({ seq: record.nextSeq, event: storedEvent });
+      record.nextSeq += 1;
+      this.notify(record);
+      return;
+    }
+    // Event nyata menggantikan delta yang sedang mengalir.
+    if (record.buffer.some((item) => item.event.type === "text_delta")) {
+      record.buffer = record.buffer.filter((item) => item.event.type !== "text_delta");
     }
 
     const stored: SequencedEvent = {

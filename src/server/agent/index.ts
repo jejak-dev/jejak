@@ -11,5 +11,5 @@ export type { SdkModule, SdkQuery, SdkRunnerOptions } from "./sdk-runner";
 export { mapSdkMessage } from "./sdk-mapper";
 
 export function createRunner(env: Record<string, string | undefined> = process.env): AgentRunner {
-  return env.MOCK?.trim().toLowerCase() === "true" ? createMockRunner() : createSdkRunner();
+  return env.MOCK?.trim().toLowerCase() === "true" ? createMockRunner({ streamDelta: true }) : createSdkRunner();
 }

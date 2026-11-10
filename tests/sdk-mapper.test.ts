@@ -282,3 +282,20 @@ test("result tidak memuat cache tokens bila bukan angka", () => {
     outputTokens: 50,
   });
 });
+
+test("stream_event text_delta menjadi event text_delta, delta lain diabaikan", () => {
+  const delta = (d: unknown, parent?: string) => ({
+    type: "stream_event",
+    event: { type: "content_block_delta", index: 0, delta: d },
+    ...(parent === undefined ? {} : { parent_tool_use_id: parent }),
+  });
+  expect(mapSdkMessage(delta({ type: "text_delta", text: "ha" }))).toEqual([
+    { type: "text_delta", text: "ha" },
+  ]);
+  expect(mapSdkMessage(delta({ type: "text_delta", text: "lo" }, "tu9"))).toEqual([
+    { type: "text_delta", text: "lo", parentToolUseId: "tu9" },
+  ]);
+  expect(mapSdkMessage(delta({ type: "input_json_delta", partial_json: "{" }))).toEqual([]);
+  expect(mapSdkMessage(delta({ type: "text_delta", text: "" }))).toEqual([]);
+  expect(mapSdkMessage({ type: "stream_event", event: { type: "message_start" } })).toEqual([]);
+});
