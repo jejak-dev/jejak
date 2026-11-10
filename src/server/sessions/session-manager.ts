@@ -10,6 +10,7 @@ import {
   type PermissionMode,
   type PermissionRequest,
   type ResolvedMcpServer,
+  type RunClaudeConfig,
   type RunWorkspace,
 } from "../agent";
 import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provider";
@@ -19,6 +20,8 @@ import {
   type ProviderErrorKind,
 } from "../agent/provider-error";
 import type { AuditKind, AuditMeta, AuditStore } from "../audit/audit-store";
+import type { ClaudeConfigStore } from "../claude-config/config-store";
+import { listSkills } from "../claude-config/skills";
 import {
   evaluateBudget,
   formatUsd,
@@ -150,6 +153,10 @@ export interface SessionManagerOptions {
   onSessionDeleted?: (id: string) => void | Promise<void>;
   /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan audit. */
   audit?: AuditStore;
+  /** Pengaturan sumber Claude; tanpa store `input.claude` tidak diisi. */
+  claude?: ClaudeConfigStore;
+  /** Direktori home pengguna untuk skills `~/.claude`; default `os.homedir()`. */
+  home?: string;
   /** Anggaran peringatan; tanpa store fitur dimatikan. */
   budget?: { ledger?: UsageLedger; store: BudgetStore };
   /** Kebijakan penyamaran rahasia pada event sesi. */
@@ -397,6 +404,8 @@ export class SessionManager {
   private readonly allowBypass: boolean;
   private readonly onSessionDeleted: ((id: string) => void | Promise<void>) | undefined;
   private readonly auditStore: AuditStore | undefined;
+  private readonly claudeConfig: ClaudeConfigStore | undefined;
+  private readonly home: string | undefined;
   private readonly budgetLedger: UsageLedger | undefined;
   private readonly budgetStore: BudgetStore | undefined;
   /**
@@ -433,6 +442,8 @@ export class SessionManager {
     this.allowBypass = options.allowBypass ?? true;
     this.onSessionDeleted = options.onSessionDeleted;
     this.auditStore = options.audit;
+    this.claudeConfig = options.claude;
+    this.home = options.home;
     this.budgetLedger = options.budget?.ledger;
     this.budgetStore = options.budget?.store;
     const requestedMode = options.secrets?.mode;
@@ -590,6 +601,37 @@ export class SessionManager {
     return worktree === undefined
       ? record.info.cwd
       : join(worktree.repoRoot, worktree.subdir ?? "");
+  }
+
+  /**
+   * Pengaturan sumber Claude per giliran. Galat apa pun ditelan agar sesi
+   * berjalan tanpa konfigurasi tambahan; `input.claude` hanya diisi bila ada store.
+   */
+  private claudeForRun(record: SessionRecord): RunClaudeConfig | undefined {
+    const store = this.claudeConfig;
+    if (store === undefined) return undefined;
+    try {
+      const config = store.get();
+      const projectRoot = this.cwdForMemory(record);
+      const disabled = store.disabledFor(projectRoot);
+      const result: RunClaudeConfig = {
+        userSettings: config.userSettings,
+        hooksEnabled: config.hooksEnabled,
+      };
+      if (disabled.length > 0) {
+        const found = listSkills(projectRoot, this.home, disabled);
+        const names = new Set<string>();
+        for (const skill of found) {
+          if (skill.scope === "user" && !config.userSettings) continue;
+          if (!skill.enabled) continue;
+          names.add(skill.name);
+        }
+        result.skills = Array.from(names).sort();
+      }
+      return result;
+    } catch {
+      return undefined;
+    }
   }
 
   /** Nilai rahasia untuk sesi; dimuat malas sekali dan tidak pernah melempar. */
@@ -1536,6 +1578,10 @@ export class SessionManager {
     };
     if (resumeSessionId !== undefined) {
       input.resumeSessionId = resumeSessionId;
+    }
+    const claude = this.claudeForRun(record);
+    if (claude !== undefined) {
+      input.claude = claude;
     }
     if (record.info.workspaceId !== undefined && this.workspaces !== undefined) {
       const workspace = await this.workspaceForRun(record);

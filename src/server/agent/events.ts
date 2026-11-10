@@ -57,6 +57,16 @@ export interface RunWorkspace {
   additionalDirectories: string[];
 }
 
+/** Pengaturan sumber Claude untuk satu giliran (dihitung pemanggil). */
+export interface RunClaudeConfig {
+  /** Muat `~/.claude` lewat `settingSources: ["project","user"]`. */
+  userSettings: boolean;
+  /** `false` -> `settings: { disableAllHooks: true }` (hook Jejak tetap aktif). */
+  hooksEnabled: boolean;
+  /** Bila terdefinisi, hanya skill ini yang diaktifkan (filter konteks SDK). */
+  skills?: string[];
+}
+
 /** Server MCP eksternal yang aktif, diselesaikan per giliran dari layanan. */
 export type ResolvedMcpServer =
   | { name: string; transport: "stdio"; command: string; args: string[]; env: Record<string, string> }
@@ -74,6 +84,8 @@ export interface RunInput {
   workspace?: RunWorkspace;
   /** Server MCP eksternal (nilai penuh); tidak pernah dikirim ke klien. */
   mcpServers?: ResolvedMcpServer[];
+  /** Pengaturan sumber Claude; tanpa field ini perilaku lama persis. */
+  claude?: RunClaudeConfig;
   /**
    * Kebijakan penolakan akses berkas rahasia. Mengembalikan alasan bila tool harus
    * ditolak lewat hook `PreToolUse`; `undefined` berarti diteruskan.

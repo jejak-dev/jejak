@@ -7,6 +7,10 @@ import { CheckpointService } from "./checkpoints/checkpoint-service";
 import type { BudgetStore } from "./budget/budget-store";
 import { defaultBudgetStore } from "./budget/budget-store";
 import { defaultUsageLedger, type UsageLedger } from "./budget/usage-ledger";
+import {
+  defaultClaudeConfigStore,
+  type ClaudeConfigStore,
+} from "./claude-config/config-store";
 import { removeSessionUndo } from "./files/revert";
 import { localGuard } from "./guard";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
@@ -29,6 +33,7 @@ import { gitRoutes } from "./routes/git";
 import { worktreeRoutes } from "./routes/worktree";
 import { secretAllowRoutes } from "./routes/secret-allow";
 import { budgetRoutes } from "./routes/budget";
+import { claudeConfigRoutes } from "./routes/claude-config";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
@@ -80,6 +85,10 @@ export interface CreateAppOptions {
   budget?: BudgetStore;
   /** Buku pemakaian biaya untuk status anggaran dan peringatan sesi. */
   usageLedger?: UsageLedger;
+  /** Pengaturan sumber Claude (CLAUDE.md/skills/hooks); tanpa store rute 503. */
+  claudeConfig?: ClaudeConfigStore;
+  /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
+  home?: string;
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -149,6 +158,8 @@ export function createApp(options: CreateAppOptions = {}) {
       worktrees,
       allowBypass: env.JEJAK_ALLOW_BYPASS?.trim() !== "0",
       audit: options.audit,
+      ...(options.claudeConfig === undefined ? {} : { claude: options.claudeConfig }),
+      ...(options.home === undefined ? {} : { home: options.home }),
       ...(options.budget === undefined
         ? {}
         : {
@@ -221,6 +232,13 @@ export function createApp(options: CreateAppOptions = {}) {
         audit: options.audit,
       }),
     )
+    .use(
+      claudeConfigRoutes({
+        store: options.claudeConfig,
+        ...(options.home === undefined ? {} : { home: options.home }),
+        audit: options.audit,
+      }),
+    )
     .get("/api/health", () => ({ ok: true, name: "jejak", version: VERSION }))
     .use(
       infoRoutes({
@@ -265,6 +283,7 @@ export function startServer(options: ServeOptions = {}) {
   const secretAllow = defaultSecretAllowStore(process.env);
   const budget = defaultBudgetStore(process.env);
   const usageLedger = defaultUsageLedger(process.env);
+  const claudeConfig = defaultClaudeConfigStore(process.env);
   const app = createApp({
     sessionStore: store,
     memory,
@@ -276,6 +295,7 @@ export function startServer(options: ServeOptions = {}) {
     ...(secretAllow === undefined ? {} : { secretAllow }),
     ...(budget === undefined ? {} : { budget }),
     ...(usageLedger === undefined ? {} : { usageLedger }),
+    ...(claudeConfig === undefined ? {} : { claudeConfig }),
   }).listen({
     hostname: host,
     port,

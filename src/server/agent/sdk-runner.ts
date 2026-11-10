@@ -254,6 +254,24 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           append,
         },
       };
+
+      // Tanpa `claude` perilaku lama persis; dengan `claude`, sumber pengguna
+      // opt-in dan saklar global hooks diteruskan ke SDK.
+      const claude = input.claude;
+      if (claude !== undefined) {
+        sdkOptions.settingSources = claude.userSettings
+          ? ["project", "user"]
+          : ["project"];
+        if (claude.hooksEnabled === false) {
+          const existingSettings = isRecord(sdkOptions.settings)
+            ? sdkOptions.settings
+            : {};
+          sdkOptions.settings = { ...existingSettings, disableAllHooks: true };
+        }
+        if (claude.skills !== undefined) {
+          sdkOptions.skills = [...claude.skills];
+        }
+      }
       const allowedTools = allowedToolsFor(input);
       const memoryServers: Record<string, unknown> = {};
       const hasMemoryServer =

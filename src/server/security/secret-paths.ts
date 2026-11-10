@@ -261,6 +261,10 @@ export function checkSecretAccess(
           if (token.includes("/api/secret-allow") || token.includes("/secret-allow")) {
             return { blocked: true, rule: "secret-allow-api", reason: SECRET_BLOCK_REASON };
           }
+          // Agent tidak boleh menyalakan sumber pengguna / mengubah skills lewat API.
+          if (token.includes("/api/claude")) {
+            return { blocked: true, rule: "claude-config-api", reason: SECRET_BLOCK_REASON };
+          }
           if (!tokenMayBeSecret(token)) continue;
           const verdict = blockedByPath(token);
           if (verdict.blocked) return verdict;
