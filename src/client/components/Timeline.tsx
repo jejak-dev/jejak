@@ -1,6 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { CANCELLED_MESSAGE, dedupeToolPermission, type TimelineItem } from "../lib/timeline";
+import { groupSteps, stepsStatus, summarizeSteps, type StepItem } from "../lib/step-groups";
 import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
 import { formatCost, formatCount } from "../lib/format";
 import { CopyButton } from "./CopyButton";
@@ -216,6 +217,74 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
     setPinned(true);
   };
 
+  const renderStep = (item: StepItem, index: number) => {
+    if (item.kind === "thinking") {
+                return (
+                  <details class="jk-step jk-step-think" key={index} style={depthStyle(item.depth)}>
+                    <summary>
+                      <span class="jk-chev">
+                        <Icon name="chevron" />
+                      </span>
+                      Berpikir
+                    </summary>
+                    <div class="jk-step-body jk-pre-wrap">{item.text}</div>
+                  </details>
+                );
+    }
+              // Pertanyaan agent ditampilkan oleh kartu izin; baris tool-nya dobel.
+              if (item.name === "AskUserQuestion" || item.name === "ExitPlanMode") return null;
+              const view = toolView(item.name, item.input);
+              const input = prettyInput(item.input);
+              return (
+                <details class="jk-step" key={index} style={depthStyle(item.depth)}>
+                  <summary>
+                    <span class="jk-chev">
+                      <Icon name="chevron" />
+                    </span>
+                    <span class="jk-step-name">{item.name}</span>
+                    {item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>}
+                    {sandboxed === true && item.name === "Bash" && (
+                      <span
+                        class="jk-step-tag"
+                        title="Berjalan dalam sandbox: tulis hanya di folder kerja, jaringan dibatasi, tanpa kartu izin."
+                      >
+                        sandbox
+                      </span>
+                    )}
+                    {running === false && item.status === "berjalan" ? (
+                      // Sesi sudah berhenti (mis. server restart): jangan berputar selamanya.
+                      <span class="jk-step-status">terhenti</span>
+                    ) : (
+                      <span class={`jk-step-status jk-step-${item.status}`}>
+                        {item.status === "berjalan" && <span class="jk-spinner" aria-hidden="true" />}
+                        {item.status}
+                      </span>
+                    )}
+                  </summary>
+                  <div class="jk-step-body">
+                    {view.kind === "generic"
+                      ? input !== "" && (
+                          <section>
+                            <SectionHead label="Masukan">
+                              <CopyButton text={rawInput(item.input)} label="Salin JSON masukan" />
+                            </SectionHead>
+                            <pre class="jk-pre">{input}</pre>
+                          </section>
+                        )
+                      : <ToolInputView name={item.name} input={item.input} view={view} />}
+                    {item.output !== undefined && (
+                      <section>
+                        <SectionHead label="Hasil">
+                          <CopyButton text={item.output} label="Salin hasil" />
+                        </SectionHead>
+                        <pre class="jk-pre jk-pre-output">{clip(item.output, MAX_OUTPUT_CHARS)}</pre>
+                      </section>
+                    )}
+                  </div>
+                </details>
+              );
+  };
+
   return (
     <div class="jk-timeline">
       <div
@@ -228,7 +297,31 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
         <div class="jk-col">
           {items.length === 0 && <p class="jk-empty-line">Belum ada aktivitas.</p>}
 
-          {visibleItems.map((item, index) => {
+          {groupSteps(visibleItems).map((block) => {
+            if (block.kind === "steps") {
+              const summary = summarizeSteps(block.items);
+              const status = stepsStatus(block.items);
+              const live = status.running && running !== false;
+              return (
+                <details class="jk-step jk-steps" key={`steps-${block.index}`}>
+                  <summary>
+                    <span class="jk-chev">
+                      <Icon name="chevron" />
+                    </span>
+                    <span class="jk-steps-text">{summary}</span>
+                    {live && <span class="jk-spinner" aria-hidden="true" />}
+                    {status.failed > 0 && (
+                      <span class="jk-step-status jk-step-gagal">{status.failed} gagal</span>
+                    )}
+                  </summary>
+                  <div class="jk-steps-list">
+                    {block.items.map((step, offset) => renderStep(step, block.index + offset))}
+                  </div>
+                </details>
+              );
+            }
+            const item = block.item;
+            const index = block.index;
             switch (item.kind) {
               case "user":
                 return (
@@ -237,18 +330,6 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
                   </div>
                 );
 
-              case "thinking":
-                return (
-                  <details class="jk-step jk-step-think" key={index} style={depthStyle(item.depth)}>
-                    <summary>
-                      <span class="jk-chev">
-                        <Icon name="chevron" />
-                      </span>
-                      Berpikir
-                    </summary>
-                    <div class="jk-step-body jk-pre-wrap">{item.text}</div>
-                  </details>
-                );
 
               case "text":
                 return (
@@ -261,60 +342,6 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
                   </div>
                 );
 
-              case "tool": {
-                // Pertanyaan agent ditampilkan oleh kartu izin; baris tool-nya dobel.
-                if (item.name === "AskUserQuestion" || item.name === "ExitPlanMode") return null;
-                const view = toolView(item.name, item.input);
-                const input = prettyInput(item.input);
-                return (
-                  <details class="jk-step" key={index} style={depthStyle(item.depth)}>
-                    <summary>
-                      <span class="jk-chev">
-                        <Icon name="chevron" />
-                      </span>
-                      <span class="jk-step-name">{item.name}</span>
-                      {item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>}
-                      {sandboxed === true && item.name === "Bash" && (
-                        <span
-                          class="jk-step-tag"
-                          title="Berjalan dalam sandbox: tulis hanya di folder kerja, jaringan dibatasi, tanpa kartu izin."
-                        >
-                          sandbox
-                        </span>
-                      )}
-                      {running === false && item.status === "berjalan" ? (
-                        // Sesi sudah berhenti (mis. server restart): jangan berputar selamanya.
-                        <span class="jk-step-status">terhenti</span>
-                      ) : (
-                        <span class={`jk-step-status jk-step-${item.status}`}>
-                          {item.status === "berjalan" && <span class="jk-spinner" aria-hidden="true" />}
-                          {item.status}
-                        </span>
-                      )}
-                    </summary>
-                    <div class="jk-step-body">
-                      {view.kind === "generic"
-                        ? input !== "" && (
-                            <section>
-                              <SectionHead label="Masukan">
-                                <CopyButton text={rawInput(item.input)} label="Salin JSON masukan" />
-                              </SectionHead>
-                              <pre class="jk-pre">{input}</pre>
-                            </section>
-                          )
-                        : <ToolInputView name={item.name} input={item.input} view={view} />}
-                      {item.output !== undefined && (
-                        <section>
-                          <SectionHead label="Hasil">
-                            <CopyButton text={item.output} label="Salin hasil" />
-                          </SectionHead>
-                          <pre class="jk-pre jk-pre-output">{clip(item.output, MAX_OUTPUT_CHARS)}</pre>
-                        </section>
-                      )}
-                    </div>
-                  </details>
-                );
-              }
 
               case "permission":
                 return <PermissionCard key={item.id} item={item} cwd={cwd} onDecide={onDecide} />;

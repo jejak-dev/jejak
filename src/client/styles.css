@@ -1387,6 +1387,22 @@ h2.jk-md-heading {
   color: var(--bad);
 }
 
+.jk-steps > summary {
+  color: var(--t3);
+}
+
+.jk-steps > summary:hover {
+  color: var(--t2);
+}
+
+.jk-steps-list {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0 6px 6px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
 .jk-step-think > summary {
   font-style: italic;
 }
