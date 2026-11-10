@@ -52,6 +52,8 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
   const [saving, setSaving] = useState(false);
   const [activating, setActivating] = useState(false);
   const [testing, setTesting] = useState(false);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsNote, setModelsNote] = useState<string | undefined>(undefined);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -114,10 +116,60 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
     }
   }, [api, applySavedView, draft, onSaved]);
 
+  const loadModels = useCallback(
+    async (profileId: string): Promise<void> => {
+      setLoadingModels(true);
+      setModelsNote(undefined);
+      try {
+        const result = await api.listProviderModels(profileId);
+        if (!result.ok) {
+          setModelsNote(`Gagal memuat model: ${result.error ?? "tidak diketahui"}`);
+          return;
+        }
+        if (result.models.length === 0) {
+          setModelsNote("Provider tidak mengembalikan model.");
+          return;
+        }
+        setDraft((current) =>
+          current === undefined
+            ? current
+            : updateProfile(current, profileId, { modelsText: result.models.join("\n") }),
+        );
+        setModelsNote(`${result.models.length} model dimuat. Simpan untuk menerapkan.`);
+      } catch (error) {
+        setModelsNote(`Gagal memuat model: ${messageOf(error)}`);
+      } finally {
+        setLoadingModels(false);
+      }
+    },
+    [api],
+  );
+
   const onSave = (): void => {
     if (!dirty || hasError) return;
     closeTransient();
-    void save();
+    const target = draft?.profiles.find((profile) => profile.id === selectedId);
+    const autoLoad = target !== undefined && target.modelsText.trim() === "";
+    void (async () => {
+      const saved = await save();
+      // Profil baru tanpa daftar model: muat otomatis dari provider.
+      if (saved && autoLoad && target !== undefined) await loadModels(target.id);
+    })();
+  };
+
+  const onLoadModels = (profile: ProfileDraft): void => {
+    if (loadingModels || saving) return;
+    closeTransient();
+    void (async () => {
+      if (dirty) {
+        if (hasError) {
+          setModelsNote("Perbaiki isian yang belum valid sebelum memuat model.");
+          return;
+        }
+        if (!(await save())) return;
+      }
+      await loadModels(profile.id);
+    })();
   };
 
   const onActivate = (profile: ProfileDraft): void => {
@@ -163,6 +215,7 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
     const next = addProfile(draft, profile);
     setDraft(next);
     setSelectedId(profile.id);
+    setModelsNote(undefined);
     closeTransient();
   };
 
@@ -306,6 +359,9 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
                 onActivate={() => onActivate(selected)}
                 onRemove={() => onRemove(selected)}
                 onTest={() => onTest(selected)}
+                loadingModels={loadingModels}
+                modelsNote={modelsNote}
+                onLoadModels={() => onLoadModels(selected)}
               />
             ) : (
               <p class="jk-note">Pilih profil di kiri atau tambah profil baru.</p>

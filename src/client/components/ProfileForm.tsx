@@ -20,6 +20,9 @@ export interface ProfileFormProps {
   onActivate: () => void;
   onRemove: () => void;
   onTest: () => void;
+  loadingModels?: boolean;
+  modelsNote?: string | undefined;
+  onLoadModels?: () => void;
 }
 
 const KEY_OPTIONS: { value: KeyMode; label: string }[] = [
@@ -105,6 +108,9 @@ export function ProfileForm({
   onActivate,
   onRemove,
   onTest,
+  loadingModels = false,
+  modelsNote,
+  onLoadModels,
 }: ProfileFormProps) {
   const models = splitModels(profile.modelsText);
   const grouped = new Map<string, string[]>();
@@ -294,6 +300,23 @@ export function ProfileForm({
         <p class="jk-help" id="jk-pf-models-help">
           Satu model per baris.
         </p>
+        {onLoadModels !== undefined && (
+          <p class="jk-field-actions">
+            <button
+              type="button"
+              class="jk-button jk-button-secondary"
+              disabled={busy || loadingModels}
+              onClick={onLoadModels}
+            >
+              {loadingModels ? "Loading models…" : "Load models"}
+            </button>
+            {modelsNote !== undefined && (
+              <span class="jk-help" role="status">
+                {modelsNote}
+              </span>
+            )}
+          </p>
+        )}
         <FieldError id="jk-pf-models-error" messages={messagesFor("models")} />
       </div>
 

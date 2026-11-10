@@ -165,3 +165,68 @@ export async function testConnection(
 
   return failure(status, elapsed(), model, error, apiKey);
 }
+
+export interface ModelListResult {
+  ok: boolean;
+  models: string[];
+  error?: string;
+}
+
+const MAX_MODELS = 500;
+
+/** Memuat daftar model dari `GET <baseUrl>/v1/models` (format Anthropic dan kompatibel OpenAI). */
+export async function listModels(
+  resolved: ResolvedProvider,
+  options: ConnectionTestOptions = {},
+): Promise<ModelListResult> {
+  const { apiKey } = resolved;
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const url = `${(resolved.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "")}/v1/models?limit=${MAX_MODELS}`;
+  const headers: Record<string, string> = { "anthropic-version": "2023-06-01" };
+  if (apiKey !== undefined && apiKey !== "") {
+    headers["x-api-key"] = apiKey;
+    headers.authorization = `Bearer ${apiKey}`;
+  }
+
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: "GET",
+      headers,
+      redirect: "error",
+      signal: AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS),
+    });
+  } catch {
+    return { ok: false, models: [], error: NETWORK_ERROR };
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    return { ok: false, models: [], error: AUTH_ERROR };
+  }
+  if (response.status === 404) {
+    return { ok: false, models: [], error: "provider tidak menyediakan daftar model (isi manual)" };
+  }
+  if (response.status < 200 || response.status >= 300) {
+    return { ok: false, models: [], error: `permintaan ditolak (status ${response.status})` };
+  }
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = undefined;
+  }
+  const rows = isRecord(payload) && Array.isArray(payload.data) ? payload.data : undefined;
+  if (rows === undefined) {
+    return { ok: false, models: [], error: UNKNOWN_RESPONSE_ERROR };
+  }
+  const models: string[] = [];
+  for (const row of rows) {
+    const id = isRecord(row) ? row.id : undefined;
+    if (typeof id !== "string") continue;
+    const clean = sanitize(id.trim(), apiKey);
+    if (clean !== "" && clean.length <= 200 && !models.includes(clean)) models.push(clean);
+    if (models.length >= MAX_MODELS) break;
+  }
+  return { ok: true, models };
+}

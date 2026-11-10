@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { testConnection } from "../connection-test";
+import { listModels, testConnection } from "../connection-test";
 import {
   parseRegistry,
   redactRegistry,
@@ -170,6 +170,20 @@ export function providerRoutes(options: ProviderRoutesOptions = {}): Elysia {
           const resolved = resolveProvider(registry, selection);
           const result = await testConnection(resolved, { fetch: options.fetch });
           return { result };
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/providers/models",
+      async ({ body }) => {
+        try {
+          const selection = parseTestBody(body);
+          const registry = await load();
+          const resolved = resolveProvider(registry, { profileId: selection.profileId });
+          return { result: await listModels(resolved, { fetch: options.fetch }) };
         } catch (error) {
           return errorResponse(error);
         }
