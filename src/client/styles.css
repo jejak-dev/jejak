@@ -2290,6 +2290,7 @@ h2.jk-md-heading {
   flex-direction: column;
   flex: none;
   width: 460px;
+  max-width: 80%;
   min-height: 0;
   border-left: 1px solid var(--line);
   background: var(--bg);

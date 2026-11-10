@@ -55,3 +55,15 @@ describe("lebar sidebar", () => {
     expect(widthForKey(264, "a")).toBeUndefined();
   });
 });
+
+describe("lebar panel kanan", () => {
+  test("batas, default, dan arah panah (melebar ke kiri)", async () => {
+    const { panelWidth, PANEL_DEFAULT } = await import("../src/client/lib/panel-width");
+    expect(panelWidth.clamp(100)).toBe(320);
+    expect(panelWidth.clamp(2000)).toBe(760);
+    expect(panelWidth.parse("x")).toBe(PANEL_DEFAULT);
+    expect(panelWidth.forKey(460, "ArrowLeft", "ArrowLeft")).toBe(480);
+    expect(panelWidth.forKey(460, "ArrowRight", "ArrowLeft")).toBe(440);
+    expect(panelWidth.forKey(600, "Home", "ArrowLeft")).toBe(PANEL_DEFAULT);
+  });
+});

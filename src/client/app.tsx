@@ -12,7 +12,7 @@ import { ReplyBar } from "./components/ReplyBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { Sidebar } from "./components/Sidebar";
-import { SidebarResizer } from "./components/SidebarResizer";
+import { PaneResizer } from "./components/PaneResizer";
 import { Timeline } from "./components/Timeline";
 import { WorkspacePage } from "./components/WorkspacePage";
 import {
@@ -30,7 +30,15 @@ import { buildCommands, type CommandId } from "./lib/commands";
 import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
-import { loadSidebarWidth, saveSidebarWidth } from "./lib/sidebar-width";
+import { panelWidth } from "./lib/panel-width";
+import {
+  SIDEBAR_DEFAULT,
+  SIDEBAR_MAX,
+  SIDEBAR_MIN,
+  loadSidebarWidth,
+  saveSidebarWidth,
+  sidebarWidth,
+} from "./lib/sidebar-width";
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 
@@ -74,6 +82,13 @@ export function App() {
   const [interruptError, setInterruptError] = useState<string | undefined>(undefined);
   const [interrupting, setInterrupting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [panelW, setPanelW] = useState(() => {
+    try {
+      return panelWidth.load(window.localStorage);
+    } catch {
+      return panelWidth.load(undefined);
+    }
+  });
   const [sideWidth, setSideWidth] = useState(() => {
     try {
       return loadSidebarWidth(window.localStorage);
@@ -472,8 +487,16 @@ export function App() {
         onOpenPalette={openPalette}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
-      <SidebarResizer
+      <PaneResizer
         width={sideWidth}
+        min={SIDEBAR_MIN}
+        max={SIDEBAR_MAX}
+        def={SIDEBAR_DEFAULT}
+        label="Lebar sidebar"
+        edge="end"
+        style={{ left: `${sideWidth - 3}px` }}
+        clamp={sidebarWidth.clamp}
+        keyFor={(current, key) => sidebarWidth.forKey(current, key, "ArrowRight")}
         onChange={setSideWidth}
         onCommit={(width) => {
           setSideWidth(width);
@@ -577,6 +600,29 @@ export function App() {
                   onOpenChange={onPanelOpenChange}
                   tabRequest={panelTabRequest}
                   onSessionChanged={() => void refresh()}
+                  width={panelW}
+                />
+              )}
+              {panelOpen && (
+                <PaneResizer
+                  width={panelW}
+                  min={panelWidth.spec.min}
+                  max={panelWidth.spec.max}
+                  def={panelWidth.spec.def}
+                  label="Lebar panel"
+                  edge="start"
+                  style={{ right: `${panelW - 3}px` }}
+                  clamp={panelWidth.clamp}
+                  keyFor={(current, key) => panelWidth.forKey(current, key, "ArrowLeft")}
+                  onChange={setPanelW}
+                  onCommit={(width) => {
+                    setPanelW(width);
+                    try {
+                      panelWidth.save(window.localStorage, width);
+                    } catch {
+                      // penyimpanan tidak tersedia
+                    }
+                  }}
                 />
               )}
             </div>

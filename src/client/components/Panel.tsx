@@ -19,6 +19,8 @@ import { SecretsTab } from "./SecretsTab";
 import { TerminalTab } from "./TerminalTab";
 
 export interface PanelProps {
+  /** Lebar panel dalam px; default dari CSS bila kosong. */
+  width?: number;
   api: ApiClient;
   sessionId: string;
   /** Sesi terpilih; diteruskan ke tab Git untuk kotak worktree. */
@@ -43,6 +45,7 @@ const TABS: { id: PanelTab; label: string }[] = [
 ];
 
 export function Panel({
+  width,
   api,
   sessionId,
   session,
@@ -98,7 +101,10 @@ export function Panel({
   };
 
   return (
-    <aside class="jk-panel" aria-label="Changes, files, git, checkpoints, and secrets">
+    <aside
+      class="jk-panel"
+      style={width === undefined ? undefined : { width: `${width}px` }}
+      aria-label="Changes, files, git, checkpoints, and secrets">
       <div class="jk-panel-head">
         <div class="jk-panel-tabs" role="tablist" aria-label="Changes, files, git, checkpoints, and secrets">
           {TABS.map((entry, index) => (
