@@ -157,20 +157,19 @@ export function WorkspacePage({ api, projects }: WorkspacePageProps) {
 
   return (
     <section class="jk-workspace" aria-labelledby="jk-workspace-title">
-      <header class="jk-settings-head">
-        <h2 id="jk-workspace-title" ref={headingRef} tabIndex={-1} class="jk-settings-title">
-          Workspace
-        </h2>
-        <p class="jk-privacy-note">
-          Kelompokkan beberapa repo dan catat kartu service-nya. Dipakai agent untuk memahami
-          hubungan antar repo.
-        </p>
-      </header>
-
-      <div class="jk-workspace-head">
+      <header class="jk-settings-head jk-head-row">
+        <div class="jk-head-text">
+          <h2 id="jk-workspace-title" ref={headingRef} tabIndex={-1} class="jk-settings-title">
+            Workspace
+          </h2>
+          <p class="jk-privacy-note">
+            Kelompokkan beberapa repo dan catat kartu service-nya. Dipakai agent untuk memahami
+            hubungan antar repo.
+          </p>
+        </div>
         <button
           type="button"
-          class="jk-button jk-workspace-add"
+          class="jk-button jk-head-action"
           aria-expanded={adding}
           disabled={disabled}
           onClick={() => {
@@ -181,7 +180,7 @@ export function WorkspacePage({ api, projects }: WorkspacePageProps) {
         >
           Tambah
         </button>
-      </div>
+      </header>
 
       {adding && !disabled && (
         <div class="jk-workspace-form-wrap">
@@ -233,7 +232,7 @@ export function WorkspacePage({ api, projects }: WorkspacePageProps) {
       {!loading && !disabled && loadError === undefined && (
         <div class="jk-workspace-list">
           {items.length === 0 ? (
-            <p class="jk-note">Belum ada workspace. Tambahkan untuk mengelompokkan repo.</p>
+            <p class="jk-empty-state">Belum ada workspace. Pakai tombol Tambah untuk mengelompokkan beberapa repo.</p>
           ) : (
             items.map((workspace) => {
               const prefix = `${workspace.id}\0`;

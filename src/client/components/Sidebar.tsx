@@ -598,7 +598,6 @@ export function Sidebar({
         >
           <Icon name="cube" />
           <span class="jk-foot-text">{activeProfileLabel ?? "Set up provider"}</span>
-          <Icon name="gear" />
         </a>
         <button
           type="button"

@@ -427,7 +427,7 @@ export function Composer({
               </label>
               <button
                 type="button"
-                class="jk-icon-btn"
+                class="jk-chip jk-chip-btn"
                 aria-label="Browse folder"
                 title={nativePicker ? "Pilih folder (Finder)" : "Browse…"}
                 data-folder-opener
@@ -437,7 +437,7 @@ export function Composer({
                   else setPickerOpen((open) => !open);
                 }}
               >
-                <Icon name="folder" />
+                Pilih…
               </button>
               {pickerOpen && (
                 <FolderPicker

@@ -145,20 +145,19 @@ export function McpPage({ api }: McpPageProps) {
 
   return (
     <section class="jk-mcp" aria-labelledby="jk-mcp-title">
-      <header class="jk-settings-head">
-        <h2 id="jk-mcp-title" ref={headingRef} tabIndex={-1} class="jk-settings-title">
-          Server MCP
-        </h2>
-        <p class="jk-privacy-note">
-          Daftarkan server MCP eksternal sekali agar tool-nya tersedia di semua sesi.
-        </p>
-      </header>
-
-      {!disabled && (
-        <div class="jk-mcp-head">
+      <header class="jk-settings-head jk-head-row">
+        <div class="jk-head-text">
+          <h2 id="jk-mcp-title" ref={headingRef} tabIndex={-1} class="jk-settings-title">
+            Server MCP
+          </h2>
+          <p class="jk-privacy-note">
+            Daftarkan server MCP eksternal sekali agar tool-nya tersedia di semua sesi.
+          </p>
+        </div>
+        {!disabled && (
           <button
             type="button"
-            class="jk-button jk-mcp-add"
+            class="jk-button jk-head-action"
             aria-expanded={adding}
             onClick={() => {
               setAdding((value) => !value);
@@ -168,8 +167,8 @@ export function McpPage({ api }: McpPageProps) {
           >
             Tambah server
           </button>
-        </div>
-      )}
+        )}
+      </header>
 
       {adding && !disabled && (
         <div class="jk-mcp-form-wrap">
@@ -220,7 +219,7 @@ export function McpPage({ api }: McpPageProps) {
       {!loading && !disabled && loadError === undefined && (
         <div class="jk-mcp-list">
           {items.length === 0 ? (
-            <p class="jk-note">Belum ada server MCP.</p>
+            <p class="jk-empty-state">Belum ada server MCP. Pakai tombol Tambah server untuk menghubungkan tool eksternal.</p>
           ) : (
             items.map((mcp) => (
               <McpRow
