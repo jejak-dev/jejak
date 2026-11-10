@@ -1,6 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
-import type { TimelineItem } from "../lib/timeline";
+import { CANCELLED_MESSAGE, dedupeToolPermission, type TimelineItem } from "../lib/timeline";
 import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
 import { formatCost, formatCount } from "../lib/format";
 import { CopyButton } from "./CopyButton";
@@ -150,6 +150,9 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
             : item,
         )
       : rawItems;
+  const visibleItems = dedupeToolPermission(items);
+  // Setelah baris hasil, giliran sudah selesai walau status sesi belum diperbarui.
+  const finished = items[items.length - 1]?.kind === "result";
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pinned, setPinned] = useState(true);
 
@@ -221,7 +224,7 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
         <div class="jk-col">
           {items.length === 0 && <p class="jk-empty-line">Belum ada aktivitas.</p>}
 
-          {items.map((item, index) => {
+          {visibleItems.map((item, index) => {
             switch (item.kind) {
               case "user":
                 return (
@@ -321,8 +324,8 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
               case "result":
                 return (
                   <footer class="jk-result" key={index} title={resultDetail(item)}>
-                    <span class={`jk-result-mark ${item.ok ? "jk-ok" : "jk-bad"}`}>
-                      {item.ok ? "Selesai" : "Gagal"}
+                    <span class={`jk-result-mark ${item.ok ? "jk-ok" : item.error === CANCELLED_MESSAGE ? "" : "jk-bad"}`}>
+                      {item.ok ? "Selesai" : item.error === CANCELLED_MESSAGE ? "Dihentikan" : "Gagal"}
                     </span>
                     {item.estimatedCostUsd !== undefined && (
                       <span title="Perkiraan dari tarif di profil provider">{formatCost(item.estimatedCostUsd)}</span>
@@ -330,7 +333,7 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
                     {item.costUsd !== undefined && item.estimatedCostUsd === undefined && (
                       <span title="Dihitung SDK dengan tarif Claude, mungkin tidak akurat untuk model lain">SDK {formatCost(item.costUsd)}</span>
                     )}
-                    {!item.ok && item.error !== undefined && (
+                    {!item.ok && item.error !== undefined && item.error !== CANCELLED_MESSAGE && (
                       <span class="jk-bad">{item.error}</span>
                     )}
                   </footer>
@@ -340,7 +343,7 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
                 return null;
             }
           })}
-          {running === true && pending.length === 0 && (
+          {running === true && !finished && pending.length === 0 && (
             <div class="jk-working" role="status" aria-label="Agent sedang bekerja">
               <span class="jk-working-dots" aria-hidden="true">
                 <i />

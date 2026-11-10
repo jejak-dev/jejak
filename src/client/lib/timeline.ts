@@ -25,6 +25,7 @@ export type TimelineItem =
   | {
       kind: "permission";
       id: string;
+      toolUseId?: string;
       name: string;
       input: unknown;
       expiresAt?: string;
@@ -98,6 +99,9 @@ export function startTimeline(prompt: string): TimelineItem[] {
 function depthOf(parentToolUseId: string | undefined): number {
   return parentToolUseId === undefined ? 0 : 1;
 }
+
+/** Pesan yang dikirim server saat giliran dibatalkan pengguna. */
+export const CANCELLED_MESSAGE = "dibatalkan";
 
 function markRunningToolsFailed(items: TimelineItem[]): TimelineItem[] {
   return items.map((item) =>
@@ -175,6 +179,7 @@ export function reduceTimeline(
         input: event.input,
         status: "menunggu",
       };
+      if (event.toolUseId !== undefined) item.toolUseId = event.toolUseId;
       if (event.expiresAt !== undefined) item.expiresAt = event.expiresAt;
       return [...items, item];
     }
@@ -202,6 +207,10 @@ export function reduceTimeline(
       return [...items, { kind: "user", text: event.text }];
 
     case "error":
+      // Penghentian oleh pengguna bukan galat: tampil sebagai catatan netral.
+      if (event.message === CANCELLED_MESSAGE) {
+        return [...items, { kind: "notice", text: "Sesi dihentikan.", level: "info" }];
+      }
       return [...items, { kind: "error", message: event.message }];
 
     case "notice":
@@ -232,4 +241,36 @@ export function reduceTimeline(
     default:
       return [...items];
   }
+}
+
+/**
+ * Satu aksi tool yang meminta izin muncul dua kali (baris tool dan kartu izin).
+ * Sisakan satu: kartu izin saat menunggu atau ditolak, baris tool saat diizinkan.
+ * Pertanyaan agent dan rencana tetap dipegang kartu izin.
+ */
+export function dedupeToolPermission(items: readonly TimelineItem[]): TimelineItem[] {
+  const permissionByTool = new Map<string, Extract<TimelineItem, { kind: "permission" }>>();
+  for (const item of items) {
+    if (item.kind === "permission" && item.toolUseId !== undefined) {
+      permissionByTool.set(item.toolUseId, item);
+    }
+  }
+  if (permissionByTool.size === 0) return [...items];
+
+  const toolIds = new Set<string>();
+  for (const item of items) if (item.kind === "tool") toolIds.add(item.id);
+
+  return items.filter((item) => {
+    if (item.kind === "tool") {
+      const permission = permissionByTool.get(item.id);
+      if (permission === undefined) return true;
+      // Pertanyaan/rencana: baris tool disembunyikan oleh Timeline sendiri.
+      return permission.status === "diizinkan";
+    }
+    if (item.kind === "permission" && item.toolUseId !== undefined) {
+      if (item.name === "AskUserQuestion" || item.name === "ExitPlanMode") return true;
+      return !(item.status === "diizinkan" && toolIds.has(item.toolUseId));
+    }
+    return true;
+  });
 }

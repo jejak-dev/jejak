@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AgentEvent } from "../src/server/agent/events";
 import {
+  dedupeToolPermission,
   reduceTimeline,
   startTimeline,
   summarizeToolInput,
@@ -339,5 +340,39 @@ describe("reduceTimeline: notice", () => {
       { kind: "text", text: "jawaban", depth: 0 },
       { kind: "notice", text: "Anggaran terlewati.", level: "warn" },
     ]);
+  });
+});
+
+describe("penghentian dan baris dobel", () => {
+  test("error dibatalkan menjadi catatan netral, bukan galat", () => {
+    const items = reduceAll([{ type: "error", message: "dibatalkan" }]);
+    expect(items).toEqual([{ kind: "notice", text: "Sesi dihentikan.", level: "info" }]);
+    expect(reduceAll([{ type: "error", message: "koneksi putus" }])[0]).toMatchObject({ kind: "error" });
+  });
+
+  test("dedupeToolPermission: satu baris per aksi tool", () => {
+    const call = { type: "tool_call", id: "tu1", name: "Write", input: { file_path: "a.txt" } } as const;
+    const ask = {
+      type: "permission_request",
+      id: "p1",
+      toolUseId: "tu1",
+      name: "Write",
+      input: { file_path: "a.txt" },
+    } as const;
+    const kinds = (events: AgentEvent[]) =>
+      dedupeToolPermission(reduceAll(events)).map((item) => item.kind);
+
+    // menunggu: hanya kartu izin
+    expect(kinds([call, ask])).toEqual(["permission"]);
+    // diizinkan: hanya baris tool
+    expect(
+      kinds([call, ask, { type: "permission_resolved", id: "p1", decision: "allow" }]),
+    ).toEqual(["tool"]);
+    // ditolak: kartu izin dengan alasan, baris tool disembunyikan
+    expect(
+      kinds([call, ask, { type: "permission_resolved", id: "p1", decision: "deny", message: "tidak" }]),
+    ).toEqual(["permission"]);
+    // tanpa toolUseId: tidak ada yang dibuang
+    expect(kinds([call, { ...ask, toolUseId: undefined }])).toEqual(["tool", "permission"]);
   });
 });
