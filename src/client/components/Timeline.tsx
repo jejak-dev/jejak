@@ -263,10 +263,15 @@ export function Timeline({ items: rawItems, connection, running, cwd, onDecide }
                       </span>
                       <span class="jk-step-name">{item.name}</span>
                       {item.summary !== "" && <span class="jk-step-arg">{item.summary}</span>}
-                      <span class={`jk-step-status jk-step-${item.status}`}>
-                        {item.status === "berjalan" && <span class="jk-spinner" aria-hidden="true" />}
-                        {item.status}
-                      </span>
+                      {running === false && item.status === "berjalan" ? (
+                        // Sesi sudah berhenti (mis. server restart): jangan berputar selamanya.
+                        <span class="jk-step-status">terhenti</span>
+                      ) : (
+                        <span class={`jk-step-status jk-step-${item.status}`}>
+                          {item.status === "berjalan" && <span class="jk-spinner" aria-hidden="true" />}
+                          {item.status}
+                        </span>
+                      )}
                     </summary>
                     <div class="jk-step-body">
                       {view.kind === "generic"
