@@ -13,6 +13,12 @@ export interface ReplyBarProps {
 
 const MAX_TEXTAREA_PX = 8 * 24;
 
+const MODE_OPTIONS: { value: "default" | "acceptEdits" | "plan"; label: string }[] = [
+  { value: "default", label: "Ask permissions" },
+  { value: "acceptEdits", label: "Accept edits" },
+  { value: "plan", label: "Plan mode" },
+];
+
 function autosize(element: HTMLTextAreaElement): void {
   element.style.height = "auto";
   element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_PX)}px`;
@@ -51,6 +57,21 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
   ]
     .filter((id): id is string => id !== undefined)
     .join(" ");
+
+  const changeMode = async (mode: "default" | "acceptEdits" | "plan"): Promise<void> => {
+    setError(undefined);
+    try {
+      await api.setSessionPermissionMode(sessionId, mode);
+      void refresh();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "gagal mengganti mode izin");
+    }
+  };
+
+  const bypass = session.permissionMode === "bypassPermissions";
+  const modeLabel = bypass
+    ? "Bypass permissions"
+    : (MODE_OPTIONS.find((option) => option.value === session.permissionMode)?.label ?? "");
 
   const submit = async (): Promise<void> => {
     if (!canSend) return;
@@ -110,6 +131,34 @@ export function ReplyBar({ api, session, refresh }: ReplyBarProps) {
           />
 
           <div class="jk-comp-bar">
+            <label
+              class="jk-chip"
+              title={running ? "Berlaku mulai balasan berikutnya" : "Mode izin sesi"}
+            >
+              <Icon name="eye" />
+              <span>{modeLabel}</span>
+              <select
+                class="jk-chip-select"
+                aria-label="Mode izin sesi"
+                value={session.permissionMode}
+                disabled={bypass}
+                onChange={(event) =>
+                  void changeMode(
+                    (event.currentTarget as HTMLSelectElement).value as
+                      | "default"
+                      | "acceptEdits"
+                      | "plan",
+                  )
+                }
+              >
+                {MODE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+                {bypass && <option value="bypassPermissions">Bypass permissions</option>}
+              </select>
+            </label>
             {session.queued > 0 && (
               <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
             )}

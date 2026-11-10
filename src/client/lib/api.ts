@@ -357,6 +357,10 @@ export interface ApiClient {
   getSession(id: string): Promise<SessionInfo>;
   renameSession(id: string, title: string): Promise<SessionInfo>;
   archiveSession(id: string, archived: boolean): Promise<SessionInfo>;
+  setSessionPermissionMode(
+    id: string,
+    mode: "default" | "acceptEdits" | "plan",
+  ): Promise<SessionInfo>;
   deleteSession(id: string): Promise<void>;
   createSession(input: {
     prompt: string;
@@ -1035,6 +1039,12 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     async archiveSession(id, archived) {
       return sessionFrom(
         await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, { archived }),
+      );
+    },
+
+    async setSessionPermissionMode(id, mode) {
+      return sessionFrom(
+        await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, { permissionMode: mode }),
       );
     },
 

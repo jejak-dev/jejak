@@ -122,18 +122,22 @@ function parseMessagesBody(body: unknown): string {
   return record.text;
 }
 
-function parseUpdateBody(body: unknown): { title?: string; archived?: boolean } {
+function parseUpdateBody(body: unknown): {
+  title?: string;
+  archived?: boolean;
+  permissionMode?: string;
+} {
   const parsed = parseJsonBody(body);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw invalid("Body permintaan harus berupa objek.");
   }
   const record = parsed as Record<string, unknown>;
   for (const key of Object.keys(record)) {
-    if (key !== "title" && key !== "archived") {
+    if (key !== "title" && key !== "archived" && key !== "permissionMode") {
       throw invalid(`Field ${key} tidak dikenal.`);
     }
   }
-  const update: { title?: string; archived?: boolean } = {};
+  const update: { title?: string; archived?: boolean; permissionMode?: string } = {};
   if (record.title !== undefined) {
     if (typeof record.title !== "string") {
       throw invalid("Field title harus berupa string.");
@@ -146,8 +150,18 @@ function parseUpdateBody(body: unknown): { title?: string; archived?: boolean } 
     }
     update.archived = record.archived;
   }
-  if (update.title === undefined && update.archived === undefined) {
-    throw invalid("Minimal satu field (title atau archived) harus diisi.");
+  if (record.permissionMode !== undefined) {
+    if (typeof record.permissionMode !== "string") {
+      throw invalid("Field permissionMode harus berupa string.");
+    }
+    update.permissionMode = record.permissionMode;
+  }
+  if (
+    update.title === undefined &&
+    update.archived === undefined &&
+    update.permissionMode === undefined
+  ) {
+    throw invalid("Minimal satu field (title, archived, atau permissionMode) harus diisi.");
   }
   return update;
 }
@@ -295,6 +309,15 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
               sessionId: params.id,
               summary: "Sesi diarsipkan",
               meta: { aksi: update.archived ? "arsip" : "buka-arsip" },
+            });
+          }
+          if (update.permissionMode !== undefined) {
+            session = manager.setPermissionMode(params.id, update.permissionMode);
+            recordAudit(audit, {
+              kind: "pengaturan",
+              sessionId: params.id,
+              summary: "Mode izin sesi diganti",
+              meta: { aksi: "ganti-mode", mode: update.permissionMode },
             });
           }
           return { session };

@@ -1881,6 +1881,42 @@ describe("SessionManager.rename", () => {
   });
 });
 
+describe("SessionManager.setPermissionMode", () => {
+  test("mengganti mode, bertahan di store, dan giliran berikutnya memakainya", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const modes: Array<string | undefined> = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        modes.push(input.permissionMode);
+        yield { type: "session", sessionId: "sdk-1" };
+        yield { type: "result", ok: true };
+      },
+    };
+    const mgr = manager({ runner, store });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    const changed = mgr.setPermissionMode(info.id, "acceptEdits");
+    expect(changed.permissionMode).toBe("acceptEdits");
+    expect(store.loadSessions()[0]?.info.permissionMode).toBe("acceptEdits");
+
+    mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+    expect(modes[modes.length - 1]).toBe("acceptEdits");
+    store.close();
+  });
+
+  test("mode tak dikenal dan pindah ke bypass ditolak; id tak ada ditolak", async () => {
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]) });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    expect(() => mgr.setPermissionMode(info.id, "ngawur")).toThrow(SessionError);
+    expect(() => mgr.setPermissionMode(info.id, 3)).toThrow(SessionError);
+    expect(() => mgr.setPermissionMode(info.id, "bypassPermissions")).toThrow(SessionError);
+    expect(() => mgr.setPermissionMode("s_tidakada", "plan")).toThrow(SessionError);
+  });
+});
+
 describe("SessionManager.setArchived", () => {
   test("set lalu hapus arsip tanpa mengubah updatedAt dan bertahan di store", async () => {
     const store = new SqliteSessionStore(":memory:");
