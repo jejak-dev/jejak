@@ -73,6 +73,14 @@ describe("buildCommands", () => {
     expect(audit?.group).toBe("aksi");
   });
 
+  test("perintah Buka instruksi dan skills tersedia", () => {
+    const cmds = buildCommands({ sessions: [], hasSession: false, panelOpen: false });
+    const instruksi = cmds.find((c) => c.id === "open-instruksi");
+    expect(instruksi?.label).toBe("Buka instruksi dan skills");
+    expect(instruksi?.run).toBe("open-instruksi");
+    expect(instruksi?.group).toBe("aksi");
+  });
+
   test("toggle-panel hanya bila ada sesi terbuka", () => {
     const withPanel = buildCommands({ sessions: [makeSession()], hasSession: true, panelOpen: true });
     expect(withPanel.some((c) => c.group === "aksi" && c.run === "toggle-panel")).toBe(true);

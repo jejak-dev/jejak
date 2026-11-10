@@ -3,6 +3,7 @@ import type { SessionInfo } from "../server/sessions/session-manager";
 import { ApiError, type ApiClient, type WorkspaceItem } from "./lib/api";
 import {
   auditHash,
+  instruksiHash,
   mcpHash,
   memoryHash,
   parseHashRoute,
@@ -47,6 +48,7 @@ export interface HashRouteState {
   navigateToWorkspaces: () => void;
   navigateToMcp: () => void;
   navigateToAudit: () => void;
+  navigateToInstruksi: () => void;
 }
 
 export function useHashRoute(): HashRouteState {
@@ -98,6 +100,10 @@ export function useHashRoute(): HashRouteState {
     applyHash(auditHash());
   }, [applyHash]);
 
+  const navigateToInstruksi = useCallback(() => {
+    applyHash(instruksiHash());
+  }, [applyHash]);
+
   return useMemo(
     () => ({
       sessionId: route.sessionId,
@@ -108,6 +114,7 @@ export function useHashRoute(): HashRouteState {
       navigateToWorkspaces,
       navigateToMcp,
       navigateToAudit,
+      navigateToInstruksi,
     }),
     [
       route,
@@ -117,6 +124,7 @@ export function useHashRoute(): HashRouteState {
       navigateToWorkspaces,
       navigateToMcp,
       navigateToAudit,
+      navigateToInstruksi,
     ],
   );
 }

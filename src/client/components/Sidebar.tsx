@@ -19,6 +19,7 @@ export interface SidebarProps {
   workspacesActive?: boolean;
   mcpActive?: boolean;
   auditActive?: boolean;
+  instruksiActive?: boolean;
   /** Jumlah usulan memory terbuka; angka kecil ditampilkan bila > 0. */
   memoryProposed?: number;
   onRename: (id: string, title: string) => Promise<void>;
@@ -63,6 +64,7 @@ export function Sidebar({
   workspacesActive = false,
   mcpActive = false,
   auditActive = false,
+  instruksiActive = false,
   memoryProposed,
   onRename,
   onArchive,
@@ -554,6 +556,14 @@ export function Sidebar({
         >
           <Icon name="cube" />
           <span class="jk-foot-text">Server MCP</span>
+        </a>
+        <a
+          class={`jk-foot-link${instruksiActive ? " jk-foot-link-active" : ""}`}
+          href="#/instruksi"
+          aria-current={instruksiActive ? "page" : undefined}
+        >
+          <Icon name="doc" />
+          <span class="jk-foot-text">Instruksi</span>
         </a>
         <a
           class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}

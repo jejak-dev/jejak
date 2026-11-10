@@ -25,6 +25,9 @@ import type {
   MemoryStatus,
 } from "../../server/memory/memory-files";
 import type { ImportResult } from "../../server/memory/memory-service";
+import type { HookInfo } from "../../server/claude-config/hooks";
+import type { InstructionFile } from "../../server/claude-config/instructions";
+import type { SkillInfo } from "../../server/claude-config/skills";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type {
   ServiceCard,
@@ -130,6 +133,18 @@ export interface WorkspaceUpdateInput {
 
 export type McpServerItem = McpServerView;
 export type McpTestOutcome = McpTestResult;
+
+export type ClaudeConfigItem = { userSettings: boolean; hooksEnabled: boolean };
+export type ClaudeInstructions = InstructionFile;
+export type ClaudeSkillItem = SkillInfo;
+export type ClaudeSkillFile = ClaudeSkillItem & { content: string };
+export type ClaudeHookItem = HookInfo;
+export type ClaudeScope = "user" | "project";
+
+export interface ClaudeConfigPatch {
+  userSettings?: boolean;
+  hooksEnabled?: boolean;
+}
 
 export interface McpList {
   items: McpServerItem[];
@@ -388,6 +403,29 @@ export interface ApiClient {
   /** `null` pada batas berarti hapus batas. */
   putBudget(patch: BudgetPatch): Promise<BudgetConfigItem>;
   getBudgetStatus(sessionId?: string): Promise<BudgetStatusResult>;
+  getClaudeConfig(): Promise<ClaudeConfigItem>;
+  putClaudeConfig(patch: ClaudeConfigPatch): Promise<ClaudeConfigItem>;
+  getInstructions(scope: ClaudeScope, cwd?: string): Promise<ClaudeInstructions>;
+  putInstructions(
+    scope: ClaudeScope,
+    content: string,
+    cwd?: string,
+  ): Promise<ClaudeInstructions>;
+  listSkills(cwd?: string): Promise<ClaudeSkillItem[]>;
+  getSkill(scope: ClaudeScope, name: string, cwd?: string): Promise<ClaudeSkillFile>;
+  putSkill(
+    scope: ClaudeScope,
+    name: string,
+    content: string,
+    cwd?: string,
+  ): Promise<ClaudeSkillFile>;
+  setSkillEnabled(
+    scope: ClaudeScope,
+    name: string,
+    enabled: boolean,
+    cwd?: string,
+  ): Promise<{ scope: ClaudeScope; name: string; enabled: boolean }>;
+  listHooks(cwd?: string): Promise<ClaudeHookItem[]>;
 }
 
 export interface ApiClientOptions {
@@ -716,6 +754,53 @@ function connectionTestFrom(payload: unknown): ConnectionTestView {
   if (typeof model === "string") view.model = model;
   if (typeof error === "string") view.error = error;
   return view;
+}
+
+function claudeConfigFrom(payload: unknown): ClaudeConfigItem {
+  if (!isRecord(payload)) throw invalidResponse();
+  const { userSettings, hooksEnabled } = payload;
+  if (typeof userSettings !== "boolean" || typeof hooksEnabled !== "boolean") {
+    throw invalidResponse();
+  }
+  return { userSettings, hooksEnabled };
+}
+
+function instructionsFrom(payload: unknown): ClaudeInstructions {
+  if (
+    !isRecord(payload) ||
+    typeof payload.path !== "string" ||
+    typeof payload.exists !== "boolean" ||
+    typeof payload.content !== "string"
+  ) {
+    throw invalidResponse();
+  }
+  return payload as unknown as ClaudeInstructions;
+}
+
+function skillListFrom(payload: unknown): ClaudeSkillItem[] {
+  if (!isRecord(payload) || !Array.isArray(payload.skills)) throw invalidResponse();
+  return payload.skills as ClaudeSkillItem[];
+}
+
+function skillFileFrom(payload: unknown): ClaudeSkillFile {
+  if (
+    !isRecord(payload) ||
+    typeof payload.name !== "string" ||
+    typeof payload.content !== "string"
+  ) {
+    throw invalidResponse();
+  }
+  return payload as unknown as ClaudeSkillFile;
+}
+
+function hookListFrom(payload: unknown): ClaudeHookItem[] {
+  if (!isRecord(payload) || !Array.isArray(payload.hooks)) throw invalidResponse();
+  return payload.hooks as ClaudeHookItem[];
+}
+
+/** `cwd` hanya dikirim bila terisi; kunci kosong tidak ikut. */
+function claudeQuery(cwd?: string): string {
+  return queryString([["cwd", cwd === undefined || cwd === "" ? undefined : cwd]]);
 }
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
@@ -1277,6 +1362,78 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         ? ""
         : `?session=${encodeURIComponent(sessionId)}`;
       return budgetStatusFrom(await request("GET", `/api/budget/status${search}`));
+    },
+
+    async getClaudeConfig() {
+      return claudeConfigFrom(await request("GET", "/api/claude/config"));
+    },
+
+    async putClaudeConfig(patch) {
+      const body: ClaudeConfigPatch = {};
+      if (patch.userSettings !== undefined) body.userSettings = patch.userSettings;
+      if (patch.hooksEnabled !== undefined) body.hooksEnabled = patch.hooksEnabled;
+      return claudeConfigFrom(await request("PUT", "/api/claude/config", body));
+    },
+
+    async getInstructions(scope, cwd) {
+      const search = queryString([
+        ["scope", scope],
+        ["cwd", cwd === undefined || cwd === "" ? undefined : cwd],
+      ]);
+      return instructionsFrom(await request("GET", `/api/claude/instructions${search}`));
+    },
+
+    async putInstructions(scope, content, cwd) {
+      const search = queryString([
+        ["scope", scope],
+        ["cwd", cwd === undefined || cwd === "" ? undefined : cwd],
+      ]);
+      return instructionsFrom(
+        await request("PUT", `/api/claude/instructions${search}`, { content }),
+      );
+    },
+
+    async listSkills(cwd) {
+      return skillListFrom(await request("GET", `/api/claude/skills${claudeQuery(cwd)}`));
+    },
+
+    async getSkill(scope, name, cwd) {
+      return skillFileFrom(
+        await request(
+          "GET",
+          `/api/claude/skills/${encodeURIComponent(scope)}/${encodeURIComponent(name)}${claudeQuery(cwd)}`,
+        ),
+      );
+    },
+
+    async putSkill(scope, name, content, cwd) {
+      return skillFileFrom(
+        await request(
+          "PUT",
+          `/api/claude/skills/${encodeURIComponent(scope)}/${encodeURIComponent(name)}${claudeQuery(cwd)}`,
+          { content },
+        ),
+      );
+    },
+
+    async setSkillEnabled(scope, name, enabled, cwd) {
+      const data = await request(
+        "PUT",
+        `/api/claude/skills/${encodeURIComponent(scope)}/${encodeURIComponent(name)}/enabled${claudeQuery(cwd)}`,
+        { enabled },
+      );
+      if (!isRecord(data) || typeof data.name !== "string" || typeof data.enabled !== "boolean") {
+        throw invalidResponse();
+      }
+      return {
+        scope: data.scope === "user" ? "user" : "project",
+        name: data.name,
+        enabled: data.enabled,
+      };
+    },
+
+    async listHooks(cwd) {
+      return hookListFrom(await request("GET", `/api/claude/hooks${claudeQuery(cwd)}`));
     },
   };
 }

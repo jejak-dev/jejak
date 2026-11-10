@@ -4430,3 +4430,204 @@ h2.jk-md-heading {
     margin-left: 0;
   }
 }
+
+/* Halaman Instruksi */
+
+.jk-instruksi {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px 80px;
+}
+
+.jk-instruksi .jk-settings-head {
+  margin-bottom: 18px;
+}
+
+.jk-instruksi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+
+.jk-instruksi-setting {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.jk-instruksi-setting-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.jk-instruksi-switch {
+  flex: none;
+  align-self: center;
+}
+
+.jk-instruksi-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-instruksi-project {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jk-instruksi-select {
+  width: auto;
+  max-width: 260px;
+  min-height: 30px;
+  height: 30px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.jk-instruksi-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+}
+
+.jk-instruksi-scope {
+  margin-bottom: 2px;
+}
+
+.jk-instruksi-pending {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--t2);
+}
+
+.jk-instruksi-warn {
+  color: var(--warn);
+}
+
+.jk-instruksi-path {
+  margin: 0;
+  color: var(--t3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.jk-instruksi-text {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  min-height: 220px;
+}
+
+.jk-instruksi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.jk-instruksi-count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-instruksi-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jk-instruksi-add {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.jk-instruksi-new,
+.jk-instruksi-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.jk-instruksi-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.jk-instruksi-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jk-instruksi-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.jk-instruksi-name {
+  flex: none;
+  font-weight: 600;
+  color: var(--t1);
+}
+
+.jk-instruksi-desc {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+}
+
+.jk-instruksi-event {
+  flex: none;
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.jk-instruksi-cmd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t2);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.jk-instruksi-note {
+  margin-top: 4px;
+}

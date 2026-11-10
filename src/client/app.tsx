@@ -3,6 +3,7 @@ import type { SessionInfo } from "../server/sessions/session-manager";
 import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { AuditPage } from "./components/AuditPage";
+import { InstruksiPage } from "./components/InstruksiPage";
 import { MemoryPage } from "./components/MemoryPage";
 import { McpPage } from "./components/McpPage";
 import { Panel } from "./components/Panel";
@@ -40,6 +41,7 @@ export function App() {
     navigateToMemory,
     navigateToMcp,
     navigateToAudit,
+    navigateToInstruksi,
     navigateToProviders,
     navigateToWorkspaces,
   } = useHashRoute();
@@ -90,6 +92,7 @@ export function App() {
   const showingWorkspaces = routeView === "workspaces";
   const showingMcp = routeView === "mcp";
   const showingAudit = routeView === "audit";
+  const showingInstruksi = routeView === "instruksi";
 
   const waiting = sessions.reduce((total, session) => total + session.pendingPermissions, 0);
 
@@ -104,11 +107,13 @@ export function App() {
             ? "Server MCP · Jejak"
             : showingAudit
               ? "Log audit · Jejak"
-              : selected !== undefined
-                ? `${selected.title} · Jejak`
-                : "Jejak";
+              : showingInstruksi
+                ? "Instruksi · Jejak"
+                : selected !== undefined
+                  ? `${selected.title} · Jejak`
+                  : "Jejak";
     document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
-  }, [selected, showingProviders, showingMemory, showingWorkspaces, showingMcp, showingAudit, waiting]);
+  }, [selected, showingProviders, showingMemory, showingWorkspaces, showingMcp, showingAudit, showingInstruksi, waiting]);
 
   // Pindah halaman menutup laci sidebar (tampilan sempit).
   useEffect(() => {
@@ -273,6 +278,9 @@ export function App() {
         case "open-audit":
           navigateToAudit();
           return;
+        case "open-instruksi":
+          navigateToInstruksi();
+          return;
         case "open-memory":
           navigateToMemory();
           return;
@@ -296,7 +304,7 @@ export function App() {
           return;
       }
     },
-    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, openGitPanel, openSecretsTab, togglePanel],
+    [navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, openGitPanel, openSecretsTab, togglePanel],
   );
 
   const commands = useMemo(
@@ -413,6 +421,7 @@ export function App() {
     showingWorkspaces ||
     showingMcp ||
     showingAudit ||
+    showingInstruksi ||
     selected !== undefined
       ? "jk-main"
       : "jk-main jk-main-home";
@@ -423,7 +432,7 @@ export function App() {
         info={info}
         sessions={sessions}
         selectedId={
-          showingProviders || showingMemory || showingWorkspaces || showingMcp || showingAudit
+          showingProviders || showingMemory || showingWorkspaces || showingMcp || showingAudit || showingInstruksi
             ? undefined
             : selectedId
         }
@@ -436,6 +445,7 @@ export function App() {
         workspacesActive={showingWorkspaces}
         mcpActive={showingMcp}
         auditActive={showingAudit}
+        instruksiActive={showingInstruksi}
         memoryProposed={memoryProposed}
         onRename={onRenameSession}
         onArchive={onArchiveSession}
@@ -480,6 +490,13 @@ export function App() {
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
               <AuditPage api={api} sessions={sessions} />
+            </div>
+          </>
+        ) : showingInstruksi ? (
+          <>
+            <Topbar onMenu={openDrawer} />
+            <div class="jk-page">
+              <InstruksiPage api={api} sessions={sessions} defaultCwd={info?.cwd} />
             </div>
           </>
         ) : selected !== undefined ? (

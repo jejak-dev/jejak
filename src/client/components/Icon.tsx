@@ -22,6 +22,7 @@ const PATHS = {
   audit: "M8 1.8l5.5 2v4.1c0 3.1-2.3 5.5-5.5 6.3-3.2-.8-5.5-3.2-5.5-6.3V3.8zM5.5 5.2h5M5.5 7.6h5M5.5 10h3",
   shield: "M8 1.8l5.5 2v4.1c0 3.1-2.3 5.5-5.5 6.3-3.2-.8-5.5-3.2-5.5-6.3V3.8z",
   alert: "M8 2.2l6 10.6H2zM8 6v3.2M8 11.2v.2",
+  doc: "M4 1.8h5l3 3v9.4H4zM9 1.8v3h3M5.8 7.5h4.4M5.8 9.7h4.4M5.8 11.9h2.6",
 } as const;
 
 export type IconName = keyof typeof PATHS;
