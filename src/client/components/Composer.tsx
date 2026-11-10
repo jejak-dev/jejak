@@ -95,6 +95,8 @@ export function Composer({
   const [noSandbox, setNoSandbox] = useState(false);
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [nativePicker, setNativePicker] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [promptError, setPromptError] = useState<string | undefined>(undefined);
   const [cwdError, setCwdError] = useState<string | undefined>(undefined);
   const [apiError, setApiError] = useState<string | undefined>(undefined);
@@ -104,6 +106,35 @@ export function Composer({
 
   const profiles = useMemo(() => registry?.profiles ?? [], [registry]);
   const activeProfileId = registry?.activeProfileId;
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .nativePickerAvailable()
+      .then((available) => {
+        if (!cancelled) setNativePicker(available);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const pickNative = async (): Promise<void> => {
+    if (picking) return;
+    setPicking(true);
+    try {
+      const start = cwd.trim() === "" ? undefined : cwd.trim();
+      const path = await api.pickFolderNative(start);
+      if (path !== undefined) setCwd(path);
+    } catch {
+      // Dialog native gagal: pakai penelusur bawaan.
+      setNativePicker(false);
+      setPickerOpen(true);
+    } finally {
+      setPicking(false);
+    }
+  };
 
   useEffect(() => {
     const stored = readStorage(STORAGE_PROVIDER);
@@ -398,10 +429,13 @@ export function Composer({
                 type="button"
                 class="jk-icon-btn"
                 aria-label="Browse folder"
-                title="Telusuri…"
+                title={nativePicker ? "Pilih folder (Finder)" : "Browse…"}
                 data-folder-opener
-                disabled={busy}
-                onClick={() => setPickerOpen((open) => !open)}
+                disabled={busy || picking}
+                onClick={() => {
+                  if (nativePicker) void pickNative();
+                  else setPickerOpen((open) => !open);
+                }}
               >
                 <Icon name="folder" />
               </button>
