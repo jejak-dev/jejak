@@ -91,6 +91,15 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
                       { label: "Rilis 3", description: "Baca roadmap dan usulkan irisan." },
                     ],
                   },
+                  {
+                    question: "Fokus pengujian?",
+                    header: "Tes",
+                    multiSelect: true,
+                    options: [
+                      { label: "Unit", description: "Tes kecil per modul." },
+                      { label: "Load", description: "Uji beban dan latensi." },
+                    ],
+                  },
                 ],
               },
             },
