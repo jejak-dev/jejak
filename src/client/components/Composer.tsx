@@ -16,6 +16,7 @@ import { secretWarning } from "../lib/secret-warning";
 import { FolderPicker } from "./FolderPicker";
 import { appendAttachments } from "../lib/attachments";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
+import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { useAttachments } from "./useAttachments";
 
@@ -478,45 +479,40 @@ export function Composer({
             </>
           )}
 
-          <label class="jk-chip">
-            <Icon name="cube" />
-            <span>{providerLabel}</span>
-            <select
-              id="jk-provider"
-              class="jk-chip-select"
-              aria-label="Provider"
-              value={profileId}
-              onChange={(event) => setProfileId((event.currentTarget as HTMLSelectElement).value)}
-              disabled={busy || profiles.length === 0}
-            >
-              {profiles.length === 0 && <option value="">Belum ada profil</option>}
-              {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
-                  {profile.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Dropdown
+            icon={<Icon name="cube" />}
+            label={providerLabel}
+            ariaLabel="Provider"
+            placement="down"
+            align="start"
+            disabled={busy || profiles.length === 0}
+            sections={[
+              {
+                options: profiles.map((profile) => ({ value: profile.id, label: profile.name })),
+                value: profileId,
+                onSelect: setProfileId,
+              },
+            ]}
+          />
 
           {hasModelList ? (
-            <label class="jk-chip">
-              <span>{modelLabel}</span>
-              <select
-                id="jk-model"
-                class="jk-chip-select"
-                aria-label="Model"
-                value={model}
-                onChange={(event) => setModel((event.currentTarget as HTMLSelectElement).value)}
-                disabled={busy}
-              >
-                <option value="">Default model</option>
-                {models.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.label ?? entry.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <Dropdown
+              label={modelLabel ?? "Default model"}
+              ariaLabel="Model"
+              placement="down"
+              align="start"
+              disabled={busy}
+              sections={[
+                {
+                  options: [
+                    { value: "", label: "Default model" },
+                    ...models.map((entry) => ({ value: entry.id, label: entry.label ?? entry.id })),
+                  ],
+                  value: model,
+                  onSelect: setModel,
+                },
+              ]}
+            />
           ) : (
             <label class="jk-chip">
               <span class="jk-visually-hidden">Model</span>
@@ -533,27 +529,28 @@ export function Composer({
             </label>
           )}
 
-          <label class="jk-chip">
-            <Icon name="eye" />
-            <span>{modeLabel}</span>
-            <select
-              id="jk-mode"
-              class="jk-chip-select"
-              aria-label="Mode izin"
-              value={briefMode ? "plan" : permissionMode}
-              onChange={(event) => {
-                setPermissionMode((event.currentTarget as HTMLSelectElement).value as PermissionMode);
-                setBypassAcknowledged(false);
-              }}
-              disabled={busy || briefMode}
-            >
-              {PERMISSION_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Dropdown
+            icon={<Icon name="eye" />}
+            label={modeLabel}
+            ariaLabel="Mode izin"
+            placement="down"
+            align="start"
+            disabled={busy || briefMode}
+            sections={[
+              {
+                options: PERMISSION_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                  danger: option.value === "bypassPermissions",
+                })),
+                value: briefMode ? "plan" : permissionMode,
+                onSelect: (value) => {
+                  setPermissionMode(value as PermissionMode);
+                  setBypassAcknowledged(false);
+                },
+              },
+            ]}
+          />
 
       </div>
 

@@ -1,3 +1,4 @@
+import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { Icon } from "./Icon";
 
@@ -26,10 +27,26 @@ export interface DropdownProps {
   ariaLabel: string;
   sections: DropdownSection[];
   disabled?: boolean;
+  /** Ikon kecil di depan label chip. */
+  icon?: ComponentChildren;
+  /** Arah buka menu; bawaan ke atas (bar balasan di dasar halaman). */
+  placement?: "up" | "down";
+  /** Sisi tempat menu menempel pada chip; bawaan kanan. */
+  align?: "start" | "end";
 }
 
 /** Menu pilihan ala Claude: chip yang membuka daftar dengan centang; tutup saat klik di luar atau Esc. */
-export function Dropdown({ label, detail, title, ariaLabel, sections, disabled }: DropdownProps) {
+export function Dropdown({
+  label,
+  detail,
+  title,
+  ariaLabel,
+  sections,
+  disabled,
+  icon,
+  placement = "up",
+  align = "end",
+}: DropdownProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -61,11 +78,12 @@ export function Dropdown({ label, detail, title, ariaLabel, sections, disabled }
         disabled={disabled}
         onClick={() => setOpen((current) => !current)}
       >
+        {icon}
         <span>{label}</span>
         {detail !== undefined && detail !== "" && <span class="jk-dd-detail">{detail}</span>}
       </button>
       {open && (
-        <div class="jk-dd-menu" role="menu" aria-label={ariaLabel}>
+        <div class={`jk-dd-menu jk-dd-${placement} jk-dd-${align}`} role="menu" aria-label={ariaLabel}>
           {sections.map((section, index) => (
             <div class="jk-dd-section" key={section.title ?? index}>
               {section.title !== undefined && <div class="jk-dd-title">{section.title}</div>}

@@ -5457,8 +5457,6 @@ h2.jk-md-heading {
 
 .jk-dd-menu {
   position: absolute;
-  right: 0;
-  bottom: 34px;
   z-index: 9;
   min-width: 230px;
   max-width: 320px;
@@ -5469,6 +5467,22 @@ h2.jk-md-heading {
   box-shadow: var(--shadow);
   font-size: 13px;
   text-align: left;
+}
+
+.jk-dd-up {
+  bottom: 34px;
+}
+
+.jk-dd-down {
+  top: 34px;
+}
+
+.jk-dd-end {
+  right: 0;
+}
+
+.jk-dd-start {
+  left: 0;
 }
 
 .jk-dd-section + .jk-dd-section {
