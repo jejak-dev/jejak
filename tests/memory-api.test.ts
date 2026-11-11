@@ -538,7 +538,9 @@ describe("jembatan memory end-to-end (mock runner)", () => {
     const finished = await waitDone(app, created.session.id);
     expect(finished.status).toBe("selesai");
 
-    const proposed = (await (await req(app, "GET", "/api/memory?status=proposed")).json()) as ListBody;
+    const all = (await (await req(app, "GET", "/api/memory?status=proposed")).json()) as ListBody;
+    // Ringkasan otomatis akhir sesi bisa ikut muncul (asinkron); yang diuji di sini usulan agent.
+    const proposed = { ...all, items: all.items.filter((item) => !item.title.startsWith("Ringkasan sesi: ")) };
     expect(proposed.items.map((item) => item.title)).toEqual(["Usulan demo"]);
 
     const accepted = await req(app, "POST", `/api/memory/${proposed.items[0]!.id}/accept`);

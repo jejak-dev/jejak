@@ -16,6 +16,8 @@ import { localGuard } from "./guard";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
+import { projectKeyFor } from "./memory/memory-tools";
+import { buildSessionSummary } from "./memory/session-summary";
 import type { McpServerService } from "./mcp/mcp-service";
 import { fallbackSelection, resolveProvider as resolveRegistryProvider } from "./provider";
 import { jejakHome, loadRegistry, providersPath } from "./provider-store";
@@ -52,7 +54,11 @@ import { defaultQuestionStore, type QuestionStore } from "./questions/question-s
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
-import { SessionManager, type WorkspaceResolver } from "./sessions/session-manager";
+import {
+  SessionManager,
+  type SessionManagerOptions,
+  type WorkspaceResolver,
+} from "./sessions/session-manager";
 import { defaultSessionStore, type SessionStore } from "./sessions/session-store";
 import { WorktreeService } from "./git/worktree-service";
 import { defaultSandboxStore, type SandboxStore } from "./sandbox/sandbox-config";
@@ -115,6 +121,20 @@ export interface CreateAppOptions {
   terminal?: TerminalManager;
   /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
   home?: string;
+}
+
+/** Ringkasan otomatis akhir sesi menjadi usulan memory proyek (lapis episodik). */
+function autoSummary(memory: MemoryService): NonNullable<SessionManagerOptions["onTurnEnd"]> {
+  return async ({ sessionId, title, cwd, events }) => {
+    const summary = buildSessionSummary(title, events);
+    if (summary === undefined) return;
+    await memory.upsertSessionSummary({
+      sessionId,
+      projectKey: await projectKeyFor(cwd),
+      title: summary.title,
+      body: summary.body,
+    });
+  };
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -192,6 +212,9 @@ export function createApp(options: CreateAppOptions = {}) {
       },
       store: options.sessionStore,
       memoryBridge: memoryBridge?.bridge,
+      ...(options.memory === undefined || env.JEJAK_AUTO_SUMMARY?.trim() === "0"
+        ? {}
+        : { onTurnEnd: autoSummary(options.memory) }),
       checkpoints,
       workspaces: workspaceResolver,
       extraDirectories: [attachments.root],

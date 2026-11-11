@@ -2112,3 +2112,40 @@ describe("SessionManager eviksi sesi terarsip", () => {
     expect(mgr.get(second.id)).toBeDefined();
   });
 });
+
+describe("SessionManager.onTurnEnd", () => {
+  test("dipanggil setelah giliran sukses dengan event sesi; galat hook ditelan", async () => {
+    const calls: Array<{ sessionId: string; types: string[] }> = [];
+    const mgr = manager({
+      runner: scriptedRunner([
+        { type: "session", sessionId: "sdk-1" },
+        { type: "tool_call", id: "t1", name: "Bash", input: {} },
+        { type: "result", ok: true },
+      ]),
+      onTurnEnd: async ({ sessionId, events }) => {
+        calls.push({ sessionId, types: events.map((event) => event.type) });
+        throw new Error("hook rusak");
+      },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    await Promise.resolve();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.sessionId).toBe(info.id);
+    expect(calls[0]?.types).toContain("tool_call");
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+  });
+
+  test("tidak dipanggil saat giliran gagal", async () => {
+    let called = false;
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: false, error: "gagal" }]),
+      onTurnEnd: async () => {
+        called = true;
+      },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    expect(called).toBe(false);
+  });
+});

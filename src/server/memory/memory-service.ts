@@ -17,6 +17,7 @@ import {
 } from "./memory-files";
 import type { MemoryCounts, MemoryListQuery, MemoryProblem } from "./memory-index";
 import type { MemoryStore } from "./memory-store";
+import { SESSION_SUMMARY_PREFIX } from "./session-summary";
 
 export const MEMORY_FROM_CODE_CONFIDENCE: MemoryConfidence = "from_code";
 export const MEMORY_ACTIVE_LIMIT = 500;
@@ -278,6 +279,39 @@ export class MemoryService {
     if (proposed >= MEMORY_PROPOSED_LIMIT) {
       throw conflict(`Batas ${MEMORY_PROPOSED_LIMIT} usulan terbuka sudah tercapai.`);
     }
+  }
+
+  /**
+   * Ringkasan otomatis akhir sesi (lapis episodik): satu usulan per sesi, diperbarui
+   * tiap giliran selama masih `proposed`. Bila sudah diterima/ditolak/diarsip, dibiarkan.
+   */
+  async upsertSessionSummary(input: {
+    sessionId: string;
+    projectKey: string;
+    title: string;
+    body: string;
+  }): Promise<Memory | undefined> {
+    const existing = (
+      await this.store.list({ layer: "project", project: input.projectKey, limit: MEMORY_MAX_LIMIT })
+    ).find(
+      (memory) =>
+        memory.origin.kind === "session" &&
+        memory.origin.sessionId === input.sessionId &&
+        memory.title.startsWith(SESSION_SUMMARY_PREFIX),
+    );
+    if (existing === undefined) {
+      return this.propose({
+        layer: "project",
+        projectKey: input.projectKey,
+        title: input.title,
+        body: input.body,
+        sessionId: input.sessionId,
+      });
+    }
+    if (existing.status !== "proposed") return undefined;
+    const title = this.normalizeText(input.title, "title", MEMORY_TITLE_MAX);
+    const body = this.normalizeText(input.body, "body", MEMORY_BODY_MAX);
+    return this.store.update({ ...existing, title, body, updatedAt: this.clock() });
   }
 
   /**

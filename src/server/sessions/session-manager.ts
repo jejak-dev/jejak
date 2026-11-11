@@ -154,6 +154,16 @@ export interface SessionManagerOptions {
   permissionTimeoutMs?: number;
   store?: SessionStore;
   memoryBridge?: MemoryBridge;
+  /**
+   * Dipanggil setelah giliran selesai dengan sukses (mis. ringkasan memory otomatis).
+   * Galat ditelan; tidak pernah menahan sesi.
+   */
+  onTurnEnd?: (input: {
+    sessionId: string;
+    title: string;
+    cwd: string;
+    events: AgentEvent[];
+  }) => Promise<void>;
   checkpoints?: SessionManagerCheckpoints;
   workspaces?: WorkspaceResolver;
   /** Server MCP eksternal; dibaca ulang tiap giliran. */
@@ -424,6 +434,7 @@ export class SessionManager {
   private readonly permissionTimeoutMs: number;
   private readonly store: SessionStore | undefined;
   private readonly memoryBridge: MemoryBridge | undefined;
+  private readonly onTurnEnd: SessionManagerOptions["onTurnEnd"];
   private readonly checkpoints: SessionManagerCheckpoints | undefined;
   private readonly workspaces: WorkspaceResolver | undefined;
   private readonly mcpServers: McpServerResolver | undefined;
@@ -465,6 +476,7 @@ export class SessionManager {
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULTS.permissionTimeoutMs;
     this.store = options.store;
     this.memoryBridge = options.memoryBridge;
+    this.onTurnEnd = options.onTurnEnd;
     this.checkpoints = options.checkpoints;
     this.workspaces = options.workspaces;
     this.mcpServers = options.mcpServers;
@@ -1840,6 +1852,7 @@ export class SessionManager {
       }
       record.settle();
       this.notify(record);
+      this.reportTurnEnd(record);
 
       if (record.info.status === "dibatalkan" || record.info.status === "gagal") {
         this.clearQueue(record);
@@ -1849,6 +1862,19 @@ export class SessionManager {
         this.startTurn(record, next, true);
       }
     }
+  }
+
+  private reportTurnEnd(record: SessionRecord): void {
+    const hook = this.onTurnEnd;
+    if (hook === undefined || record.info.status !== "selesai") return;
+    void Promise.resolve(
+      hook({
+        sessionId: record.info.id,
+        title: record.info.title,
+        cwd: this.cwdForMemory(record),
+        events: record.buffer.map((item) => item.event),
+      }),
+    ).catch(() => undefined);
   }
 
   /** Jalur lama: event diteruskan apa adanya tanpa buffer/fallback. */
