@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRunner } from "../src/server/agent";
 import type { ProviderSelection, ResolvedProvider } from "../src/server/provider";
+import { FileSandboxStore } from "../src/server/sandbox/sandbox-config";
 import {
   SessionError,
   SessionManager,
@@ -2181,5 +2182,33 @@ describe("SessionManager.setProvider", () => {
     await mgr.send(info.id, "lanjut");
     await mgr.done(info.id);
     expect(used.at(-1)).toBe("kedua/m2");
+  });
+});
+
+describe("SessionManager.setSandbox", () => {
+  test("mengganti mode sandbox dan tersimpan, nilai tak valid ditolak", async () => {
+    const mgr = manager({
+      runner: scriptedRunner([{ type: "result", ok: true }]),
+      sandbox: { store: new FileSandboxStore(":memory:") },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(mgr.setSandbox(info.id, "mati").sandbox).toBe("mati");
+    expect(mgr.get(info.id)?.sandbox).toBe("mati");
+    expect(mgr.setSandbox(info.id, "standar").sandbox).toBe("standar");
+    expect(mgr.get(info.id)?.sandbox).toBe("standar");
+
+    expect(() => mgr.setSandbox(info.id, "nyala")).toThrow(SessionError);
+    expect(() => mgr.setSandbox(info.id, 3)).toThrow(SessionError);
+    expect(mgr.get(info.id)?.sandbox).toBe("standar");
+  });
+
+  test("manager tanpa sandbox store menolak", async () => {
+    const mgr = manager({ runner: scriptedRunner([{ type: "result", ok: true }]) });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(() => mgr.setSandbox(info.id, "mati")).toThrow(SessionError);
   });
 });

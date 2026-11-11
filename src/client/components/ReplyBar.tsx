@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type { RegistryView } from "../lib/registry-view";
-import { ApiError, type ApiClient } from "../lib/api";
+import { ApiError, type ApiClient, type SandboxMode, type SandboxState } from "../lib/api";
 import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
 import { BYPASS_WARNING } from "../lib/permission-mode";
@@ -158,6 +158,37 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
     }
   };
 
+  const [sandboxState, setSandboxState] = useState<SandboxState | undefined>(undefined);
+
+  // Status sandbox hanya untuk menampilkan pilihan; galat/503 berarti pilihan disembunyikan.
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const next = await api.getSandbox();
+        if (active) setSandboxState(next);
+      } catch {
+        // Pilihan sandbox tidak tampil; sesi memakai pengaturan server.
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [api]);
+
+  const sandboxMode: SandboxMode | undefined =
+    sandboxState === undefined ? undefined : (session.sandbox ?? sandboxState.config.mode);
+
+  const changeSandbox = async (mode: SandboxMode): Promise<void> => {
+    setError(undefined);
+    try {
+      await api.setSessionSandbox(sessionId, mode);
+      void refresh();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "gagal mengganti sandbox");
+    }
+  };
+
   const modelSections: DropdownSection[] = [];
   if (modelList.length > 1) {
     modelSections.push({
@@ -281,6 +312,32 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
               },
             ]}
           />
+          {sandboxMode !== undefined && (
+            <Dropdown
+              label={sandboxMode === "mati" ? "Tanpa sandbox" : "Sandbox"}
+              ariaLabel="Sandbox sesi"
+              title={running ? "Berlaku mulai balasan berikutnya" : "Sandbox sesi"}
+              sections={[
+                {
+                  options: [
+                    {
+                      value: "standar",
+                      label: "Standar",
+                      hint: "Bash dibatasi berkas dan jaringan",
+                    },
+                    {
+                      value: "mati",
+                      label: "Mati",
+                      danger: true,
+                      hint: "Bash tanpa batas; dicatat di Audit log",
+                    },
+                  ],
+                  value: sandboxMode,
+                  onSelect: (value) => void changeSandbox(value as SandboxMode),
+                },
+              ]}
+            />
+          )}
           {context !== undefined && (
             <details ref={ctxRef} class={`jk-ctx-pop jk-ctx-${context.level}`}>
               <summary class="jk-ctx-ring" title={contextTitle} aria-label={contextTitle}>

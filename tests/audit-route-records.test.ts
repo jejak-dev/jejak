@@ -13,6 +13,7 @@ import { FileMemoryStore } from "../src/server/memory/memory-store";
 import { McpServerService } from "../src/server/mcp/mcp-service";
 import { resolveProvider as resolveRegistryProvider } from "../src/server/provider";
 import { loadRegistry } from "../src/server/provider-store";
+import { FileSandboxStore } from "../src/server/sandbox/sandbox-config";
 import { SessionManager } from "../src/server/sessions/session-manager";
 import { WorkspaceService } from "../src/server/workspaces/workspace-service";
 
@@ -70,12 +71,13 @@ function auditStore(): SqliteAuditStore {
   return store;
 }
 
-function manager(): SessionManager {
+function manager(extra: Partial<ConstructorParameters<typeof SessionManager>[0]> = {}): SessionManager {
   return new SessionManager({
     runner: createMockRunner(),
     resolveProvider: async (selection) =>
       resolveRegistryProvider(await loadRegistry(providersFile, { MOCK: "true" }), selection),
     worktrees: new WorktreeService({ root: join(home, "worktrees") }),
+    ...extra,
   });
 }
 
@@ -514,6 +516,23 @@ describe("audit rute pengaturan", () => {
     await req(app, "PATCH", `/api/sessions/${id}`, { permissionMode: "plan" });
     expect((await req(app, "PATCH", `/api/sessions/${id}`, { permissionMode: 5 })).status).toBe(400);
     expect(mgr.get(id)?.permissionMode).toBe("plan");
+  });
+
+  test("mode sandbox sesi diganti lewat PATCH dan dicatat", async () => {
+    const store = auditStore();
+    const mgr = manager({ sandbox: { store: new FileSandboxStore(":memory:") } });
+    const app = makeApp(mgr, { audit: store });
+    const id = await idleSession(mgr, dir);
+
+    const ok = await req(app, "PATCH", `/api/sessions/${id}`, { sandbox: "mati" });
+    expect(ok.status).toBe(200);
+    expect(mgr.get(id)?.sandbox).toBe("mati");
+    const entry = only(store, "pengaturan", "Sandbox sesi dimatikan");
+    expect(entry.sessionId).toBe(id);
+    expect(entry.meta).toEqual({ aksi: "sandbox-mati" });
+
+    expect((await req(app, "PATCH", `/api/sessions/${id}`, { sandbox: "x" })).status).toBe(400);
+    expect(mgr.get(id)?.sandbox).toBe("mati");
   });
 
   test("memory ditambah, diubah, dan dihapus tanpa isi", async () => {

@@ -363,6 +363,7 @@ export interface ApiClient {
     confirmBypass?: boolean,
   ): Promise<SessionInfo>;
   setSessionProvider(id: string, selection: { profileId?: string; model?: string }): Promise<SessionInfo>;
+  setSessionSandbox(id: string, mode: SandboxMode): Promise<SessionInfo>;
   deleteSession(id: string): Promise<void>;
   createSession(input: {
     prompt: string;
@@ -1060,6 +1061,12 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     async setSessionProvider(id, selection) {
       return sessionFrom(
         await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, selection),
+      );
+    },
+
+    async setSessionSandbox(id, mode) {
+      return sessionFrom(
+        await request("PATCH", `/api/sessions/${encodeURIComponent(id)}`, { sandbox: mode }),
       );
     },
 

@@ -1111,6 +1111,24 @@ export class SessionManager {
     return { ...record.info };
   }
 
+  /**
+   * Ganti mode sandbox Bash sesi; berlaku mulai giliran berikutnya (giliran yang
+   * sedang berjalan tetap memakai mode lamanya).
+   */
+  setSandbox(id: string, mode: unknown): SessionInfo {
+    const record = this.requireRecord(id);
+    if (this.sandboxStore === undefined) {
+      throw new SessionError("Sandbox tidak tersedia di server ini.", "tidak-valid");
+    }
+    if (mode !== "standar" && mode !== "mati") {
+      throw new SessionError('Field sandbox hanya "standar" atau "mati".', "tidak-valid");
+    }
+    record.info.sandbox = mode;
+    this.persistSession(record);
+    this.notify(record);
+    return { ...record.info };
+  }
+
   /** Arsipkan/batalkan arsip; sesi berjalan harus dihentikan dulu. */
   setArchived(id: string, archived: unknown): SessionInfo {
     const record = this.requireRecord(id);

@@ -133,3 +133,19 @@ describe("createSession sandbox", () => {
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ prompt: "hai" });
   });
 });
+
+describe("setSessionSandbox", () => {
+  test("PATCH ke sesi dengan body sandbox dan content-type json", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ session: { id: "s1", sandbox: "mati" } }));
+    const api = createApiClient({ fetch });
+
+    const info = await api.setSessionSandbox("s1", "mati");
+    expect(info.sandbox).toBe("mati");
+    expect(calls[0]?.url).toBe("/api/sessions/s1");
+    expect(calls[0]?.init.method).toBe("PATCH");
+    expect(
+      (calls[0]?.init.headers as Record<string, string> | undefined)?.["content-type"],
+    ).toBe("application/json");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ sandbox: "mati" });
+  });
+});

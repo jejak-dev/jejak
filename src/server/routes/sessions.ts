@@ -129,6 +129,7 @@ function parseUpdateBody(body: unknown): {
   confirmBypass?: boolean;
   profileId?: string;
   model?: string;
+  sandbox?: "standar" | "mati";
 } {
   const parsed = parseJsonBody(body);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
@@ -142,7 +143,8 @@ function parseUpdateBody(body: unknown): {
       key !== "permissionMode" &&
       key !== "confirmBypass" &&
       key !== "profileId" &&
-      key !== "model"
+      key !== "model" &&
+      key !== "sandbox"
     ) {
       throw invalid(`Field ${key} tidak dikenal.`);
     }
@@ -154,6 +156,7 @@ function parseUpdateBody(body: unknown): {
     confirmBypass?: boolean;
     profileId?: string;
     model?: string;
+    sandbox?: "standar" | "mati";
   } = {};
   for (const key of ["profileId", "model"] as const) {
     const value = record[key];
@@ -187,14 +190,23 @@ function parseUpdateBody(body: unknown): {
     }
     update.confirmBypass = record.confirmBypass;
   }
+  if (record.sandbox !== undefined) {
+    if (record.sandbox !== "standar" && record.sandbox !== "mati") {
+      throw invalid('Field sandbox hanya "standar" atau "mati".');
+    }
+    update.sandbox = record.sandbox;
+  }
   if (
     update.title === undefined &&
     update.archived === undefined &&
     update.permissionMode === undefined &&
     update.profileId === undefined &&
-    update.model === undefined
+    update.model === undefined &&
+    update.sandbox === undefined
   ) {
-    throw invalid("Minimal satu field (title, archived, permissionMode, profileId, atau model) harus diisi.");
+    throw invalid(
+      "Minimal satu field (title, archived, permissionMode, profileId, model, atau sandbox) harus diisi.",
+    );
   }
   return update;
 }
@@ -367,6 +379,15 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
               sessionId: params.id,
               summary: "Provider/model sesi diganti",
               meta: { aksi: "ganti-provider", profil: session.profileId, model: session.model ?? "" },
+            });
+          }
+          if (update.sandbox !== undefined) {
+            session = manager.setSandbox(params.id, update.sandbox);
+            recordAudit(audit, {
+              kind: "pengaturan",
+              sessionId: params.id,
+              summary: update.sandbox === "mati" ? "Sandbox sesi dimatikan" : "Sandbox sesi dinyalakan",
+              meta: { aksi: update.sandbox === "mati" ? "sandbox-mati" : "sandbox-standar" },
             });
           }
           return { session };
