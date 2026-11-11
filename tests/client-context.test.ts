@@ -87,3 +87,11 @@ describe("setelah compact", () => {
     expect(reduceContext(before, { type: "context", tokens: 1200 })?.tokens).toBe(1200);
   });
 });
+
+describe("jendela dari event context", () => {
+  test("event context membawa jendela dan menggantikan angka lama", () => {
+    const old = reduceContext(undefined, { type: "result", contextTokens: 27000, contextWindow: 200000 });
+    const next = reduceContext(old, { type: "context", tokens: 28000, window: 1000000 });
+    expect(next).toEqual({ tokens: 28000, window: 1000000 });
+  });
+});

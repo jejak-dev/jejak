@@ -16,14 +16,14 @@ export interface ContextState {
 /** Perbarui keadaan konteks dari satu event (`context` di tengah giliran, `result` di akhir). */
 export function reduceContext(
   previous: ContextState | undefined,
-  event: { type: string; tokens?: number; contextTokens?: number; contextWindow?: number },
+  event: { type: string; tokens?: number; window?: number; contextTokens?: number; contextWindow?: number },
 ): ContextState | undefined {
   let tokens: number | undefined;
   // 0 dari event context = konteks baru dipadatkan dan ukurannya belum diketahui.
   if (event.type === "context" && event.tokens === 0) return undefined;
   if (event.type === "context") tokens = event.tokens;
   else if (event.type === "result") tokens = event.contextTokens;
-  const window = event.type === "result" ? event.contextWindow : undefined;
+  const window = event.type === "result" ? event.contextWindow : event.type === "context" ? event.window : undefined;
   if (tokens === undefined && window === undefined) return previous;
   const next: ContextState = { tokens: tokens ?? previous?.tokens ?? 0 };
   const keptWindow = window ?? previous?.window;

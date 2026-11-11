@@ -412,7 +412,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
             }
             yield event;
           }
-          if (callContext !== undefined) yield { type: "context", tokens: callContext };
+          if (callContext !== undefined) {
+            const window = input.provider.contextWindow;
+            yield window === undefined
+              ? { type: "context", tokens: callContext }
+              : { type: "context", tokens: callContext, window };
+          }
         }
 
         if (!sawResult) {

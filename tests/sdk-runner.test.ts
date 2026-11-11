@@ -980,6 +980,31 @@ test("result memuat contextTokens dari panggilan terakhir dan contextWindow dari
   expect(events.indexOf(contexts[1]!)).toBeLessThan(events.indexOf(result!));
 });
 
+test("jendela konteks dari profil menggantikan tebakan SDK, di event context dan result", async () => {
+  const sdk = fakeSdk({
+    messages: [
+      INIT,
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: { content: [{ type: "text", text: "halo" }], usage: { input_tokens: 10, output_tokens: 5 } },
+      },
+      { ...RESULT_OK, modelUsage: { "model-profil": { contextWindow: 200000 } } },
+    ],
+  });
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ provider: { ...PROVIDER, contextWindow: 1_000_000 } }),
+    ),
+  );
+  expect(events.find((event) => event.type === "context")).toEqual({
+    type: "context",
+    tokens: 15,
+    window: 1_000_000,
+  });
+  expect(events.find((event) => event.type === "result")).toMatchObject({ contextWindow: 1_000_000 });
+});
+
 test("extraDirectories masuk additionalDirectories bersama folder workspace", async () => {
   let received: Record<string, unknown> | undefined;
   const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
