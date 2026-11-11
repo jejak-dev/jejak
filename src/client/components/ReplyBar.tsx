@@ -40,8 +40,28 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
   const [error, setError] = useState<string | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const att = useAttachments(api);
+  const ctxRef = useRef<HTMLDetailsElement | null>(null);
 
   const sessionId = session.id;
+
+  // Popover konteks menutup saat klik di luar atau tekan Esc.
+  useEffect(() => {
+    const close = (event: Event) => {
+      const pop = ctxRef.current;
+      if (pop === null || !pop.open) return;
+      if (event instanceof KeyboardEvent) {
+        if (event.key === "Escape") pop.open = false;
+      } else if (!pop.contains(event.target as Node)) {
+        pop.open = false;
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, []);
 
   useEffect(() => {
     const element = textareaRef.current;
@@ -217,7 +237,7 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
             </select>
           </label>
           {context !== undefined && (
-            <details class={`jk-ctx-pop jk-ctx-${context.level}`}>
+            <details ref={ctxRef} class={`jk-ctx-pop jk-ctx-${context.level}`}>
               <summary class="jk-ctx-ring" title={contextTitle} aria-label={contextTitle}>
                 <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">
                   <circle class="jk-ring-bg" cx="10" cy="10" r="7.5" />
