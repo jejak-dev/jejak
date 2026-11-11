@@ -406,7 +406,8 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
             if (event.type === "result") {
               sawResult = true;
               if (contextTokens !== undefined) event.contextTokens = contextTokens;
-              const window = contextWindowOf(message);
+              // Jendela dari profil menang atas tebakan SDK (SDK memakai 200 rb untuk model non-Claude).
+              const window = input.provider.contextWindow ?? contextWindowOf(message);
               if (window !== undefined) event.contextWindow = window;
             }
             yield event;

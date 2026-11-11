@@ -12,6 +12,8 @@ export interface ProfileDraft {
   modelsText: string;
   modelLabels: Record<string, string>;
   modelPrices: Record<string, { input: string; output: string; cacheRead: string; cacheWrite: string }>;
+  /** Jendela konteks per model (teks angka, kosong = otomatis). */
+  modelWindows: Record<string, string>;
   defaultModel: string;
   lightModel: string;
   /** ID profil lain untuk satu kali fallback; string kosong berarti tanpa cadangan. */
@@ -56,7 +58,9 @@ function hasEmptyModelLine(modelsText: string): boolean {
 }
 
 function copyProfile(profile: ProfileDraft): ProfileDraft {
-  return { ...profile, modelLabels: { ...profile.modelLabels }, modelPrices: { ...profile.modelPrices } };
+  return { ...profile, modelLabels: { ...profile.modelLabels }, modelPrices: { ...profile.modelPrices },
+    modelWindows: { ...profile.modelWindows },
+  };
 }
 
 interface ModelPrice {
@@ -98,8 +102,10 @@ export function toDraft(view: RegistryView): RegistryDraft {
       profile.apiKeyEnv !== undefined ? "env" : profile.hasKey ? "keep" : "none";
     const modelLabels: Record<string, string> = {};
     const modelPrices: Record<string, { input: string; output: string; cacheRead: string; cacheWrite: string }> = {};
+    const modelWindows: Record<string, string> = {};
     for (const model of profile.models) {
       if (model.label !== undefined) modelLabels[model.id] = model.label;
+      if (model.contextWindow !== undefined) modelWindows[model.id] = String(model.contextWindow);
       if (model.price !== undefined) {
         modelPrices[model.id] = {
           input: String(model.price.input),
@@ -119,6 +125,7 @@ export function toDraft(view: RegistryView): RegistryDraft {
       modelsText: profile.models.map((model) => model.id).join("\n"),
       modelLabels,
       modelPrices,
+      modelWindows,
       defaultModel: profile.defaultModel ?? "",
       lightModel: profile.lightModel ?? "",
       isNew: false,
@@ -150,6 +157,7 @@ export function newProfileDraft(existingIds: string[]): ProfileDraft {
     modelsText: "",
     modelLabels: {},
     modelPrices: {},
+    modelWindows: {},
     defaultModel: "",
     lightModel: "",
     fallbackProfileId: "",
@@ -346,6 +354,13 @@ export function validateDraft(draft: RegistryDraft): Record<string, string[]> {
       }
     }
 
+    for (const modelId of models) {
+      const raw = profile.modelWindows[modelId]?.trim() ?? "";
+      if (raw !== "" && !/^[1-9][0-9]*$/.test(raw)) {
+        priceErrors.push(`Jendela konteks model "${modelId}" harus bilangan bulat > 0.`);
+      }
+    }
+
     for (const message of priceErrors) {
       push(id, message);
     }
@@ -359,10 +374,13 @@ export function toPayload(draft: RegistryDraft): unknown {
     const models = modelLines(profile.modelsText).map((id) => {
       const label = profile.modelLabels[id];
       const price = buildPrice(profile.modelPrices[id]);
-      if (label === undefined && price === undefined) return id;
+      const windowText = profile.modelWindows[id]?.trim() ?? "";
+      const window = /^[1-9][0-9]*$/.test(windowText) ? Number(windowText) : undefined;
+      if (label === undefined && price === undefined && window === undefined) return id;
       const model: Record<string, unknown> = { id };
       if (label !== undefined) model.label = label;
       if (price !== undefined) model.price = price;
+      if (window !== undefined) model.contextWindow = window;
       return model;
     });
     const payload: Record<string, unknown> = {
@@ -413,6 +431,7 @@ function comparable(profile: ProfileDraft): Record<string, unknown> {
     apiKey: profile.apiKey,
     modelsText: profile.modelsText,
     modelPrices: profile.modelPrices,
+    modelWindows: profile.modelWindows,
     defaultModel: profile.defaultModel,
     lightModel: profile.lightModel,
     fallbackProfileId: profile.fallbackProfileId ?? "",

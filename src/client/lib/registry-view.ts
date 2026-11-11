@@ -9,6 +9,7 @@ export interface ModelView {
   id: string;
   label?: string;
   price?: ModelPriceView;
+  contextWindow?: number;
 }
 
 export interface RegistryView {
@@ -58,6 +59,11 @@ function parseModel(raw: unknown): ModelView | undefined {
   const price = parsePrice(raw.price);
   if (price !== undefined) {
     model.price = price;
+  }
+
+  const window = raw.contextWindow;
+  if (typeof window === "number" && Number.isInteger(window) && window > 0) {
+    model.contextWindow = window;
   }
 
   return model;

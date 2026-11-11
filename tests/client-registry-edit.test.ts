@@ -52,6 +52,7 @@ function validProfile(patch: Partial<ProfileDraft> = {}): ProfileDraft {
     modelsText: "",
     modelLabels: {},
     modelPrices: {},
+    modelWindows: {},
     defaultModel: "",
     lightModel: "",
     isNew: false,
@@ -78,6 +79,7 @@ describe("toDraft", () => {
       modelsText: "m1\nm2",
       modelLabels: { m1: "Satu" },
       modelPrices: {},
+      modelWindows: {},
       defaultModel: "m1",
       lightModel: "m2",
       isNew: false,
@@ -610,5 +612,20 @@ describe("profil cadangan", () => {
     expect(fieldForMessage("ID hanya boleh berisi huruf kecil.")).toBe("id");
     expect(fieldForMessage("Tarif model x: salah.")).toBe("prices");
     expect(fieldForMessage("lain sekali")).toBe("lain");
+  });
+});
+
+describe("jendela konteks model", () => {
+  test("dibaca dari tampilan, divalidasi, dan ikut payload", () => {
+    const view = fullView();
+    view.profiles[0]!.models = [{ id: "m1", contextWindow: 1000000 }, { id: "m2" }];
+    const draft = toDraft(view);
+    expect(draft.profiles[0]!.modelWindows).toEqual({ m1: "1000000" });
+    const payload = toPayload(draft) as { profiles: Array<{ models: unknown[] }> };
+    expect(payload.profiles[0]!.models[0]).toEqual({ id: "m1", contextWindow: 1000000 });
+    expect(payload.profiles[0]!.models[1]).toBe("m2");
+
+    const bad = validProfile({ modelsText: "m1", modelWindows: { m1: "abc" } });
+    expect(JSON.stringify(validateDraft(draftWith(bad)))).toContain("Jendela konteks");
   });
 });

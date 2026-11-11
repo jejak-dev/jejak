@@ -9,6 +9,8 @@ export interface ModelEntry {
   id: string;
   label?: string;
   price?: ModelPrice;
+  /** Jendela konteks (token); menggantikan tebakan SDK untuk model non-Claude. */
+  contextWindow?: number;
 }
 
 export interface ProviderProfile {
@@ -42,6 +44,12 @@ export interface ResolvedProvider {
   model?: string;
   lightModel?: string;
   price?: ModelPrice;
+  contextWindow?: number;
+}
+
+/** Jendela konteks model yang dikenal bila profil tidak menyebutnya. */
+export function knownContextWindow(model: string): number | undefined {
+  return /^deepseek-v4/i.test(model) ? 1_000_000 : undefined;
 }
 
 const PROFILE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,31}$/;
@@ -120,6 +128,10 @@ function parseModels(raw: unknown, context: string): ModelEntry[] {
     if (price !== undefined && isRecord(price)) {
       const parsed = parsePrice(price);
       if (parsed !== undefined) entry.price = parsed;
+    }
+    const window = item.contextWindow;
+    if (typeof window === "number" && Number.isInteger(window) && window > 0) {
+      entry.contextWindow = window;
     }
     return entry;
   });
@@ -261,16 +273,11 @@ export function serializeRegistry(registry: ProviderRegistry): unknown {
     if (profile.baseUrl !== undefined) serialized.baseUrl = profile.baseUrl;
     if (profile.apiKeyEnv !== undefined) serialized.apiKeyEnv = profile.apiKeyEnv;
     serialized.models = profile.models.map((model) => {
-      if (model.label === undefined) {
-        if (model.price === undefined) {
-          return { id: model.id };
-        }
-        return { id: model.id, price: model.price };
-      }
-      if (model.price === undefined) {
-        return { id: model.id, label: model.label };
-      }
-      return { id: model.id, label: model.label, price: model.price };
+      const item: Record<string, unknown> = { id: model.id };
+      if (model.label !== undefined) item.label = model.label;
+      if (model.price !== undefined) item.price = model.price;
+      if (model.contextWindow !== undefined) item.contextWindow = model.contextWindow;
+      return item;
     });
     if (profile.apiKey !== undefined && profile.apiKeyEnv === undefined) {
       serialized.apiKey = profile.apiKey;
@@ -445,6 +452,8 @@ export function resolveProvider(
     if (modelEntry?.price !== undefined) {
       resolved.price = modelEntry.price;
     }
+    const window = modelEntry?.contextWindow ?? knownContextWindow(model);
+    if (window !== undefined) resolved.contextWindow = window;
   }
 
   const lightModel = selection.lightModel ?? profile.lightModel;

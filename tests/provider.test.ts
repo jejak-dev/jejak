@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   parseRegistry,
   redactRegistry,
@@ -654,4 +654,27 @@ test("redactResolved tidak memuat price", () => {
   const resolved = resolveProvider(registry, {});
   const redacted = redactResolved(resolved);
   expect(redacted.price).toBeUndefined();
+});
+
+describe("jendela konteks model", () => {
+  test("dari profil, dari tabel model dikenal, dan dibawa ke ResolvedProvider", () => {
+    const registry = parseRegistry({
+      profiles: [
+        {
+          id: "p",
+          name: "P",
+          models: [
+            { id: "deepseek-v4.1-flash" },
+            { id: "kustom", contextWindow: 123456 },
+            { id: "lain" },
+          ],
+        },
+      ],
+    });
+    expect(resolveProvider(registry, { model: "deepseek-v4.1-flash" }).contextWindow).toBe(1_000_000);
+    expect(resolveProvider(registry, { model: "kustom" }).contextWindow).toBe(123456);
+    expect(resolveProvider(registry, { model: "lain" }).contextWindow).toBeUndefined();
+    const again = parseRegistry(serializeRegistry(registry));
+    expect(again.profiles[0]?.models[1]?.contextWindow).toBe(123456);
+  });
 });
