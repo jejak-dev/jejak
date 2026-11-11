@@ -69,3 +69,21 @@ describe("perintah compact di palette", () => {
     expect(without.some((command) => command.run === "compact")).toBe(false);
   });
 });
+
+describe("setelah compact", () => {
+  test("compact_boundary memberi post_tokens, atau 0 bila tak diketahui", () => {
+    const boundary = (meta: Record<string, unknown>) => ({
+      type: "system",
+      subtype: "compact_boundary",
+      compact_metadata: { trigger: "manual", pre_tokens: 9000, ...meta },
+    });
+    expect(contextTokensOf(boundary({ post_tokens: 1200 }))).toBe(1200);
+    expect(contextTokensOf(boundary({}))).toBe(0);
+  });
+
+  test("event context 0 menyembunyikan cincin sampai balasan berikutnya", () => {
+    const before = reduceContext(undefined, { type: "result", contextTokens: 7926, contextWindow: 200000 });
+    expect(reduceContext(before, { type: "context", tokens: 0 })).toBeUndefined();
+    expect(reduceContext(before, { type: "context", tokens: 1200 })?.tokens).toBe(1200);
+  });
+});

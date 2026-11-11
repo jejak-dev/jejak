@@ -174,6 +174,12 @@ export function mapSdkMessage(message: unknown): AgentEvent[] {
  * cache, dan keluaran pada panggilan model itu. `undefined` bila tak ada usage.
  */
 export function contextTokensOf(message: unknown): number | undefined {
+  if (isRecord(message) && message.type === "system" && message.subtype === "compact_boundary") {
+    // Setelah compact ukuran konteks berubah; 0 berarti "belum diketahui" (klien menyembunyikan cincin).
+    const meta = isRecord(message.compact_metadata) ? message.compact_metadata : {};
+    const post = meta.post_tokens;
+    return typeof post === "number" && post > 0 ? post : 0;
+  }
   if (!isRecord(message) || message.type !== "assistant") return undefined;
   if (readParentToolUseId(message) !== undefined) return undefined;
   const inner = message.message;

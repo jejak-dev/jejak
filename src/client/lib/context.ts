@@ -19,6 +19,8 @@ export function reduceContext(
   event: { type: string; tokens?: number; contextTokens?: number; contextWindow?: number },
 ): ContextState | undefined {
   let tokens: number | undefined;
+  // 0 dari event context = konteks baru dipadatkan dan ukurannya belum diketahui.
+  if (event.type === "context" && event.tokens === 0) return undefined;
   if (event.type === "context") tokens = event.tokens;
   else if (event.type === "result") tokens = event.contextTokens;
   const window = event.type === "result" ? event.contextWindow : undefined;
