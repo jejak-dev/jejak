@@ -8,6 +8,7 @@ import { BYPASS_WARNING } from "../lib/permission-mode";
 import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
+import { Dropdown, type DropdownSection } from "./Dropdown";
 import { Icon } from "./Icon";
 import { useAttachments } from "./useAttachments";
 
@@ -132,7 +133,7 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
       ? undefined
       : context.window === undefined
         ? `Konteks: ${formatTokens(context.tokens)} token`
-        : `Konteks: ${formatTokens(context.tokens)} dari ${formatTokens(context.window)} token (jendela menurut SDK, perkiraan untuk model non-Claude)`;
+        : `Konteks: ${formatTokens(context.tokens)} dari ${formatTokens(context.window)} token (jendela diatur di profil model; bila kosong, tebakan SDK)`;
 
   const bypass = session.permissionMode === "bypassPermissions";
   const modeLabel =
@@ -156,6 +157,24 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
       setError(caught instanceof ApiError ? caught.message : "gagal mengganti provider");
     }
   };
+
+  const modelSections: DropdownSection[] = [];
+  if (modelList.length > 1) {
+    modelSections.push({
+      title: "Model",
+      options: modelList.map((entry) => ({ value: entry.id, label: entry.label ?? entry.id })),
+      value: modelId,
+      onSelect: (value) => void changeProvider({ profileId: session.profileId, model: value }),
+    });
+  }
+  if (profiles.length > 1) {
+    modelSections.push({
+      title: "Provider",
+      options: profiles.map((profile) => ({ value: profile.id, label: profile.name })),
+      value: session.profileId,
+      onSelect: (value) => void changeProvider({ profileId: value }),
+    });
+  }
 
   const submit = async (): Promise<void> => {
     if (!canSend) return;
@@ -235,70 +254,33 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
           {session.queued > 0 && (
             <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
           )}
-          {profiles.length > 1 && (
-            <label class="jk-chip jk-chip-plain" title="Provider sesi; berlaku mulai balasan berikutnya">
-              <span>{currentProfile?.name ?? session.profileId}</span>
-              <select
-                class="jk-chip-select"
-                aria-label="Provider sesi"
-                value={session.profileId}
-                onChange={(event) =>
-                  void changeProvider({ profileId: (event.currentTarget as HTMLSelectElement).value })
-                }
-              >
-                {profiles.map((profile) => (
-                  <option key={profile.id} value={profile.id}>
-                    {profile.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          {modelSections.length > 0 ? (
+            <Dropdown
+              label={modelLabel}
+              detail={profiles.length > 1 ? (currentProfile?.name ?? session.profileId) : undefined}
+              ariaLabel="Model dan provider sesi"
+              title="Model dan provider sesi; berlaku mulai balasan berikutnya"
+              sections={modelSections}
+            />
+          ) : (
+            modelId !== "" && <span class="jk-chip jk-chip-plain">{modelLabel}</span>
           )}
-          {modelList.length > 1 && (
-            <label class="jk-chip jk-chip-plain" title="Model sesi; berlaku mulai balasan berikutnya">
-              <span>{modelLabel}</span>
-              <select
-                class="jk-chip-select"
-                aria-label="Model sesi"
-                value={modelId}
-                onChange={(event) =>
-                  void changeProvider({
-                    profileId: session.profileId,
-                    model: (event.currentTarget as HTMLSelectElement).value,
-                  })
-                }
-              >
-                {modelId !== "" && !modelList.some((entry) => entry.id === modelId) && (
-                  <option value={modelId}>{modelId}</option>
-                )}
-                {modelList.map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.label ?? entry.id}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-          <label
-            class="jk-chip jk-chip-plain"
+          <Dropdown
+            label={modeLabel}
+            ariaLabel="Mode izin sesi"
             title={running ? "Berlaku mulai balasan berikutnya" : "Mode izin sesi"}
-          >
-            <span>{modeLabel}</span>
-            <select
-              class="jk-chip-select"
-              aria-label="Mode izin sesi"
-              value={session.permissionMode}
-              onChange={(event) =>
-                void changeMode((event.currentTarget as HTMLSelectElement).value as LiveMode)
-              }
-            >
-              {MODE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            sections={[
+              {
+                options: MODE_OPTIONS.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                  danger: option.value === "bypassPermissions",
+                })),
+                value: session.permissionMode,
+                onSelect: (value) => void changeMode(value as LiveMode),
+              },
+            ]}
+          />
           {context !== undefined && (
             <details ref={ctxRef} class={`jk-ctx-pop jk-ctx-${context.level}`}>
               <summary class="jk-ctx-ring" title={contextTitle} aria-label={contextTitle}>
