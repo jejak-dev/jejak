@@ -1085,6 +1085,32 @@ export class SessionManager {
     return { ...record.info };
   }
 
+  /**
+   * Ganti profil/model sesi; berlaku mulai giliran berikutnya (giliran yang sedang
+   * berjalan tetap memakai provider lamanya). Riwayat sesi tetap dipakai.
+   */
+  async setProvider(id: string, selection: { profileId?: string; model?: string }): Promise<SessionInfo> {
+    const record = this.requireRecord(id);
+    let resolved: ResolvedProvider;
+    try {
+      resolved = await this.resolveProvider({
+        profileId: selection.profileId ?? record.info.profileId,
+        ...(selection.model === undefined ? {} : { model: selection.model }),
+      });
+    } catch (error) {
+      throw new SessionError(errorMessage(error), "tidak-valid");
+    }
+    record.resolved = resolved;
+    record.apiKey = resolved.apiKey;
+    record.price = resolved.price;
+    record.info.profileId = resolved.profileId;
+    if (resolved.model === undefined) delete record.info.model;
+    else record.info.model = resolved.model;
+    this.persistSession(record);
+    this.notify(record);
+    return { ...record.info };
+  }
+
   /** Arsipkan/batalkan arsip; sesi berjalan harus dihentikan dulu. */
   setArchived(id: string, archived: unknown): SessionInfo {
     const record = this.requireRecord(id);

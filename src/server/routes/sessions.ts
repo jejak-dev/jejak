@@ -127,6 +127,8 @@ function parseUpdateBody(body: unknown): {
   archived?: boolean;
   permissionMode?: string;
   confirmBypass?: boolean;
+  profileId?: string;
+  model?: string;
 } {
   const parsed = parseJsonBody(body);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
@@ -138,7 +140,9 @@ function parseUpdateBody(body: unknown): {
       key !== "title" &&
       key !== "archived" &&
       key !== "permissionMode" &&
-      key !== "confirmBypass"
+      key !== "confirmBypass" &&
+      key !== "profileId" &&
+      key !== "model"
     ) {
       throw invalid(`Field ${key} tidak dikenal.`);
     }
@@ -148,7 +152,17 @@ function parseUpdateBody(body: unknown): {
     archived?: boolean;
     permissionMode?: string;
     confirmBypass?: boolean;
+    profileId?: string;
+    model?: string;
   } = {};
+  for (const key of ["profileId", "model"] as const) {
+    const value = record[key];
+    if (value === undefined) continue;
+    if (typeof value !== "string" || value.trim() === "") {
+      throw invalid(`Field ${key} harus berupa string tidak kosong.`);
+    }
+    update[key] = value.trim();
+  }
   if (record.title !== undefined) {
     if (typeof record.title !== "string") {
       throw invalid("Field title harus berupa string.");
@@ -176,9 +190,11 @@ function parseUpdateBody(body: unknown): {
   if (
     update.title === undefined &&
     update.archived === undefined &&
-    update.permissionMode === undefined
+    update.permissionMode === undefined &&
+    update.profileId === undefined &&
+    update.model === undefined
   ) {
-    throw invalid("Minimal satu field (title, archived, atau permissionMode) harus diisi.");
+    throw invalid("Minimal satu field (title, archived, permissionMode, profileId, atau model) harus diisi.");
   }
   return update;
 }
@@ -297,7 +313,7 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
     })
     .patch(
       "/api/sessions/:id",
-      ({ params, body }) => {
+      async ({ params, body }) => {
         try {
           const update = parseUpdateBody(body);
           const current = manager.get(params.id);
@@ -339,6 +355,18 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
               sessionId: params.id,
               summary: "Mode izin sesi diganti",
               meta: { aksi: "ganti-mode", mode: update.permissionMode },
+            });
+          }
+          if (update.profileId !== undefined || update.model !== undefined) {
+            session = await manager.setProvider(params.id, {
+              ...(update.profileId === undefined ? {} : { profileId: update.profileId }),
+              ...(update.model === undefined ? {} : { model: update.model }),
+            });
+            recordAudit(audit, {
+              kind: "pengaturan",
+              sessionId: params.id,
+              summary: "Provider/model sesi diganti",
+              meta: { aksi: "ganti-provider", profil: session.profileId, model: session.model ?? "" },
             });
           }
           return { session };

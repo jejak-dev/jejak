@@ -598,6 +598,7 @@ export function App() {
                   session={selected}
                   refresh={refresh}
                   context={contextUsage(timeline.context)}
+                  registry={view}
                 />
               </div>
               {panelOpen && (

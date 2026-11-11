@@ -464,6 +464,21 @@ describe("audit rute pengaturan", () => {
     expect(JSON.stringify(entries(store))).not.toContain(TITLE_SENTINEL);
   });
 
+  test("provider/model sesi diganti lewat PATCH dan dicatat tanpa rahasia", async () => {
+    const store = auditStore();
+    const mgr = manager();
+    const app = makeApp(mgr, { audit: store });
+    const id = await idleSession(mgr, dir);
+
+    const ok = await req(app, "PATCH", `/api/sessions/${id}`, { model: "mock-model" });
+    expect(ok.status).toBe(200);
+    expect(mgr.get(id)?.model).toBe("mock-model");
+    const entry = only(store, "pengaturan", "Provider/model sesi diganti");
+    expect(entry.meta).toMatchObject({ aksi: "ganti-provider", model: "mock-model" });
+    expect((await req(app, "PATCH", `/api/sessions/${id}`, { model: "" })).status).toBe(400);
+    expect((await req(app, "PATCH", `/api/sessions/${id}`, { profileId: 5 })).status).toBe(400);
+  });
+
   test("mode izin sesi diganti lewat PATCH, dicatat, dan bypass butuh konfirmasi", async () => {
     const store = auditStore();
     const mgr = manager();

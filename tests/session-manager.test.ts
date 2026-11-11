@@ -2149,3 +2149,37 @@ describe("SessionManager.onTurnEnd", () => {
     expect(called).toBe(false);
   });
 });
+
+describe("SessionManager.setProvider", () => {
+  test("mengganti profil/model, dipakai giliran berikutnya, dan galat tidak mengubah apa pun", async () => {
+    const store = new SqliteSessionStore(":memory:");
+    const used: Array<string | undefined> = [];
+    const runner: AgentRunner = {
+      async *run(input) {
+        used.push(`${input.provider.profileId}/${input.provider.model}`);
+        yield { type: "session", sessionId: "sdk-1" };
+        yield { type: "result", ok: true };
+      },
+    };
+    const mgr = manager({
+      runner,
+      store,
+      resolveProvider: async (selection) => {
+        if (selection.profileId === "hilang") throw new Error("Profil tidak ditemukan.");
+        return { profileId: selection.profileId ?? "lokal", apiKey: API_KEY, model: selection.model ?? "m-default" };
+      },
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    const changed = await mgr.setProvider(info.id, { profileId: "kedua", model: "m2" });
+    expect(changed.profileId).toBe("kedua");
+    expect(changed.model).toBe("m2");
+    await expect(mgr.setProvider(info.id, { profileId: "hilang" })).rejects.toThrow(SessionError);
+    expect(mgr.get(info.id)?.profileId).toBe("kedua");
+
+    await mgr.send(info.id, "lanjut");
+    await mgr.done(info.id);
+    expect(used.at(-1)).toBe("kedua/m2");
+  });
+});

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
+import type { RegistryView } from "../lib/registry-view";
 import { ApiError, type ApiClient } from "../lib/api";
 import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
@@ -16,6 +17,8 @@ export interface ReplyBarProps {
   refresh: () => Promise<void>;
   /** Penggunaan konteks dari hasil terakhir; kosong bila belum diketahui. */
   context?: ContextUsage;
+  /** Profil provider untuk pemilih provider/model; tanpa ini pemilih tidak tampil. */
+  registry?: RegistryView;
 }
 
 const MAX_TEXTAREA_PX = 8 * 24;
@@ -34,7 +37,7 @@ function autosize(element: HTMLTextAreaElement): void {
   element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_PX)}px`;
 }
 
-export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
+export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -138,6 +141,22 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
       "",
     ) ?? "";
 
+  const profiles = registry?.profiles ?? [];
+  const currentProfile = profiles.find((profile) => profile.id === session.profileId);
+  const modelList = currentProfile?.models ?? [];
+  const modelId = session.model ?? "";
+  const modelLabel = modelList.find((entry) => entry.id === modelId)?.label ?? (modelId || "Default model");
+
+  const changeProvider = async (selection: { profileId?: string; model?: string }): Promise<void> => {
+    setError(undefined);
+    try {
+      await api.setSessionProvider(sessionId, selection);
+      void refresh();
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : "gagal mengganti provider");
+    }
+  };
+
   const submit = async (): Promise<void> => {
     if (!canSend) return;
     const trimmed = appendAttachments(text, att.items);
@@ -215,6 +234,50 @@ export function ReplyBar({ api, session, refresh, context }: ReplyBarProps) {
         <div class="jk-comp-meta jk-meta-end">
           {session.queued > 0 && (
             <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
+          )}
+          {profiles.length > 1 && (
+            <label class="jk-chip jk-chip-plain" title="Provider sesi; berlaku mulai balasan berikutnya">
+              <span>{currentProfile?.name ?? session.profileId}</span>
+              <select
+                class="jk-chip-select"
+                aria-label="Provider sesi"
+                value={session.profileId}
+                onChange={(event) =>
+                  void changeProvider({ profileId: (event.currentTarget as HTMLSelectElement).value })
+                }
+              >
+                {profiles.map((profile) => (
+                  <option key={profile.id} value={profile.id}>
+                    {profile.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {modelList.length > 1 && (
+            <label class="jk-chip jk-chip-plain" title="Model sesi; berlaku mulai balasan berikutnya">
+              <span>{modelLabel}</span>
+              <select
+                class="jk-chip-select"
+                aria-label="Model sesi"
+                value={modelId}
+                onChange={(event) =>
+                  void changeProvider({
+                    profileId: session.profileId,
+                    model: (event.currentTarget as HTMLSelectElement).value,
+                  })
+                }
+              >
+                {modelId !== "" && !modelList.some((entry) => entry.id === modelId) && (
+                  <option value={modelId}>{modelId}</option>
+                )}
+                {modelList.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.label ?? entry.id}
+                  </option>
+                ))}
+              </select>
+            </label>
           )}
           <label
             class="jk-chip jk-chip-plain"
