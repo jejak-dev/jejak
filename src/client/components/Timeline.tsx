@@ -1,6 +1,7 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { CANCELLED_MESSAGE, dedupeToolPermission, type TimelineItem } from "../lib/timeline";
+import { StepsGroup } from "./StepsGroup";
 import { groupSteps, stepsStatus, summarizeSteps, type StepItem } from "../lib/step-groups";
 import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
 import { formatCost, formatCount } from "../lib/format";
@@ -143,6 +144,19 @@ function depthStyle(depth: number): Record<string, string> | undefined {
   return depth > 0 ? { marginLeft: `${Math.min(depth, 3) * 16}px` } : undefined;
 }
 
+function hasDescription(view: ReturnType<typeof toolView>): boolean {
+  return view.kind === "command" && view.description !== undefined && view.description !== "";
+}
+
+/** Judul blok saat berjalan: deskripsi (atau ringkasan) langkah terbaru. */
+function liveLabelOf(step: StepItem | undefined): string {
+  if (step === undefined) return "";
+  if (step.kind === "thinking") return "Berpikir";
+  const view = toolView(step.name, step.input);
+  if (hasDescription(view) && view.kind === "command") return view.description ?? "";
+  return step.summary !== "" ? `${step.name} ${step.summary}` : step.name;
+}
+
 export function Timeline({ items: rawItems, connection, running, sandboxed, cwd, onDecide }: TimelineProps) {
   // Sesi sudah berhenti (gagal, selesai, server restart): izin yang masih "menunggu"
   // tidak bisa diputuskan lagi, jadi tampilkan sebagai dihentikan.
@@ -237,7 +251,11 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
               const view = toolView(item.name, item.input);
               const input = prettyInput(item.input);
               return (
-                <details class="jk-step" key={index} style={depthStyle(item.depth)}>
+                <details
+                  class={`jk-step${hasDescription(view) ? " jk-step-has-desc" : ""}`}
+                  key={index}
+                  style={depthStyle(item.depth)}
+                >
                   <summary>
                     <span class="jk-chev">
                       <Icon name="chevron" />
@@ -310,21 +328,15 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
               const status = stepsStatus(block.items);
               const live = status.running && running !== false;
               return (
-                <details class="jk-step jk-steps" key={`steps-${block.index}`}>
-                  <summary>
-                    <span class="jk-chev">
-                      <Icon name="chevron" />
-                    </span>
-                    <span class="jk-steps-text">{summary}</span>
-                    {live && <span class="jk-spinner" aria-hidden="true" />}
-                    {status.failed > 0 && (
-                      <span class="jk-step-status jk-step-gagal">{status.failed} gagal</span>
-                    )}
-                  </summary>
-                  <div class="jk-steps-list">
-                    {block.items.map((step, offset) => renderStep(step, block.index + offset))}
-                  </div>
-                </details>
+                <StepsGroup
+                  key={`steps-${block.index}`}
+                  summary={summary}
+                  liveLabel={liveLabelOf(block.items[block.items.length - 1])}
+                  live={live}
+                  failed={status.failed}
+                >
+                  {block.items.map((step, offset) => renderStep(step, block.index + offset))}
+                </StepsGroup>
               );
             }
             const item = block.item;

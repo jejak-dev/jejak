@@ -64,3 +64,13 @@ describe("stepsStatus", () => {
     expect(stepsStatus(items)).toEqual({ failed: 1, running: true });
   });
 });
+
+describe("formatElapsed", () => {
+  test("detik, menit, dan menit dengan sisa detik", async () => {
+    const { formatElapsed } = await import("../src/client/components/StepsGroup");
+    expect(formatElapsed(37)).toBe("37 dtk");
+    expect(formatElapsed(60)).toBe("1 mnt");
+    expect(formatElapsed(122.7)).toBe("2 mnt 2 dtk");
+    expect(formatElapsed(-3)).toBe("0 dtk");
+  });
+});

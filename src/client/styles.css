@@ -1429,19 +1429,120 @@ h2.jk-md-heading {
 }
 
 .jk-steps > summary {
+  gap: 10px;
+  min-height: 30px;
   color: var(--t3);
+  font-size: 14.5px;
 }
 
 .jk-steps > summary:hover {
   color: var(--t2);
 }
 
+.jk-steps-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-steps-time {
+  color: var(--t3);
+  white-space: nowrap;
+}
+
+.jk-steps > summary .jk-chev {
+  transform: rotate(90deg);
+}
+
+.jk-steps[open] > summary .jk-chev {
+  transform: rotate(-90deg);
+}
+
+/* Titik berdenyut penanda langkah sedang berjalan. */
+.jk-dots {
+  display: inline-grid;
+  grid-template-columns: repeat(2, 5px);
+  gap: 3px;
+  flex: none;
+}
+
+.jk-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #c96442;
+  animation: jk-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.jk-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.jk-dots i:nth-child(3) {
+  animation-delay: 0.45s;
+}
+
+.jk-dots i:nth-child(4) {
+  animation-delay: 0.3s;
+}
+
+@keyframes jk-dot-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jk-dots i {
+    animation: none;
+  }
+}
+
+/* Kartu daftar langkah: baris berpembatas, chevron di kanan. */
 .jk-steps-list {
   display: flex;
   flex-direction: column;
-  margin: 4px 0 6px 6px;
-  padding-left: 14px;
-  border-left: 1px solid var(--line);
+  margin: 8px 0 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.jk-steps-list > .jk-step + .jk-step {
+  border-top: 1px solid var(--line);
+}
+
+.jk-steps-list > .jk-step > summary {
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 0;
+  font-size: 14px;
+}
+
+.jk-steps-list > .jk-step > summary:hover {
+  background: var(--hover);
+}
+
+.jk-steps-list .jk-chev {
+  order: 9;
+  margin-left: auto;
+}
+
+.jk-steps-list .jk-step-has-desc > summary .jk-step-name,
+.jk-steps-list .jk-step-selesai {
+  display: none;
+}
+
+.jk-steps-list .jk-step-body {
+  margin: 0;
+  padding: 4px 16px 14px;
 }
 
 .jk-step-think > summary {
