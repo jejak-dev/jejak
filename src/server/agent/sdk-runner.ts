@@ -131,6 +131,10 @@ function sanitizeCwd(cwd: string): string {
   return cwd.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
 }
 
+/** Pengingat system prompt saat Bash berjalan di dalam sandbox. */
+export const SANDBOX_APPEND_NOTE =
+  "Bash sesi ini berjalan di dalam sandbox: tulis hanya di folder kerja, jaringan memakai allowlist, dan socket Unix serta localhost mungkin diblokir. Galat seperti 'operation not permitted', 'cannot connect to the Docker daemon', atau 'connection refused' bisa berarti DIBLOKIR sandbox, bukan layanan yang mati. Jangan mencoba menyalakan ulang daemon atau layanan; laporkan ke pengguna dan sarankan mengubah sandbox sesi di bar balasan atau menambah izin di Pengaturan > Sandbox.";
+
 type SecretGuard = NonNullable<RunInput["secretGuard"]>;
 
 /** Hook `PreToolUse` yang menolak tool bila kebijakan rahasia mengembalikan alasan. */
@@ -252,6 +256,9 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           )
           .join(", ");
         append = `${append} Sesi ini bagian dari workspace "${sanitizeCwd(workspace.name)}" dengan repo: ${repos}; folder kerja utama tetap ${sanitizeCwd(input.cwd)}. Kartu service tidak disertakan di sini.`;
+      }
+      if (input.sandbox !== undefined) {
+        append = `${append} ${SANDBOX_APPEND_NOTE}`;
       }
 
       const sdkOptions: Record<string, unknown> = {

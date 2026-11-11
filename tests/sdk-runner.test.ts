@@ -5,6 +5,7 @@ import {
   buildSdkEnv,
   withMaxRetries,
   createSdkRunner,
+  SANDBOX_APPEND_NOTE,
   type SdkModule,
   type SdkQuery,
 } from "../src/server/agent/sdk-runner";
@@ -381,6 +382,32 @@ test("systemPrompt append tidak memuat karakter kontrol/baris baru dari cwd", as
   expect(append).not.toContain("\r");
   expect(append).not.toContain("\x00");
   expect(append).toContain("/tmp/kerja baris kontrol");
+});
+
+test("catatan sandbox hanya ditambahkan ke append bila input.sandbox ada", async () => {
+  let tanpa: Record<string, unknown> | undefined;
+  await collect(
+    createSdkRunner({
+      load: async () =>
+        fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (tanpa = options) }).module,
+      baseEnv: {},
+    }).run(baseInput()),
+  );
+  const appendTanpa = (tanpa?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(appendTanpa).not.toContain(SANDBOX_APPEND_NOTE);
+
+  let dengan: Record<string, unknown> | undefined;
+  await collect(
+    createSdkRunner({
+      load: async () =>
+        fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (dengan = options) }).module,
+      baseEnv: {},
+    }).run(baseInput({ sandbox: { enabled: true } })),
+  );
+  const appendDengan = (dengan?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+  expect(appendDengan).toContain(SANDBOX_APPEND_NOTE);
+  expect(appendDengan).toContain("DIBLOKIR sandbox");
+  expect(dengan?.sandbox).toEqual({ enabled: true });
 });
 
 test("opsi lain tidak berubah setelah penambahan systemPrompt", async () => {  let received: Record<string, unknown> | undefined;

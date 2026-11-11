@@ -34,6 +34,9 @@ const CONFIG: SandboxConfigItem = {
   allowedDomains: ["example.com"],
   extraDenyRead: ["~/.ssh"],
   extraDenyWrite: ["/etc"],
+  extraAllowWrite: ["~/tmp"],
+  extraAllowUnixSockets: ["/var/run/docker.sock"],
+  allowLocalBinding: false,
 };
 
 const STATE: SandboxState = {
@@ -68,7 +71,15 @@ describe("getSandbox", () => {
     const api = createApiClient({ fetch });
 
     expect(await api.getSandbox()).toEqual({
-      config: { mode: "standar", allowedDomains: ["a.com"], extraDenyRead: [], extraDenyWrite: [] },
+      config: {
+        mode: "standar",
+        allowedDomains: ["a.com"],
+        extraDenyRead: [],
+        extraDenyWrite: [],
+        extraAllowWrite: [],
+        extraAllowUnixSockets: [],
+        allowLocalBinding: false,
+      },
       defaults: { allowedDomains: [], denyRead: [], denyWrite: [] },
       available: { ok: false, detail: "" },
     });
@@ -91,13 +102,23 @@ describe("putSandbox", () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse({ config: CONFIG }));
     const api = createApiClient({ fetch });
 
-    const result = await api.putSandbox({ mode: "mati", allowedDomains: ["a.test"] });
+    const result = await api.putSandbox({
+      mode: "mati",
+      extraAllowWrite: ["~/tmp"],
+      extraAllowUnixSockets: ["/var/run/docker.sock"],
+      allowLocalBinding: true,
+    });
 
     expect(result).toEqual(CONFIG);
     expect(calls[0]?.url).toBe("/api/sandbox");
     expect(calls[0]?.init.method).toBe("PUT");
     expect(calls[0]?.init.body).toBe(
-      JSON.stringify({ mode: "mati", allowedDomains: ["a.test"] }),
+      JSON.stringify({
+        mode: "mati",
+        extraAllowWrite: ["~/tmp"],
+        extraAllowUnixSockets: ["/var/run/docker.sock"],
+        allowLocalBinding: true,
+      }),
     );
   });
 

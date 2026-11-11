@@ -60,6 +60,9 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
   const [domains, setDomains] = useState("");
   const [denyRead, setDenyRead] = useState("");
   const [denyWrite, setDenyWrite] = useState("");
+  const [allowWrite, setAllowWrite] = useState("");
+  const [allowUnixSockets, setAllowUnixSockets] = useState("");
+  const [allowLocalBinding, setAllowLocalBinding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [disabled, setDisabled] = useState(false);
   const [loadError, setLoadError] = useState<string | undefined>(undefined);
@@ -83,6 +86,9 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
       setDomains(listToText(next.config.allowedDomains));
       setDenyRead(listToText(next.config.extraDenyRead));
       setDenyWrite(listToText(next.config.extraDenyWrite));
+      setAllowWrite(listToText(next.config.extraAllowWrite));
+      setAllowUnixSockets(listToText(next.config.extraAllowUnixSockets));
+      setAllowLocalBinding(next.config.allowLocalBinding);
       setDisabled(false);
     } catch (caught) {
       if (ticket !== requestRef.current) return;
@@ -98,15 +104,16 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
   }, [load]);
 
   const current = state?.config;
+  const form = { mode, domains, denyRead, denyWrite, allowWrite, allowUnixSockets, allowLocalBinding };
   const result =
     current === undefined
       ? { patch: undefined, error: undefined }
-      : sandboxPatchFrom({ mode, domains, denyRead, denyWrite }, current);
+      : sandboxPatchFrom(form, current);
   const dirty = canSubmit(result, saving);
 
   const save = (): void => {
     if (savingRef.current || state === undefined) return;
-    const parsed = sandboxPatchFrom({ mode, domains, denyRead, denyWrite }, state.config);
+    const parsed = sandboxPatchFrom(form, state.config);
     if (parsed.error !== undefined) {
       setError(parsed.error);
       return;
@@ -262,6 +269,73 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
                 aria-invalid={error !== undefined}
                 aria-describedby={error !== undefined ? "jk-sandbox-error" : undefined}
               />
+            </div>
+
+            <div class="jk-field">
+              <label class="jk-label" for="jk-sandbox-allow-write">
+                Jalur tulis tambahan
+              </label>
+              <textarea
+                id="jk-sandbox-allow-write"
+                class="jk-textarea jk-input-code"
+                rows={3}
+                placeholder="satu jalur per baris, mis. ~/tmp/proyek"
+                value={allowWrite}
+                onInput={(event) =>
+                  onChange(() => setAllowWrite((event.currentTarget as HTMLTextAreaElement).value))
+                }
+                aria-invalid={error !== undefined}
+                aria-describedby={error !== undefined ? "jk-sandbox-error" : undefined}
+              />
+              <p class="jk-note">
+                Folder kerja sudah bisa ditulis. Jalur di sini memperlebar akses Bash; setiap izin
+                tercatat di Audit log.
+              </p>
+            </div>
+
+            <div class="jk-field">
+              <label class="jk-label" for="jk-sandbox-allow-sockets">
+                Socket Unix yang diizinkan
+              </label>
+              <textarea
+                id="jk-sandbox-allow-sockets"
+                class="jk-textarea jk-input-code"
+                rows={3}
+                placeholder="satu jalur per baris, mis. ~/.orbstack/run/docker.sock"
+                value={allowUnixSockets}
+                onInput={(event) =>
+                  onChange(() =>
+                    setAllowUnixSockets((event.currentTarget as HTMLTextAreaElement).value),
+                  )
+                }
+                aria-invalid={error !== undefined}
+                aria-describedby={error !== undefined ? "jk-sandbox-error" : undefined}
+              />
+              <p class="jk-note">
+                Contoh: ~/.orbstack/run/docker.sock dan /var/run/docker.sock. Untuk database lokal
+                lewat TCP, tambahkan localhost dan 127.0.0.1 di daftar domain. Setiap izin
+                memperlebar akses Bash dan tercatat di Audit log.
+              </p>
+            </div>
+
+            <div class="jk-field">
+              <label class="jk-bypass-check">
+                <input
+                  id="jk-sandbox-local-binding"
+                  type="checkbox"
+                  checked={allowLocalBinding}
+                  onChange={(event) =>
+                    onChange(() =>
+                      setAllowLocalBinding((event.currentTarget as HTMLInputElement).checked),
+                    )
+                  }
+                />
+                <span>Izinkan bind port localhost</span>
+              </label>
+              <p class="jk-note">
+                Hanya berlaku di macOS. Setiap izin memperlebar akses Bash dan tercatat di Audit
+                log.
+              </p>
             </div>
 
             <details class="jk-sandbox-defaults">

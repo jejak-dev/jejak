@@ -63,6 +63,9 @@ describe("rute sandbox", () => {
       allowedDomains: [],
       extraDenyRead: [],
       extraDenyWrite: [],
+      extraAllowWrite: [],
+      extraAllowUnixSockets: [],
+      allowLocalBinding: false,
     });
     expect(payload.defaults).toMatchObject({
       allowedDomains: [...DEFAULT_ALLOWED_DOMAINS],
@@ -86,10 +89,41 @@ describe("rute sandbox", () => {
         allowedDomains: ["a.test", "b.test"],
         extraDenyRead: ["~/x"],
         extraDenyWrite: [],
+        extraAllowWrite: [],
+        extraAllowUnixSockets: [],
+        allowLocalBinding: false,
       },
     });
     const after = await json(await req(app, "GET", "/api/sandbox"));
     expect((after.config as { mode: string }).mode).toBe("mati");
+  });
+
+  test("PUT menyimpan pelonggaran dan audit mencatat aksi sandbox-longgar", async () => {
+    const audit = auditStore();
+    const app = setup({ audit });
+    const res = await req(app, "PUT", "/api/sandbox", {
+      extraAllowWrite: ["~/tmp"],
+      extraAllowUnixSockets: ["/var/run/docker.sock"],
+      allowLocalBinding: true,
+    });
+    expect(res.status).toBe(200);
+    const payload = await json(res);
+    expect((payload.config as { extraAllowWrite: string[] }).extraAllowWrite).toEqual(["~/tmp"]);
+    expect(
+      (payload.config as { extraAllowUnixSockets: string[] }).extraAllowUnixSockets,
+    ).toEqual(["/var/run/docker.sock"]);
+    expect((payload.config as { allowLocalBinding: boolean }).allowLocalBinding).toBe(true);
+
+    const after = await json(await req(app, "GET", "/api/sandbox"));
+    expect((after.config as { extraAllowWrite: string[] }).extraAllowWrite).toEqual(["~/tmp"]);
+
+    const entry = entries(audit).find((item) => item.meta.aksi === "sandbox-longgar");
+    expect(entry?.meta).toMatchObject({
+      allowWrite: 1,
+      unixSockets: 1,
+      localBinding: true,
+      aksi: "sandbox-longgar",
+    });
   });
 
   test("PUT menolak 400 field asing, domain buruk, jalur relatif, mode tak dikenal", async () => {
@@ -100,6 +134,10 @@ describe("rute sandbox", () => {
       { allowedDomains: ["https://x.test"] },
       { extraDenyRead: ["relatif"] },
       { extraDenyWrite: ["../naik"] },
+      { extraAllowWrite: ["/"] },
+      { extraAllowUnixSockets: ["/tmp/*.sock"] },
+      { allowLocalBinding: "ya" },
+      { extraAllowUnixSockets: "bukan daftar" },
       { mode: "nyala" },
       "bukan json",
       "[1]",

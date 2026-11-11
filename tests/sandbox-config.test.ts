@@ -32,6 +32,9 @@ const DEFAULTS = {
   allowedDomains: [],
   extraDenyRead: [],
   extraDenyWrite: [],
+  extraAllowWrite: [],
+  extraAllowUnixSockets: [],
+  allowLocalBinding: false,
 };
 
 describe("FileSandboxStore", () => {
@@ -47,6 +50,9 @@ describe("FileSandboxStore", () => {
       allowedDomains: ["a.test", "b.test"],
       extraDenyRead: ["~/x"],
       extraDenyWrite: [],
+      extraAllowWrite: [],
+      extraAllowUnixSockets: [],
+      allowLocalBinding: false,
     });
 
     const reopened = store();
@@ -92,6 +98,9 @@ describe("FileSandboxStore", () => {
       allowedDomains: ["oke.test"],
       extraDenyRead: ["/absolut", "~/rumah"],
       extraDenyWrite: [],
+      extraAllowWrite: [],
+      extraAllowUnixSockets: [],
+      allowLocalBinding: false,
     });
   });
 
@@ -126,6 +135,56 @@ describe("FileSandboxStore", () => {
       expect(() => s.set({ extraDenyRead: [bad] })).toThrow(SandboxConfigError);
     }
     expect(s.set({ extraDenyWrite: ["~/x", "/abs/y"] }).extraDenyWrite).toEqual(["/abs/y", "~/x"]);
+  });
+
+  test("berkas lama tanpa field pelonggaran terbaca dengan default", async () => {
+    await mkdir(join(root, "home"), { recursive: true });
+    await writeFile(
+      storePath,
+      JSON.stringify({
+        version: 1,
+        mode: "standar",
+        allowedDomains: [],
+        extraDenyRead: [],
+        extraDenyWrite: [],
+      }),
+      "utf8",
+    );
+    expect(store().get()).toEqual(DEFAULTS);
+  });
+
+  test("validasi jalur tulis tambahan dan socket Unix", () => {
+    const s = new FileSandboxStore(":memory:");
+    for (const bad of ["/", "~", "~/", "relatif", "/a/../b"]) {
+      expect(() => s.set({ extraAllowWrite: [bad] })).toThrow(SandboxConfigError);
+      expect(() => s.set({ extraAllowUnixSockets: [bad] })).toThrow(SandboxConfigError);
+    }
+    for (const bad of ["/tmp/*.sock", "~/run/?.sock"]) {
+      expect(() => s.set({ extraAllowUnixSockets: [bad] })).toThrow("wildcard");
+    }
+    expect(
+      s.set({
+        extraAllowWrite: ["~/tmp", "/srv/data"],
+        extraAllowUnixSockets: ["/var/run/docker.sock", "~/.orbstack/run/docker.sock"],
+        allowLocalBinding: true,
+      }),
+    ).toEqual({
+      mode: "standar",
+      allowedDomains: [],
+      extraDenyRead: [],
+      extraDenyWrite: [],
+      extraAllowWrite: ["/srv/data", "~/tmp"],
+      extraAllowUnixSockets: ["/var/run/docker.sock", "~/.orbstack/run/docker.sock"],
+      allowLocalBinding: true,
+    });
+  });
+
+  test("allowLocalBinding harus boolean", () => {
+    const s = new FileSandboxStore(":memory:");
+    expect(() =>
+      s.set({ allowLocalBinding: "ya" as unknown as boolean }),
+    ).toThrow(SandboxConfigError);
+    expect(s.set({ allowLocalBinding: false }).allowLocalBinding).toBe(false);
   });
 
   test("validasi mode dan bentuk patch", () => {

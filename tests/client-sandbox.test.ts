@@ -14,6 +14,9 @@ const CONFIG: SandboxConfigItem = {
   allowedDomains: ["example.com"],
   extraDenyRead: ["~/.config/rahasia"],
   extraDenyWrite: ["/etc"],
+  extraAllowWrite: ["~/tmp"],
+  extraAllowUnixSockets: ["/var/run/docker.sock"],
+  allowLocalBinding: false,
 };
 
 function state(overrides: Partial<SandboxState> = {}): SandboxState {
@@ -138,6 +141,9 @@ describe("sandboxPatchFrom", () => {
     domains: listToText(CONFIG.allowedDomains),
     denyRead: listToText(CONFIG.extraDenyRead),
     denyWrite: listToText(CONFIG.extraDenyWrite),
+    allowWrite: listToText(CONFIG.extraAllowWrite),
+    allowUnixSockets: listToText(CONFIG.extraAllowUnixSockets),
+    allowLocalBinding: CONFIG.allowLocalBinding,
   };
 
   test("tanpa perubahan menghasilkan patch kosong", () => {
@@ -160,6 +166,29 @@ describe("sandboxPatchFrom", () => {
         CONFIG,
       ),
     ).toEqual({ patch: { mode: "mati", extraDenyWrite: ["/srv"] } });
+  });
+
+  test("daftar pelonggaran dan boolean hanya masuk patch bila berbeda", () => {
+    expect(
+      sandboxPatchFrom(
+        { ...form, allowWrite: "/srv/data", allowUnixSockets: "/tmp/docker.sock" },
+        CONFIG,
+      ),
+    ).toEqual({
+      patch: {
+        extraAllowWrite: ["/srv/data"],
+        extraAllowUnixSockets: ["/tmp/docker.sock"],
+      },
+    });
+    expect(sandboxPatchFrom({ ...form, allowLocalBinding: true }, CONFIG)).toEqual({
+      patch: { allowLocalBinding: true },
+    });
+    expect(
+      sandboxPatchFrom(
+        { ...form, allowWrite: "~/tmp", allowUnixSockets: "/var/run/docker.sock" },
+        CONFIG,
+      ),
+    ).toEqual({ patch: {} });
   });
 
   test("galat validasi diteruskan tanpa patch", () => {

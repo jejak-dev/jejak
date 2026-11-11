@@ -7,6 +7,7 @@ import {
   buildSandboxOptions,
   describeSandboxFailure,
   extractSandboxViolations,
+  isSafeWritePath,
   providerHostsFrom,
   sandboxAvailable,
 } from "../src/server/sandbox/build-options";
@@ -21,6 +22,9 @@ function config(overrides: Partial<SandboxConfig> = {}): SandboxConfig {
     allowedDomains: [],
     extraDenyRead: [],
     extraDenyWrite: [],
+    extraAllowWrite: [],
+    extraAllowUnixSockets: [],
+    allowLocalBinding: false,
     ...overrides,
   };
 }
@@ -44,7 +48,12 @@ type Options = {
   allowUnsandboxedCommands: boolean;
   autoAllowBashIfSandboxed: boolean;
   filesystem: { allowWrite: string[]; denyWrite: string[]; denyRead: string[] };
-  network: { allowedDomains: string[]; strictAllowlist: boolean; allowLocalBinding: boolean };
+  network: {
+    allowedDomains: string[];
+    strictAllowlist: boolean;
+    allowLocalBinding: boolean;
+    allowUnixSockets?: string[];
+  };
 };
 
 describe("buildSandboxOptions", () => {
@@ -119,6 +128,75 @@ describe("buildSandboxOptions", () => {
     }
     expect(options.network.allowedDomains).toContain("api.tambahan.test");
     expect(options.network.allowedDomains).toContain("api.provider.test");
+  });
+
+  test("config default tidak menambah kunci socket maupun melonggarkan binding", () => {
+    const options = build() as Options;
+    expect("allowUnixSockets" in options.network).toBe(false);
+    expect(options.network.allowLocalBinding).toBe(false);
+    expect(options.filesystem.allowWrite).toEqual(["/proyek"]);
+  });
+
+  test("extraAllowWrite, socket, dan allowLocalBinding diteruskan", () => {
+    const options = build({
+      config: config({
+        extraAllowWrite: ["~/tmp/proyek", "/srv/data"],
+        extraAllowUnixSockets: ["~/.orbstack/run/docker.sock", "/var/run/docker.sock"],
+        allowLocalBinding: true,
+      }),
+    }) as Options;
+    expect(options.filesystem.allowWrite).toEqual([
+      "/proyek",
+      join(HOME, "tmp/proyek"),
+      "/srv/data",
+    ]);
+    expect(options.network.allowUnixSockets).toEqual([
+      join(HOME, ".orbstack/run/docker.sock"),
+      "/var/run/docker.sock",
+    ]);
+    expect(options.network.allowLocalBinding).toBe(true);
+  });
+
+  test("entri tulis berbahaya dibuang", () => {
+    const options = build({
+      config: config({
+        extraAllowWrite: [
+          "/rumah/uji",
+          "/rumah",
+          "~",
+          JEJAK,
+          join(JEJAK, "provider.json"),
+          "/rumah/uji/.ssh",
+          "/srv/aman",
+        ],
+        extraAllowUnixSockets: [join(JEJAK, "rahasia.sock"), "/var/run/docker.sock"],
+      }),
+    }) as Options;
+    expect(options.filesystem.allowWrite).toEqual(["/proyek", "/srv/aman"]);
+    expect(options.network.allowUnixSockets).toEqual(["/var/run/docker.sock"]);
+  });
+});
+
+describe("isSafeWritePath", () => {
+  const guard = { home: HOME, jejakHome: JEJAK, denyRead: [join(HOME, ".ssh")] };
+
+  test("menolak home, jejakHome, leluhur, dan isi jejakHome", () => {
+    for (const path of [
+      "/",
+      HOME,
+      "/rumah",
+      JEJAK,
+      join(JEJAK, "audit.db"),
+      join(HOME, ".ssh"),
+      join(HOME, ".ssh", "authorized_keys"),
+    ]) {
+      expect(isSafeWritePath(path, guard)).toBe(false);
+    }
+  });
+
+  test("menerima jalur spesifik di luar jalur sensitif", () => {
+    expect(isSafeWritePath(join(HOME, "tmp"), guard)).toBe(true);
+    expect(isSafeWritePath("/srv/data", guard)).toBe(true);
   });
 });
 

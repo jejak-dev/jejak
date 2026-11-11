@@ -116,6 +116,9 @@ export interface SandboxForm {
   domains: string;
   denyRead: string;
   denyWrite: string;
+  allowWrite: string;
+  allowUnixSockets: string;
+  allowLocalBinding: boolean;
 }
 
 /**
@@ -142,6 +145,10 @@ export function sandboxPatchFrom(
   if (denyRead.error !== undefined) return { error: denyRead.error };
   const denyWrite = parseListInput(form.denyWrite, "path");
   if (denyWrite.error !== undefined) return { error: denyWrite.error };
+  const allowWrite = parseListInput(form.allowWrite, "path");
+  if (allowWrite.error !== undefined) return { error: allowWrite.error };
+  const allowUnixSockets = parseListInput(form.allowUnixSockets, "path");
+  if (allowUnixSockets.error !== undefined) return { error: allowUnixSockets.error };
 
   const patch: SandboxPatch = {};
   if (form.mode !== current.mode) patch.mode = form.mode;
@@ -153,6 +160,15 @@ export function sandboxPatchFrom(
   }
   if (!sameList(denyWrite.values ?? [], current.extraDenyWrite)) {
     patch.extraDenyWrite = denyWrite.values ?? [];
+  }
+  if (!sameList(allowWrite.values ?? [], current.extraAllowWrite)) {
+    patch.extraAllowWrite = allowWrite.values ?? [];
+  }
+  if (!sameList(allowUnixSockets.values ?? [], current.extraAllowUnixSockets)) {
+    patch.extraAllowUnixSockets = allowUnixSockets.values ?? [];
+  }
+  if (form.allowLocalBinding !== current.allowLocalBinding) {
+    patch.allowLocalBinding = form.allowLocalBinding;
   }
   return { patch };
 }

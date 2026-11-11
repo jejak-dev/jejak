@@ -67,6 +67,44 @@ function uniqueOrdered(values: readonly string[]): string[] {
   return result;
 }
 
+function normalizePath(path: string): string {
+  return path.length > 1 ? path.replace(/\/+$/, "") : path;
+}
+
+/** Apakah `entry` sama dengan `target` atau merupakan leluhurnya. */
+function isSameOrParent(entry: string, target: string): boolean {
+  if (entry === target) return true;
+  if (entry === "/") return true;
+  return target.startsWith(`${entry}/`);
+}
+
+export interface SafeWriteGuard {
+  home: string;
+  jejakHome: string;
+  denyRead: readonly string[];
+}
+
+/**
+ * Jalur tulis tambahan aman bila bukan home/jejakHome, bukan leluhur
+ * keduanya atau jalur denyRead, dan tidak berada di dalam jejakHome
+ * maupun di dalam jalur denyRead (mis. ~/.ssh/authorized_keys).
+ * Jalur spesifik di dalam home (mis. ~/tmp) tetap boleh.
+ */
+export function isSafeWritePath(path: string, guard: SafeWriteGuard): boolean {
+  const value = normalizePath(path);
+  const home = normalizePath(guard.home);
+  const jejakHome = normalizePath(guard.jejakHome);
+  if (isSameOrParent(value, home)) return false;
+  if (isSameOrParent(value, jejakHome)) return false;
+  if (isSameOrParent(jejakHome, value)) return false;
+  for (const deny of guard.denyRead) {
+    const normalizedDeny = normalizePath(deny);
+    if (isSameOrParent(value, normalizedDeny)) return false;
+    if (isSameOrParent(normalizedDeny, value)) return false;
+  }
+  return true;
+}
+
 /**
  * Opsi `sandbox` untuk SDK. `mati` menghasilkan `undefined` sehingga perilaku
  * lama (tanpa opsi sandbox) berlaku persis.
@@ -101,21 +139,38 @@ export function buildSandboxOptions(
     ...input.providerHosts,
   ]);
 
+  const writeGuard: SafeWriteGuard = {
+    home: input.home,
+    jejakHome: input.jejakHome,
+    denyRead,
+  };
+  const extraAllowedWrite = input.config.extraAllowWrite
+    .map((path) => expandHome(path, input.home))
+    .filter((path) => isSafeWritePath(path, writeGuard));
+
+  const network: Record<string, unknown> = {
+    allowedDomains,
+    strictAllowlist: true,
+    allowLocalBinding: input.config.allowLocalBinding,
+  };
+  const unixSockets = uniqueSorted(
+    input.config.extraAllowUnixSockets
+      .map((path) => expandHome(path, input.home))
+      .filter((path) => !isSameOrParent(normalizePath(input.jejakHome), normalizePath(path))),
+  );
+  if (unixSockets.length > 0) network.allowUnixSockets = unixSockets;
+
   return {
     enabled: true,
     failIfUnavailable: true,
     allowUnsandboxedCommands: false,
     autoAllowBashIfSandboxed: true,
     filesystem: {
-      allowWrite: uniqueSorted(input.extraWriteDirs),
+      allowWrite: uniqueSorted([...input.extraWriteDirs, ...extraAllowedWrite]),
       denyWrite: uniqueSorted(denyWrite),
       denyRead: uniqueSorted(denyRead),
     },
-    network: {
-      allowedDomains,
-      strictAllowlist: true,
-      allowLocalBinding: false,
-    },
+    network,
   };
 }
 

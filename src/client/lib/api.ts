@@ -341,6 +341,9 @@ export interface SandboxConfigItem {
   allowedDomains: string[];
   extraDenyRead: string[];
   extraDenyWrite: string[];
+  extraAllowWrite: string[];
+  extraAllowUnixSockets: string[];
+  allowLocalBinding: boolean;
 }
 
 export interface SandboxState {
@@ -726,6 +729,9 @@ function sandboxConfigFrom(payload: unknown): SandboxConfigItem {
     allowedDomains: stringListFrom(payload.allowedDomains),
     extraDenyRead: stringListFrom(payload.extraDenyRead),
     extraDenyWrite: stringListFrom(payload.extraDenyWrite),
+    extraAllowWrite: stringListFrom(payload.extraAllowWrite),
+    extraAllowUnixSockets: stringListFrom(payload.extraAllowUnixSockets),
+    allowLocalBinding: payload.allowLocalBinding === true,
   };
 }
 
@@ -1670,6 +1676,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       if (patch.allowedDomains !== undefined) body.allowedDomains = patch.allowedDomains;
       if (patch.extraDenyRead !== undefined) body.extraDenyRead = patch.extraDenyRead;
       if (patch.extraDenyWrite !== undefined) body.extraDenyWrite = patch.extraDenyWrite;
+      if (patch.extraAllowWrite !== undefined) body.extraAllowWrite = patch.extraAllowWrite;
+      if (patch.extraAllowUnixSockets !== undefined) {
+        body.extraAllowUnixSockets = patch.extraAllowUnixSockets;
+      }
+      if (patch.allowLocalBinding !== undefined) body.allowLocalBinding = patch.allowLocalBinding;
       const data = await request("PUT", "/api/sandbox", body);
       return sandboxConfigFrom(field(data, "config"));
     },

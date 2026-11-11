@@ -19,6 +19,12 @@ export interface SandboxConfig {
   allowedDomains: string[];
   extraDenyRead: string[];
   extraDenyWrite: string[];
+  /** Jalur tulis tambahan di luar folder kerja. */
+  extraAllowWrite: string[];
+  /** Jalur socket Unix yang boleh dipakai Bash. */
+  extraAllowUnixSockets: string[];
+  /** Izinkan bind port localhost (macOS). */
+  allowLocalBinding: boolean;
 }
 
 export interface SandboxStore {
@@ -47,7 +53,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function defaultConfig(): SandboxConfig {
-  return { mode: "standar", allowedDomains: [], extraDenyRead: [], extraDenyWrite: [] };
+  return {
+    mode: "standar",
+    allowedDomains: [],
+    extraDenyRead: [],
+    extraDenyWrite: [],
+    extraAllowWrite: [],
+    extraAllowUnixSockets: [],
+    allowLocalBinding: false,
+  };
 }
 
 export function copySandboxConfig(config: SandboxConfig): SandboxConfig {
@@ -56,6 +70,9 @@ export function copySandboxConfig(config: SandboxConfig): SandboxConfig {
     allowedDomains: [...config.allowedDomains],
     extraDenyRead: [...config.extraDenyRead],
     extraDenyWrite: [...config.extraDenyWrite],
+    extraAllowWrite: [...config.extraAllowWrite],
+    extraAllowUnixSockets: [...config.extraAllowUnixSockets],
+    allowLocalBinding: config.allowLocalBinding,
   };
 }
 
@@ -102,6 +119,24 @@ function validatePath(raw: unknown): string {
   }
   if (value.split("/").includes("..")) {
     throw new SandboxConfigError("Jalur tidak boleh memuat segmen ..");
+  }
+  return value;
+}
+
+/** Jalur tulis tambahan tidak boleh berupa akar atau home utuh. */
+function validateAllowWritePath(raw: unknown): string {
+  const value = validatePath(raw);
+  if (value === "/" || value === "~" || value === "~/") {
+    throw new SandboxConfigError("Jalur tulis tidak boleh akar atau home utuh.");
+  }
+  return value;
+}
+
+/** Socket Unix tidak boleh berupa akar/home utuh maupun memuat wildcard. */
+function validateUnixSocketPath(raw: unknown): string {
+  const value = validateAllowWritePath(raw);
+  if (value.includes("*") || value.includes("?")) {
+    throw new SandboxConfigError("Jalur socket tidak boleh memuat wildcard.");
   }
   return value;
 }
@@ -198,6 +233,12 @@ export class FileSandboxStore implements SandboxStore {
         allowedDomains: sanitizeList(parsed.allowedDomains, validateDomain),
         extraDenyRead: sanitizeList(parsed.extraDenyRead, validatePath),
         extraDenyWrite: sanitizeList(parsed.extraDenyWrite, validatePath),
+        extraAllowWrite: sanitizeList(parsed.extraAllowWrite, validateAllowWritePath),
+        extraAllowUnixSockets: sanitizeList(
+          parsed.extraAllowUnixSockets,
+          validateUnixSocketPath,
+        ),
+        allowLocalBinding: parsed.allowLocalBinding === true,
       };
     } catch {
       // JSON rusak: pakai default.
@@ -221,6 +262,9 @@ export class FileSandboxStore implements SandboxStore {
         allowedDomains: [...config.allowedDomains].sort(),
         extraDenyRead: [...config.extraDenyRead].sort(),
         extraDenyWrite: [...config.extraDenyWrite].sort(),
+        extraAllowWrite: [...config.extraAllowWrite].sort(),
+        extraAllowUnixSockets: [...config.extraAllowUnixSockets].sort(),
+        allowLocalBinding: config.allowLocalBinding,
       },
       null,
       2,
@@ -259,6 +303,9 @@ export class FileSandboxStore implements SandboxStore {
     let allowedDomains: string[] | undefined;
     let extraDenyRead: string[] | undefined;
     let extraDenyWrite: string[] | undefined;
+    let extraAllowWrite: string[] | undefined;
+    let extraAllowUnixSockets: string[] | undefined;
+    let allowLocalBinding: boolean | undefined;
     if (patch.mode !== undefined) {
       mode = validateMode(patch.mode);
     }
@@ -271,11 +318,36 @@ export class FileSandboxStore implements SandboxStore {
     if (patch.extraDenyWrite !== undefined) {
       extraDenyWrite = validateList(patch.extraDenyWrite, "jalur tulis", validatePath);
     }
+    if (patch.extraAllowWrite !== undefined) {
+      extraAllowWrite = validateList(
+        patch.extraAllowWrite,
+        "jalur tulis tambahan",
+        validateAllowWritePath,
+      );
+    }
+    if (patch.extraAllowUnixSockets !== undefined) {
+      extraAllowUnixSockets = validateList(
+        patch.extraAllowUnixSockets,
+        "socket Unix",
+        validateUnixSocketPath,
+      );
+    }
+    if (patch.allowLocalBinding !== undefined) {
+      if (typeof patch.allowLocalBinding !== "boolean") {
+        throw new SandboxConfigError("allowLocalBinding harus berupa boolean.");
+      }
+      allowLocalBinding = patch.allowLocalBinding;
+    }
 
     if (mode !== undefined) next.mode = mode;
     if (allowedDomains !== undefined) next.allowedDomains = allowedDomains;
     if (extraDenyRead !== undefined) next.extraDenyRead = extraDenyRead;
     if (extraDenyWrite !== undefined) next.extraDenyWrite = extraDenyWrite;
+    if (extraAllowWrite !== undefined) next.extraAllowWrite = extraAllowWrite;
+    if (extraAllowUnixSockets !== undefined) {
+      next.extraAllowUnixSockets = extraAllowUnixSockets;
+    }
+    if (allowLocalBinding !== undefined) next.allowLocalBinding = allowLocalBinding;
 
     this.config = next;
     this.persist(next);

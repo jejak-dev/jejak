@@ -22,7 +22,15 @@ export interface SandboxRoutesOptions {
 
 const DISABLED = "Sandbox dimatikan.";
 
-const BODY_KEYS = ["mode", "allowedDomains", "extraDenyRead", "extraDenyWrite"] as const;
+const BODY_KEYS = [
+  "mode",
+  "allowedDomains",
+  "extraDenyRead",
+  "extraDenyWrite",
+  "extraAllowWrite",
+  "extraAllowUnixSockets",
+  "allowLocalBinding",
+] as const;
 
 function jsonResponse(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -65,13 +73,25 @@ function parsePatch(record: Record<string, unknown>): Partial<SandboxConfig> {
     }
     patch.mode = record.mode;
   }
-  for (const key of ["allowedDomains", "extraDenyRead", "extraDenyWrite"] as const) {
+  for (const key of [
+    "allowedDomains",
+    "extraDenyRead",
+    "extraDenyWrite",
+    "extraAllowWrite",
+    "extraAllowUnixSockets",
+  ] as const) {
     const value = record[key];
     if (value === undefined) continue;
     if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
       throw new SandboxConfigError(`Field "${key}" harus berupa daftar teks.`);
     }
     patch[key] = value as string[];
+  }
+  if (record.allowLocalBinding !== undefined) {
+    if (typeof record.allowLocalBinding !== "boolean") {
+      throw new SandboxConfigError('Field "allowLocalBinding" harus berupa boolean.');
+    }
+    patch.allowLocalBinding = record.allowLocalBinding;
   }
   if (Object.keys(patch).length === 0) {
     throw new SandboxConfigError("Tidak ada pengaturan yang diubah.");
@@ -117,9 +137,19 @@ export function sandboxRoutes(options: SandboxRoutesOptions = {}): Elysia {
             domain: config.allowedDomains.length,
             denyRead: config.extraDenyRead.length,
             denyWrite: config.extraDenyWrite.length,
+            allowWrite: config.extraAllowWrite.length,
+            unixSockets: config.extraAllowUnixSockets.length,
+            localBinding: config.allowLocalBinding,
           };
           if (patch.mode !== undefined && patch.mode !== before.mode && config.mode === "mati") {
             meta.aksi = "sandbox-mati-global";
+          }
+          const widened =
+            config.extraAllowWrite.length > before.extraAllowWrite.length ||
+            config.extraAllowUnixSockets.length > before.extraAllowUnixSockets.length ||
+            (config.allowLocalBinding && !before.allowLocalBinding);
+          if (widened && meta.aksi === undefined) {
+            meta.aksi = "sandbox-longgar";
           }
           recordAudit(auditStore, {
             kind: "pengaturan",
