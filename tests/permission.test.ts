@@ -297,6 +297,17 @@ describe("rute izin", () => {
   });
 });
 
+describe("mock-runner: [mermaid]", () => {
+  test("menjawab dengan blok kode mermaid", async () => {
+    const events = await collect(
+      createMockRunner({ delayMs: 0 }).run({ prompt: "gambar [mermaid]", cwd: dir, provider: PROVIDER }),
+    );
+    const text = events.find((e) => e.type === "text") as { text: string } | undefined;
+    expect(text?.text).toContain("```mermaid");
+    expect(events.at(-1)?.type).toBe("result");
+  });
+});
+
 describe("mock-runner: [todo]", () => {
   test("mengirim TodoWrite dengan tiga langkah lalu hasil", async () => {
     const events = await collect(

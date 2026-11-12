@@ -87,6 +87,17 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
       }
       let hasResult = false;
 
+      // Penanda [mermaid]: jawaban berisi blok diagram (uji render Mermaid).
+      if (input.prompt.includes("[mermaid]")) {
+        yield { type: "session", sessionId: "mock-session", model: "mock-model" };
+        yield {
+          type: "text",
+          text: "Alur singkat:\n\n```mermaid\nflowchart LR\n  A[Pesan] --> B{Agent}\n  B --> C[Tool]\n  B --> D[Jawaban]\n```\n\nSelesai.",
+        };
+        yield withAnchor({ type: "result", ok: true });
+        return;
+      }
+
       // Penanda [todo]: agent mengirim daftar langkah lewat TodoWrite (uji tab Todos).
       if (input.prompt.includes("[todo]")) {
         yield { type: "session", sessionId: "mock-session", model: "mock-model" };
