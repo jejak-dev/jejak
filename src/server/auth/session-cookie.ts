@@ -34,10 +34,6 @@ export interface SessionCodec {
   clear(options?: CookieOptions): string;
 }
 
-function base64url(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64url");
-}
-
 function sign(key: Uint8Array, payload: string): string {
   return createHmac("sha256", key).update(payload, "utf8").digest("base64url");
 }

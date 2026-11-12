@@ -18,7 +18,6 @@ import type { ModelPrice, ProviderSelection, ResolvedProvider } from "../provide
 import {
   classifyProviderError,
   describeFallbackReason,
-  type ProviderErrorKind,
 } from "../agent/provider-error";
 import type { AuditKind, AuditMeta, AuditStore } from "../audit/audit-store";
 import type { ClaudeConfigStore } from "../claude-config/config-store";

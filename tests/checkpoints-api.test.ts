@@ -53,22 +53,6 @@ function runner(): AgentRunner {
   };
 }
 
-function hanging(): AgentRunner {
-  return {
-    async *run(input) {
-      yield { type: "text", text: "menunggu" };
-      await new Promise<void>((resolve) => {
-        if (input.signal?.aborted === true) {
-          resolve();
-          return;
-        }
-        input.signal?.addEventListener("abort", () => resolve(), { once: true });
-      });
-      yield { type: "result", ok: false, error: "dibatalkan" };
-    },
-  };
-}
-
 /** Giliran pertama selesai; giliran berikutnya menunggu sampai dihentikan. */
 function hangAfterFirst(): AgentRunner {
   let calls = 0;

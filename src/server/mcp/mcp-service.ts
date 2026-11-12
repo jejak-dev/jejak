@@ -18,7 +18,6 @@ import {
   type McpProblem,
   type McpServerConfig,
   type McpServerView,
-  type McpTransport,
 } from "./mcp-config";
 
 export type McpErrorCode = "tidak-valid" | "tidak-ditemukan" | "konflik";

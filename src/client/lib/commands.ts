@@ -34,12 +34,10 @@ export function fuzzyScore(query: string, label: string): number | undefined {
   let bestRun = 0;
   let span = 0;
   let first = -1;
-  let last = -1;
   for (const char of q) {
     const found = t.indexOf(char, cursor);
     if (found === -1) return undefined;
     if (first === -1) first = found;
-    last = found;
     span = found - first + 1;
     run = found === cursor && cursor !== 0 ? run + 1 : 1;
     bestRun = Math.max(bestRun, run);

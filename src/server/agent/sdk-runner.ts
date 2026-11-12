@@ -1,6 +1,5 @@
 import { toSdkEnv, type ResolvedProvider } from "../provider";
 import type {
-  AgentEvent,
   AgentRunner,
   RunInput,
   PermissionRequest,

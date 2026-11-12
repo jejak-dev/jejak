@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../src/server";
-import type { AgentEvent, AgentRunner, RunInput } from "../src/server/agent";
+import type { AgentRunner, RunInput } from "../src/server/agent";
 import type { ProviderSelection, ResolvedProvider } from "../src/server/provider";
 import {
   SessionManager,

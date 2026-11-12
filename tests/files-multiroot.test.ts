@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type CreateAppOptions } from "../src/server";
-import { createMockRunner, type AgentRunner } from "../src/server/agent";
+import type { AgentRunner } from "../src/server/agent";
 import { FileError } from "../src/server/files/path";
 import {
   repoSnapshotName,

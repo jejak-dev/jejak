@@ -130,10 +130,6 @@ interface UsageBucket {
   turns: number;
 }
 
-function emptyBucket(): UsageBucket {
-  return { costUsd: 0, inputTokens: 0, outputTokens: 0, turns: 0 };
-}
-
 function num(value: number | null | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }

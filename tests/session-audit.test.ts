@@ -64,13 +64,6 @@ function askingRunner(input: unknown = { file_path: "a.txt" }): AgentRunner {
   };
 }
 
-async function waitUntil(check: () => boolean): Promise<void> {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    if (check()) return;
-    await new Promise((resolve) => setTimeout(resolve, 1));
-  }
-  throw new Error("kondisi tidak tercapai");
-}
 function entriesOf(audit: AuditStore, sessionId: string, kind?: AuditEntry["kind"]): AuditEntry[] {
   const query: AuditQuery = { session: sessionId, limit: 200 };
   if (kind !== undefined) query.kind = kind;

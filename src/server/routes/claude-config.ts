@@ -272,7 +272,6 @@ export function claudeConfigRoutes(options: ClaudeConfigRoutesOptions = {}): Ely
     .get("/api/claude/skills", ({ query }) => {
       try {
         const cwd = queryCwd(query, true);
-        const config = store.get();
         return {
           skills: listSkills(cwd, home, store.disabledFor(cwd ?? "")),
         };

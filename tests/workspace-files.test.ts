@@ -1,10 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
-  chmod,
   mkdir,
   mkdtemp,
   readdir,
-  readFile,
   rm,
   stat,
   writeFile,

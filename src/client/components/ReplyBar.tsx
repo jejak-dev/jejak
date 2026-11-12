@@ -254,7 +254,6 @@ export function ReplyBar({
         ? `Konteks: ${formatTokens(context.tokens)} token`
         : `Konteks: ${formatTokens(context.tokens)} dari ${formatTokens(context.window)} token (jendela diatur di profil model; bila kosong, tebakan SDK)`;
 
-  const bypass = session.permissionMode === "bypassPermissions";
   const modeLabel =
     MODE_OPTIONS.find((option) => option.value === session.permissionMode)?.label.replace(
       " (berbahaya)",
