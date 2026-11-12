@@ -226,6 +226,9 @@ describe("SessionManager anggaran", () => {
       sumForSession() {
         throw new Error("ledger rusak");
       },
+      summarize() {
+        throw new Error("ledger rusak");
+      },
       prune() {},
       close() {},
     };

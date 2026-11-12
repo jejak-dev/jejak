@@ -10,7 +10,7 @@ import { createThrottle } from "./auth/throttle";
 import { CheckpointService } from "./checkpoints/checkpoint-service";
 import type { BudgetStore } from "./budget/budget-store";
 import { defaultBudgetStore } from "./budget/budget-store";
-import { defaultUsageLedger, type UsageLedger } from "./budget/usage-ledger";
+import { defaultUsageLedger, type UsageLedger, usageRetentionDays } from "./budget/usage-ledger";
 import {
   defaultClaudeConfigStore,
   type ClaudeConfigStore,
@@ -42,6 +42,7 @@ import { gitRoutes } from "./routes/git";
 import { worktreeRoutes } from "./routes/worktree";
 import { secretAllowRoutes } from "./routes/secret-allow";
 import { budgetRoutes } from "./routes/budget";
+import { usageRoutes } from "./routes/usage";
 import { claudeConfigRoutes } from "./routes/claude-config";
 import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
@@ -377,6 +378,22 @@ export function createApp(options: CreateAppOptions = {}) {
         store: options.budget,
         ledger: options.usageLedger,
         audit: options.audit,
+      }),
+    )
+    .use(
+      usageRoutes({
+        ...(options.usageLedger === undefined ? {} : { ledger: options.usageLedger }),
+        retentionDays: usageRetentionDays(env),
+        // Judul sesi diambil dari manajer sesi; tanpa itu klien memakai daftarnya.
+        titles: (ids) => {
+          const wanted = new Set(ids);
+          const found: Record<string, string> = {};
+          for (const session of manager.list()) {
+            if (!wanted.has(session.id)) continue;
+            found[session.id] = session.title;
+          }
+          return found;
+        },
       }),
     )
     .use(
