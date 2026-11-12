@@ -1154,6 +1154,172 @@ code {
   overflow-wrap: anywhere;
 }
 
+/* Mode Goal: pita tujuan, konfirmasi mulai, dan baris lanjutan otomatis */
+
+.jk-goal-slot {
+  width: min(740px, 100%);
+  margin: 0 auto 8px;
+}
+
+.jk-goal-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+
+.jk-goal-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jk-goal-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink);
+  animation: jk-pulse 1.4s ease-in-out infinite;
+}
+
+.jk-goal-mark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--t3);
+}
+
+.jk-goal-title {
+  font-weight: 600;
+}
+
+.jk-goal-objective {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.jk-goal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-goal-reason {
+  margin: 0;
+  color: var(--t2);
+}
+
+.jk-goal-summary {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jk-goal-warn {
+  margin: 0;
+  color: var(--warn);
+}
+
+.jk-goal-hint {
+  margin: 0;
+}
+
+.jk-goal-error {
+  margin: 0;
+  color: var(--bad);
+}
+
+.jk-goal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.jk-goal-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+
+.jk-goal-confirm-objective {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.jk-goal-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.jk-goal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.jk-goal-field .jk-input {
+  width: 140px;
+  max-width: 100%;
+}
+
+.jk-goal-auto {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-session-goal {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--t2);
+}
+
+.jk-session-goal-paused {
+  color: var(--t3);
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jk-goal-dot {
+    animation: none;
+  }
+}
+
+@media (pointer: coarse) {
+  .jk-goal-actions .jk-button {
+    min-height: 40px;
+  }
+}
+
 /* Timeline */
 
 .jk-timeline {

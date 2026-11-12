@@ -161,6 +161,116 @@ function liveLabelOf(step: StepItem | undefined): string {
   return step.summary !== "" ? `${step.name} ${step.summary}` : step.name;
 }
 
+export interface UserItemProps {
+  item: Extract<TimelineItem, { kind: "user" }>;
+  /** Nomor giliran otomatis (pesan lanjutan mode Goal). */
+  turn?: number;
+  /** Pesan boleh dimundurkan. */
+  canRewind: boolean;
+  /** Nomor urut yang sedang dikonfirmasi untuk dibuang. */
+  confirmSeq?: number;
+  /** Mundur percakapan sedang berjalan. */
+  rewinding: boolean;
+  onRequestRewind: (seq: number) => void;
+  onConfirmRewind: (seq: number) => void;
+  onCancelRewind: () => void;
+}
+
+/**
+ * Baris pesan pengguna. Pesan lanjutan otomatis mode Goal (`auto`) tampil
+ * sebagai baris kecil "Melanjutkan tujuan", bukan gelembung, dan tak punya
+ * tombol mundur.
+ */
+export function UserItem({
+  item,
+  turn,
+  canRewind,
+  confirmSeq,
+  rewinding,
+  onRequestRewind,
+  onConfirmRewind,
+  onCancelRewind,
+}: UserItemProps) {
+  if (item.auto === "goal") {
+    return (
+      <div class="jk-goal-auto" title="Pesan lanjutan otomatis mode Goal">
+        <Icon name="target" />
+        <span>
+          Melanjutkan tujuan
+          {turn !== undefined ? ` (giliran ke-${turn})` : ""}
+        </span>
+      </div>
+    );
+  }
+
+  const parsed = splitAttachments(item.text);
+  const seq = item.seq;
+  return (
+    <div class="jk-user">
+      {parsed.body}
+      {parsed.files.length > 0 && (
+        <div class="jk-user-atts">
+          {parsed.files.map((file) =>
+            file.image ? (
+              <a key={file.path} href={attachmentUrl(file)} target="_blank" rel="noreferrer">
+                <img class="jk-user-att-img" src={attachmentUrl(file)} alt={file.name} />
+              </a>
+            ) : (
+              <a
+                key={file.path}
+                class="jk-user-att-file"
+                href={attachmentUrl(file)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Icon name="file" />
+                {file.name}
+              </a>
+            ),
+          )}
+        </div>
+      )}
+      {canRewind && seq !== undefined && (
+        confirmSeq === seq ? (
+          <div
+            class="jk-rewind-confirm"
+            role="alertdialog"
+            aria-label="Konfirmasi mundur percakapan"
+          >
+            <p>Buang pesan ini dan sesudahnya? Berkas tidak ikut dikembalikan.</p>
+            <div class="jk-rewind-actions">
+              <button
+                type="button"
+                class="jk-button"
+                disabled={rewinding}
+                onClick={() => onConfirmRewind(seq)}
+              >
+                Ya, buang
+              </button>
+              <button
+                type="button"
+                class="jk-link-btn"
+                disabled={rewinding}
+                onClick={onCancelRewind}
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            class="jk-rewind-btn"
+            onClick={() => onRequestRewind(seq)}
+          >
+            Mundur ke sini
+          </button>
+        )
+      )}
+    </div>
+  );
+}
+
 export function Timeline({
   items: rawItems,
   connection,
@@ -182,6 +292,15 @@ export function Timeline({
         )
       : rawItems;
   const visibleItems = dedupeToolPermission(items);
+  // Nomor giliran otomatis yang terlihat (pesan lanjutan mode Goal).
+  const autoTurns = new Map<number, number>();
+  let autoTotal = 0;
+  visibleItems.forEach((entry, position) => {
+    if (entry.kind === "user" && entry.auto === "goal") {
+      autoTotal += 1;
+      autoTurns.set(position, autoTotal);
+    }
+  });
   // Setelah baris hasil, giliran sudah selesai walau status sesi belum diperbarui.
   const finished = items[items.length - 1]?.kind === "result";
   const lastItem = items[items.length - 1];
@@ -375,7 +494,6 @@ export function Timeline({
             const index = block.index;
             switch (item.kind) {
               case "user": {
-                const parsed = splitAttachments(item.text);
                 const seq = item.seq;
                 const canRewind =
                   running !== true &&
@@ -383,68 +501,17 @@ export function Timeline({
                   seq !== undefined &&
                   rewindableSeqs?.includes(seq) === true;
                 return (
-                  <div class="jk-user" key={index}>
-                    {parsed.body}
-                    {parsed.files.length > 0 && (
-                      <div class="jk-user-atts">
-                        {parsed.files.map((file) =>
-                          file.image ? (
-                            <a key={file.path} href={attachmentUrl(file)} target="_blank" rel="noreferrer">
-                              <img class="jk-user-att-img" src={attachmentUrl(file)} alt={file.name} />
-                            </a>
-                          ) : (
-                            <a
-                              key={file.path}
-                              class="jk-user-att-file"
-                              href={attachmentUrl(file)}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <Icon name="file" />
-                              {file.name}
-                            </a>
-                          ),
-                        )}
-                      </div>
-                    )}
-                    {canRewind && (
-                      confirmSeq === seq ? (
-                        <div
-                          class="jk-rewind-confirm"
-                          role="alertdialog"
-                          aria-label="Konfirmasi mundur percakapan"
-                        >
-                          <p>Buang pesan ini dan sesudahnya? Berkas tidak ikut dikembalikan.</p>
-                          <div class="jk-rewind-actions">
-                            <button
-                              type="button"
-                              class="jk-button"
-                              disabled={rewinding}
-                              onClick={() => void runRewind(seq)}
-                            >
-                              Ya, buang
-                            </button>
-                            <button
-                              type="button"
-                              class="jk-link-btn"
-                              disabled={rewinding}
-                              onClick={() => setConfirmSeq(undefined)}
-                            >
-                              Batal
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <button
-                          type="button"
-                          class="jk-rewind-btn"
-                          onClick={() => setConfirmSeq(seq)}
-                        >
-                          Mundur ke sini
-                        </button>
-                      )
-                    )}
-                  </div>
+                  <UserItem
+                    key={index}
+                    item={item}
+                    turn={autoTurns.get(index)}
+                    canRewind={canRewind}
+                    confirmSeq={confirmSeq}
+                    rewinding={rewinding}
+                    onRequestRewind={(value) => setConfirmSeq(value)}
+                    onConfirmRewind={(value) => void runRewind(value)}
+                    onCancelRewind={() => setConfirmSeq(undefined)}
+                  />
                 );
               }
 

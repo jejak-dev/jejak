@@ -11,6 +11,7 @@ import { McpPage } from "./components/McpPage";
 import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { ReplyBar } from "./components/ReplyBar";
+import { GoalBar } from "./components/GoalBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { Sidebar } from "./components/Sidebar";
@@ -46,6 +47,21 @@ import {
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 import { rewindableSeqs } from "./lib/rewind";
+import type { GoalView } from "./lib/goal";
+
+/**
+ * Tujuan terbaru antara daftar sesi dan respons aksi terakhir. Daftar sesi
+ * kalah bila lebih baru (giliran otomatis mengubah `updatedAt` terus-menerus).
+ */
+function freshestGoal(
+  polled: GoalView | undefined,
+  override: GoalView | null | undefined,
+): GoalView | null | undefined {
+  if (override === undefined) return polled;
+  if (polled === undefined) return override;
+  if (override === null) return polled;
+  return override.updatedAt >= polled.updatedAt ? override : polled;
+}
 
 export function App() {
   // Respons 401 di tengah sesi mengembalikan ke layar login tanpa kehilangan draf.
@@ -163,6 +179,16 @@ export function App() {
 
   const [interruptError, setInterruptError] = useState<string | undefined>(undefined);
   const [interrupting, setInterrupting] = useState(false);
+
+  // Mode Goal: pita tujuan di atas kolom balasan.
+  const [goalOverride, setGoalOverride] = useState<
+    { sessionId: string; goal: GoalView | null } | undefined
+  >(undefined);
+  /** Id tujuan yang dikartu-result-nya sudah ditutup di klien. */
+  const [goalDismissed, setGoalDismissed] = useState<string[]>([]);
+  const [goalBusy, setGoalBusy] = useState(false);
+  const [goalError, setGoalError] = useState<string | undefined>(undefined);
+
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [panelW, setPanelW] = useState(() => {
     try {
@@ -194,6 +220,12 @@ export function App() {
     { sessionId: string; text: string; nonce: number } | undefined
   >(undefined);
   const draftNonceRef = useRef(0);
+
+  // Ganti sesi: status tujuan lokal (override) tidak berlaku untuk sesi lain.
+  useEffect(() => {
+    setGoalOverride(undefined);
+    setGoalError(undefined);
+  }, [selectedId]);
 
   // Teks draf tidak berlaku untuk sesi lain.
   useEffect(() => {
@@ -513,6 +545,38 @@ export function App() {
     })();
   }, [api, interruptId, refresh]);
 
+  // Aksi pita Goal: jeda, lanjut, atau hentikan tujuan.
+  const goalAction = async (action: "pause" | "resume" | "stop"): Promise<void> => {
+    if (selected === undefined || goalBusy) return;
+    setGoalBusy(true);
+    setGoalError(undefined);
+    try {
+      const result =
+        action === "pause"
+          ? await api.pauseGoal(selected.id)
+          : action === "resume"
+            ? await api.resumeGoal(selected.id)
+            : await api.stopGoal(selected.id);
+      setGoalOverride({ sessionId: selected.id, goal: result.goal });
+      void refresh();
+    } catch (caught) {
+      setGoalError(
+        caught instanceof ApiError ? caught.message : "gagal mengubah tujuan",
+      );
+    } finally {
+      setGoalBusy(false);
+    }
+  };
+
+  const sessionGoal = freshestGoal(
+    selected?.goal,
+    goalOverride !== undefined && goalOverride.sessionId === selectedId
+      ? goalOverride.goal
+      : undefined,
+  );
+  const goalVisible =
+    sessionGoal !== undefined && sessionGoal !== null && !goalDismissed.includes(sessionGoal.id);
+
   const onDecide = useCallback(
     async (
       requestId: string,
@@ -749,6 +813,28 @@ export function App() {
                   rewindableSeqs={rewindable}
                   onRewind={onRewind}
                 />
+                {goalVisible && sessionGoal !== undefined && sessionGoal !== null && (
+                  <div class="jk-goal-slot">
+                    <GoalBar
+                      goal={sessionGoal}
+                      busy={goalBusy}
+                      permissionMode={selected.permissionMode}
+                      onPause={() => void goalAction("pause")}
+                      onResume={() => void goalAction("resume")}
+                      onStop={() => void goalAction("stop")}
+                      onDismiss={() =>
+                        setGoalDismissed((list) =>
+                          list.includes(sessionGoal.id) ? list : [...list, sessionGoal.id],
+                        )
+                      }
+                    />
+                    {goalError !== undefined && (
+                      <p class="jk-error-line jk-goal-error" role="alert">
+                        {goalError}
+                      </p>
+                    )}
+                  </div>
+                )}
                 <ReplyBar
                   key={selected.id}
                   api={api}
@@ -757,6 +843,9 @@ export function App() {
                   context={contextUsage(timeline.context)}
                   registry={view}
                   draft={draft !== undefined && draft.sessionId === selected.id ? draft : undefined}
+                  onGoalChanged={(goal) =>
+                    setGoalOverride({ sessionId: selected.id, goal })
+                  }
                 />
               </div>
               {panelOpen && (

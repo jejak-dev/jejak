@@ -4,6 +4,7 @@ import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient, type SandboxState, type WorkspaceItem } from "../lib/api";
 import type { RegistryView } from "../lib/registry-view";
 import { folderName } from "../lib/format";
+import { parseGoalCommand } from "../lib/goal";
 import {
   BYPASS_WARNING,
   canSubmitMode,
@@ -259,6 +260,13 @@ export function Composer({
     const trimmedCwd = cwd.trim();
     const usingWorkspace = selectedWorkspace !== undefined;
 
+    // `/goal` butuh sesi yang sudah ada; beranda belum punya sesi.
+    if (parseGoalCommand(trimmedPrompt) !== undefined) {
+      setPromptError(undefined);
+      setApiError(undefined);
+      return;
+    }
+
     const hasAttachments = att.items.length > 0;
     if (att.pending > 0) {
       setApiError("Tunggu lampiran selesai diunggah.");
@@ -364,6 +372,9 @@ export function Composer({
     ? recentCwds.filter((path) => path !== cwd.trim()).slice(0, 4)
     : [];
   const warning = useMemo(() => secretWarning(prompt), [prompt]);
+  // Perintah `/goal` di beranda: server hanya bisa memulai Goal pada sesi
+  // yang sudah ada, jadi arahkan pengguna ke kolom balasan.
+  const goalCommand = parseGoalCommand(prompt.trim());
   const promptDescribedBy = [
     promptError === undefined ? undefined : "jk-prompt-error",
     warning === undefined ? undefined : "jk-prompt-secret-warning",
@@ -571,6 +582,12 @@ export function Composer({
       {warning !== undefined && (
         <p class="jk-secret-warning" id="jk-prompt-secret-warning" role="status">
           {warning.message}
+        </p>
+      )}
+
+      {goalCommand !== undefined && (
+        <p class="jk-note jk-goal-note" role="status">
+          Mulai sesi dulu, lalu ketik /goal di kolom balasan.
         </p>
       )}
 

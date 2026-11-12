@@ -6,6 +6,7 @@ import { canMutate, filterSessions, splitArchived, validateTitle } from "../lib/
 import { notificationSupport, type NotifyPrefs } from "../lib/notify";
 import { applyTheme, loadTheme, nextTheme, saveTheme, themeLabel, type ThemePref } from "../lib/theme";
 import { Icon } from "./Icon";
+import { GoalMark } from "./GoalBar";
 
 export interface SidebarProps {
   info?: { name: string; version: string; mock: boolean };
@@ -332,6 +333,8 @@ export function Sidebar({
                 aria-hidden={label === undefined ? "true" : undefined}
               />
               <span class="jk-session-title">{session.title}</span>
+              {session.goal?.status === "active" && <GoalMark status="active" />}
+              {session.goal?.status === "paused" && <GoalMark status="paused" />}
               {showsBypassMarker(session.permissionMode) && (
                 <span class="jk-session-bypass">Bypass</span>
               )}

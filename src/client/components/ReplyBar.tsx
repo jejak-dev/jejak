@@ -6,6 +6,7 @@ import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
 import { BYPASS_WARNING } from "../lib/permission-mode";
 import { parseBtw } from "../lib/btw";
+import { parseGoalCommand, validateGoalOptions, type GoalView } from "../lib/goal";
 import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
 import { useDictation } from "../lib/use-dictation";
@@ -26,6 +27,8 @@ export interface ReplyBarProps {
   registry?: RegistryView;
   /** Teks yang ditaruh di kolom input (mis. pesan yang dibuang saat mundur). */
   draft?: { text: string; nonce: number };
+  /** Dipanggil setelah tujuan dimulai atau berubah agar pita Goal langsung sinkron. */
+  onGoalChanged?: (goal: GoalView | null) => void;
 }
 
 const MAX_TEXTAREA_PX = 8 * 24;
@@ -51,7 +54,15 @@ function autosize(element: HTMLTextAreaElement): void {
   element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_PX)}px`;
 }
 
-export function ReplyBar({ api, session, refresh, context, registry, draft }: ReplyBarProps) {
+export function ReplyBar({
+  api,
+  session,
+  refresh,
+  context,
+  registry,
+  draft,
+  onGoalChanged,
+}: ReplyBarProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -146,6 +157,66 @@ export function ReplyBar({ api, session, refresh, context, registry, draft }: Re
   }, [sessionId, abortDictation]);
 
   const [confirmingBypass, setConfirmingBypass] = useState(false);
+
+  // Konfirmasi mulai tujuan (mode Goal).
+  const [goalForm, setGoalForm] = useState<
+    { objective: string; maxTurns: string; costCapUsd: string } | undefined
+  >(undefined);
+  const [goalError, setGoalError] = useState<string | undefined>(undefined);
+
+  const startGoal = async (): Promise<void> => {
+    if (busy || goalForm === undefined) return;
+    const options = validateGoalOptions({
+      maxTurns: goalForm.maxTurns,
+      costCapUsd: goalForm.costCapUsd,
+    });
+    if (!options.ok) {
+      setGoalError(options.error);
+      return;
+    }
+    setBusy(true);
+    setGoalError(undefined);
+    try {
+      const result = await api.startGoal(sessionId, {
+        objective: goalForm.objective,
+        ...(options.maxTurns === undefined ? {} : { maxTurns: options.maxTurns }),
+        ...(options.costCapUsd === undefined ? {} : { costCapUsd: options.costCapUsd }),
+      });
+      setGoalForm(undefined);
+      setText("");
+      att.clear();
+      if (textareaRef.current !== null) {
+        autosize(textareaRef.current);
+        textareaRef.current.focus();
+      }
+      onGoalChanged?.(result.goal);
+      void refresh();
+    } catch (caught) {
+      // Draf tetap di kolom; galat ditampilkan dekat kolom.
+      setGoalError(caught instanceof ApiError ? caught.message : "gagal memulai tujuan");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Perintah `/goal`: bukan pesan biasa; butuh konfirmasi kecil lebih dulu. */
+  const prepareGoal = (objective: string): void => {
+    if (running) {
+      setError("Tunggu giliran selesai.");
+      return;
+    }
+    if (session.permissionMode === "plan") {
+      setError("Goal tidak jalan di mode plan.");
+      return;
+    }
+    if (session.goal?.status === "active") {
+      setError("Sesi ini sudah punya tujuan aktif.");
+      return;
+    }
+    setError(undefined);
+    setGoalError(undefined);
+    setGoalForm({ objective, maxTurns: "", costCapUsd: "" });
+  };
 
   const changeMode = async (mode: LiveMode, confirmBypass?: boolean): Promise<void> => {
     setError(undefined);
@@ -286,9 +357,16 @@ export function ReplyBar({ api, session, refresh, context, registry, draft }: Re
   const submit = async (): Promise<void> => {
     // Kirim pesan menghentikan dikte lebih dulu.
     dict.stop();
+    // Kartu konfirmasi Goal terbuka: tombol "Mulai tujuan" yang menentukan.
+    if (goalForm !== undefined) return;
     const question = parseBtw(text.trim());
     if (question !== undefined) {
       await submitAside(question);
+      return;
+    }
+    const objective = parseGoalCommand(text.trim());
+    if (objective !== undefined) {
+      prepareGoal(objective);
       return;
     }
     if (!canSend) return;
@@ -350,6 +428,91 @@ export function ReplyBar({ api, session, refresh, context, registry, draft }: Re
                 <Markdown text={aside.answer ?? ""} />
               </div>
             )}
+          </div>
+        )}
+        {goalForm !== undefined && (
+          <div class="jk-goal-confirm" role="dialog" aria-label="Konfirmasi mulai tujuan">
+            <p class="jk-goal-confirm-objective">{goalForm.objective}</p>
+            {session.permissionMode === "bypassPermissions" && (
+              <p class="jk-note jk-goal-warn">
+                Mode bypass: agent bekerja tanpa meminta izin.
+              </p>
+            )}
+            <div class="jk-goal-fields">
+              <label class="jk-goal-field">
+                <span>Maks. giliran otomatis</span>
+                <input
+                  class="jk-input"
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="10"
+                  value={goalForm.maxTurns}
+                  disabled={busy}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    void startGoal();
+                  }}
+                  onInput={(event) =>
+                    setGoalForm({
+                      ...goalForm,
+                      maxTurns: (event.currentTarget as HTMLInputElement).value,
+                    })
+                  }
+                />
+              </label>
+              <label class="jk-goal-field">
+                <span>Plafon biaya (USD)</span>
+                <input
+                  class="jk-input"
+                  type="text"
+                  inputMode="decimal"
+                  placeholder="opsional"
+                  value={goalForm.costCapUsd}
+                  disabled={busy}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    void startGoal();
+                  }}
+                  onInput={(event) =>
+                    setGoalForm({
+                      ...goalForm,
+                      costCapUsd: (event.currentTarget as HTMLInputElement).value,
+                    })
+                  }
+                />
+              </label>
+            </div>
+            <p class="jk-note">
+              Batas giliran 1-50; bawaan 10. Tanpa plafon biaya, biaya tidak dibatasi.
+            </p>
+            {goalError !== undefined && (
+              <p class="jk-note jk-goal-error" role="alert">
+                {goalError}
+              </p>
+            )}
+            <div class="jk-goal-actions">
+              <button
+                type="button"
+                class="jk-button jk-button-primary"
+                disabled={busy}
+                onClick={() => void startGoal()}
+              >
+                Mulai tujuan
+              </button>
+              <button
+                type="button"
+                class="jk-link-btn"
+                disabled={busy}
+                onClick={() => {
+                  setGoalForm(undefined);
+                  setGoalError(undefined);
+                }}
+              >
+                Batal
+              </button>
+            </div>
           </div>
         )}
         <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
