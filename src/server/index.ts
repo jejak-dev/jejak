@@ -52,6 +52,9 @@ import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
 import { terminalRoutes } from "./routes/terminal";
 import { TerminalManager } from "./terminal/terminal-manager";
+import { runnerRoutes } from "./routes/runner";
+import { RunnerService } from "./runner/runner-service";
+import { FileRunnerStore, runnerPath as runnerStorePath } from "./runner/runner-store";
 import { indexerRoutes } from "./routes/indexer";
 import { defaultGitProviderStore, type GitProviderStore } from "./gitprovider/provider-store";
 import type { AdapterDeps } from "./gitprovider/adapters";
@@ -145,6 +148,10 @@ export interface CreateAppOptions {
   gitAdapterDeps?: AdapterDeps;
   /** Terminal PTY (akses shell penuh, tanpa sandbox); tanpa manajer rute 503. */
   terminal?: TerminalManager;
+  /** Layanan peluncur perintah; tanpa opsi ini dibuat dari store bawaan. */
+  runnerService?: RunnerService;
+  /** Lokasi berkas `runner.json`; default `<jejakHome(env)>/runner.json`. */
+  runnerPath?: string;
   /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
   home?: string;
   /** Host yang diizinkan pada penjaga Host/Origin; default hanya loopback. */
@@ -296,6 +303,25 @@ export function createApp(options: CreateAppOptions = {}) {
     (sessionId) => manager.hasActiveGoal(sessionId),
   );
 
+  // Peluncur perintah: folder yang boleh dipakai adalah folder sesi aktif
+  // (dan worktree miliknya); perintah hanya dijalankan lewat terminal.
+  const runnerService =
+    options.runnerService ??
+    new RunnerService({
+      store: new FileRunnerStore(options.runnerPath ?? runnerStorePath(env)),
+      terminal: options.terminal,
+      allowedCwds: () => {
+        const paths: string[] = [];
+        for (const session of manager.list()) {
+          if (session.archivedAt !== undefined) continue;
+          paths.push(session.cwd);
+          if (session.worktree?.path !== undefined) paths.push(session.worktree.path);
+        }
+        return paths;
+      },
+      audit: options.audit,
+    });
+
   // Autentikasi opsional: penjaga dipasang sesudah penjaga lokal (Host/Origin),
   // rute auth dipasang lebih dulu agar status dan login terjangkau.
   const authOptions = options.auth;
@@ -369,6 +395,7 @@ export function createApp(options: CreateAppOptions = {}) {
     )
     .use(memoryRoutes({ service: options.memory, audit: options.audit }))
     .use(terminalRoutes({ manager: options.terminal, audit: options.audit }))
+    .use(runnerRoutes({ runner: runnerService }))
     .use(questionRoutes({ service: questionService, audit: options.audit }))
     .use(
       indexerRoutes({
