@@ -2681,6 +2681,14 @@ h2.jk-md-heading {
   gap: 10px;
   flex: 1;
   min-width: 0;
+  position: relative;
+  /* Tab tambahan (Commands) boleh melebihi lebar panel; strip digeser. */
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.jk-panel-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .jk-panel-tab { flex: none; white-space: nowrap; font-size: 12px; }
@@ -6516,6 +6524,132 @@ h2.jk-md-heading {
   }
 
   .jk-dictation .jk-dd-btn {
+    min-height: 40px;
+  }
+}
+
+/* ---------- Tab Commands (peluncur perintah) ---------- */
+
+.jk-runner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.jk-runner-group {
+  min-width: 0;
+}
+
+.jk-runner-group-title {
+  margin: 0 0 6px;
+  color: var(--t3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.jk-runner-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-runner-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 2px 0;
+}
+
+.jk-runner-label {
+  flex: 1 1 120px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--t1);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-runner-run {
+  color: var(--t2);
+}
+
+.jk-runner-run:hover {
+  color: var(--t1);
+}
+
+.jk-runner-confirm {
+  flex: 1 1 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 6px 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.jk-runner-confirm-text {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.jk-runner-confirm-actions,
+.jk-runner-form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jk-runner-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.jk-runner-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.jk-runner-field > span {
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-runner-add {
+  align-self: flex-start;
+}
+
+@media (pointer: coarse) {
+  .jk-runner-item .jk-icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .jk-runner-confirm-actions .jk-button,
+  .jk-runner-form-actions .jk-button {
     min-height: 40px;
   }
 }

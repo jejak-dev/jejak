@@ -17,6 +17,7 @@ import { CheckpointsTab } from "./CheckpointsTab";
 import { FilesTab } from "./FilesTab";
 import { GitTab } from "./GitTab";
 import { Icon } from "./Icon";
+import { RunnerTab } from "./RunnerTab";
 import { SecretsTab } from "./SecretsTab";
 import { TerminalTab } from "./TerminalTab";
 import { TodosTab } from "./TodosTab";
@@ -47,6 +48,7 @@ const TABS: { id: PanelTab; label: string }[] = [
   { id: "git", label: "Git" },
   { id: "checkpoints", label: "Checkpoints" },
   { id: "rahasia", label: "Secrets" },
+  { id: "commands", label: "Commands" },
   { id: "terminal", label: "Terminal" },
 ];
 
@@ -73,8 +75,11 @@ export function Panel({
   // Pilihan repo hanya disimpan di state; panel dipasang ulang per sesi, jadi
   // pindah sesi kembali ke repo utama.
   const [repoChoice, setRepoChoice] = useState<string | undefined>(undefined);
+  // Terminal yang dibuat peluncur perintah; tab Terminal menempel ke sana.
+  const [terminalToAttach, setTerminalToAttach] = useState<string | undefined>(undefined);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const tabsRef = useRef<HTMLDivElement | null>(null);
 
   const repos = useSessionRepos(api, sessionId, status).repos;
   const multiRepo = repos !== undefined && repos.length > 1;
@@ -101,7 +106,26 @@ export function Panel({
     setTab(tabRequest.tab);
   }, [tabRequest?.nonce]);
 
+  // Tab aktif tetap terlihat saat strip tab digeser (lebar panel terbatas).
+  useEffect(() => {
+    const strip = tabsRef.current;
+    const active = tabRefs.current[tab];
+    if (strip === null || active === null || active === undefined) return;
+    const left = active.offsetLeft;
+    const right = left + active.offsetWidth;
+    if (left < strip.scrollLeft) strip.scrollLeft = Math.max(0, left - 8);
+    else if (right > strip.scrollLeft + strip.clientWidth) {
+      strip.scrollLeft = right - strip.clientWidth + 8;
+    }
+  }, [tab]);
+
   const select = (next: PanelTab): void => setTab(next);
+
+  /** Terminal baru dari peluncur perintah: pindah ke tab Terminal dan menempel. */
+  const onOpenTerminal = (terminalId: string): void => {
+    setTerminalToAttach(terminalId);
+    select("terminal");
+  };
 
   const onTabKeyDown = (event: KeyboardEvent, index: number): void => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -116,9 +140,14 @@ export function Panel({
     <aside
       class="jk-panel"
       style={width === undefined ? undefined : { width: `${width}px` }}
-      aria-label="Changes, todos, files, git, checkpoints, and secrets">
+      aria-label="Changes, todos, files, git, checkpoints, secrets, and commands">
       <div class="jk-panel-head">
-        <div class="jk-panel-tabs" role="tablist" aria-label="Changes, todos, files, git, checkpoints, and secrets">
+        <div
+          class="jk-panel-tabs"
+          ref={tabsRef}
+          role="tablist"
+          aria-label="Changes, todos, files, git, checkpoints, secrets, and commands"
+        >
           {TABS.map((entry, index) => (
             <button
               key={entry.id}
@@ -240,8 +269,14 @@ export function Panel({
           />
         ) : tab === "rahasia" ? (
           <SecretsTab api={api} sessionId={sessionId} />
+        ) : tab === "commands" ? (
+          <RunnerTab
+            api={api}
+            cwd={session?.cwd ?? ""}
+            onOpenTerminal={onOpenTerminal}
+          />
         ) : tab === "terminal" ? (
-          <TerminalTab api={api} cwd={session?.cwd ?? ""} />
+          <TerminalTab api={api} cwd={session?.cwd ?? ""} attachId={terminalToAttach} />
         ) : (
           <FilesTab
             api={api}

@@ -14,6 +14,8 @@ export interface TerminalTabProps {
   api: ApiClient;
   /** Folder kerja sesi; terminal dibuka di sini. */
   cwd: string;
+  /** Terminal yang sudah ada (mis. dibuat peluncur perintah) untuk ditempel. */
+  attachId?: string;
 }
 
 const NOTE =
@@ -26,11 +28,13 @@ function errorMessage(caught: unknown): string {
   return caught instanceof Error ? caught.message : "Permintaan gagal.";
 }
 
-export function TerminalTab({ api, cwd }: TerminalTabProps) {
+export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
   const [state, setState] = useState<State>("siap");
   const [error, setError] = useState<string | undefined>();
   const [screen, setScreen] = useState<Screen>(emptyScreen);
   const idRef = useRef<string | undefined>(undefined);
+  // Terminal yang ditempel (bukan dibuat tab ini); tidak ditutup saat tab dilepas.
+  const attachedRef = useRef<string | undefined>(undefined);
   const abortRef = useRef<AbortController | undefined>(undefined);
   const logRef = useRef<HTMLPreElement | null>(null);
   const screenRef = useRef<Screen>(emptyScreen());
@@ -44,11 +48,14 @@ export function TerminalTab({ api, cwd }: TerminalTabProps) {
   }, []);
 
   // Tutup terminal saat tab dilepas supaya tidak ada shell yatim.
+  // Terminal yang ditempel (dari peluncur perintah) bukan milik tab ini.
   useEffect(
     () => () => {
       stopStream();
       const id = idRef.current;
-      if (id !== undefined) void api.closeTerminal(id).catch(() => undefined);
+      if (id !== undefined && attachedRef.current !== id) {
+        void api.closeTerminal(id).catch(() => undefined);
+      }
     },
     [api, stopStream],
   );
@@ -58,7 +65,7 @@ export function TerminalTab({ api, cwd }: TerminalTabProps) {
     if (element !== null) element.scrollTop = element.scrollHeight;
   }, [screen]);
 
-  const follow = async (id: string): Promise<void> => {
+  const follow = useCallback(async (id: string): Promise<void> => {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
@@ -77,7 +84,21 @@ export function TerminalTab({ api, cwd }: TerminalTabProps) {
     } catch (caught) {
       if (!controller.signal.aborted) setError(errorMessage(caught));
     }
-  };
+  }, []);
+
+  // Tempel ke terminal yang sudah ada (dibuat peluncur perintah).
+  useEffect(() => {
+    if (attachId === undefined || attachId === "") return;
+    if (attachedRef.current === attachId && idRef.current === attachId) return;
+    stopStream();
+    attachedRef.current = attachId;
+    idRef.current = attachId;
+    setState("aktif");
+    setError(undefined);
+    screenRef.current = emptyScreen();
+    setScreen(screenRef.current);
+    void follow(attachId);
+  }, [attachId, follow, stopStream]);
 
   const open = async (): Promise<void> => {
     if (state === "membuka" || cwd === "") return;
@@ -85,6 +106,7 @@ export function TerminalTab({ api, cwd }: TerminalTabProps) {
     setError(undefined);
     screenRef.current = emptyScreen();
     setScreen(screenRef.current);
+    attachedRef.current = undefined;
     try {
       const info = await api.createTerminal(cwd, { cols: 100, rows: 28 });
       idRef.current = info.id;
@@ -104,6 +126,7 @@ export function TerminalTab({ api, cwd }: TerminalTabProps) {
     const id = idRef.current;
     stopStream();
     idRef.current = undefined;
+    attachedRef.current = undefined;
     queueRef.current = "";
     setState("siap");
     if (id !== undefined) await api.closeTerminal(id).catch(() => undefined);
