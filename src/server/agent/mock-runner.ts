@@ -47,14 +47,36 @@ function wait(ms: number, signal?: AbortSignal): Promise<void> {
 
 const MEMORY_SEARCH_TOOL = "mcp__jejak-memory__memory_search";
 const MEMORY_PROPOSE_TOOL = "mcp__jejak-memory__memory_propose";
+const GOAL_UPDATE_TOOL = "mcp__jejak-memory__goal_update";
 const WORKSPACE_OVERVIEW_TOOL = "mcp__jejak-memory__workspace_overview";
 const WORKSPACE_SERVICE_TOOL = "mcp__jejak-memory__workspace_service";
+
+/** Penanda mode Goal di dalam blok `<tujuan>`. */
+const GOAL_OPEN = "<tujuan>";
+const GOAL_CLOSE = "</tujuan>";
 
 function markerText(prompt: string, marker: string): string | undefined {
   const index = prompt.indexOf(marker);
   if (index === -1) return undefined;
   const rest = prompt.slice(index + marker.length).trim();
   return rest === "" ? undefined : rest;
+}
+
+/** Isi blok `<tujuan>` pada prompt Goal. */
+function goalObjective(prompt: string): string | undefined {
+  const start = prompt.indexOf(GOAL_OPEN);
+  if (start === -1) return undefined;
+  const end = prompt.indexOf(GOAL_CLOSE, start + GOAL_OPEN.length);
+  if (end === -1) return undefined;
+  return prompt.slice(start + GOAL_OPEN.length, end).trim();
+}
+
+/** Status yang diminta penanda `[goal]`, `[goal:done]`, atau `[goal:blocked]`. */
+function goalMarker(objective: string): "progress" | "done" | "blocked" | undefined {
+  if (objective.includes("[goal:blocked]")) return "blocked";
+  if (objective.includes("[goal:done]")) return "done";
+  if (objective.includes("[goal]")) return "progress";
+  return undefined;
 }
 
 export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
@@ -210,6 +232,31 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
       }
 
       const memory = input.memory;
+
+      // Penanda [goal]: agent melaporkan status tujuan lewat tool goal_update.
+      if (memory !== undefined && input.prompt.includes(GOAL_OPEN)) {
+        const objective = goalObjective(input.prompt);
+        const status = objective === undefined ? undefined : goalMarker(objective);
+        if (status !== undefined) {
+          const id = `goal-update-${crypto.randomUUID()}`;
+          const args = {
+            status,
+            summary: `Laporan uji mode Goal: ${status}.`,
+          };
+          yield { type: "tool_call", id, name: GOAL_UPDATE_TOOL, input: args };
+          let outcome: { text: string; isError: boolean };
+          try {
+            outcome = await memory.call("goal_update", args);
+          } catch {
+            outcome = { text: "Laporan tujuan gagal.", isError: true };
+          }
+          yield { type: "tool_result", id, output: outcome.text, isError: outcome.isError };
+          yield { type: "text", text: "Status tujuan dilaporkan." };
+          yield withAnchor({ type: "result", ok: true, summary: "Status tujuan dilaporkan." });
+          return;
+        }
+      }
+
       if (memory !== undefined && input.prompt.includes("[memori]")) {
         const query = markerText(input.prompt, "[memori]") ?? "memori";
         const id = `memory-search-${crypto.randomUUID()}`;

@@ -17,6 +17,7 @@ import {
 } from "./claude-config/config-store";
 import { removeSessionUndo } from "./files/revert";
 import { localGuard, DEFAULT_ALLOWED_HOSTS } from "./guard";
+import { GoalReporterHolder } from "./goals/goal-reporter";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
@@ -38,6 +39,7 @@ import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { fileRoutes } from "./routes/files";
 import { fsRoutes } from "./routes/fs";
+import { goalRoutes } from "./routes/goal";
 import { gitRoutes } from "./routes/git";
 import { worktreeRoutes } from "./routes/worktree";
 import { secretAllowRoutes } from "./routes/secret-allow";
@@ -177,6 +179,10 @@ export function createApp(options: CreateAppOptions = {}) {
           ...(options.memory === undefined ? {} : { memory: options.memory }),
         });
 
+  // Jembatan MCP dibuat sebelum manajer sesi; pelapor tujuan ditautkan
+  // begitu manajer siap (tool `goal_update` menolak sebelum itu).
+  const goalReporter = new GoalReporterHolder();
+
   const memoryBridge =
     options.memory === undefined && options.workspaces === undefined
       ? undefined
@@ -185,6 +191,8 @@ export function createApp(options: CreateAppOptions = {}) {
           ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
           ...(questionService === undefined ? {} : { questions: questionService }),
           ...(options.indexer === undefined ? {} : { indexer: options.indexer }),
+          goalReporter: (sessionId, report) => goalReporter.report(sessionId, report),
+          goalActive: (sessionId) => goalReporter.hasGoal(sessionId),
           mcpUrl: options.mcpUrl,
         });
 
@@ -283,6 +291,11 @@ export function createApp(options: CreateAppOptions = {}) {
         ),
     });
 
+  goalReporter.attach(
+    (sessionId, report) => manager.reportGoal(sessionId, report),
+    (sessionId) => manager.hasActiveGoal(sessionId),
+  );
+
   // Autentikasi opsional: penjaga dipasang sesudah penjaga lokal (Host/Origin),
   // rute auth dipasang lebih dulu agar status dan login terjangkau.
   const authOptions = options.auth;
@@ -324,6 +337,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(authPlugins)
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch, audit: options.audit }))
     .use(sessionRoutes({ manager, workspaces: workspaceResolver, audit: options.audit }))
+    .use(goalRoutes({ manager, audit: options.audit }))
     .use(worktreeRoutes({ manager, service: worktrees, audit: options.audit }))
     .use(
       secretAllowRoutes({

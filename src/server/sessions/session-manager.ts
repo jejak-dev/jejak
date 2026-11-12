@@ -31,6 +31,25 @@ import {
 } from "../budget/budget";
 import type { BudgetStore } from "../budget/budget-store";
 import type { UsageLedger } from "../budget/usage-ledger";
+import {
+  createGoal,
+  decideNext,
+  goalView,
+  nextIdleTurns,
+  parseGoalInput,
+  parseStoredGoal,
+  GoalInputError,
+  type Goal,
+  type GoalEndReason,
+  type GoalInput,
+  type GoalOutcome,
+  type GoalReport,
+  type GoalReportResult,
+  type GoalReportedStatus,
+  type GoalStatus,
+  type GoalView,
+} from "../goals/goal";
+import { continuationPrompt, firstGoalPrompt } from "../goals/goal-prompts";
 import type { MemoryBridge } from "../memory/memory-bridge";
 import { estimateCostUsd } from "../pricing";
 import { jejakHome as defaultJejakHome } from "../provider-store";
@@ -89,6 +108,11 @@ export interface SessionInfo {
    * agar restart server tidak melanjutkan riwayat penuh.
    */
   rewindTo?: { uuid: string; sdkSessionId: string };
+  /**
+   * Tujuan mode Goal; bentuk ringkas (tujuan dipotong 200 karakter, tanpa
+   * field internal seperti `startCostUsd`).
+   */
+  goal?: GoalView;
 }
 
 export interface SequencedEvent {
@@ -250,6 +274,13 @@ interface SessionRecord {
   queue: string[];
   /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
   turns: number;
+  /**
+   * Tujuan sesi (isi penuh; yang dikirim ke klien adalah bentuk ringkas).
+   * Disimpan di kolom data JSON baris sesi, seperti `rewindTo`.
+   */
+  goal?: Goal;
+  /** Status giliran yang sedang berjalan (dilewati bila tidak ada giliran). */
+  turn?: SessionTurn;
   /** Peringatan workspace tak tersedia hanya sekali per sesi. */
   workspaceWarned?: boolean;
   /** Nilai rahasia dari `.env` sesi; dimuat malas dan tidak dipersist. */
@@ -258,6 +289,18 @@ interface SessionRecord {
   flushPending?: () => void;
   /** Kunci tambahan yang ikut disanitasi dari event (kunci profil asal saat fallback). */
   extraApiKeys?: readonly string[];
+}
+
+/** Status giliran yang sedang berjalan; dipakai loop Goal. */
+interface SessionTurn {
+  /** Giliran otomatis (loop Goal), bukan pesan pengguna. */
+  auto: boolean;
+  /** Jumlah tool call pada giliran ini. */
+  toolCalls: number;
+  /** Status terakhir yang dilaporkan agent lewat `goal_update`. */
+  reportedStatus?: GoalReportedStatus;
+  /** Ringkasan terakhir yang dilaporkan agent. */
+  summary?: string;
 }
 
 /** Kegagalan satu percobaan giliran; event tertahan dipakai bila tanpa fallback. */
@@ -286,6 +329,18 @@ const CHECKPOINT_TIMEOUT_MS = 30_000;
 const ASIDE_TIMEOUT_MS = 120_000;
 
 const MAX_QUEUED_MESSAGES = 5;
+
+/** Label Bahasa Indonesia untuk alasan berakhir/berjeda tujuan. */
+const GOAL_REASON_LABEL: Record<GoalEndReason, string> = {
+  selesai: "tujuan tercapai",
+  buntu: "tujuan buntu",
+  "plafon-giliran": "batas giliran otomatis tercapai",
+  "plafon-biaya": "plafon biaya tercapai",
+  "anggaran-sesi": "anggaran sesi terlampaui",
+  "tanpa-kemajuan": "tidak ada kemajuan",
+  gagal: "giliran gagal",
+  dihentikan: "dihentikan",
+};
 
 const PERMISSION_MODES: readonly SessionPermissionMode[] = [
   "default",
@@ -537,6 +592,11 @@ export class SessionManager {
     // opsional lain; restart server tidak boleh melanjutkan riwayat penuh.
     if (record.rewindTo === undefined) delete info.rewindTo;
     else info.rewindTo = record.rewindTo;
+    // Tujuan ikut tersimpan penuh di kolom data; yang dikirim ke klien tetap
+    // bentuk ringkas lewat `viewInfo`. Tujuan disamarkan seperti prompt sesi
+    // agar rahasia tidak masuk penyimpanan.
+    if (record.goal === undefined) delete info.goal;
+    else info.goal = { ...record.goal, objective: this.redactText(record.goal.objective) };
     const sdkSessionId = record.sdkSessionId;
     this.storeGuard(() => this.store?.saveSession(info, sdkSessionId));
   }
@@ -830,6 +890,18 @@ export class SessionManager {
       if (item.info.rewindTo !== undefined) {
         record.rewindTo = { ...item.info.rewindTo };
       }
+      // Tujuan aktif tidak pernah dilanjutkan otomatis setelah restart:
+      // dipulihkan sebagai `paused` supaya pengguna menekan Lanjut sendiri.
+      const storedGoal = parseStoredGoal(item.info.goal);
+      if (storedGoal !== undefined) {
+        record.goal = storedGoal;
+        if (storedGoal.status === "active") {
+          storedGoal.status = "paused";
+          storedGoal.endedReason = "dihentikan";
+          storedGoal.updatedAt = this.now().toISOString();
+          this.persistSession(record);
+        }
+      }
       this.sessions.set(record.info.id, record);
 
       if (record.info.status === "berjalan") {
@@ -1039,12 +1111,12 @@ export class SessionManager {
   list(): SessionInfo[] {
     return Array.from(this.sessions.values())
       .reverse()
-      .map((record) => this.viewInfo(record.info));
+      .map((record) => this.viewInfo(record));
   }
 
   get(id: string): SessionInfo | undefined {
     const record = this.sessions.get(id);
-    return record === undefined ? undefined : this.viewInfo(record.info);
+    return record === undefined ? undefined : this.viewInfo(record);
   }
 
   /**
@@ -1062,10 +1134,15 @@ export class SessionManager {
   }
 
   /** Salinan info untuk tampilan; `worktree.missing` dihitung di sini. */
-  private viewInfo(info: SessionInfo): SessionInfo {
+  private viewInfo(record: SessionRecord): SessionInfo {
+    const info = record.info;
     const copy: SessionInfo = { ...info };
     // Target mundur bersifat internal; tidak dikirim ke klien.
     delete copy.rewindTo;
+    // Bentuk goal untuk klien: tujuan dipotong 200 karakter, tanpa field internal.
+    if (record.goal !== undefined) {
+      copy.goal = goalView(record.goal);
+    }
     if (info.worktree !== undefined) {
       copy.worktree = {
         ...info.worktree,
@@ -1082,7 +1159,7 @@ export class SessionManager {
     record.info.title = value;
     this.persistSession(record);
     this.notify(record);
-    return { ...record.info };
+    return this.viewInfo(record);
   }
 
   /**
@@ -1104,9 +1181,16 @@ export class SessionManager {
       }
     }
     record.info.permissionMode = mode as SessionPermissionMode;
+    // Mode plan butuh persetujuan manual; tujuan aktif otomatis dijeda.
+    if (mode === "plan") {
+      const goal = record.goal;
+      if (goal !== undefined && goal.status === "active") {
+        this.pauseGoalInternal(record, "dihentikan");
+      }
+    }
     this.persistSession(record);
     this.notify(record);
-    return { ...record.info };
+    return this.viewInfo(record);
   }
 
   /**
@@ -1132,7 +1216,7 @@ export class SessionManager {
     else record.info.model = resolved.model;
     this.persistSession(record);
     this.notify(record);
-    return { ...record.info };
+    return this.viewInfo(record);
   }
 
   /**
@@ -1150,7 +1234,7 @@ export class SessionManager {
     record.info.sandbox = mode;
     this.persistSession(record);
     this.notify(record);
-    return { ...record.info };
+    return this.viewInfo(record);
   }
 
   /** Arsipkan/batalkan arsip; sesi berjalan harus dihentikan dulu. */
@@ -1169,7 +1253,7 @@ export class SessionManager {
     }
     this.persistSession(record);
     this.notify(record);
-    return { ...record.info };
+    return this.viewInfo(record);
   }
 
   /** Hapus sesi beserta event, checkpoint, dan snapshot undo (lewat hook). */
@@ -1179,6 +1263,319 @@ export class SessionManager {
       throw new SessionError("Hentikan sesi dulu.", "konflik");
     }
     this.dropSession(record);
+  }
+
+  // ---------------------------------------------------------------------
+  // Mode Goal
+  // ---------------------------------------------------------------------
+
+  /**
+   * Mulai tujuan baru. Syarat: sesi tidak berjalan, tidak ada izin tertunda,
+   * mode izin bukan `plan`, belum ada tujuan aktif, dan jembatan MCP internal
+   * aktif (tool `goal_update` harus bisa dipanggil).
+   */
+  startGoal(id: string, input: unknown): SessionInfo {
+    const record = this.requireRecord(id);
+    if (this.memoryBridge === undefined) {
+      throw new SessionError("Mode Goal butuh MCP internal aktif.", "konflik");
+    }
+    if (record.goal !== undefined && record.goal.status === "active") {
+      throw new SessionError("Sesi ini sudah punya tujuan aktif.", "konflik");
+    }
+    if (record.info.status === "berjalan") {
+      throw new SessionError(
+        "Sesi sedang berjalan; hentikan dulu sebelum memulai tujuan.",
+        "konflik",
+      );
+    }
+    if (record.pending.size > 0) {
+      throw new SessionError("Masih ada izin yang menunggu jawaban.", "konflik");
+    }
+    if (record.info.permissionMode === "plan") {
+      throw new SessionError("Mode izin plan tidak mendukung Goal.", "konflik");
+    }
+    this.assertConcurrencyCapacity();
+
+    let parsed: GoalInput;
+    try {
+      parsed = parseGoalInput(input);
+    } catch (error) {
+      if (error instanceof GoalInputError) {
+        throw new SessionError(error.message, "tidak-valid");
+      }
+      throw error;
+    }
+
+    const ledger = this.budgetLedger;
+    const goal = createGoal(parsed, {
+      id: `g_${crypto.randomUUID().slice(0, 8)}`,
+      startCostUsd: ledger === undefined ? 0 : ledger.sumForSession(record.info.id),
+      now: this.now().toISOString(),
+    });
+    record.goal = goal;
+    this.persistSession(record);
+    this.notify(record);
+
+    this.audit("pengaturan", "Tujuan dimulai", record.info.id, {
+      aksi: "goal-mulai",
+      tujuan: this.redactText(goal.objective.slice(0, 200)),
+      maxTurns: goal.maxTurns,
+      ...(goal.costCapUsd === undefined ? {} : { costCapUsd: goal.costCapUsd }),
+    });
+
+    // Giliran pertama memakai teks pengguna biasa (tanpa penanda otomatis).
+    this.startTurn(record, firstGoalPrompt(goal.objective, goal.maxTurns), true);
+    return this.viewInfo(record);
+  }
+
+  /** Jeda tujuan; giliran yang sedang berjalan dibiarkan selesai. */
+  pauseGoal(id: string): SessionInfo {
+    const record = this.requireRecord(id);
+    const goal = record.goal;
+    if (goal === undefined) {
+      throw new SessionError("Sesi ini tidak punya tujuan.", "tidak-ditemukan");
+    }
+    if (goal.status !== "active" && goal.status !== "paused") {
+      throw new SessionError("Tujuan ini sudah berakhir.", "konflik");
+    }
+    if (goal.status === "paused") return this.viewInfo(record);
+    this.pauseGoalInternal(record, "dihentikan");
+    return this.viewInfo(record);
+  }
+
+  /** Lanjutkan tujuan yang dijeda: penghitung direset, lalu satu giliran lanjutan. */
+  resumeGoal(id: string): SessionInfo {
+    const record = this.requireRecord(id);
+    const goal = record.goal;
+    if (goal === undefined) {
+      throw new SessionError("Sesi ini tidak punya tujuan.", "tidak-ditemukan");
+    }
+    if (goal.status !== "paused") {
+      throw new SessionError(
+        "Hanya tujuan yang dijeda yang bisa dilanjutkan.",
+        "konflik",
+      );
+    }
+    if (record.info.status === "berjalan") {
+      throw new SessionError("Sesi sedang berjalan.", "konflik");
+    }
+    if (record.pending.size > 0) {
+      throw new SessionError("Masih ada izin yang menunggu jawaban.", "konflik");
+    }
+    this.assertConcurrencyCapacity();
+
+    goal.status = "active";
+    delete goal.endedReason;
+    goal.autoTurns = 0;
+    goal.idleTurns = 0;
+    goal.updatedAt = this.now().toISOString();
+    this.persistSession(record);
+    this.notify(record);
+    this.audit("pengaturan", "Tujuan dilanjutkan", record.info.id, {
+      aksi: "goal-lanjut",
+    });
+
+    goal.autoTurns += 1;
+    this.startTurn(
+      record,
+      continuationPrompt(goal.objective, goal.autoTurns, goal.maxTurns),
+      true,
+      "goal",
+    );
+    return this.viewInfo(record);
+  }
+
+  /** Hentikan tujuan: giliran berjalan dibatalkan, status menjadi `stopped`. */
+  stopGoal(id: string): SessionInfo {
+    const record = this.requireRecord(id);
+    const goal = record.goal;
+    if (goal === undefined) {
+      throw new SessionError("Sesi ini tidak punya tujuan.", "tidak-ditemukan");
+    }
+    if (goal.status === "stopped" || goal.status === "achieved" || goal.status === "blocked") {
+      throw new SessionError("Tujuan ini sudah berakhir.", "konflik");
+    }
+
+    goal.status = "stopped";
+    goal.endedReason = "dihentikan";
+    goal.updatedAt = this.now().toISOString();
+    this.persistSession(record);
+    this.notify(record);
+    this.audit("pengaturan", "Tujuan dihentikan", record.info.id, {
+      aksi: "goal-henti",
+      alasan: "dihentikan",
+    });
+
+    if (record.info.status === "berjalan") {
+      record.controller.abort();
+      this.clearQueue(record);
+    }
+    this.append(record, { type: "notice", text: "Tujuan dihentikan.", level: "warn" });
+    return this.viewInfo(record);
+  }
+
+  /** Tujuan sesi; `null` bila sesi tidak punya tujuan. */
+  getGoal(id: string): GoalView | null {
+    const record = this.requireRecord(id);
+    return record.goal === undefined ? null : goalView(record.goal);
+  }
+
+  /**
+   * Laporan agent lewat tool `goal_update`. Hanya mencatat status dan
+   * ringkasan; batas giliran, plafon biaya, dan mode izin tidak berubah.
+   */
+  reportGoal(sessionId: string, report: GoalReport): GoalReportResult {
+    const record = this.sessions.get(sessionId);
+    if (record === undefined) {
+      return { ok: false, error: "Sesi tidak ditemukan." };
+    }
+    const goal = record.goal;
+    if (goal === undefined || goal.status !== "active") {
+      return { ok: false, error: "Sesi ini tidak punya tujuan aktif." };
+    }
+
+    const turn = record.turn;
+    if (turn !== undefined) {
+      turn.reportedStatus = report.status;
+      turn.summary = report.summary;
+    }
+    goal.reportedStatus = report.status;
+    goal.summary = report.summary;
+    goal.updatedAt = this.now().toISOString();
+    this.persistSession(record);
+    this.notify(record);
+    return { ok: true };
+  }
+
+  /** Apakah sesi punya tujuan aktif (tool `goal_update` hanya saat itu). */
+  hasActiveGoal(sessionId: string): boolean {
+    const record = this.sessions.get(sessionId);
+    const goal = record?.goal;
+    return goal !== undefined && goal.status === "active";
+  }
+
+  /** Jeda internal (dipakai juga saat mode izin diganti ke `plan`). */
+  private pauseGoalInternal(record: SessionRecord, reason: GoalEndReason): void {
+    const goal = record.goal;
+    if (goal === undefined) return;
+    goal.status = "paused";
+    goal.endedReason = reason;
+    goal.updatedAt = this.now().toISOString();
+    this.persistSession(record);
+    this.notify(record);
+    this.audit("pengaturan", "Tujuan dijeda", record.info.id, {
+      aksi: "goal-jeda",
+      alasan: reason,
+    });
+    this.append(record, {
+      type: "notice",
+      text: `Tujuan dijeda: ${GOAL_REASON_LABEL[reason]}.`,
+      level: "warn",
+    });
+  }
+
+  /** Akhiri tujuan: status akhir, audit, dan satu notifikasi. */
+  private endGoal(
+    record: SessionRecord,
+    status: GoalStatus,
+    reason: GoalEndReason,
+    summary?: string,
+  ): void {
+    const goal = record.goal;
+    if (goal === undefined) return;
+    goal.status = status;
+    goal.endedReason = reason;
+    if (summary !== undefined) goal.summary = summary;
+    goal.updatedAt = this.now().toISOString();
+    this.persistSession(record);
+    this.notify(record);
+    // Ringkasan agent tidak pernah masuk audit.
+    this.audit("pengaturan", `Tujuan berakhir: ${GOAL_REASON_LABEL[reason]}`, record.info.id, {
+      aksi: "goal-selesai",
+      alasan: reason,
+    });
+    this.append(record, {
+      type: "notice",
+      text: `Tujuan berakhir: ${GOAL_REASON_LABEL[reason]}.`,
+      level: "info",
+    });
+  }
+
+  /** Hasil giliran untuk keputusan loop Goal. */
+  private goalOutcome(record: SessionRecord): GoalOutcome {
+    const goal = record.goal;
+    const turn = record.turn;
+    const ledger = this.budgetLedger;
+    const cost =
+      goal === undefined || ledger === undefined
+        ? 0
+        : Math.max(0, ledger.sumForSession(record.info.id) - goal.startCostUsd);
+    const budget = record.info.budget?.session;
+    const outcome: GoalOutcome = {
+      turnStatus: "selesai",
+      toolCalls: turn?.toolCalls ?? 0,
+      costSinceStartUsd: cost,
+    };
+    if (turn?.reportedStatus !== undefined) outcome.reportedStatus = turn.reportedStatus;
+    if (budget !== undefined) outcome.sessionBudget = budget;
+    return outcome;
+  }
+
+  /**
+   * Lanjut otomatis. Batas keras diperiksa `decideNext` SEBELUM giliran
+   * baru dimulai; bila prasyarat tidak terpenuhi, tujuan dijeda (bukan
+   * menumpuk giliran).
+   */
+  private continueGoal(record: SessionRecord): void {
+    const goal = record.goal;
+    if (goal === undefined || goal.status !== "active") return;
+    if (record.info.status !== "selesai") return;
+
+    const turn = record.turn;
+    const toolCalls = turn?.toolCalls ?? 0;
+    // Giliran pengguna memutus rentetan giliran otomatis tanpa tool call.
+    if (turn?.auto !== true) goal.idleTurns = 0;
+
+    const decision = decideNext(goal, this.goalOutcome(record));
+    if (turn?.auto === true) {
+      goal.idleTurns = nextIdleTurns(goal, toolCalls);
+    }
+
+    if (decision.action === "end") {
+      this.endGoal(record, decision.status, decision.reason, decision.summary);
+      return;
+    }
+
+    // Prasyarat giliran otomatis: tidak ada izin tertunda dan kapasitas cukup.
+    if (record.pending.size > 0) {
+      this.pauseGoalInternal(record, "dihentikan");
+      return;
+    }
+    try {
+      this.assertConcurrencyCapacity();
+    } catch {
+      this.pauseGoalInternal(record, "dihentikan");
+      return;
+    }
+
+    goal.autoTurns += 1;
+    goal.updatedAt = this.now().toISOString();
+    const prompt = continuationPrompt(goal.objective, goal.autoTurns, goal.maxTurns);
+    try {
+      this.startTurn(record, prompt, true, "goal");
+    } catch {
+      // Galat saat memulai: berhenti tanpa mencoba ulang.
+      this.endGoal(record, "stopped", "gagal");
+    }
+  }
+
+  /** Giliran gagal atau dibatalkan: tujuan berhenti, tidak pernah lanjut. */
+  private finishGoalOnFailure(record: SessionRecord): void {
+    const goal = record.goal;
+    if (goal === undefined || goal.status !== "active") return;
+    const reason: GoalEndReason =
+      record.info.status === "dibatalkan" ? "dihentikan" : "gagal";
+    this.endGoal(record, "stopped", reason);
   }
 
   /** Pesan lanjutan ditolak bila worktree sesi sudah dihapus atau foldernya hilang. */
@@ -1379,6 +1776,13 @@ export class SessionManager {
     if (record === undefined) {
       throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
     }
+    const goal = record.goal;
+    if (goal !== undefined && goal.status === "active") {
+      throw new SessionError(
+        "Hentikan tujuan dulu sebelum mundur percakapan.",
+        "konflik",
+      );
+    }
     if (record.info.status === "berjalan" || record.pending.size > 0) {
       throw new SessionError("Hentikan sesi dulu.", "konflik");
     }
@@ -1392,6 +1796,10 @@ export class SessionManager {
     }
     if (target.event.type !== "user_message") {
       throw new SessionError("Hanya pesan pengguna yang bisa dimundurkan.", "tidak-valid");
+    }
+    // Pesan otomatis mode Goal tidak bisa dimundurkan.
+    if (target.event.auto !== undefined) {
+      throw new SessionError("Pesan otomatis tidak bisa dimundurkan.", "tidak-valid");
     }
 
     const anchor = this.anchorBefore(record, target.seq);
@@ -1814,7 +2222,16 @@ export class SessionManager {
     this.notify(record);
   }
 
-  private startTurn(record: SessionRecord, text: string, isFollowUp: boolean): void {
+  /**
+   * Mulai satu giliran. `auto: "goal"` menandai giliran lanjutan otomatis
+   * mode Goal (event pesannya ditandai, tidak bisa dimundurkan).
+   */
+  private startTurn(
+    record: SessionRecord,
+    text: string,
+    isFollowUp: boolean,
+    auto?: "goal",
+  ): void {
     record.controller = new AbortController();
     let settle: () => void = () => {};
     record.done = new Promise<void>((resolve) => {
@@ -1822,10 +2239,16 @@ export class SessionManager {
     });
     record.settle = settle;
     record.turns += 1;
+    record.turn = { auto: auto === "goal", toolCalls: 0 };
 
     this.setStatus(record, "berjalan");
     if (isFollowUp) {
-      this.append(record, { type: "user_message", text });
+      this.append(
+        record,
+        auto === undefined
+          ? { type: "user_message", text }
+          : { type: "user_message", text, auto },
+      );
     }
 
     const resolved = record.resolved;
@@ -1833,6 +2256,8 @@ export class SessionManager {
       this.append(record, { type: "error", message: "provider belum diselesaikan" });
       this.append(record, { type: "result", ok: false, error: "provider belum diselesaikan" });
       this.setStatus(record, "gagal");
+      // Giliran tidak jalan: tujuan berhenti, bukan menunggu tanpa batas.
+      this.finishGoalOnFailure(record);
       record.settle();
       return;
     }
@@ -2099,10 +2524,14 @@ export class SessionManager {
 
       if (record.info.status === "dibatalkan" || record.info.status === "gagal") {
         this.clearQueue(record);
+        this.finishGoalOnFailure(record);
       } else if (record.queue.length > 0) {
+        // Antrean pengguna selalu didahulukan dari kelanjutan otomatis.
         const next = record.queue.shift()!;
         record.info.queued = record.queue.length;
         this.startTurn(record, next, true);
+      } else {
+        this.continueGoal(record);
       }
     }
   }
@@ -2492,6 +2921,8 @@ export class SessionManager {
     }
 
     if (event.type === "tool_call") {
+      // Tool call dihitung untuk deteksi "tanpa kemajuan" pada mode Goal.
+      if (record.turn !== undefined) record.turn.toolCalls += 1;
       this.audit("tool", `${event.name}: ${toolSummary(event.input)}`, record.info.id, {
         tool: event.name,
         sub: event.parentToolUseId !== undefined,
