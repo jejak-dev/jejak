@@ -1,6 +1,7 @@
 import "./styles.css";
 import { render } from "preact";
 import { App } from "./app";
+import { registerServiceWorker } from "./lib/pwa";
 import { applyTheme, loadTheme } from "./lib/theme";
 
 // Pasang tema sebelum render agar tidak berkedip.
@@ -15,3 +16,6 @@ function safeStorage(): Storage | undefined {
 }
 
 render(<App />, document.getElementById("app")!);
+
+// PWA: daftarkan service worker setelah halaman selesai dimuat.
+registerServiceWorker();
