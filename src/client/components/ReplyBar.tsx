@@ -8,7 +8,9 @@ import { BYPASS_WARNING } from "../lib/permission-mode";
 import { parseBtw } from "../lib/btw";
 import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
+import { useDictation } from "../lib/use-dictation";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
+import { DictationButton } from "./DictationButton";
 import { Dropdown, type DropdownSection } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
@@ -118,6 +120,13 @@ export function ReplyBar({ api, session, refresh, context, registry, draft }: Re
 
   const running = session.status === "berjalan";
   const usable = canSendToSession(session);
+  const dict = useDictation({
+    draft: text,
+    setDraft: setText,
+    disabled: !usable.allowed || busy,
+  });
+  const abortDictation = dict.abort;
+
   const canSend =
     !busy &&
     usable.allowed &&
@@ -130,6 +139,11 @@ export function ReplyBar({ api, session, refresh, context, registry, draft }: Re
   ]
     .filter((id): id is string => id !== undefined)
     .join(" ");
+
+  // Ganti sesi: mikrofon dilepas, tidak ada dikte yang nyala di sesi lain.
+  useEffect(() => {
+    abortDictation();
+  }, [sessionId, abortDictation]);
 
   const [confirmingBypass, setConfirmingBypass] = useState(false);
 
@@ -270,6 +284,8 @@ export function ReplyBar({ api, session, refresh, context, registry, draft }: Re
   };
 
   const submit = async (): Promise<void> => {
+    // Kirim pesan menghentikan dikte lebih dulu.
+    dict.stop();
     const question = parseBtw(text.trim());
     if (question !== undefined) {
       await submitAside(question);
@@ -357,6 +373,7 @@ export function ReplyBar({ api, session, refresh, context, registry, draft }: Re
               disabled={!usable.allowed || busy}
               aria-describedby={describedBy === "" ? undefined : describedBy}
             />
+            <DictationButton dict={dict} />
             <button
               type="submit"
               class="jk-send"

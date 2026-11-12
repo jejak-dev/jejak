@@ -16,9 +16,11 @@ import { secretWarning } from "../lib/secret-warning";
 import { FolderPicker } from "./FolderPicker";
 import { appendAttachments } from "../lib/attachments";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
+import { DictationButton } from "./DictationButton";
 import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { useAttachments } from "./useAttachments";
+import { useDictation } from "../lib/use-dictation";
 
 export interface ComposerProps {
   api: ApiClient;
@@ -108,6 +110,7 @@ export function Composer({
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const att = useAttachments(api);
   const cwdRef = useRef<HTMLInputElement | null>(null);
+  const dict = useDictation({ draft: prompt, setDraft: setPrompt, disabled: busy });
 
   const profiles = useMemo(() => registry?.profiles ?? [], [registry]);
   const activeProfileId = registry?.activeProfileId;
@@ -176,6 +179,13 @@ export function Composer({
     setCwd((current) => (current.trim() === "" ? defaultCwd : current));
   }, [defaultCwd]);
 
+  // Tinggi kolom mengikuti isi terbaru (mis. teks hasil dikte).
+  useEffect(() => {
+    const element = promptRef.current;
+    if (element === null) return;
+    autosize(element);
+  }, [prompt]);
+
   // Status sandbox hanya untuk menampilkan opsi; galat/503 berarti opsi disembunyikan.
   useEffect(() => {
     let active = true;
@@ -241,6 +251,9 @@ export function Composer({
 
   const submit = async (): Promise<void> => {
     if (busy) return;
+
+    // Kirim pesan menghentikan dikte lebih dulu.
+    dict.stop();
 
     const trimmedPrompt = prompt.trim();
     const trimmedCwd = cwd.trim();
@@ -382,6 +395,7 @@ export function Composer({
           aria-invalid={promptError !== undefined}
           aria-describedby={promptDescribedBy === "" ? undefined : promptDescribedBy}
         />
+          <DictationButton dict={dict} />
           <button type="submit" class="jk-send" disabled={!canSend} aria-label={busy ? "Memulai…" : "Mulai sesi"}>
             <Icon name="send" />
           </button>
