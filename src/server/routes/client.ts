@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { buildClientBundle, type ClientBundle } from "../client-bundle";
+import { getEmbeddedClientSource, type ClientSource } from "../client-source";
 import {
   DARK_BG,
   ICON_MASKABLE_SVG,
@@ -12,6 +13,11 @@ import {
 export interface ClientRoutesOptions {
   dev?: boolean;
   entry?: string;
+  /**
+   * Sumber klien eksplisit. Bila ada, sumber inilah yang dipakai; selain itu
+   * dipakai klien tertanam terdaftar, lalu baru pembangun runtime.
+   */
+  source?: ClientSource;
 }
 
 const CSP =
@@ -42,6 +48,12 @@ export function clientRoutes(options: ClientRoutesOptions = {}): Elysia {
   let cached: Promise<ClientBundle> | undefined;
 
   const bundle = (): Promise<ClientBundle> => {
+    // Urutan sumber: eksplisit > klien tertanam terdaftar > pembangun runtime.
+    const source = options.source ?? getEmbeddedClientSource();
+    if (source !== undefined) {
+      // Cache ditangani oleh sumbernya; jangan dibangun ulang di sini.
+      return source();
+    }
     if (dev) {
       return buildClientBundle(entry);
     }
