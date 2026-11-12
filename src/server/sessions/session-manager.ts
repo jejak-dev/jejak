@@ -1528,7 +1528,11 @@ export class SessionManager {
       throw new SessionError(failure, "tidak-valid");
     }
 
-    const answer = parts.join("").trim();
+    // Tiap event `text` adalah satu blok utuh; pisahkan blok dengan paragraf baru.
+    const answer = parts
+      .map((part) => part.trim())
+      .filter((part) => part !== "")
+      .join("\n\n");
     return { answer };
   }
 

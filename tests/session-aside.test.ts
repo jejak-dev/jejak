@@ -68,7 +68,7 @@ async function createOk(mgr: SessionManager, overrides: Record<string, unknown> 
 }
 
 describe("SessionManager.askAside", () => {
-  test("mengembalikan teks gabungan dari event text", async () => {
+  test("menggabungkan blok text dengan paragraf baru", async () => {
     const mgr = manager({
       runner: scriptedRunner([
         { type: "session", sessionId: "mock-session" },
@@ -81,7 +81,7 @@ describe("SessionManager.askAside", () => {
 
     const result = await mgr.askAside(info.id, "apa agenda sesi ini?");
 
-    expect(result.answer).toBe("Ini jawaban sampingan.");
+    expect(result.answer).toBe("Ini jawaban\n\nsampingan.");
   });
 
   test("tidak menambah event ke timeline dan status tidak berubah", async () => {
