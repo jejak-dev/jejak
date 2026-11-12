@@ -94,6 +94,8 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* Tanpa scroll horizontal di layar sempit (320px). */
+  overflow-x: clip;
 }
 
 body {
@@ -102,6 +104,8 @@ body {
   font-family: var(--sans);
   font-size: 13.5px;
   -webkit-font-smoothing: antialiased;
+  /* Tarik halaman (rubber band) dinonaktifkan di bodi. */
+  overscroll-behavior-y: none;
 }
 
 #app {
@@ -5911,4 +5915,100 @@ h2.jk-md-heading {
   color: var(--t1);
   font-size: 12px;
   line-height: 1.5;
+}
+
+/* Area aman (notch) dan layar sentuh */
+
+/*
+ * `env(safe-area-inset-*)` bernilai 0 di desktop dan di peramban lama,
+ * jadi tampilan desktop tidak berubah. Nilai inset ditambahkan ke padding
+ * yang sudah ada memakai calc.
+ */
+.jk-top {
+  min-height: calc(46px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.jk-sidebar {
+  padding: calc(12px + env(safe-area-inset-top, 0px))
+    calc(8px + env(safe-area-inset-right, 0px))
+    calc(8px + env(safe-area-inset-bottom, 0px))
+    calc(8px + env(safe-area-inset-left, 0px));
+}
+
+.jk-panel {
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.jk-panel-head {
+  min-height: calc(46px + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.jk-reply {
+  padding: 0 calc(20px + env(safe-area-inset-right, 0px))
+    calc(14px + env(safe-area-inset-bottom, 0px))
+    calc(20px + env(safe-area-inset-left, 0px));
+}
+
+.jk-home {
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Layar sentuh: target sebesar jari, bukan kursor. */
+@media (pointer: coarse) {
+  .jk-icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .jk-button,
+  .jk-pill-btn,
+  .jk-chip,
+  .jk-session-actions > button,
+  .jk-perm-actions .jk-button,
+  .jk-panel-tab {
+    min-height: 40px;
+  }
+
+  .jk-send {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .jk-step > summary {
+    min-height: 44px;
+  }
+
+  .jk-step-head .jk-copy {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* 16px mencegah peramban phone memperbesar tampilan saat kolom diisi. */
+  .jk-input,
+  .jk-select,
+  .jk-textarea,
+  .jk-comp-input {
+    font-size: 16px;
+  }
+
+  button,
+  a,
+  summary {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button {
+    touch-action: manipulation;
+  }
+
+  /* Daftar yang bisa digulir tidak menarik halaman induk. */
+  .jk-timeline-scroll,
+  .jk-groups,
+  .jk-panel,
+  .jk-home {
+    overscroll-behavior: contain;
+  }
 }
