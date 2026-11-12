@@ -22,5 +22,5 @@ Kontrak untuk kontributor manusia dan agent.
 
 - Ubah satu hal per commit.
 - Perubahan perilaku harus disertai tes.
-- Baca docs/ROADMAP.md sebelum menambah fitur besar; sesuaikan dengan rilis yang berlaku.
+- Baca roadmap lokal (bila ada) sebelum menambah fitur besar; sesuaikan dengan rilis yang berlaku.
 - Jangan menambah dependensi tanpa alasan yang jelas di deskripsi perubahan.
