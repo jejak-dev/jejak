@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { SessionInfo } from "../src/server/sessions/session-manager";
 import { detectEvents, notificationSupport, parseNotifyPrefs } from "../src/client/lib/notify";
+import type { GoalView } from "../src/server/goals/goal";
 
 function session(overrides: Partial<SessionInfo> = {}): SessionInfo {
   return {
@@ -106,6 +107,66 @@ describe("detectEvents", () => {
       { sessionId: "a", title: "Perbaiki login", kind: "selesai" },
       { sessionId: "b", title: "Perbaiki login", kind: "izin" },
     ]);
+  });
+});
+
+describe("detectEvents dengan mode Goal", () => {
+  function goalView(overrides: Partial<GoalView> = {}): GoalView {
+    return {
+      id: "g_1",
+      objective: "Buat tes auth hijau",
+      status: "active",
+      maxTurns: 10,
+      autoTurns: 1,
+      idleTurns: 0,
+      startedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  test("tidak ada notifikasi selesai saat goal masih aktif", () => {
+    const prev = [session({ status: "berjalan", goal: goalView() })];
+    const next = [session({ status: "selesai", goal: goalView({ autoTurns: 2 }) })];
+    expect(detectEvents(prev, next)).toEqual([]);
+  });
+
+  test("satu peristiwa saat goal berakhir", () => {
+    const prev = [session({ status: "berjalan", goal: goalView() })];
+    const next = [
+      session({
+        status: "selesai",
+        goal: goalView({ status: "achieved", endedReason: "selesai", summary: "Semua tes hijau." }),
+      }),
+    ];
+    const events = detectEvents(prev, next);
+    expect(events.length).toBe(1);
+    expect(events[0]?.kind).toBe("tujuan");
+    expect(events[0]?.detail).toContain("Tercapai");
+  });
+
+  test("galat tetap muncul seperti biasa saat goal aktif", () => {
+    const prev = [session({ status: "berjalan", goal: goalView() })];
+    const next = [session({ status: "gagal", goal: goalView() })];
+    const events = detectEvents(prev, next);
+    expect(events.some((event) => event.kind === "gagal")).toBe(true);
+  });
+
+  test("memulai goal (belum ada -> aktif) tidak memicu peristiwa", () => {
+    const prev = [session({ status: "berjalan" })];
+    const next = [session({ status: "berjalan", goal: goalView() })];
+    expect(detectEvents(prev, next)).toEqual([]);
+  });
+
+  test("tujuan dijeda menghasilkan satu peristiwa", () => {
+    const prev = [session({ status: "berjalan", goal: goalView() })];
+    const next = [
+      session({ status: "berjalan", goal: goalView({ status: "paused", endedReason: "plafon-giliran" }) }),
+    ];
+    const events = detectEvents(prev, next);
+    expect(events.length).toBe(1);
+    expect(events[0]?.kind).toBe("tujuan");
+    expect(events[0]?.detail).toContain("Dijeda");
   });
 });
 

@@ -1,17 +1,20 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import { isArchived } from "./sessions";
+import { goalReasonLabel, goalStatusLabel, type GoalView } from "./goal";
 
 export interface NotifyPrefs {
   enabled: boolean;
   sound: boolean;
 }
 
-export type NotifyKind = "izin" | "selesai" | "gagal";
+export type NotifyKind = "izin" | "selesai" | "gagal" | "tujuan";
 
 export interface NotifyEvent {
   sessionId: string;
   title: string;
   kind: NotifyKind;
+  /** Keterangan singkat (mis. alasan tujuan berakhir). */
+  detail?: string;
 }
 
 export type NotificationSupport = "tidak-ada" | "ditolak" | "belum" | "diizinkan";
@@ -23,6 +26,7 @@ const TITLES: Record<NotifyKind, string> = {
   izin: "Butuh izin",
   selesai: "Selesai",
   gagal: "Gagal",
+  tujuan: "Tujuan",
 };
 
 /** Baca preferensi notifikasi dari string JSON; bentuk asing jatuh ke bawaan (semua mati). */
@@ -55,6 +59,13 @@ export function writeNotifyPrefs(prefs: NotifyPrefs): void {
   }
 }
 
+/** Keterangan singkat saat tujuan berakhir: status dan alasannya. */
+function goalEndLabel(goal: GoalView): string {
+  const status = goalStatusLabel(goal);
+  if (goal.endedReason === undefined) return status;
+  return `${status}: ${goalReasonLabel(goal.endedReason)}`;
+}
+
 /**
  * Peristiwa yang layak dinotifikasi antara dua daftar sesi. Tanpa daftar
  * sebelumnya tidak ada peristiwa; sesi arsip dan sesi baru diabaikan.
@@ -73,11 +84,26 @@ export function detectEvents(
     if (session.pendingPermissions > old.pendingPermissions) {
       events.push({ sessionId: session.id, title: session.title, kind: "izin" });
     }
-    if (old.status === "berjalan" && session.status === "selesai") {
+    // Goal aktif: status sesi berayun "berjalan"/"selesai" tiap giliran
+    // otomatis, jadi notifikasi "selesai" ditunda sampai tujuan berakhir.
+    const goalLive = session.goal?.status === "active";
+    const goalEnded =
+      old.goal?.status === "active" &&
+      session.goal !== undefined &&
+      session.goal.status !== "active";
+    if (old.status === "berjalan" && session.status === "selesai" && !goalLive && !goalEnded) {
       events.push({ sessionId: session.id, title: session.title, kind: "selesai" });
     }
     if (old.status === "berjalan" && session.status === "gagal") {
       events.push({ sessionId: session.id, title: session.title, kind: "gagal" });
+    }
+    if (goalEnded && session.goal !== undefined) {
+      events.push({
+        sessionId: session.id,
+        title: session.title,
+        kind: "tujuan",
+        detail: goalEndLabel(session.goal),
+      });
     }
   }
   return events;
@@ -101,7 +127,7 @@ export function showNotification(event: NotifyEvent, onClick: () => void): void 
     if (typeof Notification === "undefined") return;
     if (Notification.permission !== "granted") return;
     const notification = new Notification(TITLES[event.kind], {
-      body: event.title,
+      body: event.detail === undefined ? event.title : `${event.title} — ${event.detail}`,
       tag: `jejak-${event.sessionId}-${event.kind}`,
       silent: true,
     });
