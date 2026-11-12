@@ -3,6 +3,10 @@ import { join } from "node:path";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
 import { defaultAuditStore, type AuditStore } from "./audit/audit-store";
+import { authGuard } from "./auth/auth-guard";
+import { createVerifier, type PasswordVerifier } from "./auth/password";
+import { createSessionCodec } from "./auth/session-cookie";
+import { createThrottle } from "./auth/throttle";
 import { CheckpointService } from "./checkpoints/checkpoint-service";
 import type { BudgetStore } from "./budget/budget-store";
 import { defaultBudgetStore } from "./budget/budget-store";
@@ -12,7 +16,7 @@ import {
   type ClaudeConfigStore,
 } from "./claude-config/config-store";
 import { removeSessionUndo } from "./files/revert";
-import { localGuard } from "./guard";
+import { localGuard, DEFAULT_ALLOWED_HOSTS } from "./guard";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
@@ -28,6 +32,7 @@ import {
 } from "./security/secret-allow-store";
 import { AttachmentStore } from "./attachments/store";
 import { attachmentRoutes } from "./routes/attachments";
+import { authRoutes } from "./routes/auth";
 import { checkpointRoutes } from "./routes/checkpoints";
 import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
@@ -67,6 +72,24 @@ import type { WorkspaceService } from "./workspaces/workspace-service";
 export interface ServeOptions {
   host?: string;
   port?: number;
+  /** Kata sandi aktif (atau verifier siap pakai); bila diisi, autentikasi aktif. */
+  password?: string | PasswordVerifier;
+  /** Host tambahan yang diizinkan (dari `--allow-host`). */
+  allowHosts?: string[];
+  /** Paksa penanda `Secure` pada cookie sesi. */
+  secureCookie?: boolean;
+  /** Sertifikat dan kunci TLS (isi PEM) untuk `Bun.serve`. */
+  tls?: { cert: string; key: string };
+}
+
+/** Opsi autentikasi untuk `createApp`. */
+export interface AuthOptions {
+  /** Kata sandi aktif atau verifier siap pakai. */
+  password: string | PasswordVerifier;
+  /** Port server; dipakai pada nama cookie sesi. */
+  port: number;
+  /** Paksa penanda `Secure` pada cookie sesi. */
+  secureCookie?: boolean;
 }
 
 export interface CreateAppOptions {
@@ -121,6 +144,10 @@ export interface CreateAppOptions {
   terminal?: TerminalManager;
   /** Direktori home pengguna untuk `~/.claude`; default `os.homedir()`. */
   home?: string;
+  /** Host yang diizinkan pada penjaga Host/Origin; default hanya loopback. */
+  allowedHosts?: string[];
+  /** Autentikasi opsional; bila diisi, guard dan rute auth dipasang. */
+  auth?: AuthOptions;
 }
 
 /** Ringkasan otomatis akhir sesi menjadi usulan memory proyek (lapis episodik). */
@@ -255,8 +282,45 @@ export function createApp(options: CreateAppOptions = {}) {
         ),
     });
 
+  // Autentikasi opsional: penjaga dipasang sesudah penjaga lokal (Host/Origin),
+  // rute auth dipasang lebih dulu agar status dan login terjangkau.
+  const authOptions = options.auth;
+  const verifier: PasswordVerifier | undefined =
+    authOptions === undefined
+      ? undefined
+      : typeof authOptions.password === "string"
+        ? createVerifier(authOptions.password)
+        : authOptions.password;
+  const codec =
+    authOptions === undefined ? undefined : createSessionCodec({ port: authOptions.port });
+  const throttle = createThrottle();
+  const authPlugins: Elysia[] = [];
+
+  if (codec !== undefined) {
+    authPlugins.push(authGuard({ codec }));
+  }
+  authPlugins.push(
+    authRoutes({
+      ...(verifier === undefined ? {} : { verifier }),
+      ...(codec === undefined ? {} : { codec }),
+      throttle,
+      audit: options.audit,
+      ...(authOptions?.secureCookie === undefined
+        ? {}
+        : { secureCookie: authOptions.secureCookie }),
+    }),
+  );
+
   let app = new Elysia()
-    .use(localGuard())
+    .use(
+      localGuard(
+        options.allowedHosts === undefined
+          ? undefined
+          : // Daftar host diizinkan diperluas, bukan mengganti daftar bawaan.
+            { allowedHosts: [...DEFAULT_ALLOWED_HOSTS, ...options.allowedHosts] },
+      ),
+    )
+    .use(authPlugins)
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch, audit: options.audit }))
     .use(sessionRoutes({ manager, workspaces: workspaceResolver, audit: options.audit }))
     .use(worktreeRoutes({ manager, service: worktrees, audit: options.audit }))
@@ -342,9 +406,9 @@ export function createApp(options: CreateAppOptions = {}) {
   return result;
 }
 
-function mcpUrlFor(host: string, port: number): string {
+function mcpUrlFor(host: string, port: number, secure: boolean): string {
   const safeHost = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
-  return `http://${safeHost}:${port}/mcp`;
+  return `${secure ? "https" : "http"}://${safeHost}:${port}/mcp`;
 }
 
 export function startServer(options: ServeOptions = {}) {
@@ -360,7 +424,7 @@ export function startServer(options: ServeOptions = {}) {
   const checkpoints = checkpointsDisabled
     ? undefined
     : new CheckpointService({ root: join(jejakHome(), "checkpoints") });
-  const mcpUrl = mcpUrlFor(host, port);
+  const mcpUrl = mcpUrlFor(host, port, options.tls !== undefined);
   const workspaces = defaultWorkspaceService(process.env);
   const mcpServers = defaultMcpServerService(process.env);
   const audit = defaultAuditStore(process.env);
@@ -382,6 +446,16 @@ export function startServer(options: ServeOptions = {}) {
     mcpUrl,
     checkpoints,
     workspaces,
+    ...(options.allowHosts === undefined ? {} : { allowedHosts: options.allowHosts }),
+    ...(options.password === undefined
+      ? {}
+      : {
+          auth: {
+            password: options.password,
+            port,
+            ...(options.secureCookie === undefined ? {} : { secureCookie: options.secureCookie }),
+          },
+        }),
     ...(mcpServers === undefined ? {} : { mcpServers }),
     ...(audit === undefined ? {} : { audit }),
     ...(secretAllow === undefined ? {} : { secretAllow }),
@@ -395,8 +469,11 @@ export function startServer(options: ServeOptions = {}) {
   }).listen({
     hostname: host,
     port,
+    ...(options.tls === undefined ? {} : { tls: options.tls }),
   });
-  console.log(`Jejak ${VERSION} siap di http://${host}:${port}`);
+  console.log(
+    `Jejak ${VERSION} siap di ${options.tls === undefined ? "http" : "https"}://${host}:${port}`,
+  );
   const closers: Array<() => void> = [];
   if (store !== undefined) closers.push(() => store.close());
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
