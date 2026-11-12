@@ -17,6 +17,8 @@ export interface SessionStore {
   saveSession(info: SessionInfo, sdkSessionId: string | undefined): void;
   appendEvent(id: string, item: SequencedEvent): void;
   trimEvents(id: string, keepFromSeq: number): void;
+  /** Hapus event dengan seq >= batas (mundur percakapan). */
+  deleteEventsFrom(id: string, seq: number): void;
   deleteSession(id: string): void;
   close(): void;
 }
@@ -83,6 +85,7 @@ export class SqliteSessionStore implements SessionStore {
   private readonly stmtSaveSession: Statement;
   private readonly stmtAppendEvent: Statement;
   private readonly stmtTrimEvents: Statement;
+  private readonly stmtDeleteEventsFrom: Statement;
   private readonly stmtDeleteEvents: Statement;
   private readonly stmtDeleteSession: Statement;
   private readonly stmtSyncNextSeq: Statement;
@@ -131,6 +134,9 @@ export class SqliteSessionStore implements SessionStore {
        ON CONFLICT(session_id, seq) DO UPDATE SET data = excluded.data`,
     );
     this.stmtTrimEvents = this.db.prepare("DELETE FROM events WHERE session_id = ? AND seq < ?");
+    this.stmtDeleteEventsFrom = this.db.prepare(
+      "DELETE FROM events WHERE session_id = ? AND seq >= ?",
+    );
     this.stmtDeleteEvents = this.db.prepare("DELETE FROM events WHERE session_id = ?");
     this.stmtDeleteSession = this.db.prepare("DELETE FROM sessions WHERE id = ?");
     this.stmtSyncNextSeq = this.db.prepare(
@@ -252,6 +258,10 @@ export class SqliteSessionStore implements SessionStore {
 
   trimEvents(id: string, keepFromSeq: number): void {
     this.stmtTrimEvents.run(id, keepFromSeq);
+  }
+
+  deleteEventsFrom(id: string, seq: number): void {
+    this.stmtDeleteEventsFrom.run(id, seq);
   }
 
   deleteSession(id: string): void {

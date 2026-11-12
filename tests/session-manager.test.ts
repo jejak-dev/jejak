@@ -1365,6 +1365,7 @@ describe("SessionManager + store", () => {
         trimmed.push(keep);
         inner.trimEvents(id, keep);
       },
+      deleteEventsFrom: (id, seq) => inner.deleteEventsFrom(id, seq),
       deleteSession: (id) => inner.deleteSession(id),
       close: () => inner.close(),
     };
@@ -1396,6 +1397,9 @@ describe("SessionManager + store", () => {
         throw new Error("disk penuh");
       },
       trimEvents: () => {
+        throw new Error("disk penuh");
+      },
+      deleteEventsFrom: () => {
         throw new Error("disk penuh");
       },
       deleteSession: () => {

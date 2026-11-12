@@ -388,6 +388,8 @@ export interface ApiClient {
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
   /** Pertanyaan sampingan dari salinan percakapan sesi (tidak masuk riwayat). */
   askSideQuestion(id: string, question: string): Promise<{ answer: string }>;
+  /** Mundur percakapan ke pesan pengguna; mengembalikan teks pesan yang dibuang. */
+  rewindConversation(id: string, eventSeq: number): Promise<{ text: string }>;
   uploadAttachment(file: {
     name: string;
     data: string;
@@ -1131,6 +1133,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         { question },
       );
       return { answer: String(field(data, "answer") ?? "") };
+    },
+
+    async rewindConversation(id, eventSeq) {
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/rewind`,
+        { eventSeq },
+      );
+      return { text: String(field(data, "text") ?? "") };
     },
 
     async getFiles(id, path, repo) {

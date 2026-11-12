@@ -42,6 +42,7 @@ import {
 } from "./lib/sidebar-width";
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
+import { rewindableSeqs } from "./lib/rewind";
 
 export function App() {
   const api = useMemo(() => createApiClient(), []);
@@ -108,6 +109,16 @@ export function App() {
   >(undefined);
   const previousFocusRef = useRef<Element | null>(null);
   const [promptFocusTick, setPromptFocusTick] = useState(0);
+  // Teks yang ditaruh di kolom input (pesan yang dibuang saat mundur percakapan).
+  const [draft, setDraft] = useState<
+    { sessionId: string; text: string; nonce: number } | undefined
+  >(undefined);
+  const draftNonceRef = useRef(0);
+
+  // Teks draf tidak berlaku untuk sesi lain.
+  useEffect(() => {
+    setDraft(undefined);
+  }, [selectedId]);
 
   const activeProfile = view?.profiles.find((profile) => profile.id === view.activeProfileId);
   const activeProfileLabel = activeProfile?.name ?? view?.activeProfileId;
@@ -431,6 +442,28 @@ export function App() {
   );
 
   const headerError = selected !== undefined ? interruptError : undefined;
+
+  // Mundur percakapan: buang pesan dan sesudahnya, lalu taruh teksnya di input.
+  const rewindable = useMemo(
+    () => rewindableSeqs(timeline.events ?? []),
+    [timeline.events],
+  );
+  const reloadTimeline = timeline.reload;
+  const onRewind = useCallback(
+    async (seq: number): Promise<void> => {
+      if (selected === undefined) return;
+      const result = await api.rewindConversation(selected.id, seq);
+      reloadTimeline();
+      draftNonceRef.current += 1;
+      setDraft({
+        sessionId: selected.id,
+        text: result.text,
+        nonce: draftNonceRef.current,
+      });
+      void refresh();
+    },
+    [api, refresh, reloadTimeline, selected],
+  );
   const recentCwds = useMemo(() => {
     const seen: string[] = [];
     for (const session of sessions) {
@@ -591,6 +624,8 @@ export function App() {
                   sandboxed={selected.sandbox === "standar"}
                   cwd={selected.cwd}
                   onDecide={onDecide}
+                  rewindableSeqs={rewindable}
+                  onRewind={onRewind}
                 />
                 <ReplyBar
                   key={selected.id}
@@ -599,6 +634,7 @@ export function App() {
                   refresh={refresh}
                   context={contextUsage(timeline.context)}
                   registry={view}
+                  draft={draft !== undefined && draft.sessionId === selected.id ? draft : undefined}
                 />
               </div>
               {panelOpen && (

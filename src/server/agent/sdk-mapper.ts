@@ -170,6 +170,17 @@ export function mapSdkMessage(message: unknown): AgentEvent[] {
 }
 
 /**
+ * `uuid` pesan assistant agent utama (bukan subagent); jangkar percakapan.
+ * `undefined` bila pesan tidak punya uuid atau berasal dari subagent.
+ */
+export function assistantUuidOf(message: unknown): string | undefined {
+  if (!isRecord(message) || message.type !== "assistant") return undefined;
+  if (readParentToolUseId(message) !== undefined) return undefined;
+  const uuid = message.uuid;
+  return typeof uuid === "string" && uuid !== "" ? uuid : undefined;
+}
+
+/**
  * Ukuran konteks dari pesan assistant agent utama (bukan subagent): token masuk,
  * cache, dan keluaran pada panggilan model itu. `undefined` bila tak ada usage.
  */

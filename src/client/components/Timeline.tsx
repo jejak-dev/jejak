@@ -25,6 +25,10 @@ export interface TimelineProps {
     message?: string,
     answers?: Record<string, string>,
   ) => Promise<void>;
+  /** Nomor urut pesan pengguna yang bisa dimundurkan. */
+  rewindableSeqs?: number[];
+  /** Jalankan mundur percakapan; galat ditampilkan di timeline. */
+  onRewind?: (seq: number) => Promise<void>;
 }
 
 const MAX_INPUT_CHARS = 2000;
@@ -157,7 +161,16 @@ function liveLabelOf(step: StepItem | undefined): string {
   return step.summary !== "" ? `${step.name} ${step.summary}` : step.name;
 }
 
-export function Timeline({ items: rawItems, connection, running, sandboxed, cwd, onDecide }: TimelineProps) {
+export function Timeline({
+  items: rawItems,
+  connection,
+  running,
+  sandboxed,
+  cwd,
+  onDecide,
+  rewindableSeqs,
+  onRewind,
+}: TimelineProps) {
   // Sesi sudah berhenti (gagal, selesai, server restart): izin yang masih "menunggu"
   // tidak bisa diputuskan lagi, jadi tampilkan sebagai dihentikan.
   const items =
@@ -175,6 +188,25 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
   const streamingNow = lastItem?.kind === "text" && lastItem.streaming === true;
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const [pinned, setPinned] = useState(true);
+
+  // Mundur percakapan: tombol kecil di pesan pengguna, konfirmasi dua langkah.
+  const [confirmSeq, setConfirmSeq] = useState<number | undefined>(undefined);
+  const [rewinding, setRewinding] = useState(false);
+  const [rewindError, setRewindError] = useState<string | undefined>(undefined);
+
+  const runRewind = async (seq: number): Promise<void> => {
+    if (onRewind === undefined || rewinding) return;
+    setRewinding(true);
+    setRewindError(undefined);
+    try {
+      await onRewind(seq);
+      setConfirmSeq(undefined);
+    } catch (error) {
+      setRewindError(error instanceof Error ? error.message : "gagal mundur percakapan");
+    } finally {
+      setRewinding(false);
+    }
+  };
 
   useEffect(() => {
     const element = scrollRef.current;
@@ -344,6 +376,12 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
             switch (item.kind) {
               case "user": {
                 const parsed = splitAttachments(item.text);
+                const seq = item.seq;
+                const canRewind =
+                  running !== true &&
+                  onRewind !== undefined &&
+                  seq !== undefined &&
+                  rewindableSeqs?.includes(seq) === true;
                 return (
                   <div class="jk-user" key={index}>
                     {parsed.body}
@@ -368,6 +406,43 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
                           ),
                         )}
                       </div>
+                    )}
+                    {canRewind && (
+                      confirmSeq === seq ? (
+                        <div
+                          class="jk-rewind-confirm"
+                          role="alertdialog"
+                          aria-label="Konfirmasi mundur percakapan"
+                        >
+                          <p>Buang pesan ini dan sesudahnya? Berkas tidak ikut dikembalikan.</p>
+                          <div class="jk-rewind-actions">
+                            <button
+                              type="button"
+                              class="jk-button"
+                              disabled={rewinding}
+                              onClick={() => void runRewind(seq)}
+                            >
+                              Ya, buang
+                            </button>
+                            <button
+                              type="button"
+                              class="jk-link-btn"
+                              disabled={rewinding}
+                              onClick={() => setConfirmSeq(undefined)}
+                            >
+                              Batal
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          class="jk-rewind-btn"
+                          onClick={() => setConfirmSeq(seq)}
+                        >
+                          Mundur ke sini
+                        </button>
+                      )
                     )}
                   </div>
                 );
@@ -443,6 +518,11 @@ export function Timeline({ items: rawItems, connection, running, sandboxed, cwd,
       </div>
 
       <div class="jk-timeline-foot">
+        {rewindError !== undefined && (
+          <p class="jk-error-line" role="alert">
+            {rewindError}
+          </p>
+        )}
         {pendingHidden && pending.length > 0 && (
           <button type="button" class="jk-pending-pill" onClick={jumpToPending}>
             <span>

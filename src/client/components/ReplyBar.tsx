@@ -22,6 +22,8 @@ export interface ReplyBarProps {
   context?: ContextUsage;
   /** Profil provider untuk pemilih provider/model; tanpa ini pemilih tidak tampil. */
   registry?: RegistryView;
+  /** Teks yang ditaruh di kolom input (mis. pesan yang dibuang saat mundur). */
+  draft?: { text: string; nonce: number };
 }
 
 const MAX_TEXTAREA_PX = 8 * 24;
@@ -47,7 +49,7 @@ function autosize(element: HTMLTextAreaElement): void {
   element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_PX)}px`;
 }
 
-export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarProps) {
+export function ReplyBar({ api, session, refresh, context, registry, draft }: ReplyBarProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -65,6 +67,20 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
     asideSessionRef.current = sessionId;
     setAside(undefined);
   }, [sessionId]);
+
+  // Teks hasil mundur percakapan ditaruh di kolom input agar bisa disunting.
+  useEffect(() => {
+    if (draft === undefined) return;
+    setText(draft.text);
+    textareaRef.current?.focus();
+  }, [draft]);
+
+  // Tinggi kolom input mengikuti isi (termasuk teks yang ditaruh dari luar).
+  useEffect(() => {
+    const element = textareaRef.current;
+    if (element === null) return;
+    autosize(element);
+  }, [text]);
 
   // Popover konteks menutup saat klik di luar atau tekan Esc.
   useEffect(() => {

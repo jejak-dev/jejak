@@ -84,6 +84,18 @@ describe("SqliteSessionStore", () => {
     store.close();
   });
 
+  test("deleteEventsFrom menghapus event dari seq batas ke atas", () => {
+    const store = new SqliteSessionStore(":memory:");
+    store.saveSession(info("s_1"), undefined);
+    for (let seq = 1; seq <= 5; seq += 1) {
+      store.appendEvent("s_1", event(seq, `e${seq}`));
+    }
+
+    store.deleteEventsFrom("s_1", 3);
+    expect(store.loadEvents("s_1").map((item) => item.seq)).toEqual([1, 2]);
+    store.close();
+  });
+
   test("deleteSession menghapus sesi dan event-nya", () => {
     const store = new SqliteSessionStore(":memory:");
     store.saveSession(info("s_1"), undefined);

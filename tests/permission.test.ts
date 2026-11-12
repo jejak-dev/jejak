@@ -326,7 +326,8 @@ describe("mock-runner: [izin]", () => {
     expect(calls).toBe(1);
     expect(events).toEqual([
       { type: "text", text: "Izin ditolak, aksi dibatalkan." },
-      { type: "result", ok: true },
+      // Hasil mock memakai jangkar percakapan sintetis.
+      { type: "result", ok: true, anchorUuid: "mock-anchor-1" },
     ]);
   });
 

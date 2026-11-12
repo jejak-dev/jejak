@@ -23,6 +23,7 @@ import {
 import { followSession } from "./lib/sse";
 import { reduceContext, type ContextState } from "./lib/context";
 import { reduceTimeline, startTimeline, type TimelineItem } from "./lib/timeline";
+import type { RewindEvent } from "./lib/rewind";
 
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message !== "") {
@@ -237,6 +238,13 @@ export interface TimelineState {
   error?: string;
   /** Ukuran konteks terbaru (diperbarui di tengah giliran). */
   context?: ContextState;
+  /** Event sesi mentah (dengan nomor urut) untuk mundur percakapan. */
+  events?: RewindEvent[];
+}
+
+export interface TimelineController extends TimelineState {
+  /** Muat ulang timeline dari awal (dipakai setelah mundur percakapan). */
+  reload: () => void;
 }
 
 const IDLE_TIMELINE: TimelineState = { items: [], connection: "idle" };
@@ -257,8 +265,9 @@ export function shouldResume(
   return false;
 }
 
-export function useTimeline(api: ApiClient, session: SessionInfo | undefined): TimelineState {
+export function useTimeline(api: ApiClient, session: SessionInfo | undefined): TimelineController {
   const [state, setState] = useState<TimelineState>(IDLE_TIMELINE);
+  const [reloadTick, setReloadTick] = useState(0);
   const sessionId = session?.id;
   const prompt = session?.prompt;
   const status = session?.status;
@@ -284,7 +293,7 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
           error: undefined,
         }));
       } else {
-        setState({ items: initialItems, connection: "menyambung" });
+        setState({ items: initialItems, connection: "menyambung", events: [] });
       }
 
       void (async () => {
@@ -296,7 +305,8 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
               setState((previous) => ({
                 ...previous,
                 connection: previous.connection === "menyambung" ? "terhubung" : previous.connection,
-                items: reduceTimeline(previous.items, item.event),
+                items: reduceTimeline(previous.items, item.event, { seq: item.seq }),
+                events: [...(previous.events ?? []), { seq: item.seq, event: item.event }],
                 context: reduceContext(previous.context, item.event),
               }));
             } else {
@@ -338,7 +348,7 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
       controllerRef.current?.abort();
       controllerRef.current = null;
     };
-  }, [openStream, sessionId, prompt]);
+  }, [openStream, sessionId, prompt, reloadTick]);
 
   // Giliran lanjutan: aliran sudah berakhir tetapi sesi kembali berjalan atau ada event baru.
   useEffect(() => {
@@ -351,7 +361,13 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
     openStream(sessionId, lastSeqRef.current, undefined);
   }, [openStream, sessionId, status, state.connection, eventCount]);
 
-  return state;
+  // Muat ulang dari awal: dipakai setelah mundur percakapan (riwayat berubah).
+  // Efek di atas memakai `reloadTick` sebagai dependensi, jadi stream dibuka ulang.
+  const reload = useCallback((): void => {
+    setReloadTick((tick) => tick + 1);
+  }, []);
+
+  return { ...state, reload };
 }
 
 export interface RegistryState {

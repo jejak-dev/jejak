@@ -28,6 +28,11 @@ export type AgentEvent =
       contextTokens?: number;
       /** Jendela konteks model menurut SDK; perkiraan untuk model non-Claude. */
       contextWindow?: number;
+      /**
+       * `uuid` pesan assistant terakhir giliran ini; jangkar untuk mundur
+       * percakapan. Tidak ada bila runner tidak memberi uuid.
+       */
+      anchorUuid?: string;
     }
   | { type: "error"; message: string }
   | {
@@ -102,6 +107,11 @@ export interface RunInput {
    * (percakapan dicabang; riwayat sesi asal tidak berubah).
    */
   fork?: boolean;
+  /**
+   * Jangkar percakapan: uuid pesan assistant tempat percakapan dilanjutkan
+   * (opsi SDK `resumeSessionAt`). Dipakai bersama `resumeSessionId` dan `fork`.
+   */
+  resumeAt?: string;
   /** Tanpa tool sama sekali (tool bawaan, MCP memory, dan MCP eksternal). */
   noTools?: boolean;
   memory?: RunMemory;

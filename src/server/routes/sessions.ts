@@ -441,6 +441,26 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
       { parse: "text" },
     )
     .post(
+      "/api/sessions/:id/rewind",
+      async ({ params, body }) => {
+        try {
+          const parsed = parseJsonBody(body);
+          if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+            throw invalid("Body permintaan harus berupa objek.");
+          }
+          const eventSeq = (parsed as Record<string, unknown>).eventSeq;
+          if (typeof eventSeq !== "number" || !Number.isSafeInteger(eventSeq)) {
+            throw invalid("Field eventSeq harus berupa bilangan bulat.");
+          }
+          const result = await manager.rewindConversation(params.id, eventSeq);
+          return jsonResponse(200, { text: result.text });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
       "/api/sessions/:id/btw",
       async ({ params, body }) => {
         try {

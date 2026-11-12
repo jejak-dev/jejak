@@ -83,6 +83,12 @@ export interface SessionInfo {
   budget?: { session?: BudgetLevel; day?: BudgetLevel };
   /** Jumlah event yang mengandung rahasia; tidak ada bila 0. */
   redactedEvents?: number;
+  /**
+   * Target mundur percakapan yang masih menunggu giliran berikutnya:
+   * jangkar (uuid pesan assistant) dan sesi SDK asal. Disimpan di baris sesi
+   * agar restart server tidak melanjutkan riwayat penuh.
+   */
+  rewindTo?: { uuid: string; sdkSessionId: string };
 }
 
 export interface SequencedEvent {
@@ -236,6 +242,11 @@ interface SessionRecord {
   price?: ModelPrice;
   resolved?: ResolvedProvider;
   sdkSessionId?: string;
+  /**
+   * Jangkar mundur percakapan yang menunggu giliran berikutnya; hilang setelah
+   * giliran itu memakai jangkar tersebut.
+   */
+  rewindTo?: { uuid: string; sdkSessionId: string };
   queue: string[];
   /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
   turns: number;
@@ -522,6 +533,10 @@ export class SessionManager {
 
   private persistSession(record: SessionRecord): void {
     const info = { ...record.info };
+    // Target mundur ikut tersimpan di baris sesi (kolom data), seperti field
+    // opsional lain; restart server tidak boleh melanjutkan riwayat penuh.
+    if (record.rewindTo === undefined) delete info.rewindTo;
+    else info.rewindTo = record.rewindTo;
     const sdkSessionId = record.sdkSessionId;
     this.storeGuard(() => this.store?.saveSession(info, sdkSessionId));
   }
@@ -811,6 +826,10 @@ export class SessionManager {
       if (item.sdkSessionId !== undefined) {
         record.sdkSessionId = item.sdkSessionId;
       }
+      // Target mundur yang masih menunggu tetap berlaku setelah restart.
+      if (item.info.rewindTo !== undefined) {
+        record.rewindTo = { ...item.info.rewindTo };
+      }
       this.sessions.set(record.info.id, record);
 
       if (record.info.status === "berjalan") {
@@ -1045,6 +1064,8 @@ export class SessionManager {
   /** Salinan info untuk tampilan; `worktree.missing` dihitung di sini. */
   private viewInfo(info: SessionInfo): SessionInfo {
     const copy: SessionInfo = { ...info };
+    // Target mundur bersifat internal; tidak dikirim ke klien.
+    delete copy.rewindTo;
     if (info.worktree !== undefined) {
       copy.worktree = {
         ...info.worktree,
@@ -1345,6 +1366,88 @@ export class SessionManager {
     this.assertConcurrencyCapacity();
     this.startTurn(record, message, true);
     return { queued: false };
+  }
+
+  /**
+   * Mundur percakapan: pesan pengguna target dan semua sesudahnya dibuang dari
+   * riwayat sesi. Giliran berikutnya melanjutkan percakapan SDK dari jangkar
+   * giliran sebelumnya (opsi `resumeSessionAt` + fork). Berkas tidak ikut
+   * dikembalikan; teks pesan yang dibuang dikembalikan untuk disunting ulang.
+   */
+  async rewindConversation(id: string, eventSeq: unknown): Promise<{ text: string }> {
+    const record = this.sessions.get(id);
+    if (record === undefined) {
+      throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
+    }
+    if (record.info.status === "berjalan" || record.pending.size > 0) {
+      throw new SessionError("Hentikan sesi dulu.", "konflik");
+    }
+    if (typeof eventSeq !== "number" || !Number.isSafeInteger(eventSeq) || eventSeq < 1) {
+      throw new SessionError("Field eventSeq harus berupa nomor urut event.", "tidak-valid");
+    }
+
+    const target = record.buffer.find((item) => item.seq === eventSeq);
+    if (target === undefined) {
+      throw new SessionError("Pesan tidak ditemukan pada sesi ini.", "tidak-valid");
+    }
+    if (target.event.type !== "user_message") {
+      throw new SessionError("Hanya pesan pengguna yang bisa dimundurkan.", "tidak-valid");
+    }
+
+    const anchor = this.anchorBefore(record, target.seq);
+    if (anchor === undefined) {
+      throw new SessionError(
+        "Pesan ini tidak bisa dimundurkan: giliran sebelumnya tidak punya jangkar.",
+        "tidak-valid",
+      );
+    }
+    const sdkSessionId = record.sdkSessionId;
+    if (sdkSessionId === undefined) {
+      throw new SessionError(
+        "Sesi ini belum punya riwayat untuk dilanjutkan.",
+        "tidak-valid",
+      );
+    }
+
+    // (a) buang event target dan sesudahnya dari buffer dan penyimpanan.
+    record.buffer = record.buffer.filter((item) => item.seq < target.seq);
+    this.storeGuard(() => this.store?.deleteEventsFrom(record.info.id, target.seq));
+
+    // (b) simpan jangkar untuk giliran berikutnya (persisten di baris sesi).
+    record.rewindTo = { uuid: anchor, sdkSessionId };
+
+    // (c) hitung ulang field turunan.
+    record.info.eventCount = record.buffer.filter(
+      (item) => item.event.type !== "text_delta",
+    ).length;
+    record.queue.length = 0;
+    record.info.queued = 0;
+    record.info.pendingPermissions = 0;
+    record.turns = this.countTurns(record.buffer);
+    record.info.updatedAt = this.now().toISOString();
+    this.persistSession(record);
+    this.notify(record);
+
+    // (d) catat audit.
+    this.audit("pengaturan", "Percakapan dimundurkan", record.info.id, {
+      aksi: "mundur-percakapan",
+    });
+
+    return { text: target.event.text };
+  }
+
+  /**
+   * Jangkar giliran sebelumnya: uuid pesan assistant terakhir pada `result`
+   * paling akhir sebelum nomor urut target. `undefined` bila tidak ada.
+   */
+  private anchorBefore(record: SessionRecord, seq: number): string | undefined {
+    for (let index = record.buffer.length - 1; index >= 0; index -= 1) {
+      const item = record.buffer[index]!;
+      if (item.seq >= seq) continue;
+      if (item.event.type !== "result") continue;
+      return item.event.anchorUuid;
+    }
+    return undefined;
   }
 
   /**
@@ -1862,6 +1965,13 @@ export class SessionManager {
     if (resumeSessionId !== undefined) {
       input.resumeSessionId = resumeSessionId;
     }
+    // Target mundur: lanjutkan dari jangkar dan cabang riwayat lama.
+    const rewindTo = record.rewindTo;
+    if (rewindTo !== undefined) {
+      input.resumeSessionId = rewindTo.sdkSessionId;
+      input.resumeAt = rewindTo.uuid;
+      input.fork = true;
+    }
     const claude = this.claudeForRun(record);
     if (claude !== undefined) {
       input.claude = claude;
@@ -2006,6 +2116,23 @@ export class SessionManager {
     ).catch(() => undefined);
   }
 
+  /**
+   * Event `session`: sesi SDK pertama dicatat. Setelah mundur, sesi hasil
+   * fork menimpa `sdkSessionId` dan target mundur dibersihkan.
+   */
+  private handleSessionEvent(record: SessionRecord, sessionId: string): void {
+    if (record.rewindTo !== undefined) {
+      record.sdkSessionId = sessionId;
+      record.rewindTo = undefined;
+      this.persistSession(record);
+      return;
+    }
+    if (record.sdkSessionId === undefined) {
+      record.sdkSessionId = sessionId;
+      this.persistSession(record);
+    }
+  }
+
   /** Jalur lama: event diteruskan apa adanya tanpa buffer/fallback. */
   private async runPlain(
     record: SessionRecord,
@@ -2014,9 +2141,8 @@ export class SessionManager {
     let sawResult = false;
     try {
       for await (const event of this.runner.run(input)) {
-        if (event.type === "session" && record.sdkSessionId === undefined) {
-          record.sdkSessionId = event.sessionId;
-          this.persistSession(record);
+        if (event.type === "session") {
+          this.handleSessionEvent(record, event.sessionId);
         }
         if (event.type === "result") {
           sawResult = true;
@@ -2074,10 +2200,7 @@ export class SessionManager {
     try {
       for await (const event of this.runner.run(input)) {
         if (event.type === "session") {
-          if (record.sdkSessionId === undefined) {
-            record.sdkSessionId = event.sessionId;
-            this.persistSession(record);
-          }
+          this.handleSessionEvent(record, event.sessionId);
           // Event sesi diteruskan langsung, bukan bagian buffer fallback.
           this.append(record, event);
           continue;

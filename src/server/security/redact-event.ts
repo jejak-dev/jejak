@@ -19,6 +19,7 @@ const IDENTITY_KEYS = new Set([
   "expiresAt",
   "decision",
   "model",
+  "anchorUuid",
 ]);
 
 export interface RedactedEvent {

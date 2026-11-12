@@ -6,7 +6,7 @@ import type {
   PermissionRequest,
   ResolvedMcpServer,
 } from "./events";
-import { contextTokensOf, contextWindowOf, mapSdkMessage } from "./sdk-mapper";
+import { assistantUuidOf, contextTokensOf, contextWindowOf, mapSdkMessage } from "./sdk-mapper";
 
 const SDK_MODULE: string = "@anthropic-ai/claude-agent-sdk";
 
@@ -342,6 +342,10 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         // Percakapan dicabang: sesi SDK baru, riwayat sesi asal tak berubah.
         sdkOptions.forkSession = true;
       }
+      if (input.resumeAt !== undefined) {
+        // Lanjutkan hanya sampai jangkar (uuid pesan assistant terakhir giliran itu).
+        sdkOptions.resumeSessionAt = input.resumeAt;
+      }
       const directories = [
         ...(workspace?.additionalDirectories ?? []),
         ...(input.extraDirectories ?? []),
@@ -408,9 +412,13 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         let pendingParent: string | undefined;
         let lastFlush = 0;
         let contextTokens: number | undefined;
+        // Jangkar percakapan: uuid pesan assistant terakhir giliran ini.
+        let anchorUuid: string | undefined;
         for await (const message of query) {
           const callContext = contextTokensOf(message);
           contextTokens = callContext ?? contextTokens;
+          const messageUuid = assistantUuidOf(message);
+          if (messageUuid !== undefined) anchorUuid = messageUuid;
           for (const event of mapSdkMessage(message)) {
             if (event.type === "text_delta") {
               if (pendingParent !== event.parentToolUseId && pendingDelta !== "") {
@@ -436,6 +444,8 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
               // Jendela dari profil menang atas tebakan SDK (SDK memakai 200 rb untuk model non-Claude).
               const window = input.provider.contextWindow ?? contextWindowOf(message);
               if (window !== undefined) event.contextWindow = window;
+              // Jangkar hanya diisi bila runner memberi uuid (pesan assistant terakhir).
+              if (anchorUuid !== undefined) event.anchorUuid = anchorUuid;
             }
             yield event;
           }

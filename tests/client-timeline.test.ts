@@ -9,12 +9,24 @@ import {
 } from "../src/client/lib/timeline";
 
 function reduceAll(events: AgentEvent[], initial: TimelineItem[] = []): TimelineItem[] {
-  return events.reduce(reduceTimeline, initial);
+  return events.reduce((items, event) => reduceTimeline(items, event), initial);
 }
 
 describe("startTimeline", () => {
   test("membuat item user dari prompt", () => {
     expect(startTimeline("Halo")).toEqual([{ kind: "user", text: "Halo" }]);
+  });
+});
+
+describe("reduceTimeline", () => {
+  test("pesan pengguna memakai nomor urut event bila ada", () => {
+    const items = reduceTimeline([], { type: "user_message", text: "halo" }, { seq: 7 });
+    expect(items).toEqual([{ kind: "user", text: "halo", seq: 7 }]);
+  });
+
+  test("pesan pengguna tanpa nomor urut tetap tanpa seq", () => {
+    const items = reduceTimeline([], { type: "user_message", text: "halo" });
+    expect(items).toEqual([{ kind: "user", text: "halo" }]);
   });
 });
 

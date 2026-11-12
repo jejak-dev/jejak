@@ -5735,3 +5735,44 @@ h2.jk-md-heading {
     animation: none;
   }
 }
+
+/* Mundur percakapan ("mundur ke sini") pada pesan pengguna. */
+
+.jk-rewind-btn {
+  display: block;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--t2);
+  font-size: 12px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-2);
+}
+
+.jk-rewind-btn:hover:not(:disabled) {
+  color: var(--t1);
+}
+
+.jk-rewind-confirm {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.jk-rewind-confirm p {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--t2);
+}
+
+.jk-rewind-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

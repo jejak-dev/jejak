@@ -67,12 +67,22 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
         ? provided
         : [...provided, { type: "result", ok: true } satisfies AgentEvent];
 
+  // Jangkar percakapan sintetis: uuid pesan assistant terakhir giliran ini.
+  let anchorCounter = 0;
+  const withAnchor = (
+    event: Extract<AgentEvent, { type: "result" }>,
+  ): Extract<AgentEvent, { type: "result" }> => {
+    if (!event.ok || event.anchorUuid !== undefined) return event;
+    anchorCounter += 1;
+    return { ...event, anchorUuid: `mock-anchor-${anchorCounter}` };
+  };
+
   return {
     async *run(input) {
       const signal = input.signal;
       if (input.prompt.trim() === "/compact") {
         yield { type: "text", text: "Percakapan dipadatkan." };
-        yield { type: "result", ok: true, contextTokens: 4_200, contextWindow: 200_000 };
+        yield withAnchor({ type: "result", ok: true, contextTokens: 4_200, contextWindow: 200_000 });
         return;
       }
       let hasResult = false;
@@ -100,7 +110,7 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
           // dibatalkan
         }
         yield { type: "text", text: reply };
-        yield { type: "result", ok: true };
+        yield withAnchor({ type: "result", ok: true });
         return;
       }
 
@@ -145,7 +155,7 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
           // dibatalkan
         }
         yield { type: "text", text: reply };
-        yield { type: "result", ok: true };
+        yield withAnchor({ type: "result", ok: true });
         return;
       }
 
@@ -162,7 +172,7 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
         }
         if (!allowed) {
           yield { type: "text", text: "Izin ditolak, aksi dibatalkan." };
-          yield { type: "result", ok: true };
+          yield withAnchor({ type: "result", ok: true });
           return;
         }
       }
@@ -179,7 +189,7 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
           outcome = { text: "Pencarian memory gagal.", isError: true };
         }
         yield { type: "tool_result", id, output: outcome.text, isError: outcome.isError };
-        yield { type: "result", ok: true, summary: "Pencarian memory selesai." };
+        yield withAnchor({ type: "result", ok: true, summary: "Pencarian memory selesai." });
         return;
       }
 
@@ -198,7 +208,7 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
           outcome = { text: "Usulan gagal dicatat.", isError: true };
         }
         yield { type: "tool_result", id, output: outcome.text, isError: outcome.isError };
-        yield { type: "result", ok: true, summary: "Usulan memory dicatat." };
+        yield withAnchor({ type: "result", ok: true, summary: "Usulan memory dicatat." });
         return;
       }
 
@@ -237,7 +247,7 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
           };
         }
 
-        yield { type: "result", ok: true, summary: "Data workspace dibaca." };
+        yield withAnchor({ type: "result", ok: true, summary: "Data workspace dibaca." });
         return;
       }
 
@@ -268,7 +278,7 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
             await wait(40, signal);
           }
         }
-        yield event;
+        yield event.type === "result" ? withAnchor(event) : event;
       }
     },
   };

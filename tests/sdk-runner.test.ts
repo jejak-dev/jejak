@@ -1135,3 +1135,75 @@ test("noTools menambah catatan pertanyaan sampingan ke systemPrompt", async () =
     | undefined;
   expect((promptPlain?.append as string)).not.toContain("pertanyaan sampingan");
 });
+
+test("resumeAt mengisi resumeSessionAt dan tanpa resumeAt kuncinya tidak ada", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ resumeAt: "anchor-1", resumeSessionId: "s-lama", fork: true }),
+    ),
+  );
+
+  expect(received?.resumeSessionAt).toBe("anchor-1");
+  expect(received?.resume).toBe("s-lama");
+  expect(received?.forkSession).toBe(true);
+
+  received = undefined;
+  const plain = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+  await collect(createSdkRunner({ load: async () => plain.module, baseEnv: {} }).run(baseInput()));
+
+  expect("resumeSessionAt" in (received ?? {})).toBe(false);
+});
+
+const ASSISTANT_SATU = {
+  type: "assistant",
+  parent_tool_use_id: null,
+  uuid: "uuid-satu",
+  message: { content: [{ type: "text", text: "halo" }] },
+};
+
+const ASSISTANT_DUA = {
+  type: "assistant",
+  parent_tool_use_id: null,
+  uuid: "uuid-dua",
+  message: { content: [{ type: "text", text: "dunia" }] },
+};
+
+test("anchorUuid pada result memakai uuid pesan assistant terakhir", async () => {
+  const sdk = fakeSdk({ messages: [INIT, ASSISTANT_SATU, ASSISTANT_DUA, RESULT_OK] });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+
+  const result = events.find((event) => event.type === "result");
+  expect(result).toMatchObject({ anchorUuid: "uuid-dua" });
+});
+
+test("tanpa pesan assistant result tidak punya anchorUuid", async () => {
+  const sdk = fakeSdk({ messages: [INIT, RESULT_OK] });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+
+  const result = events.find((event) => event.type === "result");
+  expect(result).toEqual({ type: "result", ok: true, summary: "selesai", costUsd: 0.01, inputTokens: 10, outputTokens: 5, numTurns: 1 });
+});
+
+test("pesan assistant subagent tidak dipakai sebagai jangkar", async () => {
+  const subagent = {
+    ...ASSISTANT_DUA,
+    parent_tool_use_id: "parent-1",
+  };
+  const sdk = fakeSdk({ messages: [INIT, ASSISTANT_SATU, subagent, RESULT_OK] });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+
+  const result = events.find((event) => event.type === "result");
+  expect(result).toMatchObject({ anchorUuid: "uuid-satu" });
+});

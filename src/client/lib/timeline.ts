@@ -9,7 +9,7 @@ export type ToolStatus = "berjalan" | "selesai" | "gagal";
 export type PermissionStatus = "menunggu" | "diizinkan" | "ditolak" | "kedaluwarsa" | "dihentikan";
 
 export type TimelineItem =
-  | { kind: "user"; text: string }
+  | { kind: "user"; text: string; seq?: number }
   | { kind: "thinking"; text: string; depth: number }
   | { kind: "text"; text: string; depth: number; streaming?: boolean }
   | {
@@ -125,6 +125,7 @@ function markRunningToolsFailed(items: TimelineItem[]): TimelineItem[] {
 export function reduceTimeline(
   items: readonly TimelineItem[],
   event: AgentEvent,
+  options: { seq?: number } = {},
 ): TimelineItem[] {
   switch (event.type) {
     case "session":
@@ -231,7 +232,15 @@ export function reduceTimeline(
     }
 
     case "user_message":
-      return [...items, { kind: "user", text: event.text }];
+      // Nomor urut event dipakai untuk mundur percakapan.
+      return [
+        ...items,
+        {
+          kind: "user",
+          text: event.text,
+          ...(options.seq === undefined ? {} : { seq: options.seq }),
+        },
+      ];
 
     case "error":
       items = settleStreaming([...items]);
