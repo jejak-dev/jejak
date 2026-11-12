@@ -13,12 +13,44 @@ import {
   type WikiProject,
   type WikiSync,
 } from "../lib/wiki";
+import {
+  filterRepos,
+  gitlabProviders,
+  matchRepos,
+  readStoredProject,
+  storedProjectErrorMessage,
+  writeStoredProject,
+  WIKI_PROJECT_STORAGE_KEY,
+  type StoredWikiProject,
+  type WikiProviderOption,
+  type WikiRepo,
+} from "../lib/wiki-project";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 
 export interface WikiState {
   /** Proyek wiki yang cocok dengan remote origin folder sesi. */
   project?: WikiProject;
+  /** Proyek ini dipilih manual, bukan hasil pencocokan remote. */
+  manual: boolean;
+  /** Pemilih proyek manual ditampilkan. */
+  picker: boolean;
+  /** Penyedia GitLab yang bisa dipilih manual. */
+  providers: readonly WikiProviderOption[];
+  /** Penyedia yang sedang dipilih di pemilih proyek. */
+  providerId?: string;
+  /** Daftar repo penyedia yang sudah dimuat. */
+  repos: readonly WikiRepo[];
+  /** Saring nama repo di pemilih proyek. */
+  repoQuery: string;
+  /** Daftar repo sedang dimuat. */
+  reposLoading: boolean;
+  /** Galat memuat daftar repo. */
+  reposError?: string;
+  /** Daftar penyedia sedang dimuat. */
+  providersLoading: boolean;
+  /** Galat memuat daftar penyedia. */
+  providersError?: string;
   /** Daftar halaman dari cache server. */
   pages: readonly WikiPageRef[];
   /** Isi _Sidebar bila ada. */
@@ -58,6 +90,18 @@ export interface WikiActions {
   onQuote: () => void;
   /** Intercept tautan di isi halaman; `true` berarti tautan ditangani. */
   onLink: (href: string) => boolean;
+  /** Pilih penyedia GitLab di pemilih proyek. */
+  onSelectProvider: (id: string) => void;
+  /** Saring daftar repo di pemilih proyek. */
+  onRepoQueryChange: (query: string) => void;
+  /** Jadikan repo terpilih proyek wiki. */
+  onPickRepo: (fullPath: string) => void;
+  /** Muat ulang daftar repo. */
+  onRetryRepos: () => void;
+  /** Muat ulang daftar penyedia. */
+  onRetryProviders: () => void;
+  /** Buang pilihan tersimpan dan buka pemilih proyek. */
+  onChangeProject: () => void;
 }
 
 export interface WikiViewProps {
@@ -79,6 +123,13 @@ const NO_MATCH_MESSAGE = "Tidak ada halaman yang cocok dengan saringan.";
 
 const INITIAL_STATE: WikiState = {
   pages: [],
+  manual: false,
+  picker: false,
+  providers: [],
+  repos: [],
+  repoQuery: "",
+  reposLoading: false,
+  providersLoading: false,
   stale: false,
   loading: true,
   syncing: false,
@@ -114,6 +165,133 @@ function listingFields(listing: WikiSync): Partial<WikiState> {
     commit: listing.commit,
     fetchedAt: listing.fetchedAt,
   };
+}
+
+/**
+ * Pemilih proyek manual: pilih penyedia GitLab, saring daftar repo, lalu
+ * klik repo untuk dijadikan proyek wiki.
+ */
+function WikiProjectPicker({ state, actions }: { state: WikiState; actions: WikiActions }) {
+  const visible = filterRepos(state.repos, state.repoQuery);
+  const total = matchRepos(state.repos, state.repoQuery).length;
+
+  return (
+    <section class="jk-wiki-picker" aria-label="Pilih proyek wiki">
+      <h3 class="jk-wiki-group-title">Pilih proyek wiki</h3>
+
+      {state.providersLoading && (
+        <p class="jk-panel-note" role="status">
+          Memuat penyedia…
+        </p>
+      )}
+
+      {state.providersError !== undefined && (
+        <div class="jk-panel-error">
+          <p class="jk-error-line" role="alert">
+            {state.providersError}
+          </p>
+          <button
+            type="button"
+            class="jk-button jk-button-secondary"
+            onClick={actions.onRetryProviders}
+          >
+            Coba lagi
+          </button>
+        </div>
+      )}
+
+      {!state.providersLoading &&
+        state.providersError === undefined &&
+        state.providers.length === 0 && (
+          <p class="jk-note">
+            Tidak ada penyedia GitLab. Tambahkan penyedia GitLab di halaman Workspace.
+          </p>
+        )}
+
+      {state.providers.length > 0 && (
+        <>
+          <label class="jk-label" for="jk-wiki-provider">
+            Penyedia GitLab
+          </label>
+          <select
+            id="jk-wiki-provider"
+            class="jk-select"
+            value={state.providerId ?? ""}
+            onChange={(event) =>
+              actions.onSelectProvider((event.currentTarget as HTMLSelectElement).value)
+            }
+          >
+            {state.providers.length > 1 && <option value="">Pilih penyedia…</option>}
+            {state.providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
+
+      {state.providerId !== undefined && (
+        <>
+          {state.reposLoading && (
+            <p class="jk-panel-note" role="status">
+              Memuat daftar repo…
+            </p>
+          )}
+
+          {state.reposError !== undefined && (
+            <div class="jk-panel-error">
+              <p class="jk-error-line" role="alert">
+                {state.reposError}
+              </p>
+              <button
+                type="button"
+                class="jk-button jk-button-secondary"
+                onClick={actions.onRetryRepos}
+              >
+                Coba lagi
+              </button>
+            </div>
+          )}
+
+          {!state.reposLoading && state.reposError === undefined && (
+            <>
+              <input
+                class="jk-input jk-wiki-filter"
+                type="search"
+                value={state.repoQuery}
+                placeholder="Saring repo"
+                aria-label="Saring repo"
+                onInput={(event) =>
+                  actions.onRepoQueryChange((event.currentTarget as HTMLInputElement).value)
+                }
+              />
+              {visible.length === 0 ? (
+                <p class="jk-note">Tidak ada repo yang cocok.</p>
+              ) : (
+                <ul class="jk-wiki-list">
+                  {visible.map((repo) => (
+                    <li key={repo.fullPath}>
+                      <button
+                        type="button"
+                        class="jk-wiki-page"
+                        onClick={() => actions.onPickRepo(repo.fullPath)}
+                      >
+                        {repo.fullPath}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {total > visible.length && (
+                <p class="jk-note">Persempit pencarian untuk melihat repo lainnya.</p>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
 }
 
 /**
@@ -194,6 +372,8 @@ export function WikiView({ state, actions, canQuote }: WikiViewProps) {
         </div>
       )}
 
+      {state.picker && <WikiProjectPicker state={state} actions={actions} />}
+
       {state.loading && (
         <p class="jk-panel-note" role="status">
           Memuat wiki…
@@ -226,6 +406,22 @@ export function WikiView({ state, actions, canQuote }: WikiViewProps) {
 
       {state.project !== undefined && (
         <>
+          <div class="jk-wiki-head">
+            <p class="jk-wiki-status">
+              Proyek: {state.project.fullPath}
+              {state.manual ? " (manual)" : ""}
+            </p>
+            {state.manual && (
+              <button
+                type="button"
+                class="jk-link-btn"
+                onClick={actions.onChangeProject}
+              >
+                Ganti proyek
+              </button>
+            )}
+          </div>
+
           <div class="jk-wiki-toolbar">
             <input
               class="jk-input jk-wiki-filter"
@@ -291,6 +487,41 @@ export interface WikiTabProps {
   onQuote?: (text: string) => void;
 }
 
+/** Pilihan proyek tersimpan untuk folder; penyimpanan yang tidak terbaca berarti tidak ada. */
+function readStored(cwd: string): StoredWikiProject | undefined {
+  try {
+    return readStoredProject(globalThis.localStorage.getItem(WIKI_PROJECT_STORAGE_KEY), cwd);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Simpan pilihan proyek untuk folder; kegagalan penyimpanan diabaikan. */
+function saveStored(cwd: string, project: StoredWikiProject): void {
+  try {
+    const current = globalThis.localStorage.getItem(WIKI_PROJECT_STORAGE_KEY);
+    globalThis.localStorage.setItem(
+      WIKI_PROJECT_STORAGE_KEY,
+      writeStoredProject(current, cwd, project),
+    );
+  } catch {
+    // Penyimpanan tidak tersedia; pilihan hanya berlaku di sesi ini.
+  }
+}
+
+/** Buang pilihan proyek untuk folder; kegagalan penyimpanan diabaikan. */
+function forgetStored(cwd: string): void {
+  try {
+    const current = globalThis.localStorage.getItem(WIKI_PROJECT_STORAGE_KEY);
+    globalThis.localStorage.setItem(
+      WIKI_PROJECT_STORAGE_KEY,
+      writeStoredProject(current, cwd, undefined),
+    );
+  } catch {
+    // Penyimpanan tidak tersedia; tidak ada yang perlu dibuang.
+  }
+}
+
 /**
  * Tab Wiki: daftar halaman wiki proyek GitLab yang terkait dengan folder
  * sesi, dibaca dari cache server dan disegarkan bila perlu.
@@ -298,19 +529,95 @@ export interface WikiTabProps {
 export function WikiTab({ api, cwd, onQuote }: WikiTabProps) {
   const [state, setState] = useState<WikiState>(INITIAL_STATE);
 
-  const load = useCallback(
-    async (force: boolean): Promise<void> => {
-      if (cwd === "") {
-        setState({
-          ...INITIAL_STATE,
-          loading: false,
-          error: NO_FOLDER_MESSAGE,
-          canRetry: false,
-        });
-        return;
-      }
+  const loadRepos = useCallback(
+    async (providerId: string): Promise<void> => {
       setState((current) => ({
         ...current,
+        providerId,
+        reposLoading: true,
+        reposError: undefined,
+        repos: [],
+        repoQuery: "",
+      }));
+      try {
+        const repos = await api.listProviderRepos(providerId);
+        setState((current) => ({
+          ...current,
+          reposLoading: false,
+          repos: repos.map((repo) => ({ name: repo.name, fullPath: repo.fullPath })),
+        }));
+      } catch (caught) {
+        const message = caught instanceof ApiError ? caught.message : undefined;
+        setState((current) => ({
+          ...current,
+          reposLoading: false,
+          reposError: message ?? "Gagal memuat daftar repo.",
+        }));
+      }
+    },
+    [api],
+  );
+
+  const openPicker = useCallback(async (): Promise<void> => {
+    setState((current) => ({
+      ...current,
+      // Proyek lama dikosongkan agar daftar halamannya tidak tampil di bawah pemilih.
+      project: undefined,
+      manual: false,
+      pages: [],
+      sidebar: undefined,
+      commit: undefined,
+      fetchedAt: undefined,
+      page: undefined,
+      note: undefined,
+      pageError: undefined,
+      loading: false,
+      syncing: false,
+      picker: true,
+      providersLoading: true,
+      providersError: undefined,
+      providers: [],
+      providerId: undefined,
+      repos: [],
+      reposLoading: false,
+      reposError: undefined,
+      repoQuery: "",
+    }));
+    let options: WikiProviderOption[];
+    try {
+      options = gitlabProviders(await api.listGitProviders());
+    } catch (caught) {
+      const message = caught instanceof ApiError ? caught.message : undefined;
+      setState((current) => ({
+        ...current,
+        providersLoading: false,
+        providersError: message ?? "Gagal memuat daftar penyedia git.",
+      }));
+      return;
+    }
+    if (options.length === 0) {
+      // Tanpa penyedia GitLab tidak ada yang bisa dipilih: pesan lama saja.
+      setState((current) => ({
+        ...current,
+        picker: false,
+        providersLoading: false,
+        providers: [],
+        error: current.error ?? wikiErrorMessage(404),
+        canRetry: false,
+      }));
+      return;
+    }
+    setState((current) => ({ ...current, providersLoading: false, providers: options }));
+    const only = options.length === 1 ? options[0] : undefined;
+    if (only !== undefined) await loadRepos(only.id);
+  }, [api, loadRepos]);
+
+  const applyProject = useCallback(
+    async (project: WikiProject, manual: boolean, force: boolean): Promise<void> => {
+      setState((current) => ({
+        ...current,
+        project,
+        manual,
         loading: true,
         syncing: false,
         error: undefined,
@@ -318,22 +625,24 @@ export function WikiTab({ api, cwd, onQuote }: WikiTabProps) {
         pageError: undefined,
       }));
 
-      let project: WikiProject;
-      try {
-        project = await api.wikiProject(cwd);
-      } catch (caught) {
-        const status = caught instanceof ApiError ? caught.status : 0;
-        const message = caught instanceof ApiError ? caught.message : undefined;
+      /** Pilihan tersimpan yang tidak berlaku lagi dibuang, lalu pemilih dibuka. */
+      const fallback = async (status: number, message?: string): Promise<void> => {
+        forgetStored(cwd);
         setState((current) => ({
           ...current,
+          project: undefined,
+          manual: false,
+          pages: [],
+          sidebar: undefined,
+          commit: undefined,
+          fetchedAt: undefined,
           loading: false,
-          error: wikiErrorMessage(status, message),
-          // Tanpa proyek tidak ada yang bisa dicoba ulang.
-          canRetry: status !== 404,
+          syncing: false,
+          error: storedProjectErrorMessage(status, message),
+          canRetry: false,
         }));
-        return;
-      }
-      setState((current) => ({ ...current, project }));
+        await openPicker();
+      };
 
       // Cache lama dipakai bila masih segar; selain itu wiki disinkronkan.
       let listing: WikiSync | undefined;
@@ -343,6 +652,10 @@ export function WikiTab({ api, cwd, onQuote }: WikiTabProps) {
         const status = caught instanceof ApiError ? caught.status : 0;
         if (status !== 409) {
           const message = caught instanceof ApiError ? caught.message : undefined;
+          if (manual && status === 404) {
+            await fallback(status, message);
+            return;
+          }
           setState((current) => ({
             ...current,
             loading: false,
@@ -378,6 +691,10 @@ export function WikiTab({ api, cwd, onQuote }: WikiTabProps) {
       } catch (caught) {
         const status = caught instanceof ApiError ? caught.status : 0;
         const message = caught instanceof ApiError ? caught.message : undefined;
+        if (manual && status === 404) {
+          await fallback(status, message);
+          return;
+        }
         if (listing !== undefined) {
           // Sinkron gagal: pakai cache lama dan tandai mungkin tertinggal.
           setState((current) => ({
@@ -398,7 +715,59 @@ export function WikiTab({ api, cwd, onQuote }: WikiTabProps) {
         }
       }
     },
-    [api, cwd],
+    [api, cwd, openPicker],
+  );
+
+  const load = useCallback(
+    async (force: boolean): Promise<void> => {
+      if (cwd === "") {
+        setState({
+          ...INITIAL_STATE,
+          loading: false,
+          error: NO_FOLDER_MESSAGE,
+          canRetry: false,
+        });
+        return;
+      }
+      setState((current) => ({
+        ...current,
+        loading: true,
+        syncing: false,
+        error: undefined,
+        note: undefined,
+        pageError: undefined,
+      }));
+
+      let project: WikiProject;
+      let manual = false;
+      try {
+        project = await api.wikiProject(cwd);
+      } catch (caught) {
+        const status = caught instanceof ApiError ? caught.status : 0;
+        if (status !== 404) {
+          const message = caught instanceof ApiError ? caught.message : undefined;
+          setState((current) => ({
+            ...current,
+            loading: false,
+            error: wikiErrorMessage(status, message),
+            canRetry: true,
+          }));
+          return;
+        }
+        // Pencocokan gagal: pakai pilihan proyek tersimpan bila ada.
+        const stored = readStored(cwd);
+        if (stored === undefined) {
+          setState((current) => ({ ...current, loading: false }));
+          await openPicker();
+          return;
+        }
+        project = { providerId: stored.providerId, fullPath: stored.fullPath };
+        manual = true;
+      }
+
+      await applyProject(project, manual, force);
+    },
+    [api, cwd, openPicker, applyProject],
   );
 
   useEffect(() => {
@@ -455,6 +824,30 @@ export function WikiTab({ api, cwd, onQuote }: WikiTabProps) {
     [openPage, state.page, state.pages],
   );
 
+  const pickRepo = useCallback(
+    async (fullPath: string): Promise<void> => {
+      const providerId = state.providerId;
+      if (providerId === undefined) return;
+      const project: WikiProject = { providerId, fullPath };
+      saveStored(cwd, project);
+      setState((current) => ({
+        ...current,
+        picker: false,
+        providers: [],
+        providerId: undefined,
+        repos: [],
+        repoQuery: "",
+      }));
+      await applyProject(project, true, false);
+    },
+    [cwd, state.providerId, applyProject],
+  );
+
+  const changeProject = useCallback((): void => {
+    forgetStored(cwd);
+    void openPicker();
+  }, [cwd, openPicker]);
+
   const actions: WikiActions = {
     onRetry: () => void load(false),
     onRefresh: () => void load(true),
@@ -463,6 +856,18 @@ export function WikiTab({ api, cwd, onQuote }: WikiTabProps) {
     onClosePage: () => setState((current) => ({ ...current, page: undefined, pageError: undefined })),
     onQuote: quote,
     onLink: handleLink,
+    onSelectProvider: (id) => {
+      if (id === "") return;
+      void loadRepos(id);
+    },
+    onRepoQueryChange: (query) => setState((current) => ({ ...current, repoQuery: query })),
+    onPickRepo: (fullPath) => void pickRepo(fullPath),
+    onRetryRepos: () => {
+      const providerId = state.providerId;
+      if (providerId !== undefined) void loadRepos(providerId);
+    },
+    onRetryProviders: () => void openPicker(),
+    onChangeProject: changeProject,
   };
 
   return <WikiView state={state} actions={actions} canQuote={onQuote !== undefined} />;

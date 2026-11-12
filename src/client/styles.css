@@ -6757,6 +6757,17 @@ h2.jk-md-heading {
   align-self: flex-start;
 }
 
+.jk-wiki-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jk-wiki-picker .jk-select {
+  max-width: 100%;
+}
+
 @media (pointer: coarse) {
   .jk-wiki-page,
   .jk-wiki-quote {
@@ -6766,5 +6777,10 @@ h2.jk-md-heading {
   .jk-wiki-toolbar .jk-icon-btn {
     min-width: 40px;
     min-height: 40px;
+  }
+
+  .jk-wiki-picker .jk-select,
+  .jk-wiki-picker .jk-button {
+    min-height: 44px;
   }
 }

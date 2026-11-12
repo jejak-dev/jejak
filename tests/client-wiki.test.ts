@@ -12,6 +12,15 @@ import {
   type WikiPageRef,
 } from "../src/client/lib/wiki";
 import {
+  filterRepos,
+  gitlabProviders,
+  matchRepos,
+  readStoredProject,
+  storedProjectErrorMessage,
+  writeStoredProject,
+  WIKI_PROJECT_MAX_ENTRIES,
+} from "../src/client/lib/wiki-project";
+import {
   WikiView,
   type WikiActions,
   type WikiState,
@@ -85,11 +94,24 @@ const NOOP_ACTIONS: WikiActions = {
   onClosePage: () => undefined,
   onQuote: () => undefined,
   onLink: () => false,
+  onSelectProvider: () => undefined,
+  onRepoQueryChange: () => undefined,
+  onPickRepo: () => undefined,
+  onRetryRepos: () => undefined,
+  onRetryProviders: () => undefined,
+  onChangeProject: () => undefined,
 };
 
 function stateOf(overrides: Partial<WikiState> = {}): WikiState {
   return {
     pages: [],
+    manual: false,
+    picker: false,
+    providers: [],
+    repos: [],
+    repoQuery: "",
+    reposLoading: false,
+    providersLoading: false,
     stale: false,
     loading: false,
     syncing: false,
@@ -333,6 +355,141 @@ describe("wikiErrorMessage", () => {
     const message = wikiErrorMessage(503, "Wiki dimatikan.");
     expect(message).toContain("Wiki dimatikan");
     expect(message).toContain("Workspace");
+  });
+});
+
+/* ---------- Pilihan proyek manual ---------- */
+
+describe("readStoredProject", () => {
+  test("isi rusak dianggap tidak ada pilihan", () => {
+    expect(readStoredProject("{rusak", "/a")).toBeUndefined();
+    expect(readStoredProject("", "/a")).toBeUndefined();
+    expect(readStoredProject(null, "/a")).toBeUndefined();
+    expect(readStoredProject(undefined, "/a")).toBeUndefined();
+  });
+
+  test("bentuk salah diabaikan", () => {
+    expect(readStoredProject("[]", "/a")).toBeUndefined();
+    expect(readStoredProject(JSON.stringify({ "/a": "teks" }), "/a")).toBeUndefined();
+    expect(readStoredProject(JSON.stringify({ "/a": { providerId: "p_1" } }), "/a")).toBeUndefined();
+    expect(
+      readStoredProject(JSON.stringify({ "/a": { providerId: "", fullPath: "grup/proyek" } }), "/a"),
+    ).toBeUndefined();
+    expect(
+      readStoredProject(JSON.stringify({ "/a": { providerId: "p_1", fullPath: 7 } }), "/a"),
+    ).toBeUndefined();
+  });
+
+  test("pilihan yang sah dibaca per folder", () => {
+    const raw = JSON.stringify({ "/a": { providerId: "p_1", fullPath: "grup/proyek" } });
+    expect(readStoredProject(raw, "/a")).toEqual({
+      providerId: "p_1",
+      fullPath: "grup/proyek",
+    });
+    expect(readStoredProject(raw, "/b")).toBeUndefined();
+  });
+});
+
+describe("writeStoredProject", () => {
+  test("menambah entri lalu dibaca kembali", () => {
+    const next = writeStoredProject(null, "/a", { providerId: "p_1", fullPath: "grup/proyek" });
+    expect(readStoredProject(next, "/a")).toEqual({
+      providerId: "p_1",
+      fullPath: "grup/proyek",
+    });
+  });
+
+  test("entri folder lain tetap utuh", () => {
+    const start = writeStoredProject(null, "/a", { providerId: "p_1", fullPath: "grup/satu" });
+    const next = writeStoredProject(start, "/b", { providerId: "p_2", fullPath: "grup/dua" });
+    expect(readStoredProject(next, "/a")?.fullPath).toBe("grup/satu");
+    expect(readStoredProject(next, "/b")?.fullPath).toBe("grup/dua");
+  });
+
+  test("proyek undefined menghapus entri folder itu", () => {
+    const start = writeStoredProject(null, "/a", { providerId: "p_1", fullPath: "grup/satu" });
+    const next = writeStoredProject(start, "/a", undefined);
+    expect(readStoredProject(next, "/a")).toBeUndefined();
+  });
+
+  test("isi rusak tidak merusak peta baru", () => {
+    const next = writeStoredProject("{rusak", "/a", {
+      providerId: "p_1",
+      fullPath: "grup/proyek",
+    });
+    expect(readStoredProject(next, "/a")?.fullPath).toBe("grup/proyek");
+  });
+
+  test("jumlah folder tersimpan dibatasi lima puluh", () => {
+    let raw: string | null = null;
+    for (let index = 0; index < WIKI_PROJECT_MAX_ENTRIES + 10; index += 1) {
+      raw = writeStoredProject(raw, `/folder-${index}`, {
+        providerId: "p_1",
+        fullPath: `grup/proyek-${index}`,
+      });
+    }
+    const parsed = JSON.parse(raw ?? "{}") as Record<string, unknown>;
+    expect(Object.keys(parsed)).toHaveLength(WIKI_PROJECT_MAX_ENTRIES);
+    expect(readStoredProject(raw, `/folder-${WIKI_PROJECT_MAX_ENTRIES + 9}`)).toBeDefined();
+  });
+});
+
+describe("gitlabProviders", () => {
+  test("hanya penyedia gitlab yang diambil", () => {
+    const options = gitlabProviders([
+      { id: "p_1", name: "GitLab Kantor", kind: "gitlab" },
+      { id: "p_2", name: "Folder Lokal", kind: "local" },
+    ]);
+    expect(options).toEqual([{ id: "p_1", name: "GitLab Kantor" }]);
+  });
+});
+
+describe("filterRepos", () => {
+  const REPOS = [
+    { name: "satu", fullPath: "grup/satu" },
+    { name: "dua", fullPath: "grup/sub/dua" },
+    { name: "tiga", fullPath: "lain/tiga" },
+  ];
+
+  test("saringan kosong mengembalikan semua repo", () => {
+    expect(filterRepos(REPOS, "")).toHaveLength(3);
+    expect(filterRepos(REPOS, "   ")).toHaveLength(3);
+  });
+
+  test("saringan mencocokkan sebagian fullPath tanpa cares huruf besar", () => {
+    expect(filterRepos(REPOS, "grup/sub").map((repo) => repo.fullPath)).toEqual([
+      "grup/sub/dua",
+    ]);
+    expect(filterRepos(REPOS, "GRUP").map((repo) => repo.fullPath)).toEqual([
+      "grup/satu",
+      "grup/sub/dua",
+    ]);
+  });
+
+  test("saringan tanpa hasil menghasilkan daftar kosong", () => {
+    expect(filterRepos(REPOS, "tidak-ada")).toEqual([]);
+  });
+
+  test("hasil dibatasi lima puluh tapi jumlah sebenarnya tetap diketahui", () => {
+    const banyak = Array.from({ length: 120 }, (_, index) => ({
+      name: `r${index}`,
+      fullPath: `grup/r${index}`,
+    }));
+    expect(filterRepos(banyak, "grup")).toHaveLength(50);
+    expect(filterRepos(banyak, "grup", 10)).toHaveLength(10);
+    expect(matchRepos(banyak, "grup")).toHaveLength(120);
+  });
+});
+
+describe("storedProjectErrorMessage", () => {
+  test("menyertakan pesan server bila ada", () => {
+    expect(storedProjectErrorMessage(404, "Repo tidak ditemukan di penyedia.")).toContain(
+      "Repo tidak ditemukan di penyedia.",
+    );
+  });
+
+  test("tanpa pesan memakai kalimat bawaan", () => {
+    expect(storedProjectErrorMessage(404)).toContain("tidak ditemukan");
   });
 });
 
@@ -586,6 +743,143 @@ describe("WikiView", () => {
 
     expect(buttonTexts(node)).not.toContain("Kutip ke komposer");
     expect(byTag(node, "pre")).toHaveLength(1);
+  });
+});
+
+describe("WikiView pemilih proyek manual", () => {
+  const PROVIDERS = [
+    { id: "p_1", name: "GitLab Kantor" },
+    { id: "p_2", name: "GitLab kedua" },
+  ];
+  const REPOS = [
+    { name: "proyek", fullPath: "grup/proyek" },
+    { name: "lain", fullPath: "grup/lain" },
+  ];
+
+  test("tanpa penyedia gitlab menampilkan pesan lama tanpa pemilih", () => {
+    const node = WikiView({
+      state: stateOf({ error: wikiErrorMessage(404), canRetry: false }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    expect(textOf(node)).toContain("Tambahkan penyedia GitLab di halaman Workspace");
+    expect(byTag(node, "select")).toHaveLength(0);
+  });
+
+  test("pemilih menampilkan daftar penyedia dan repo", () => {
+    const node = WikiView({
+      state: stateOf({
+        picker: true,
+        providers: PROVIDERS,
+        providerId: "p_1",
+        repos: REPOS,
+      }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    const selects = byTag(node, "select");
+    expect(selects).toHaveLength(1);
+    const options = byTag(selects[0]!, "option");
+    expect(options.map((vnode) => propsOf(vnode).value)).toEqual(["", "p_1", "p_2"]);
+    expect(textOf(node)).toContain("grup/proyek");
+    expect(textOf(node)).toContain("grup/lain");
+  });
+
+  test("satu penyedia saja tidak memakai opsi kosong", () => {
+    const node = WikiView({
+      state: stateOf({
+        picker: true,
+        providers: [PROVIDERS[0]!],
+        providerId: "p_1",
+        repos: REPOS,
+      }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    const selects = byTag(node, "select");
+    expect(byTag(selects[0]!, "option")).toHaveLength(1);
+  });
+
+  test("daftar repo yang dimuat menampilkan status memuat", () => {
+    const node = WikiView({
+      state: stateOf({
+        picker: true,
+        providers: PROVIDERS,
+        providerId: "p_1",
+        reposLoading: true,
+      }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    expect(textOf(node)).toContain("Memuat daftar repo…");
+  });
+
+  test("galat daftar repo menampilkan tombol coba lagi", () => {
+    const node = WikiView({
+      state: stateOf({
+        picker: true,
+        providers: PROVIDERS,
+        providerId: "p_1",
+        reposError: "Gagal memuat daftar repo.",
+      }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    expect(textOf(node)).toContain("Gagal memuat daftar repo.");
+    expect(buttonTexts(node)).toContain("Coba lagi");
+  });
+
+  test("daftar repo dibatasi lima puluh dan menawarkan persempit pencarian", () => {
+    const banyak = Array.from({ length: 80 }, (_, index) => ({
+      name: `r${index}`,
+      fullPath: `grup/r${index}`,
+    }));
+    const node = WikiView({
+      state: stateOf({
+        picker: true,
+        providers: PROVIDERS,
+        providerId: "p_1",
+        repos: banyak,
+      }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    expect(byClass(node, "jk-wiki-page")).toHaveLength(50);
+    expect(textOf(node)).toContain("Persempit pencarian");
+  });
+});
+
+describe("WikiView kepala proyek", () => {
+  test("proyek manual menampilkan tombol ganti proyek", () => {
+    const node = WikiView({
+      state: stateOf({
+        project: { providerId: "p_1", fullPath: "grup/proyek" },
+        manual: true,
+      }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    expect(textOf(node)).toContain("Proyek: grup/proyek (manual)");
+    expect(buttonTexts(node)).toContain("Ganti proyek");
+  });
+
+  test("proyek dari pencocokan remote tidak menampilkan tombol ganti proyek", () => {
+    const node = WikiView({
+      state: stateOf({ project: { providerId: "p_1", fullPath: "grup/proyek" } }),
+      actions: NOOP_ACTIONS,
+      canQuote: false,
+    }) as unknown as ComponentChild;
+
+    expect(textOf(node)).toContain("Proyek: grup/proyek");
+    expect(textOf(node)).not.toContain("(manual)");
+    expect(buttonTexts(node)).not.toContain("Ganti proyek");
   });
 });
 
