@@ -1,4 +1,5 @@
 import type { RunMemory } from "../agent/events";
+import type { GoalReporter } from "../goals/goal";
 import {
   mcpRoutes,
   McpTokenRegistry,
@@ -38,6 +39,10 @@ export interface MemoryBridgeOptions {
   questions?: QuestionService;
   /** Tanpa `indexer`, tool index_* tidak ada. */
   indexer?: RepoIndexer;
+  /** Pelapor status tujuan; tanpa ini tool `goal_update` menolak panggilan. */
+  goalReporter?: GoalReporter;
+  /** Penentu apakah sesi punya tujuan aktif (tool `goal_update` tampil). */
+  goalActive?: (sessionId: string) => boolean;
   mcpUrl?: string;
 }
 
@@ -60,7 +65,9 @@ function composeTools(
   return {
     definitionsFor(ctx: McpToolContext): McpToolDefinition[] {
       const definitions: McpToolDefinition[] = [];
-      if (memoryTools !== undefined) definitions.push(...memoryTools.definitions);
+      if (memoryTools !== undefined) {
+        definitions.push(...memoryTools.definitionsFor(ctx.sessionId));
+      }
       if (workspaceTools !== undefined && ctx.workspaceId !== undefined) {
         definitions.push(...workspaceTools.definitions);
       }
@@ -71,7 +78,8 @@ function composeTools(
     async call(ctx: McpToolContext, name: string, args: unknown) {
       if (
         memoryTools !== undefined &&
-        memoryTools.definitions.some((tool) => tool.name === name)
+        (name === "goal_update" ||
+          memoryTools.definitions.some((tool) => tool.name === name))
       ) {
         return memoryTools.call(
           {
@@ -119,7 +127,16 @@ export function createMemoryBridge(options: MemoryBridgeOptions): {
   routes: ReturnType<typeof mcpRoutes>;
 } {
   const memoryTools =
-    options.service === undefined ? undefined : new MemoryTools(options.service);
+    options.service === undefined
+      ? undefined
+      : new MemoryTools(options.service, {
+          ...(options.goalReporter === undefined
+            ? {}
+            : { goalReporter: options.goalReporter }),
+          ...(options.goalActive === undefined
+            ? {}
+            : { goalActive: options.goalActive }),
+        });
   const workspaceTools =
     options.workspaces === undefined ? undefined : new WorkspaceTools(options.workspaces);
   const questionTools =
@@ -157,7 +174,9 @@ export function createMemoryBridge(options: MemoryBridgeOptions): {
 
       const available: string[] = [];
       if (memoryTools !== undefined) {
-        available.push(...memoryTools.definitions.map((tool) => tool.name));
+        available.push(
+          ...memoryTools.definitionsFor(input.sessionId).map((tool) => tool.name),
+        );
       }
       if (indexTools !== undefined) {
         available.push(...indexTools.definitions.map((tool) => tool.name));
