@@ -383,6 +383,13 @@ describe("Markdown: render Preact", () => {
     expect(textOf(pre as VNode)).toContain("x");
   });
 
+  test("blok mermaid aman ditelusuri tanpa DOM dan menampilkan sumber", () => {
+    const vnode = render("```mermaid\nflowchart TD\nA-->B\n```");
+    const pre = byTag(vnode, "pre")[0];
+    expect(propsOf(pre).class).toBe("jk-md-pre");
+    expect(textOf(pre as VNode)).toContain("flowchart TD");
+  });
+
   test("daftar dan tabel", () => {
     const list = render("- a\n- b");
     expect(byTag(list, "ul")).toHaveLength(1);

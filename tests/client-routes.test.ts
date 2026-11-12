@@ -3,6 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../src/server";
+import { buildClientBundle } from "../src/server/client-bundle";
 
 let dir: string;
 
@@ -117,5 +118,45 @@ describe("GET /app.js dan /app.css", () => {
 
     const second = await (await get(app, "/app.js")).text();
     expect(second).toBe(first);
+  });
+});
+
+describe("GET /:file (chunk hasil code-splitting)", () => {
+  test("menyajikan chunk bundel sebagai javascript", async () => {
+    const bundle = await buildClientBundle();
+    const name = [...bundle.files.keys()].find((key) => key.startsWith("chunk-"));
+    expect(name).toBeDefined();
+
+    const res = await get(makeApp(), `/${name as string}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/javascript; charset=utf-8");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+    expect((await res.text()).length).toBeGreaterThan(0);
+  });
+
+  test("nama tak dikenal dan nama traversal menjawab 404 JSON", async () => {
+    const app = makeApp();
+    for (const path of ["/tidak-ada.js", "/a..b.js", "/%2e%2e.js"]) {
+      const res = await get(app, path);
+      expect(res.status).toBe(404);
+      expect(res.headers.get("content-type")).toBe("application/json; charset=utf-8");
+      const data = (await res.json()) as { error: string };
+      expect(typeof data.error).toBe("string");
+      expect(data.error.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("nama bertingkat tidak dilayani", async () => {
+    const res = await get(makeApp(), "/satu/dua.js");
+    expect(res.status).toBe(404);
+  });
+
+  test("rute lain tidak tertimpa oleh rute param", async () => {
+    const app = makeApp();
+    expect((await get(app, "/")).status).toBe(200);
+    expect((await get(app, "/app.js")).status).toBe(200);
+    expect((await get(app, "/app.css")).status).toBe(200);
+    expect((await get(app, "/api/health")).status).toBe(200);
   });
 });

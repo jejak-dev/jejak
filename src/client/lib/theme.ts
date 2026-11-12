@@ -38,6 +38,20 @@ export function loadTheme(storage: Pick<Storage, "getItem"> | undefined): ThemeP
   }
 }
 
+/**
+ * Tema gelap efektif: pilihan eksplisit (atribut `data-theme`) menang,
+ * selain itu ikut media query sistem.
+ */
+export function isDarkTheme(
+  root: Pick<Element, "getAttribute"> | undefined,
+  media: Pick<MediaQueryList, "matches"> | undefined,
+): boolean {
+  const attribute = root?.getAttribute("data-theme") ?? null;
+  if (attribute === "dark") return true;
+  if (attribute === "light") return false;
+  return media?.matches ?? false;
+}
+
 export function saveTheme(storage: Pick<Storage, "setItem"> | undefined, pref: ThemePref): void {
   try {
     storage?.setItem(THEME_STORAGE_KEY, pref);

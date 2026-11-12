@@ -1311,6 +1311,71 @@ h2.jk-md-heading {
   margin-bottom: 0;
 }
 
+/* Diagram mermaid: sumber tampil sebagai kode, hasil render tampil sebagai SVG. */
+
+.jk-md-mermaid-wrap {
+  margin: 0 0 0.75em;
+}
+
+.jk-md-mermaid-wrap:last-child {
+  margin-bottom: 0;
+}
+
+.jk-md-mermaid-wrap .jk-md-codeblock {
+  margin-bottom: 0;
+}
+
+.jk-md-mermaid {
+  display: flex;
+  justify-content: center;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.jk-md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Perbesar: diagram memakai lebar penuh panel dan boleh digeser. */
+.jk-md-mermaid-zoom {
+  width: 100%;
+  max-width: none;
+  overflow: auto;
+}
+
+.jk-md-mermaid-zoom .jk-md-mermaid {
+  max-width: none;
+  justify-content: flex-start;
+}
+
+.jk-md-mermaid-zoom .jk-md-mermaid svg {
+  max-width: none;
+}
+
+.jk-md-mermaid-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.jk-md-mermaid-btn {
+  padding: 2px 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--t2);
+  font: 12px/1.6 var(--sans);
+  cursor: pointer;
+}
+
+.jk-md-mermaid-btn:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
 .jk-md-pre code {
   font: inherit;
   color: inherit;

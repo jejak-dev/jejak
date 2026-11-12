@@ -1,6 +1,8 @@
 import { h, type ComponentChild, type VNode } from "preact";
 import { parseMarkdown, safeHref, type MdBlock, type MdInline } from "../lib/markdown";
+import { isMermaidLang } from "../lib/mermaid";
 import { CopyButton } from "./CopyButton";
+import { MermaidBlock } from "./MermaidBlock";
 
 function renderInlines(nodes: readonly MdInline[]): ComponentChild[] {
   return nodes.map((node, index): ComponentChild => {
@@ -46,6 +48,9 @@ function renderBlock(block: MdBlock, index: number): ComponentChild {
       return h(`h${level}` as "h1", { key: index, class: "jk-md-heading" }, children);
     }
     case "code":
+      if (isMermaidLang(block.lang)) {
+        return <MermaidBlock source={block.text} key={index} />;
+      }
       return (
         <div class="jk-md-codeblock" key={index}>
           <pre class="jk-md-pre" tabIndex={0}>
