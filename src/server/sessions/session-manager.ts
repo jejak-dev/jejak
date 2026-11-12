@@ -271,6 +271,9 @@ const FALLBACK_SDK_RETRIES = 2;
 
 const CHECKPOINT_TIMEOUT_MS = 30_000;
 
+/** Batas waktu satu pertanyaan sampingan (`/btw`). */
+const ASIDE_TIMEOUT_MS = 120_000;
+
 const MAX_QUEUED_MESSAGES = 5;
 
 const PERMISSION_MODES: readonly SessionPermissionMode[] = [
@@ -1342,6 +1345,88 @@ export class SessionManager {
     this.assertConcurrencyCapacity();
     this.startTurn(record, message, true);
     return { queued: false };
+  }
+
+  /**
+   * Pertanyaan sampingan: dijawab model dari salinan (fork) percakapan sesi.
+   * Tidak menambah event ke timeline, tidak mengubah status sesi, dan tidak
+   * mengganggu giliran yang sedang berjalan.
+   */
+  async askAside(id: string, question: unknown): Promise<{ answer: string }> {
+    const record = this.sessions.get(id);
+    if (record === undefined) {
+      throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
+    }
+
+    const text = this.validateMessage(question as string);
+
+    if (record.sdkSessionId === undefined) {
+      throw new SessionError(
+        "Sesi ini belum punya riwayat untuk ditanya.",
+        "tidak-valid",
+      );
+    }
+
+    // Provider diselesaikan seperti `send`, tetapi record tidak boleh berubah.
+    let provider: ResolvedProvider | undefined = record.resolved;
+    if (provider === undefined) {
+      try {
+        provider = await this.resolveProvider({
+          profileId: record.info.profileId,
+          model: record.info.model,
+        });
+      } catch (error) {
+        throw new SessionError(errorMessage(error), "tidak-valid");
+      }
+    }
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, ASIDE_TIMEOUT_MS);
+
+    const parts: string[] = [];
+    let failure: string | undefined;
+    try {
+      for await (const event of this.runner.run({
+        prompt: text,
+        cwd: record.info.cwd,
+        provider,
+        permissionMode: "plan",
+        resumeSessionId: record.sdkSessionId,
+        fork: true,
+        noTools: true,
+        signal: controller.signal,
+      })) {
+        // Event `session` dari fork diabaikan; `sdkSessionId` sesi asal tetap.
+        if (event.type === "text") {
+          parts.push(event.text);
+        } else if (event.type === "error") {
+          failure = event.message;
+        } else if (event.type === "result" && !event.ok) {
+          failure = event.error ?? "gagal menjawab pertanyaan";
+        }
+      }
+    } catch (error) {
+      throw new SessionError(errorMessage(error), "tidak-valid");
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (timedOut) {
+      throw new SessionError(
+        `Waktu menjawab pertanyaan sampingan habis (${Math.round(ASIDE_TIMEOUT_MS / 1000)} detik).`,
+        "tidak-valid",
+      );
+    }
+    if (failure !== undefined) {
+      throw new SessionError(failure, "tidak-valid");
+    }
+
+    const answer = parts.join("").trim();
+    return { answer };
   }
 
   interrupt(id: string): boolean {

@@ -135,6 +135,10 @@ function sanitizeCwd(cwd: string): string {
 export const SANDBOX_APPEND_NOTE =
   "Bash sesi ini berjalan di dalam sandbox: tulis hanya di folder kerja, jaringan memakai allowlist, dan socket Unix serta localhost mungkin diblokir. Galat seperti 'operation not permitted', 'cannot connect to the Docker daemon', atau 'connection refused' bisa berarti DIBLOKIR sandbox, bukan layanan yang mati. Jangan mencoba menyalakan ulang daemon atau layanan; laporkan ke pengguna dan sarankan mengubah sandbox sesi di bar balasan atau menambah izin di Pengaturan > Sandbox.";
 
+/** Catatan system prompt untuk giliran pertanyaan sampingan (`/btw`). */
+export const ASIDE_APPEND_NOTE =
+  "Pertanyaan ini adalah pertanyaan sampingan: jawab singkat berdasarkan percakapan yang ada, tanpa memakai tool.";
+
 type SecretGuard = NonNullable<RunInput["secretGuard"]>;
 
 /** Hook `PreToolUse` yang menolak tool bila kebijakan rahasia mengembalikan alasan. */
@@ -260,6 +264,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       if (input.sandbox !== undefined) {
         append = `${append} ${SANDBOX_APPEND_NOTE}`;
       }
+      // Tanpa `noTools` perilaku lama persis; dengan `noTools`, giliran ini
+      // adalah pertanyaan sampingan yang tidak boleh memakai tool.
+      const noTools = input.noTools === true;
+      if (noTools) {
+        append = `${append} ${ASIDE_APPEND_NOTE}`;
+      }
 
       const sdkOptions: Record<string, unknown> = {
         cwd: input.cwd,
@@ -295,6 +305,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       const allowedTools = allowedToolsFor(input);
       const memoryServers: Record<string, unknown> = {};
       const hasMemoryServer =
+        !noTools &&
         memory !== undefined &&
         memory.url !== undefined &&
         memory.token !== undefined &&
@@ -307,7 +318,8 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           alwaysLoad: true,
         };
       }
-      const external = externalMcpServers(input.mcpServers);
+      // Tanpa tool, server MCP memory maupun eksternal tidak dipasang.
+      const external = noTools ? undefined : externalMcpServers(input.mcpServers);
       if (hasMemoryServer || external !== undefined) {
         sdkOptions.mcpServers = external === undefined
           ? memoryServers
@@ -316,11 +328,19 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       if (hasMemoryServer) {
         sdkOptions.allowedTools = allowedTools;
       }
+      if (noTools) {
+        // Daftar kosong mematikan semua tool bawaan SDK.
+        sdkOptions.tools = [];
+      }
       if (input.provider.model !== undefined) {
         sdkOptions.model = input.provider.model;
       }
       if (input.resumeSessionId !== undefined) {
         sdkOptions.resume = input.resumeSessionId;
+      }
+      if (input.fork === true) {
+        // Percakapan dicabang: sesi SDK baru, riwayat sesi asal tak berubah.
+        sdkOptions.forkSession = true;
       }
       const directories = [
         ...(workspace?.additionalDirectories ?? []),

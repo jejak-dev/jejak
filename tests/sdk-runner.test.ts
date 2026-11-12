@@ -1049,3 +1049,89 @@ test("extraDirectories masuk additionalDirectories bersama folder workspace", as
   await collect(createSdkRunner({ load: async () => plain.module, baseEnv: {} }).run(baseInput()));
   expect((received as Record<string, unknown> | undefined)?.additionalDirectories).toBeUndefined();
 });
+
+test("fork menyetel forkSession dan tanpa fork kuncinya tidak ada", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ fork: true, resumeSessionId: "s-lama" }),
+    ),
+  );
+
+  expect(received?.forkSession).toBe(true);
+  expect(received?.resume).toBe("s-lama");
+
+  received = undefined;
+  const plain = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+  await collect(createSdkRunner({ load: async () => plain.module, baseEnv: {} }).run(baseInput()));
+  expect("forkSession" in (received ?? {})).toBe(false);
+});
+
+test("noTools mematikan semua tool dan tanpa noTools kuncinya tidak ada", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ noTools: true }),
+    ),
+  );
+
+  expect(received?.tools).toEqual([]);
+
+  received = undefined;
+  const plain = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+  await collect(createSdkRunner({ load: async () => plain.module, baseEnv: {} }).run(baseInput()));
+  expect("tools" in (received ?? {})).toBe(false);
+});
+
+test("noTools tidak memasang server MCP memory maupun eksternal", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({
+        noTools: true,
+        mcpServers: [
+          {
+            name: "luar",
+            transport: "stdio",
+            command: "server-luar",
+            args: [],
+            env: {},
+          },
+        ],
+      }),
+    ),
+  );
+
+  expect("mcpServers" in (received ?? {})).toBe(false);
+  expect("allowedTools" in (received ?? {})).toBe(false);
+});
+
+test("noTools menambah catatan pertanyaan sampingan ke systemPrompt", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ noTools: true }),
+    ),
+  );
+
+  const prompt = received?.systemPrompt as Record<string, unknown> | undefined;
+  const append = prompt?.append as string;
+  expect(append).toContain("pertanyaan sampingan");
+  expect(append).toContain("tanpa memakai tool");
+
+  received = undefined;
+  const plain = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+  await collect(createSdkRunner({ load: async () => plain.module, baseEnv: {} }).run(baseInput()));
+  const promptPlain = (received as Record<string, unknown> | undefined)?.systemPrompt as
+    | Record<string, unknown>
+    | undefined;
+  expect((promptPlain?.append as string)).not.toContain("pertanyaan sampingan");
+});

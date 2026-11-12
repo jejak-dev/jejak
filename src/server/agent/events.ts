@@ -97,6 +97,13 @@ export interface RunInput {
   signal?: AbortSignal;
   requestPermission?: PermissionHandler;
   resumeSessionId?: string;
+  /**
+   * Lanjutkan dari `resumeSessionId` tetapi simpan sebagai sesi SDK baru
+   * (percakapan dicabang; riwayat sesi asal tidak berubah).
+   */
+  fork?: boolean;
+  /** Tanpa tool sama sekali (tool bawaan, MCP memory, dan MCP eksternal). */
+  noTools?: boolean;
   memory?: RunMemory;
   workspace?: RunWorkspace;
   /** Server MCP eksternal (nilai penuh); tidak pernah dikirim ke klien. */

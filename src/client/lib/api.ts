@@ -386,6 +386,8 @@ export interface ApiClient {
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
+  /** Pertanyaan sampingan dari salinan percakapan sesi (tidak masuk riwayat). */
+  askSideQuestion(id: string, question: string): Promise<{ answer: string }>;
   uploadAttachment(file: {
     name: string;
     data: string;
@@ -1120,6 +1122,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         { text },
       );
       return { queued: field(data, "queued") === true };
+    },
+
+    async askSideQuestion(id, question) {
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/btw`,
+        { question },
+      );
+      return { answer: String(field(data, "answer") ?? "") };
     },
 
     async getFiles(id, path, repo) {

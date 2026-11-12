@@ -1117,6 +1117,39 @@ code {
   font-size: 12px;
 }
 
+/* Kartu pertanyaan sampingan (/btw) */
+
+.jk-btw-card {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  font-size: 12.5px;
+}
+
+.jk-btw-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.jk-btw-question {
+  color: var(--t3);
+  overflow-wrap: anywhere;
+}
+
+.jk-btw-waiting {
+  margin: 6px 0 0;
+}
+
+.jk-btw-answer {
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
 /* Timeline */
 
 .jk-timeline {

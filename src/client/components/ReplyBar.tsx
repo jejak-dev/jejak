@@ -5,11 +5,13 @@ import { ApiError, type ApiClient, type SandboxMode, type SandboxState } from ".
 import { secretWarning } from "../lib/secret-warning";
 import { canSendToSession } from "../lib/worktree";
 import { BYPASS_WARNING } from "../lib/permission-mode";
+import { parseBtw } from "../lib/btw";
 import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
 import { Dropdown, type DropdownSection } from "./Dropdown";
 import { Icon } from "./Icon";
+import { Markdown } from "./Markdown";
 import { useAttachments } from "./useAttachments";
 
 export interface ReplyBarProps {
@@ -33,6 +35,13 @@ const MODE_OPTIONS: { value: LiveMode; label: string }[] = [
   { value: "bypassPermissions", label: "Lewati izin (berbahaya)" },
 ];
 
+/** Kartu pertanyaan sampingan: satu kartu pada satu waktu. */
+interface AsideState {
+  question: string;
+  status: "menjawab" | "selesai";
+  answer?: string;
+}
+
 function autosize(element: HTMLTextAreaElement): void {
   element.style.height = "auto";
   element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_PX)}px`;
@@ -47,6 +56,15 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
   const ctxRef = useRef<HTMLDetailsElement | null>(null);
 
   const sessionId = session.id;
+
+  // Kartu pertanyaan sampingan; hilang saat ganti sesi.
+  const [aside, setAside] = useState<AsideState | undefined>(undefined);
+  const asideSessionRef = useRef(sessionId);
+
+  useEffect(() => {
+    asideSessionRef.current = sessionId;
+    setAside(undefined);
+  }, [sessionId]);
 
   // Popover konteks menutup saat klik di luar atau tekan Esc.
   useEffect(() => {
@@ -207,7 +225,40 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
     });
   }
 
+  /** Pertanyaan sampingan (`/btw`): dijawab dari salinan percakapan. */
+  const submitAside = async (question: string): Promise<void> => {
+    if (busy) return;
+    const asked = sessionId;
+    setBusy(true);
+    setError(undefined);
+    setAside({ question, status: "menjawab" });
+    try {
+      const result = await api.askSideQuestion(asked, question);
+      if (asideSessionRef.current !== asked) return;
+      setAside({ question, status: "selesai", answer: result.answer });
+      setText("");
+      att.clear();
+      if (textareaRef.current !== null) {
+        autosize(textareaRef.current);
+        textareaRef.current.focus();
+      }
+    } catch (caught) {
+      if (asideSessionRef.current !== asked) return;
+      setAside(undefined);
+      setError(
+        caught instanceof ApiError ? caught.message : "gagal menjawab pertanyaan sampingan",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const submit = async (): Promise<void> => {
+    const question = parseBtw(text.trim());
+    if (question !== undefined) {
+      await submitAside(question);
+      return;
+    }
     if (!canSend) return;
     const trimmed = appendAttachments(text, att.items);
     setBusy(true);
@@ -248,6 +299,27 @@ export function ReplyBar({ api, session, refresh, context, registry }: ReplyBarP
   return (
     <form class="jk-reply" onSubmit={onSubmit} aria-busy={busy}>
       <div class="jk-reply-inner">
+        {aside !== undefined && (
+          <div class="jk-btw-card" role="status" aria-label="Jawaban pertanyaan sampingan">
+            <div class="jk-btw-head">
+              <span class="jk-btw-question">{aside.question}</span>
+              <button
+                type="button"
+                class="jk-link-btn"
+                onClick={() => setAside(undefined)}
+              >
+                Tutup
+              </button>
+            </div>
+            {aside.status === "menjawab" ? (
+              <p class="jk-note jk-btw-waiting">Menjawab…</p>
+            ) : (
+              <div class="jk-btw-answer">
+                <Markdown text={aside.answer ?? ""} />
+              </div>
+            )}
+          </div>
+        )}
         <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
           {att.dragging && <DropHint />}
           <AttachmentTray items={att.items} pending={att.pending} error={att.error} onRemove={att.remove} />

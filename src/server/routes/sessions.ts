@@ -122,6 +122,18 @@ function parseMessagesBody(body: unknown): string {
   return record.text;
 }
 
+function parseBtwBody(body: unknown): string {
+  const parsed = parseJsonBody(body);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw invalid("Body permintaan harus berupa objek.");
+  }
+  const record = parsed as Record<string, unknown>;
+  if (typeof record.question !== "string") {
+    throw invalid("Field question harus berupa string.");
+  }
+  return record.question;
+}
+
 function parseUpdateBody(body: unknown): {
   title?: string;
   archived?: boolean;
@@ -422,6 +434,19 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
           const text = parseMessagesBody(body);
           const result = await manager.send(params.id, text);
           return jsonResponse(200, { ok: true, queued: result.queued });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/sessions/:id/btw",
+      async ({ params, body }) => {
+        try {
+          const question = parseBtwBody(body);
+          const result = await manager.askAside(params.id, question);
+          return jsonResponse(200, { answer: result.answer });
         } catch (error) {
           return errorResponse(error);
         }
