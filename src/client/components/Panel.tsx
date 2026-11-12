@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type { ApiClient } from "../lib/api";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "../lib/panel-prefs";
 import { formatCount } from "../lib/format";
+import type { TimelineItem } from "../lib/timeline";
+import { latestTodos, todoProgress } from "../lib/todos";
 import {
   effectivePanelRepo,
   checkpointRepoNote,
@@ -17,6 +19,7 @@ import { GitTab } from "./GitTab";
 import { Icon } from "./Icon";
 import { SecretsTab } from "./SecretsTab";
 import { TerminalTab } from "./TerminalTab";
+import { TodosTab } from "./TodosTab";
 
 export interface PanelProps {
   /** Lebar panel dalam px; default dari CSS bila kosong. */
@@ -29,6 +32,8 @@ export interface PanelProps {
   status: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Item timeline berjalan; sumber daftar langkah agent (tool TodoWrite). */
+  timelineItems?: readonly TimelineItem[];
   /** Permintaan pindah tab dari luar (palette); `nonce` memaksa ulang. */
   tabRequest?: { tab: PanelTab; nonce: number };
   /** Dipanggil setelah aksi yang mengubah sesi (mis. hapus/pulihkan worktree). */
@@ -37,6 +42,7 @@ export interface PanelProps {
 
 const TABS: { id: PanelTab; label: string }[] = [
   { id: "changes", label: "Changes" },
+  { id: "todos", label: "Todos" },
   { id: "files", label: "Files" },
   { id: "git", label: "Git" },
   { id: "checkpoints", label: "Checkpoints" },
@@ -53,6 +59,7 @@ export function Panel({
   status,
   open,
   onOpenChange,
+  timelineItems,
   tabRequest,
   onSessionChanged,
 }: PanelProps) {
@@ -75,6 +82,11 @@ export function Panel({
   const repo = multiRepo ? repoForRequest(repos, repoChoice) : undefined;
   const repoOptions = multiRepo ? panelRepoOptions(repos) : [];
   const checkpointNote = checkpointRepoNote(repos);
+
+  // Daftar langkah agent berasal dari tool TodoWrite di timeline berjalan.
+  const todos = useMemo(() => latestTodos(timelineItems ?? []), [timelineItems]);
+  const todoProgressValue = todoProgress(todos);
+  const todoPending = todoProgressValue.total - todoProgressValue.done;
 
   useEffect(() => {
     writePanelPrefs({ tab });
@@ -104,9 +116,9 @@ export function Panel({
     <aside
       class="jk-panel"
       style={width === undefined ? undefined : { width: `${width}px` }}
-      aria-label="Changes, files, git, checkpoints, and secrets">
+      aria-label="Changes, todos, files, git, checkpoints, and secrets">
       <div class="jk-panel-head">
-        <div class="jk-panel-tabs" role="tablist" aria-label="Changes, files, git, checkpoints, and secrets">
+        <div class="jk-panel-tabs" role="tablist" aria-label="Changes, todos, files, git, checkpoints, and secrets">
           {TABS.map((entry, index) => (
             <button
               key={entry.id}
@@ -124,6 +136,9 @@ export function Panel({
               onKeyDown={(event) => onTabKeyDown(event, index)}
             >
               {entry.label}
+              {entry.id === "todos" && todoPending > 0 && (
+                <span class="jk-panel-count">{formatCount(todoPending)}</span>
+              )}
               {entry.id === "changes" && fileCount !== undefined && fileCount > 0 && (
                 <span class="jk-panel-count">{formatCount(fileCount)}</span>
               )}
@@ -192,6 +207,8 @@ export function Panel({
             repo={repo}
             onFileCount={setFileCount}
           />
+        ) : tab === "todos" ? (
+          <TodosTab todos={todos} />
         ) : tab === "checkpoints" ? (
           <CheckpointsTab
             api={api}

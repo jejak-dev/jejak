@@ -609,6 +609,7 @@ export function App() {
                   session={selected}
                   eventCount={selected.eventCount}
                   status={timeline.status ?? selected.status}
+                  timelineItems={timeline.items}
                   open={panelOpen}
                   onOpenChange={onPanelOpenChange}
                   tabRequest={panelTabRequest}

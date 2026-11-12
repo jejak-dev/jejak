@@ -1,4 +1,11 @@
-export type PanelTab = "changes" | "files" | "git" | "checkpoints" | "rahasia" | "terminal";
+export type PanelTab =
+  | "changes"
+  | "todos"
+  | "files"
+  | "git"
+  | "checkpoints"
+  | "rahasia"
+  | "terminal";
 
 export interface PanelPrefs {
   open: boolean;
@@ -9,6 +16,7 @@ const STORAGE_KEY = "jejak.panel";
 const DEFAULT_PREFS: PanelPrefs = { open: false, tab: "changes" };
 const TABS: readonly PanelTab[] = [
   "changes",
+  "todos",
   "files",
   "git",
   "checkpoints",

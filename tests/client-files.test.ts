@@ -236,6 +236,10 @@ describe("parsePanelPrefs", () => {
     });
   });
 
+  test("membaca tab Todos", () => {
+    expect(parsePanelPrefs('{"open":true,"tab":"todos"}')).toEqual({ open: true, tab: "todos" });
+  });
+
   test("tab asing kembali ke Perubahan", () => {
     expect(parsePanelPrefs('{"open":true,"tab":"entah"}')).toEqual({ open: true, tab: "changes" });
   });

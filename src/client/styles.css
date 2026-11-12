@@ -5641,3 +5641,64 @@ h2.jk-md-heading {
 .jk-dd-danger .jk-dd-label {
   color: var(--danger, #b3261e);
 }
+
+/* Tab Todos: daftar langkah agent dari tool TodoWrite. */
+
+.jk-todo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-todo-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--t1);
+}
+
+.jk-todo-mark {
+  flex: none;
+  width: 14px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--t3);
+}
+
+.jk-todo-mark-done {
+  color: var(--ok);
+}
+
+.jk-todo-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.jk-todo-dot-run {
+  background: var(--t2);
+  animation: jk-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.jk-todo-dot-wait {
+  border: 1.5px solid var(--line-2);
+}
+
+.jk-todo-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jk-todo-dot-run {
+    animation: none;
+  }
+}
