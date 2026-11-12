@@ -12,6 +12,7 @@
     "src/",
     "LICENSE",
     "README.md",
+    "CHANGELOG.md",
     "docs/PASANG.md"
   ],
   "workspaces": [
@@ -25,7 +26,8 @@
     "start": "bun run src/cli/index.ts serve",
     "doctor": "bun run src/cli/index.ts doctor",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "release": "bun run scripts/release.ts"
   },
   "dependencies": {
     "elysia": "^1.4.0",

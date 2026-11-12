@@ -1,3 +1,4 @@
+import { VERSION } from "../../shared/version";
 import type { McpServerConfig, McpTransport } from "./mcp-config";
 
 export interface McpToolInfo {
@@ -364,7 +365,7 @@ async function runStdio(config: McpTestTarget, options: McpTestOptions): Promise
         params: {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: "jejak", version: "0.0.1" },
+          clientInfo: { name: "jejak", version: VERSION },
         },
       })}\n`,
     );
@@ -513,7 +514,7 @@ async function runHttp(config: McpTestTarget, options: McpTestOptions): Promise<
         params: {
           protocolVersion: MCP_PROTOCOL_VERSION,
           capabilities: {},
-          clientInfo: { name: "jejak", version: "0.0.1" },
+          clientInfo: { name: "jejak", version: VERSION },
         },
       },
       undefined,

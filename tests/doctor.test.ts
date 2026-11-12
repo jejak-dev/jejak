@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { collectChecks, formatCheck, runDoctor, type Check } from "../src/cli/doctor";
 import { parseRegistry } from "../src/server/provider";
 import { saveRegistry } from "../src/server/provider-store";
+import { VERSION } from "../src/shared/version";
 
 let root: string;
 let providersFile: string;
@@ -201,7 +202,7 @@ test("hanya peringatan membuat runDoctor mengembalikan 0", async () => {
   });
 
   expect(code).toBe(0);
-  expect(logged[0]).toBe(`Jejak 0.0.1\n`);
+  expect(logged[0]).toBe(`Jejak ${VERSION}\n`);
   expect(logged.some((line) => line.includes("PERINGATAN  Profil aktif"))).toBe(true);
 });
 
