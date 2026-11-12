@@ -45,6 +45,17 @@ describe("ikon SVG", () => {
       expect(svg).not.toContain('href="http');
     }
   });
+
+  test("memuat warna aksen teal logo", () => {
+    expect(ICON_SVG).toContain("#2DD4BF");
+    expect(ICON_MASKABLE_SVG).toContain("#2DD4BF");
+  });
+
+  test("berkas assets/logo.svg identik dengan ICON_SVG", async () => {
+    const berkas = Bun.file(new URL("../assets/logo.svg", import.meta.url));
+    expect(await berkas.exists()).toBe(true);
+    expect(await berkas.text()).toBe(ICON_SVG);
+  });
 });
 
 describe("pemilihshouldHandle", () => {

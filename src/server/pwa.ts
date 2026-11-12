@@ -12,9 +12,6 @@ export const LIGHT_BG = "#faf9f6";
 /** Warna latar gelap (variabel `--bg` tema gelap di styles.css). */
 export const DARK_BG = "#1d1c1a";
 
-/** Warna tinta ikon (variabel `--t1` tema terang). */
-export const ICON_INK = "#1f1e1b";
-
 export interface PwaIcon {
   src: string;
   sizes: string;
@@ -53,29 +50,36 @@ export const MANIFEST_DATA: PwaManifest = {
 /** Manifes web siap disajikan (JSON). */
 export const MANIFEST = JSON.stringify(MANIFEST_DATA, null, 2);
 
+/** Warna bidang logo (latar ikon), terpisah dari warna antarmuka. */
+const LOGO_TILE = "#172033";
+
 /**
- * Jejak langkah sederhana, digambar sendiri sebagai vektor.
+ * Titik-titik lintasan Jejak, digambar sendiri sebagai vektor.
  * Tanpa fon eksternal, tanpa skrip, tanpa referensi jaringan.
  */
-const FOOTPRINT = `<ellipse cx="256" cy="286" rx="62" ry="92" transform="rotate(-16 256 286)"/>
-    <circle cx="206" cy="162" r="30"/>`;
+const LOGO_DOTS = `<circle cx="22" cy="76" r="3.5" fill="#F8FAFC" opacity="0.45"/>
+    <circle cx="33" cy="68" r="4.8" fill="#F8FAFC" opacity="0.6"/>
+    <circle cx="46" cy="65" r="6.2" fill="#F8FAFC" opacity="0.75"/>
+    <circle cx="57" cy="54" r="7.8" fill="#F8FAFC" opacity="0.9"/>
+    <circle cx="68" cy="42" r="9.5" fill="#F8FAFC"/>
+    <circle cx="76" cy="25" r="8" fill="#2DD4BF"/>`;
 
-/** Ikon biasa: latar transparan dengan sudut membulat. */
+/** Ikon biasa: bidang gelap dengan sudut membulat dan lintasan titik. */
 export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Jejak">
-  <rect width="512" height="512" rx="112" fill="${LIGHT_BG}"/>
-  <g fill="${ICON_INK}">
-    ${FOOTPRINT}
+  <rect width="512" height="512" rx="112" fill="${LOGO_TILE}"/>
+  <g transform="scale(5.12)">
+    ${LOGO_DOTS}
   </g>
 </svg>
 `;
 
 /**
- * Ikon maskable: latar penuh tanpa sudut, isi dikecilkan ke 60% (padding aman 20%).
+ * Ikon maskable: latar penuh tanpa sudut, isi dikecilkan (padding aman 20%).
  */
 export const ICON_MASKABLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Jejak">
-  <rect width="512" height="512" fill="${LIGHT_BG}"/>
-  <g fill="${ICON_INK}" transform="translate(256 256) scale(0.6) translate(-256 -256)">
-    ${FOOTPRINT}
+  <rect width="512" height="512" fill="${LOGO_TILE}"/>
+  <g transform="translate(256 256) scale(3.4) translate(-50 -50)">
+    ${LOGO_DOTS}
   </g>
 </svg>
 `;
