@@ -9,7 +9,7 @@ export type ToolStatus = "berjalan" | "selesai" | "gagal";
 export type PermissionStatus = "menunggu" | "diizinkan" | "ditolak" | "kedaluwarsa" | "dihentikan";
 
 export type TimelineItem =
-  | { kind: "user"; text: string; seq?: number }
+  | { kind: "user"; text: string; seq?: number; auto?: "goal" }
   | { kind: "thinking"; text: string; depth: number }
   | { kind: "text"; text: string; depth: number; streaming?: boolean }
   | {
@@ -233,12 +233,14 @@ export function reduceTimeline(
 
     case "user_message":
       // Nomor urut event dipakai untuk mundur percakapan.
+      // `auto` menandai pesan lanjutan otomatis mode Goal (bukan ketikan pengguna).
       return [
         ...items,
         {
           kind: "user",
           text: event.text,
           ...(options.seq === undefined ? {} : { seq: options.seq }),
+          ...(event.auto === "goal" ? { auto: "goal" as const } : {}),
         },
       ];
 

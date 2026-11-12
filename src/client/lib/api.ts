@@ -36,6 +36,7 @@ import type { Question } from "../../server/questions/question-store";
 import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
 import type { SessionInfo } from "../../server/sessions/session-manager";
+import type { GoalView } from "../../server/goals/goal";
 import type {
   UsageDayBucket,
   UsageModelBucket,
@@ -53,6 +54,15 @@ import type { WorkspaceView } from "../../server/workspaces/workspace-service";
 
 export type AuditEntryItem = AuditEntry;
 export type AuditSummaryResult = AuditSummary;
+
+export type { GoalView };
+
+/** Masukan memulai tujuan (mode Goal). */
+export interface GoalStartInput {
+  objective: string;
+  maxTurns?: number;
+  costCapUsd?: number;
+}
 
 export type {
   UsageDayBucket,
@@ -419,6 +429,16 @@ export interface ApiClient {
     sandbox?: SandboxMode;
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
+  /** Mulai tujuan (mode Goal) pada sesi yang sudah ada. */
+  startGoal(id: string, input: GoalStartInput): Promise<{ goal: GoalView | null }>;
+  /** Jeda tujuan; giliran yang sedang berjalan dibiarkan selesai. */
+  pauseGoal(id: string): Promise<{ goal: GoalView | null }>;
+  /** Lanjutkan tujuan yang dijeda. */
+  resumeGoal(id: string): Promise<{ goal: GoalView | null }>;
+  /** Hentikan tujuan dan batalkan giliran berjalan. */
+  stopGoal(id: string): Promise<{ goal: GoalView | null }>;
+  /** Tujuan sesi; `null` bila sesi tidak punya tujuan. */
+  getGoal(id: string): Promise<{ goal: GoalView | null }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
   /** Pertanyaan sampingan dari salinan percakapan sesi (tidak masuk riwayat). */
   askSideQuestion(id: string, question: string): Promise<{ answer: string }>;
@@ -582,6 +602,16 @@ function sessionFrom(payload: unknown): SessionInfo {
     throw new ApiError("respons server tidak valid", 200);
   }
   return session as unknown as SessionInfo;
+}
+
+/** Bentuk `{ goal }` dari server; `null` berarti sesi tidak punya tujuan. */
+function goalFrom(payload: unknown): { goal: GoalView | null } {
+  const goal = field(payload, "goal");
+  if (goal === null || goal === undefined) return { goal: null };
+  if (!isRecord(goal)) {
+    throw new ApiError("respons server tidak valid", 200);
+  }
+  return { goal: goal as unknown as GoalView };
 }
 
 function memoryFrom(payload: unknown): MemoryItem {
@@ -1206,6 +1236,37 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         {},
       );
       return { interrupted: field(data, "interrupted") === true };
+    },
+
+    async startGoal(id, input) {
+      const body: GoalStartInput = { objective: input.objective };
+      if (input.maxTurns !== undefined) body.maxTurns = input.maxTurns;
+      if (input.costCapUsd !== undefined) body.costCapUsd = input.costCapUsd;
+      return goalFrom(
+        await request("POST", `/api/sessions/${encodeURIComponent(id)}/goal`, body),
+      );
+    },
+
+    async pauseGoal(id) {
+      return goalFrom(
+        await request("POST", `/api/sessions/${encodeURIComponent(id)}/goal/pause`, {}),
+      );
+    },
+
+    async resumeGoal(id) {
+      return goalFrom(
+        await request("POST", `/api/sessions/${encodeURIComponent(id)}/goal/resume`, {}),
+      );
+    },
+
+    async stopGoal(id) {
+      return goalFrom(
+        await request("POST", `/api/sessions/${encodeURIComponent(id)}/goal/stop`, {}),
+      );
+    },
+
+    async getGoal(id) {
+      return goalFrom(await request("GET", `/api/sessions/${encodeURIComponent(id)}/goal`));
     },
 
     async uploadAttachment(file) {
