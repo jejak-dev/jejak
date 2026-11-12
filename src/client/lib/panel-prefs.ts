@@ -5,6 +5,7 @@ export type PanelTab =
   | "git"
   | "checkpoints"
   | "rahasia"
+  | "commands"
   | "terminal";
 
 export interface PanelPrefs {
@@ -21,6 +22,7 @@ const TABS: readonly PanelTab[] = [
   "git",
   "checkpoints",
   "rahasia",
+  "commands",
   "terminal",
 ];
 

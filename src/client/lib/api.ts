@@ -29,6 +29,7 @@ import type { ImportResult } from "../../server/memory/memory-service";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
 import type { TerminalInfo } from "../../server/terminal/terminal-manager";
+import type { RunnerCommand } from "../../server/runner/runner-service";
 import type { RemoteRepo } from "../../server/gitprovider/adapters";
 import type { GitProviderView } from "../../server/gitprovider/provider-store";
 import type { IndexedRepo } from "../../server/indexer/repo-indexer";
@@ -181,6 +182,21 @@ export type ClaudeInstructions = InstructionFile;
 export type ClaudeSkillItem = SkillInfo;
 export type ClaudeSkillFile = ClaudeSkillItem & { content: string };
 export type TerminalItem = TerminalInfo;
+export type { RunnerCommand };
+
+/** Formulir perintah kustom (label, command, grup opsional). */
+export interface RunnerCommandInput {
+  label: string;
+  command: string;
+  group?: string;
+}
+
+/** Bagian yang boleh diubah pada perintah kustom. */
+export interface RunnerCommandPatch {
+  label?: string;
+  command?: string;
+  group?: string;
+}
 export type GitProviderItem = GitProviderView;
 export type RemoteRepoItem = RemoteRepo & { indexed: boolean };
 export type IndexedRepoItem = IndexedRepo;
@@ -494,6 +510,21 @@ export interface ApiClient {
   sendTerminalInput(id: string, data: string): Promise<void>;
   resizeTerminal(id: string, cols: number, rows: number): Promise<void>;
   closeTerminal(id: string): Promise<void>;
+  /** Daftar perintah folder sesi (script package + perintah kustom). */
+  listRunner(cwd: string): Promise<{ commands: RunnerCommand[] }>;
+  addRunnerCommand(cwd: string, form: RunnerCommandInput): Promise<RunnerCommand>;
+  updateRunnerCommand(
+    cwd: string,
+    id: string,
+    patch: RunnerCommandPatch,
+  ): Promise<RunnerCommand>;
+  deleteRunnerCommand(cwd: string, id: string): Promise<void>;
+  /** Jalankan perintah; `confirm` benar hanya untuk konfirmasi pertama. */
+  runRunnerCommand(
+    cwd: string,
+    id: string,
+    confirm?: boolean,
+  ): Promise<{ terminalId: string }>;
   listGitProviders(): Promise<GitProviderItem[]>;
   putGitProvider(id: string, input: GitProviderInput): Promise<GitProviderItem>;
   deleteGitProvider(id: string): Promise<void>;
@@ -1051,6 +1082,21 @@ function agentFileFrom(payload: unknown): ClaudeAgentFile {
 function hookListFrom(payload: unknown): ClaudeHookItem[] {
   if (!isRecord(payload) || !Array.isArray(payload.hooks)) throw invalidResponse();
   return payload.hooks as ClaudeHookItem[];
+}
+
+/** Perintah runner dari server; `group` dan `detail` boleh absen. */
+function runnerCommandFrom(payload: unknown): RunnerCommand {
+  if (!isRecord(payload)) throw invalidResponse();
+  const { id, label, command, source, confirmed } = payload;
+  if (typeof id !== "string" || typeof label !== "string" || typeof command !== "string") {
+    throw invalidResponse();
+  }
+  if (source !== "package" && source !== "custom") throw invalidResponse();
+  if (typeof confirmed !== "boolean") throw invalidResponse();
+  const result: RunnerCommand = { id, label, command, source, confirmed };
+  if (typeof payload.group === "string") result.group = payload.group;
+  if (typeof payload.detail === "string") result.detail = payload.detail;
+  return result;
 }
 
 /** `cwd` hanya dikirim bila terisi; kunci kosong tidak ikut. */
@@ -1650,6 +1696,55 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async closeTerminal(id) {
       await request("DELETE", `/api/terminal/${encodeURIComponent(id)}`, {});
+    },
+
+    async listRunner(cwd) {
+      const data = await request("GET", `/api/runner${queryString([["cwd", cwd]])}`);
+      if (!isRecord(data) || !Array.isArray(data.commands)) throw invalidResponse();
+      return { commands: data.commands.map(runnerCommandFrom) };
+    },
+
+    async addRunnerCommand(cwd, form) {
+      const data = await request("POST", "/api/runner/custom", {
+        cwd,
+        label: form.label,
+        command: form.command,
+        ...(form.group === undefined || form.group === "" ? {} : { group: form.group }),
+      });
+      if (!isRecord(data)) throw invalidResponse();
+      return runnerCommandFrom(data.command);
+    },
+
+    async updateRunnerCommand(cwd, id, patch) {
+      const body: Record<string, unknown> = { cwd };
+      if (patch.label !== undefined) body.label = patch.label;
+      if (patch.command !== undefined) body.command = patch.command;
+      if (patch.group !== undefined) body.group = patch.group;
+      const data = await request(
+        "PATCH",
+        `/api/runner/custom/${encodeURIComponent(id)}`,
+        body,
+      );
+      if (!isRecord(data)) throw invalidResponse();
+      return runnerCommandFrom(data.command);
+    },
+
+    async deleteRunnerCommand(cwd, id) {
+      await request(
+        "DELETE",
+        `/api/runner/custom/${encodeURIComponent(id)}${queryString([["cwd", cwd]])}`,
+        {},
+      );
+    },
+
+    async runRunnerCommand(cwd, id, confirm) {
+      const data = await request("POST", "/api/runner/run", {
+        cwd,
+        id,
+        ...(confirm === undefined ? {} : { confirm }),
+      });
+      if (!isRecord(data) || typeof data.terminalId !== "string") throw invalidResponse();
+      return { terminalId: data.terminalId };
     },
 
     async listGitProviders() {
