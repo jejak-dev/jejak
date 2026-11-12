@@ -61,4 +61,15 @@ describe("rewindableSeqs", () => {
     expect(rewindableSeqs(events(result(1, "anchor-1")))).toEqual([]);
     expect(rewindableSeqs([])).toEqual([]);
   });
+
+  test("pesan otomatis mode Goal diabaikan", () => {
+    const list = events(
+      result(1, "anchor-1"),
+      { seq: 2, event: { type: "user_message", text: "lanjutan", auto: "goal" } },
+      result(3, "anchor-2"),
+      user(4),
+    );
+
+    expect(rewindableSeqs(list)).toEqual([4]);
+  });
 });

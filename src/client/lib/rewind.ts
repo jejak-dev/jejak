@@ -12,6 +12,7 @@ export interface RewindEvent {
  *
  * Prompt awal tidak punya nomor urut event sehingga tidak termasuk; pesan
  * pertama setelahnya baru bisa dimundurkan bila giliran pertama punya jangkar.
+ * Pesan otomatis (mode Goal) tidak bisa dimundurkan.
  */
 export function rewindableSeqs(events: readonly RewindEvent[]): number[] {
   let anchor = false;
@@ -23,6 +24,7 @@ export function rewindableSeqs(events: readonly RewindEvent[]): number[] {
       continue;
     }
     if (event.type !== "user_message" || !anchor) continue;
+    if (event.auto !== undefined) continue;
     seqs.push(item.seq);
   }
   return seqs;

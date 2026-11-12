@@ -53,7 +53,11 @@ export type AgentEvent =
       answers?: Record<string, string>;
     }
   | { type: "notice"; text: string; level?: "info" | "warn" }
-  | { type: "user_message"; text: string };
+  /**
+   * Pesan pengguna. `auto: "goal"` menandai pesan yang dibuat otomatis oleh
+   * loop Goal (bukan ketikan pengguna); pesan ini tidak bisa dimundurkan.
+   */
+  | { type: "user_message"; text: string; auto?: "goal" };
 
 export const PERMISSION_EXPIRED_MESSAGE = "waktu izin habis";
 export const PERMISSION_STOPPED_MESSAGE = "sesi dihentikan";
