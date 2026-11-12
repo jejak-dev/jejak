@@ -6653,3 +6653,118 @@ h2.jk-md-heading {
     min-height: 40px;
   }
 }
+
+/* ---------- Tab Wiki (wiki proyek GitLab) ---------- */
+
+.jk-wiki {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.jk-wiki-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jk-wiki-title {
+  margin: 0;
+  color: var(--t1);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.jk-wiki-status {
+  margin: 0;
+  color: var(--t3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.jk-wiki-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.jk-wiki-filter {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.jk-wiki-group {
+  min-width: 0;
+}
+
+.jk-wiki-group-title {
+  margin: 0 0 4px;
+  color: var(--t3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.jk-wiki-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-wiki-page {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: var(--t1);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.jk-wiki-page:hover {
+  color: var(--t2);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.jk-wiki-pre {
+  margin: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.jk-wiki-quote {
+  align-self: flex-start;
+}
+
+@media (pointer: coarse) {
+  .jk-wiki-page,
+  .jk-wiki-quote {
+    min-height: 40px;
+  }
+
+  .jk-wiki-toolbar .jk-icon-btn {
+    min-width: 40px;
+    min-height: 40px;
+  }
+}

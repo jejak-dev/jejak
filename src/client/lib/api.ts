@@ -52,6 +52,7 @@ import type {
   WorkspaceRepo,
 } from "../../server/workspaces/workspace-files";
 import type { WorkspaceView } from "../../server/workspaces/workspace-service";
+import type { WikiPage, WikiPageRef, WikiProject, WikiSync } from "./wiki";
 
 export type AuditEntryItem = AuditEntry;
 export type AuditSummaryResult = AuditSummary;
@@ -525,6 +526,14 @@ export interface ApiClient {
     id: string,
     confirm?: boolean,
   ): Promise<{ terminalId: string }>;
+  /** Proyek wiki yang cocok dengan remote origin folder sesi. */
+  wikiProject(cwd: string): Promise<WikiProject>;
+  /** Sinkronkan wiki proyek (klon dangkal lalu segarkan). */
+  wikiSync(providerId: string, fullPath: string): Promise<WikiSync>;
+  /** Daftar halaman wiki dari cache server. */
+  wikiPages(providerId: string, fullPath: string): Promise<WikiSync>;
+  /** Isi satu halaman wiki. */
+  wikiPage(providerId: string, fullPath: string, slug: string): Promise<WikiPage>;
   listGitProviders(): Promise<GitProviderItem[]>;
   putGitProvider(id: string, input: GitProviderInput): Promise<GitProviderItem>;
   deleteGitProvider(id: string): Promise<void>;
@@ -1102,6 +1111,43 @@ function runnerCommandFrom(payload: unknown): RunnerCommand {
 /** `cwd` hanya dikirim bila terisi; kunci kosong tidak ikut. */
 function claudeQuery(cwd?: string): string {
   return queryString([["cwd", cwd === undefined || cwd === "" ? undefined : cwd]]);
+}
+
+/** Rujukan halaman wiki dari server. */
+function wikiPageRefFrom(payload: unknown): WikiPageRef {
+  if (!isRecord(payload)) throw invalidResponse();
+  const { slug, title, format } = payload;
+  if (typeof slug !== "string" || typeof title !== "string") throw invalidResponse();
+  if (format !== "markdown" && format !== "text") throw invalidResponse();
+  return { slug, title, format };
+}
+
+/** Daftar halaman wiki beserta commit dan waktu pengambilan. */
+function wikiSyncFrom(payload: unknown): WikiSync {
+  if (!isRecord(payload)) throw invalidResponse();
+  const { commit, fetchedAt, pages } = payload;
+  if (typeof commit !== "string" || typeof fetchedAt !== "string" || !Array.isArray(pages)) {
+    throw invalidResponse();
+  }
+  const result: WikiSync = {
+    commit,
+    fetchedAt,
+    pages: pages.map(wikiPageRefFrom),
+  };
+  if (typeof payload.sidebar === "string") result.sidebar = payload.sidebar;
+  return result;
+}
+
+/** Isi halaman wiki beserta asal dan tanda potong. */
+function wikiPageFrom(payload: unknown): WikiPage {
+  if (!isRecord(payload)) throw invalidResponse();
+  const page = field(payload, "page");
+  if (!isRecord(page)) throw invalidResponse();
+  const ref = wikiPageRefFrom(page);
+  const { content, truncated, commit, fetchedAt } = page;
+  if (typeof content !== "string" || typeof truncated !== "boolean") throw invalidResponse();
+  if (typeof commit !== "string" || typeof fetchedAt !== "string") throw invalidResponse();
+  return { ...ref, content, truncated, commit, fetchedAt };
 }
 
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
@@ -1745,6 +1791,39 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       });
       if (!isRecord(data) || typeof data.terminalId !== "string") throw invalidResponse();
       return { terminalId: data.terminalId };
+    },
+
+    async wikiProject(cwd) {
+      const data = await request("GET", `/api/wiki/project${queryString([["cwd", cwd]])}`);
+      if (!isRecord(data)) throw invalidResponse();
+      const providerId = field(data, "providerId");
+      const fullPath = field(data, "fullPath");
+      if (typeof providerId !== "string" || typeof fullPath !== "string") {
+        throw invalidResponse();
+      }
+      return { providerId, fullPath };
+    },
+
+    async wikiSync(providerId, fullPath) {
+      const data = await request("POST", "/api/wiki/sync", { providerId, fullPath });
+      return wikiSyncFrom(data);
+    },
+
+    async wikiPages(providerId, fullPath) {
+      const query = queryString([
+        ["providerId", providerId],
+        ["fullPath", fullPath],
+      ]);
+      return wikiSyncFrom(await request("GET", `/api/wiki/pages${query}`));
+    },
+
+    async wikiPage(providerId, fullPath, slug) {
+      const query = queryString([
+        ["providerId", providerId],
+        ["fullPath", fullPath],
+        ["slug", slug],
+      ]);
+      return wikiPageFrom(await request("GET", `/api/wiki/page${query}`));
     },
 
     async listGitProviders() {

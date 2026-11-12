@@ -21,6 +21,7 @@ import { RunnerTab } from "./RunnerTab";
 import { SecretsTab } from "./SecretsTab";
 import { TerminalTab } from "./TerminalTab";
 import { TodosTab } from "./TodosTab";
+import { WikiTab } from "./WikiTab";
 
 export interface PanelProps {
   /** Lebar panel dalam px; default dari CSS bila kosong. */
@@ -39,7 +40,11 @@ export interface PanelProps {
   tabRequest?: { tab: PanelTab; nonce: number };
   /** Dipanggil setelah aksi yang mengubah sesi (mis. hapus/pulihkan worktree). */
   onSessionChanged?: () => void;
+  /** Kutipan wiki yang ditempel ke kolom pesan; tidak mengirim apa pun. */
+  onQuote?: (text: string) => void;
 }
+
+const PANEL_LABEL = "Changes, todos, files, git, checkpoints, secrets, wiki, and commands";
 
 const TABS: { id: PanelTab; label: string }[] = [
   { id: "changes", label: "Changes" },
@@ -48,6 +53,7 @@ const TABS: { id: PanelTab; label: string }[] = [
   { id: "git", label: "Git" },
   { id: "checkpoints", label: "Checkpoints" },
   { id: "rahasia", label: "Secrets" },
+  { id: "wiki", label: "Wiki" },
   { id: "commands", label: "Commands" },
   { id: "terminal", label: "Terminal" },
 ];
@@ -64,6 +70,7 @@ export function Panel({
   timelineItems,
   tabRequest,
   onSessionChanged,
+  onQuote,
 }: PanelProps) {
   const [tab, setTab] = useState<PanelTab>(() => readPanelPrefs().tab);
   const [fileCount, setFileCount] = useState<number | undefined>(undefined);
@@ -140,13 +147,13 @@ export function Panel({
     <aside
       class="jk-panel"
       style={width === undefined ? undefined : { width: `${width}px` }}
-      aria-label="Changes, todos, files, git, checkpoints, secrets, and commands">
+      aria-label={PANEL_LABEL}>
       <div class="jk-panel-head">
         <div
           class="jk-panel-tabs"
           ref={tabsRef}
           role="tablist"
-          aria-label="Changes, todos, files, git, checkpoints, secrets, and commands"
+          aria-label={PANEL_LABEL}
         >
           {TABS.map((entry, index) => (
             <button
@@ -269,6 +276,8 @@ export function Panel({
           />
         ) : tab === "rahasia" ? (
           <SecretsTab api={api} sessionId={sessionId} />
+        ) : tab === "wiki" ? (
+          <WikiTab api={api} cwd={session?.cwd ?? ""} onQuote={onQuote} />
         ) : tab === "commands" ? (
           <RunnerTab
             api={api}

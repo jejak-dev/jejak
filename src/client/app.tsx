@@ -217,7 +217,7 @@ export function App() {
   const [promptFocusTick, setPromptFocusTick] = useState(0);
   // Teks yang ditaruh di kolom input (pesan yang dibuang saat mundur percakapan).
   const [draft, setDraft] = useState<
-    { sessionId: string; text: string; nonce: number } | undefined
+    { sessionId: string; text: string; nonce: number; append?: boolean } | undefined
   >(undefined);
   const draftNonceRef = useRef(0);
 
@@ -282,6 +282,21 @@ export function App() {
     setPanelOpen(open);
     writePanelPrefs({ open });
   }, []);
+
+  // Kutipan wiki ditempel ke kolom pesan; tidak ada yang dikirim otomatis.
+  const onQuote = useCallback(
+    (text: string): void => {
+      if (selected === undefined) return;
+      draftNonceRef.current += 1;
+      setDraft({
+        sessionId: selected.id,
+        text,
+        nonce: draftNonceRef.current,
+        append: true,
+      });
+    },
+    [selected],
+  );
   const togglePanel = useCallback((): void => {
     const next = !panelOpen;
     setPanelOpen(next);
@@ -861,6 +876,7 @@ export function App() {
                   onOpenChange={onPanelOpenChange}
                   tabRequest={panelTabRequest}
                   onSessionChanged={() => void refresh()}
+                  onQuote={onQuote}
                   width={panelW}
                 />
               )}

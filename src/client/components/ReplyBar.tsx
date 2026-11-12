@@ -26,7 +26,7 @@ export interface ReplyBarProps {
   /** Profil provider untuk pemilih provider/model; tanpa ini pemilih tidak tampil. */
   registry?: RegistryView;
   /** Teks yang ditaruh di kolom input (mis. pesan yang dibuang saat mundur). */
-  draft?: { text: string; nonce: number };
+  draft?: { text: string; nonce: number; append?: boolean };
   /** Dipanggil setelah tujuan dimulai atau berubah agar pita Goal langsung sinkron. */
   onGoalChanged?: (goal: GoalView | null) => void;
 }
@@ -82,9 +82,15 @@ export function ReplyBar({
   }, [sessionId]);
 
   // Teks hasil mundur percakapan ditaruh di kolom input agar bisa disunting.
+  // Kutipan wiki memakai `append`: ditambahkan ke teks yang sudah diketik.
   useEffect(() => {
     if (draft === undefined) return;
-    setText(draft.text);
+    const value = draft.text;
+    if (draft.append === true) {
+      setText((current) => (current.trim() === "" ? value : `${current}\n${value}`));
+    } else {
+      setText(value);
+    }
     textareaRef.current?.focus();
   }, [draft]);
 
