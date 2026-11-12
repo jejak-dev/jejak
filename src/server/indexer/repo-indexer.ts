@@ -40,7 +40,7 @@ export const MAX_SEARCH_RESULTS = 50;
 const CLONE_TIMEOUT_MS = 180_000;
 const GIT_TIMEOUT_MS = 30_000;
 const KEY_RE = /^[0-9a-f]{16}$/;
-const ASKPASS = '#!/bin/sh\ncase "$1" in\n  Username*) echo oauth2 ;;\n  *) echo "$JEJAK_GIT_TOKEN" ;;\nesac\n';
+export const ASKPASS = '#!/bin/sh\ncase "$1" in\n  Username*) echo oauth2 ;;\n  *) echo "$JEJAK_GIT_TOKEN" ;;\nesac\n';
 
 export function indexRoot(env: Record<string, string | undefined> = process.env): string {
   return join(jejakHome(env), "cache", "repos");
@@ -55,10 +55,36 @@ function fail(message: string, code: IndexerErrorCode = "gagal"): IndexerError {
 }
 
 /** Pesan galat git tanpa kemungkinan token: hanya baris pertama, dipotong. */
-function gitMessage(stderr: string, token: string | undefined): string {
+export function gitMessage(stderr: string, token: string | undefined): string {
   let text = stderr.split("\n").find((line) => line.trim() !== "") ?? "git gagal";
   if (token !== undefined && token !== "") text = text.split(token).join("***");
   return text.slice(0, 200);
+}
+
+/**
+ * Masalah pada alamat clone (bukan galat): undefined berarti alamat diterima.
+ * Aturan asal-usul yang sama dipakai layanan wiki.
+ */
+export function cloneUrlProblem(
+  provider: GitProviderProfile,
+  cloneUrl: string,
+): string | undefined {
+  let url: URL;
+  try {
+    url = new URL(cloneUrl);
+  } catch {
+    return "Alamat clone tidak valid.";
+  }
+  if (url.username !== "" || url.password !== "") {
+    return "Alamat clone tidak boleh memuat kredensial.";
+  }
+  if (provider.kind === "local") {
+    if (url.protocol !== "file:") return "Alamat clone lokal harus file://.";
+    return undefined;
+  }
+  const base = new URL(provider.baseUrl ?? "");
+  if (url.origin !== base.origin) return "Alamat clone tidak berasal dari penyedia ini.";
+  return undefined;
 }
 
 export interface RepoIndexerOptions {
@@ -104,19 +130,8 @@ export class RepoIndexer {
 
   /** `cloneUrl` harus berasal dari adapter penyedia: asal-usul dicek di sini juga. */
   private assertCloneUrl(provider: GitProviderProfile, repo: RemoteRepo): void {
-    let url: URL;
-    try {
-      url = new URL(repo.cloneUrl);
-    } catch {
-      throw fail("Alamat clone tidak valid.", "tidak-valid");
-    }
-    if (url.username !== "" || url.password !== "") throw fail("Alamat clone tidak boleh memuat kredensial.", "tidak-valid");
-    if (provider.kind === "local") {
-      if (url.protocol !== "file:") throw fail("Alamat clone lokal harus file://.", "tidak-valid");
-      return;
-    }
-    const base = new URL(provider.baseUrl ?? "");
-    if (url.origin !== base.origin) throw fail("Alamat clone tidak berasal dari penyedia ini.", "tidak-valid");
+    const problem = cloneUrlProblem(provider, repo.cloneUrl);
+    if (problem !== undefined) throw fail(problem, "tidak-valid");
   }
 
   async index(provider: GitProviderProfile, repo: RemoteRepo): Promise<IndexedRepo> {
