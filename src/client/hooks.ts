@@ -9,6 +9,7 @@ import {
   parseHashRoute,
   providersHash,
   sessionHash,
+  usageHash,
   workspacesHash,
   type AppView,
 } from "./lib/format";
@@ -51,6 +52,7 @@ export interface HashRouteState {
   navigateToMcp: () => void;
   navigateToAudit: () => void;
   navigateToInstruksi: () => void;
+  navigateToUsage: () => void;
 }
 
 export function useHashRoute(): HashRouteState {
@@ -106,6 +108,10 @@ export function useHashRoute(): HashRouteState {
     applyHash(instruksiHash());
   }, [applyHash]);
 
+  const navigateToUsage = useCallback(() => {
+    applyHash(usageHash());
+  }, [applyHash]);
+
   return useMemo(
     () => ({
       sessionId: route.sessionId,
@@ -117,6 +123,7 @@ export function useHashRoute(): HashRouteState {
       navigateToMcp,
       navigateToAudit,
       navigateToInstruksi,
+      navigateToUsage,
     }),
     [
       route,
@@ -127,6 +134,7 @@ export function useHashRoute(): HashRouteState {
       navigateToMcp,
       navigateToAudit,
       navigateToInstruksi,
+      navigateToUsage,
     ],
   );
 }

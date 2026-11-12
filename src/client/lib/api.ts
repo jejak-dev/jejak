@@ -37,6 +37,13 @@ import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type {
+  UsageDayBucket,
+  UsageModelBucket,
+  UsageProfileBucket,
+  UsageSessionBucket,
+  UsageSummary,
+} from "../../server/budget/usage-ledger";
+import type {
   ServiceCard,
   ServiceKind,
   WorkspaceProblem,
@@ -46,6 +53,24 @@ import type { WorkspaceView } from "../../server/workspaces/workspace-service";
 
 export type AuditEntryItem = AuditEntry;
 export type AuditSummaryResult = AuditSummary;
+
+export type {
+  UsageDayBucket,
+  UsageModelBucket,
+  UsageProfileBucket,
+  UsageSessionBucket,
+  UsageSummary,
+};
+
+/** Respons ringkasan pemakaian dari `GET /api/usage`. */
+export interface UsageResponse {
+  days: number;
+  summary: UsageSummary;
+  /** Lama retensi pemakaian dalam hari. */
+  retentionDays: number;
+  /** Judul sesi per id sesi. */
+  sessions: Record<string, string>;
+}
 
 export interface AuditListResult {
   entries: AuditEntryItem[];
@@ -481,6 +506,7 @@ export interface ApiClient {
   testMcpServer(id: string): Promise<McpTestOutcome>;
   listAudit(query?: AuditQueryInput): Promise<AuditListResult>;
   getAuditSummary(): Promise<AuditSummaryResult>;
+  getUsage(days: 7 | 30 | 90): Promise<UsageResponse>;
   getSecretAllow(sessionId: string): Promise<SecretAllowState>;
   addSecretAllow(sessionId: string, path: string): Promise<SecretAllowAddResult>;
   removeSecretAllow(
@@ -678,6 +704,31 @@ function auditSummaryFrom(payload: unknown): AuditSummaryResult {
     throw invalidResponse();
   }
   return payload as unknown as AuditSummaryResult;
+}
+
+function usageResponseFrom(payload: unknown): UsageResponse {
+  if (!isRecord(payload)) throw invalidResponse();
+  const { days, summary, retentionDays, sessions } = payload;
+  if (
+    typeof days !== "number" ||
+    !Number.isFinite(days) ||
+    typeof retentionDays !== "number" ||
+    !Number.isFinite(retentionDays) ||
+    !isRecord(sessions) ||
+    !isRecord(summary)
+  ) {
+    throw invalidResponse();
+  }
+  return {
+    days,
+    retentionDays,
+    summary: summary as unknown as UsageSummary,
+    sessions: Object.fromEntries(
+      Object.entries(sessions).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string",
+      ),
+    ),
+  };
 }
 
 function secretAllowStateFrom(payload: unknown): SecretAllowState {
@@ -1694,6 +1745,17 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async getAuditSummary() {
       return auditSummaryFrom(await request("GET", "/api/audit/summary"));
+    },
+
+    async getUsage(days) {
+      // `tz` adalah menit timur dari UTC: tanda dibalik dari
+      // `Date.getTimezoneOffset()`.
+      const tz = -new Date().getTimezoneOffset();
+      const search = queryString([
+        ["days", String(days)],
+        ["tz", String(tz)],
+      ]);
+      return usageResponseFrom(await request("GET", `/api/usage${search}`));
     },
 
     async getSecretAllow(sessionId) {

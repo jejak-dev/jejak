@@ -125,7 +125,7 @@ export function shortPath(path: string, max = 36): string {
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
-export type AppView = "providers" | "memory" | "workspaces" | "mcp" | "audit" | "instruksi";
+export type AppView = "providers" | "memory" | "workspaces" | "mcp" | "audit" | "instruksi" | "usage";
 
 export interface HashRoute {
   sessionId?: string;
@@ -150,6 +150,9 @@ export function parseHashRoute(hash: string): HashRoute {
   }
   if (hash === "#/instruksi") {
     return { view: "instruksi" };
+  }
+  if (hash === "#/usage") {
+    return { view: "usage" };
   }
 
   const match = /^#\/s\/([^/?#]+)$/.exec(hash);
@@ -200,6 +203,10 @@ export function auditHash(): string {
 
 export function instruksiHash(): string {
   return "#/instruksi";
+}
+
+export function usageHash(): string {
+  return "#/usage";
 }
 
 export type ToolCallingTone = "success" | "warning" | "muted";

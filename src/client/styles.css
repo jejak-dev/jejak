@@ -4853,6 +4853,224 @@ h2.jk-md-heading {
   }
 }
 
+/* Halaman Usage */
+
+.jk-usage {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px 80px;
+}
+
+.jk-usage .jk-settings-head {
+  margin-bottom: 18px;
+}
+
+.jk-usage-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-usage-range {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.jk-usage-range-btn {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.jk-usage-range-btn:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-usage-range-btn-active {
+  border-color: var(--line-2);
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-usage-range-label {
+  margin: 0;
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-usage-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0 18px;
+}
+
+.jk-usage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.jk-usage-card-label {
+  color: var(--t3);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jk-usage-card-value {
+  color: var(--t1);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-usage-chart-wrap {
+  margin-bottom: 18px;
+}
+
+.jk-usage-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 120px;
+  padding: 8px 0 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-usage-chart-col {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  align-items: flex-end;
+}
+
+.jk-usage-chart-bar {
+  width: 100%;
+  min-height: 0;
+  border-radius: 2px 2px 0 0;
+  background: var(--t3);
+  transition: height 160ms ease-out;
+}
+
+.jk-usage-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+  color: var(--t3);
+  font-size: 11px;
+}
+
+.jk-usage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.jk-usage-panel {
+  margin-bottom: 12px;
+}
+
+.jk-usage-panel-title {
+  margin: 0 0 6px;
+  color: var(--t2);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jk-usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.jk-usage-table th {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-2);
+  color: var(--t3);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jk-usage-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.jk-usage-name {
+  display: block;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+
+.jk-usage-bar {
+  display: block;
+  height: 3px;
+  min-width: 2px;
+  margin-top: 4px;
+  border-radius: 999px;
+  background: var(--t3);
+}
+
+.jk-usage-num {
+  color: var(--t2);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-usage-session-link {
+  color: var(--t2);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 2px;
+}
+
+.jk-usage-session-link:hover {
+  color: var(--t1);
+}
+
+.jk-usage-foot {
+  margin: 16px 0 0;
+  color: var(--t3);
+  font-size: 11.5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jk-usage-chart-bar {
+    transition: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .jk-usage-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .jk-usage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Halaman Instruksi */
 
 .jk-instruksi {

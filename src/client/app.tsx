@@ -4,6 +4,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { AuditPage } from "./components/AuditPage";
 import { InstruksiPage } from "./components/InstruksiPage";
+import { UsagePage } from "./components/UsagePage";
 import { LoginScreen } from "./components/LoginScreen";
 import { MemoryPage } from "./components/MemoryPage";
 import { McpPage } from "./components/McpPage";
@@ -132,6 +133,7 @@ export function App() {
     navigateToMcp,
     navigateToAudit,
     navigateToInstruksi,
+    navigateToUsage,
     navigateToProviders,
     navigateToWorkspaces,
   } = useHashRoute();
@@ -207,6 +209,7 @@ export function App() {
   const showingMcp = routeView === "mcp";
   const showingAudit = routeView === "audit";
   const showingInstruksi = routeView === "instruksi";
+  const showingUsage = routeView === "usage";
 
   const waiting = sessions.reduce((total, session) => total + session.pendingPermissions, 0);
 
@@ -223,11 +226,13 @@ export function App() {
               ? "Audit log · Jejak"
               : showingInstruksi
                 ? "Instructions · Jejak"
-                : selected !== undefined
-                  ? `${selected.title} · Jejak`
-                  : "Jejak";
+                : showingUsage
+                  ? "Usage · Jejak"
+                  : selected !== undefined
+                    ? `${selected.title} · Jejak`
+                    : "Jejak";
     document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
-  }, [selected, showingProviders, showingMemory, showingWorkspaces, showingMcp, showingAudit, showingInstruksi, waiting]);
+  }, [selected, showingProviders, showingMemory, showingWorkspaces, showingMcp, showingAudit, showingInstruksi, showingUsage, waiting]);
 
   // Pindah halaman menutup laci sidebar (tampilan sempit).
   useEffect(() => {
@@ -395,6 +400,9 @@ export function App() {
         case "open-instruksi":
           navigateToInstruksi();
           return;
+        case "open-usage":
+          navigateToUsage();
+          return;
         case "open-memory":
           navigateToMemory();
           return;
@@ -423,7 +431,7 @@ export function App() {
           return;
       }
     },
-    [api, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, openGitPanel, openSecretsTab, togglePanel],
+    [api, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToUsage, openGitPanel, openSecretsTab, togglePanel],
   );
 
   const commands = useMemo(
@@ -568,6 +576,7 @@ export function App() {
     showingMcp ||
     showingAudit ||
     showingInstruksi ||
+    showingUsage ||
     selected !== undefined
       ? "jk-main"
       : "jk-main jk-main-home";
@@ -601,7 +610,7 @@ export function App() {
         info={info}
         sessions={sessions}
         selectedId={
-          showingProviders || showingMemory || showingWorkspaces || showingMcp || showingAudit || showingInstruksi
+          showingProviders || showingMemory || showingWorkspaces || showingMcp || showingAudit || showingInstruksi || showingUsage
             ? undefined
             : selectedId
         }
@@ -615,6 +624,7 @@ export function App() {
         mcpActive={showingMcp}
         auditActive={showingAudit}
         instruksiActive={showingInstruksi}
+        usageActive={showingUsage}
         memoryProposed={memoryProposed}
         onRename={onRenameSession}
         onArchive={onArchiveSession}
@@ -693,6 +703,13 @@ export function App() {
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
               <InstruksiPage api={api} sessions={sessions} defaultCwd={info?.cwd} />
+            </div>
+          </>
+        ) : showingUsage ? (
+          <>
+            <Topbar onMenu={openDrawer} />
+            <div class="jk-page">
+              <UsagePage api={api} sessions={sessions} />
             </div>
           </>
         ) : selected !== undefined ? (
