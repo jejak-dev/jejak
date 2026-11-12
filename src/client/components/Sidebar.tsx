@@ -29,6 +29,10 @@ export interface SidebarProps {
   notifyPrefs: NotifyPrefs;
   onNotifyPrefsChange: (prefs: NotifyPrefs) => void;
   onOpenPalette?: () => void;
+  /** True bila autentikasi aktif; tombol "Keluar" hanya tampil bila true. */
+  authRequired?: boolean;
+  /** Aksi keluar (hapus sesi di server). */
+  onLogout?: () => void;
 }
 
 function dotClass(session: SessionInfo): string {
@@ -73,6 +77,8 @@ export function Sidebar({
   notifyPrefs,
   onNotifyPrefsChange,
   onOpenPalette,
+  authRequired = false,
+  onLogout,
 }: SidebarProps) {
   const now = new Date();
   const [query, setQuery] = useState("");
@@ -637,6 +643,16 @@ export function Sidebar({
             </button>
             {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
           </div>
+        )}
+        {authRequired && onLogout !== undefined && (
+          <button
+            type="button"
+            class="jk-foot-link jk-foot-btn"
+            onClick={() => onLogout()}
+            aria-label="Keluar dari Jejak"
+          >
+            <span class="jk-foot-text">Keluar</span>
+          </button>
         )}
       </footer>
     </aside>

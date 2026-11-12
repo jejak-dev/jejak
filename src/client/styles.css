@@ -5841,3 +5841,74 @@ h2.jk-md-heading {
   align-items: center;
   gap: 10px;
 }
+
+/* Autentikasi opsional: layar login dan banner tanpa TLS. */
+
+.jk-app-login {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  background: var(--bg);
+}
+
+.jk-login {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 24px;
+}
+
+.jk-login-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(320px, 100%);
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.jk-login-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.jk-login-sub {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.jk-login-input {
+  font-size: 13px;
+}
+
+.jk-login-button {
+  width: 100%;
+}
+
+.jk-login-error {
+  margin: 0;
+}
+
+.jk-login-retry {
+  margin: 0;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.jk-auth-banner {
+  margin: 0;
+  padding: 7px 16px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--t1);
+  font-size: 12px;
+  line-height: 1.5;
+}

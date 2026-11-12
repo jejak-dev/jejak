@@ -1,4 +1,5 @@
 import type { AuditEntry, AuditSummary } from "../../server/audit/audit-store";
+import type { AuthStatus } from "./auth";
 import type {
   ChangeAction,
   CheckpointChange,
@@ -226,6 +227,8 @@ export class ApiError extends Error {
     message: string,
     public readonly status: number,
     public readonly details?: ApiErrorDetails,
+    /** Detik penundaan dari header `retry-after` (galat 429). */
+    public readonly retryAfterSec?: number,
   ) {
     super(message);
     this.name = "ApiError";
@@ -356,6 +359,12 @@ export type SandboxPatch = Partial<SandboxConfigItem>;
 
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
+  /** Status autentikasi server (apakah login diperlukan). */
+  getAuthStatus(): Promise<AuthStatus>;
+  /** Masuk dengan kata sandi; galat 401 melempar `ApiError`. */
+  login(password: string): Promise<{ ok: boolean }>;
+  /** Keluar: hapus cookie sesi. */
+  logout(): Promise<{ ok: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
   getSession(id: string): Promise<SessionInfo>;
   renameSession(id: string, title: string): Promise<SessionInfo>;
@@ -520,6 +529,8 @@ export interface ApiClient {
 export interface ApiClientOptions {
   baseUrl?: string;
   fetch?: typeof fetch;
+  /** Dipanggil saat server menjawab 401; klien kembali ke layar login. */
+  onUnauthorized?: () => void;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -528,6 +539,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function field(value: unknown, key: string): unknown {
   return isRecord(value) ? value[key] : undefined;
+}
+
+/** Baca header `retry-after` (detik) menjadi angka. */
+function parseRetryAfter(raw: string | null): number | undefined {
+  if (raw === null) return undefined;
+  const trimmed = raw.trim();
+  if (!/^\d+$/.test(trimmed)) return undefined;
+  const value = Number(trimmed);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function sessionFrom(payload: unknown): SessionInfo {
@@ -961,7 +981,12 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const baseUrl = options.baseUrl ?? "";
   const doFetch: typeof fetch = options.fetch ?? globalThis.fetch;
 
-  async function request(method: string, path: string, body?: unknown): Promise<unknown> {
+  async function request(
+    method: string,
+    path: string,
+    body?: unknown,
+    requestOptions: { skipUnauthorized?: boolean } = {},
+  ): Promise<unknown> {
     const init: RequestInit = { method };
     if (body !== undefined) {
       init.headers = { "content-type": "application/json" };
@@ -994,6 +1019,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     }
 
     if (!response.ok) {
+      if (response.status === 401 && requestOptions.skipUnauthorized !== true) {
+        try {
+          options.onUnauthorized?.();
+        } catch {
+          // Callback tidak boleh mengubah respons.
+        }
+      }
       const serverError = field(parsed, "error");
       const message =
         isJson && typeof serverError === "string" && serverError !== ""
@@ -1014,6 +1046,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         details.dirtyFiles === undefined && details.commitsAhead === undefined
           ? undefined
           : details,
+        parseRetryAfter(response.headers.get("retry-after")),
       );
     }
 
@@ -1032,6 +1065,29 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         cwd: string;
         mock: boolean;
       };
+    },
+
+    async getAuthStatus() {
+      const data = await request("GET", "/api/auth/status");
+      return {
+        required: field(data, "required") === true,
+        authenticated: field(data, "authenticated") === true,
+      } satisfies AuthStatus;
+    },
+
+    async login(password: string) {
+      const data = await request(
+        "POST",
+        "/api/auth/login",
+        { password },
+        { skipUnauthorized: true },
+      );
+      return { ok: field(data, "ok") === true };
+    },
+
+    async logout() {
+      const data = await request("POST", "/api/auth/logout", {});
+      return { ok: field(data, "ok") === true };
     },
 
     async listSessions() {

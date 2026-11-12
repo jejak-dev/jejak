@@ -4,6 +4,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { AuditPage } from "./components/AuditPage";
 import { InstruksiPage } from "./components/InstruksiPage";
+import { LoginScreen } from "./components/LoginScreen";
 import { MemoryPage } from "./components/MemoryPage";
 import { McpPage } from "./components/McpPage";
 import { Panel } from "./components/Panel";
@@ -25,7 +26,8 @@ import {
   useTimeline,
   useWorkspaces,
 } from "./hooks";
-import { createApiClient } from "./lib/api";
+import { createApiClient, ApiError } from "./lib/api";
+import { needsTlsWarning, type AuthStatus } from "./lib/auth";
 import { buildCommands, type CommandId } from "./lib/commands";
 import { contextUsage } from "./lib/context";
 import { groupSessions } from "./lib/format";
@@ -45,7 +47,83 @@ import { dirtyWarning } from "./lib/worktree";
 import { rewindableSeqs } from "./lib/rewind";
 
 export function App() {
-  const api = useMemo(() => createApiClient(), []);
+  // Respons 401 di tengah sesi mengembalikan ke layar login tanpa kehilangan draf.
+  const unauthorizedRef = useRef<() => void>(() => undefined);
+  const api = useMemo(
+    () => createApiClient({ onUnauthorized: () => unauthorizedRef.current() }),
+    [],
+  );
+  const [auth, setAuth] = useState<AuthStatus | undefined>(undefined);
+  const [loginError, setLoginError] = useState<string | undefined>(undefined);
+  const [retryAfterSec, setRetryAfterSec] = useState<number | undefined>(undefined);
+
+  const onUnauthorized = useCallback((): void => {
+    setAuth((current) =>
+      current === undefined || current.authenticated === false
+        ? current
+        : { ...current, authenticated: false },
+    );
+  }, []);
+
+  useEffect(() => {
+    unauthorizedRef.current = onUnauthorized;
+  }, [onUnauthorized]);
+
+  // Status autentikasi dicek saat aplikasi mulai.
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const status = await api.getAuthStatus();
+        if (!alive) return;
+        setAuth(status);
+      } catch {
+        if (alive) setAuth({ required: false, authenticated: true });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [api]);
+
+  const onLogin = useCallback(
+    async (password: string): Promise<void> => {
+      setLoginError(undefined);
+      setRetryAfterSec(undefined);
+      try {
+        await api.login(password);
+        setAuth((current) =>
+          current === undefined
+            ? { required: true, authenticated: true }
+            : { ...current, authenticated: true },
+        );
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 429 && error.retryAfterSec !== undefined) {
+          setRetryAfterSec(error.retryAfterSec);
+          setLoginError("Terlalu banyak percobaan. Tunggu sebentar.");
+          return;
+        }
+        setLoginError(
+          error instanceof Error && error.message !== "" ? error.message : "gagal masuk",
+        );
+      }
+    },
+    [api],
+  );
+
+  const onLogout = useCallback((): void => {
+    void (async () => {
+      try {
+        await api.logout();
+      } catch {
+        // Cookie mungkin sudah kedaluwarsa; layar login tetap ditampilkan.
+      }
+      setAuth((current) =>
+        current === undefined ? current : { ...current, authenticated: false },
+      );
+    })();
+  }, [api]);
+
   const {
     sessionId: selectedId,
     view: routeView,
@@ -494,6 +572,26 @@ export function App() {
       ? "jk-main"
       : "jk-main jk-main-home";
 
+  // Tanpa TLS di luar loopback, kata sandi dan cookie berjalan sebagai teks biasa.
+  const tlsWarning = useMemo(() => {
+    if (auth?.required !== true) return false;
+    if (typeof window === "undefined") return false;
+    return needsTlsWarning(window.location.protocol, window.location.hostname);
+  }, [auth]);
+
+  // Auth aktif tapi belum masuk: layar login penuh, draf tetap tersimpan di state.
+  if (auth !== undefined && auth.required && !auth.authenticated) {
+    return (
+      <div class="jk-app jk-app-login">
+        <LoginScreen
+          error={loginError}
+          retryAfterSec={retryAfterSec}
+          onLogin={onLogin}
+        />
+      </div>
+    );
+  }
+
   return (
     <div
       class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}`}
@@ -524,6 +622,8 @@ export function App() {
         notifyPrefs={notifyPrefs}
         onNotifyPrefsChange={onNotifyPrefsChange}
         onOpenPalette={openPalette}
+        authRequired={auth?.required === true}
+        onLogout={onLogout}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
       <PaneResizer
@@ -548,6 +648,11 @@ export function App() {
       />
 
       <main class={mainClass}>
+        {tlsWarning && (
+          <p class="jk-auth-banner" role="status">
+            Tanpa HTTPS: kata sandi dan cookie sesi dikirim sebagai teks biasa di jaringan.
+          </p>
+        )}
         {showingProviders ? (
           <>
             <Topbar onMenu={openDrawer} />
