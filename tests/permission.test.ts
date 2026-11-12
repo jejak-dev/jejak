@@ -297,6 +297,19 @@ describe("rute izin", () => {
   });
 });
 
+describe("mock-runner: [todo]", () => {
+  test("mengirim TodoWrite dengan tiga langkah lalu hasil", async () => {
+    const events = await collect(
+      createMockRunner({ delayMs: 0 }).run({ prompt: "isi [todo]", cwd: dir, provider: PROVIDER }),
+    );
+    const call = events.find((e) => e.type === "tool_call");
+    expect(call).toMatchObject({ name: "TodoWrite" });
+    const todos = (call as { input: { todos: unknown[] } }).input.todos;
+    expect(todos).toHaveLength(3);
+    expect(events.at(-1)?.type).toBe("result");
+  });
+});
+
 describe("mock-runner: [izin]", () => {
   async function run(prompt: string, decision: PermissionDecision) {
     let calls = 0;

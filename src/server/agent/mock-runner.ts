@@ -87,6 +87,27 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
       }
       let hasResult = false;
 
+      // Penanda [todo]: agent mengirim daftar langkah lewat TodoWrite (uji tab Todos).
+      if (input.prompt.includes("[todo]")) {
+        yield { type: "session", sessionId: "mock-session", model: "mock-model" };
+        yield {
+          type: "tool_call",
+          id: "todo-1",
+          name: "TodoWrite",
+          input: {
+            todos: [
+              { content: "Baca README", status: "completed", activeForm: "Membaca README" },
+              { content: "Tulis tes", status: "in_progress", activeForm: "Menulis tes" },
+              { content: "Rapikan dokumen", status: "pending", activeForm: "Merapikan dokumen" },
+            ],
+          },
+        };
+        yield { type: "tool_result", id: "todo-1", output: "Todos diperbarui.", isError: false };
+        yield { type: "text", text: "Daftar langkah dibuat." };
+        yield withAnchor({ type: "result", ok: true });
+        return;
+      }
+
       if (input.workspace !== undefined) {
         yield {
           type: "text",
