@@ -4,15 +4,18 @@ import { isMermaidLang } from "../lib/mermaid";
 import { CopyButton } from "./CopyButton";
 import { MermaidBlock } from "./MermaidBlock";
 
-function renderInlines(nodes: readonly MdInline[]): ComponentChild[] {
+/** Penanganan tautan: `true` berarti tautan sudah ditangani pemanggil. */
+export type LinkHandler = (href: string) => boolean;
+
+function renderInlines(nodes: readonly MdInline[], onLink?: LinkHandler): ComponentChild[] {
   return nodes.map((node, index): ComponentChild => {
     switch (node.type) {
       case "text":
         return node.text;
       case "strong":
-        return <strong key={index}>{renderInlines(node.children)}</strong>;
+        return <strong key={index}>{renderInlines(node.children, onLink)}</strong>;
       case "em":
-        return <em key={index}>{renderInlines(node.children)}</em>;
+        return <em key={index}>{renderInlines(node.children, onLink)}</em>;
       case "code":
         return (
           <code class="jk-md-code" key={index}>
@@ -20,11 +23,26 @@ function renderInlines(nodes: readonly MdInline[]): ComponentChild[] {
           </code>
         );
       case "link": {
-        const href = safeHref(node.href);
-        if (href === undefined) return renderInlines(node.children);
+        const href = safeHref(node.href, onLink !== undefined);
+        if (href === undefined) return renderInlines(node.children, onLink);
+        // Tautan berkode skema (http, https, mailto) tetap seperti biasa.
+        const external = /^[A-Za-z][A-Za-z0-9+.-]*:/.test(href);
+        if (onLink !== undefined && !external) {
+          return (
+            <a
+              key={index}
+              href={href}
+              onClick={(event) => {
+                if (onLink(href)) event.preventDefault();
+              }}
+            >
+              {renderInlines(node.children, onLink)}
+            </a>
+          );
+        }
         return (
           <a key={index} href={href} target="_blank" rel="noopener noreferrer">
-            {renderInlines(node.children)}
+            {renderInlines(node.children, onLink)}
           </a>
         );
       }
@@ -34,17 +52,17 @@ function renderInlines(nodes: readonly MdInline[]): ComponentChild[] {
   });
 }
 
-function renderBlocks(blocks: readonly MdBlock[]): ComponentChild[] {
-  return blocks.map((block, index) => renderBlock(block, index));
+function renderBlocks(blocks: readonly MdBlock[], onLink?: LinkHandler): ComponentChild[] {
+  return blocks.map((block, index) => renderBlock(block, index, onLink));
 }
 
-function renderBlock(block: MdBlock, index: number): ComponentChild {
+function renderBlock(block: MdBlock, index: number, onLink?: LinkHandler): ComponentChild {
   switch (block.type) {
     case "paragraph":
-      return <p key={index}>{renderInlines(block.children)}</p>;
+      return <p key={index}>{renderInlines(block.children, onLink)}</p>;
     case "heading": {
       const level = Math.min(Math.max(block.level, 1), 6);
-      const children = renderInlines(block.children);
+      const children = renderInlines(block.children, onLink);
       return h(`h${level}` as "h1", { key: index, class: "jk-md-heading" }, children);
     }
     case "code":
@@ -62,7 +80,7 @@ function renderBlock(block: MdBlock, index: number): ComponentChild {
       );
     case "list": {
       const items = block.items.map((item, itemIndex) => (
-        <li key={itemIndex}>{renderBlocks(item)}</li>
+        <li key={itemIndex}>{renderBlocks(item, onLink)}</li>
       ));
       return block.ordered ? (
         <ol key={index} start={block.start === 1 ? undefined : block.start}>
@@ -73,7 +91,7 @@ function renderBlock(block: MdBlock, index: number): ComponentChild {
       );
     }
     case "quote":
-      return <blockquote class="jk-md-quote" key={index}>{renderBlocks(block.children)}</blockquote>;
+      return <blockquote class="jk-md-quote" key={index}>{renderBlocks(block.children, onLink)}</blockquote>;
     case "rule":
       return <hr class="jk-md-rule" key={index} />;
     case "table":
@@ -84,7 +102,7 @@ function renderBlock(block: MdBlock, index: number): ComponentChild {
               <tr>
                 {block.header.map((cell, cellIndex) => (
                   <th key={cellIndex} style={alignStyle(block.aligns[cellIndex])}>
-                    {renderInlines(cell)}
+                    {renderInlines(cell, onLink)}
                   </th>
                 ))}
               </tr>
@@ -94,7 +112,7 @@ function renderBlock(block: MdBlock, index: number): ComponentChild {
                 <tr key={rowIndex}>
                   {row.map((cell, cellIndex) => (
                     <td key={cellIndex} style={alignStyle(block.aligns[cellIndex])}>
-                      {renderInlines(cell)}
+                      {renderInlines(cell, onLink)}
                     </td>
                   ))}
                 </tr>
@@ -112,11 +130,20 @@ function alignStyle(
   return align === null || align === undefined ? undefined : { textAlign: align };
 }
 
-export function Markdown({ text }: { text: string }): VNode {
-  const blocks = parseMarkdown(text);
+export interface MarkdownProps {
+  text: string;
+  /**
+   * Penanganan tautan relatif (tanpa skema). Dipanggil saat tautan diklik;
+   * `true` berarti tautan sudah ditangani dan navigasi bawaan dibatalkan.
+   */
+  onLink?: LinkHandler;
+}
+
+export function Markdown({ text, onLink }: MarkdownProps): VNode {
+  const blocks = parseMarkdown(text, { relativeLinks: onLink !== undefined });
   return (
     <div class="jk-md">
-      {renderBlocks(blocks)}
+      {renderBlocks(blocks, onLink)}
       {text !== "" && (
         <div class="jk-md-foot">
           <CopyButton text={text} label="Salin markdown" />

@@ -31,22 +31,32 @@ const MAX_EMPHASIS_SPAN = 1_000;
 const MAX_AUTOLINK_SPAN = 2_048;
 const MAX_LINK_URL_SPAN = 2_048;
 
-export function parseMarkdown(source: string): MdBlock[] {
+export interface MarkdownOptions {
+  /** Izinkan tautan relatif (tanpa skema) tetap dirender sebagai tautan. */
+  relativeLinks?: boolean;
+}
+
+export function parseMarkdown(source: string, options?: MarkdownOptions): MdBlock[] {
   if (source.length === 0) return [];
   // Teks sangat panjang: jangan diparse, perlakukan sebagai pre polos.
   if (source.length > MAX_SOURCE_CHARS) {
     return [{ type: "code", text: source }];
   }
   const normalized = source.replace(/\r\n?/g, "\n");
-  return parseBlocks(normalized.split("\n"), 0);
+  return parseBlocks(normalized.split("\n"), 0, options?.relativeLinks === true);
 }
 
-export function safeHref(url: string): string | undefined {
+export function safeHref(url: string, allowRelative = false): string | undefined {
   const trimmed = url.trim();
   if (trimmed === "") return undefined;
   if (/[\u0000-\u001f\u007f]/.test(trimmed)) return undefined;
   const scheme = /^([A-Za-z][A-Za-z0-9+.-]*):/.exec(trimmed);
-  if (scheme === null) return undefined;
+  if (scheme === null) {
+    if (!allowRelative) return undefined;
+    // Tautan relatif: "//" (protocol-relative) dan backslash ditolak.
+    if (trimmed.startsWith("//") || trimmed.startsWith("\\")) return undefined;
+    return trimmed;
+  }
   const name = scheme[1]!.toLowerCase();
   if (name === "http" || name === "https" || name === "mailto") return trimmed;
   return undefined;
@@ -198,7 +208,7 @@ function startsBlock(lines: string[], index: number): boolean {
   return false;
 }
 
-function parseBlocks(lines: string[], depth: number): MdBlock[] {
+function parseBlocks(lines: string[], depth: number, relative: boolean): MdBlock[] {
   const blocks: MdBlock[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -219,7 +229,7 @@ function parseBlocks(lines: string[], depth: number): MdBlock[] {
       blocks.push({
         type: "heading",
         level: heading.level,
-        children: parseInline(heading.content, 0, false),
+        children: parseInline(heading.content, 0, false, relative),
       });
       i += 1;
       continue;
@@ -235,23 +245,23 @@ function parseBlocks(lines: string[], depth: number): MdBlock[] {
       const header = splitTableRow(line);
       const delimiter = splitTableRow(lines[i + 1]!);
       if (header.length === delimiter.length && isDelimiterRow(lines[i + 1]!)) {
-        i = parseTable(lines, i, header, delimiter, blocks);
+        i = parseTable(lines, i, header, delimiter, blocks, relative);
         continue;
       }
     }
 
     if (isQuoteLine(line)) {
-      i = parseQuote(lines, i, depth, blocks);
+      i = parseQuote(lines, i, depth, blocks, relative);
       continue;
     }
 
     const marker = matchListMarker(line);
     if (marker !== undefined) {
-      i = parseList(lines, i, marker, depth, blocks);
+      i = parseList(lines, i, marker, depth, blocks, relative);
       continue;
     }
 
-    i = parseParagraph(lines, i, blocks);
+    i = parseParagraph(lines, i, blocks, relative);
   }
   return blocks;
 }
@@ -284,6 +294,7 @@ function parseQuote(
   start: number,
   depth: number,
   blocks: MdBlock[],
+  relative: boolean,
 ): number {
   const inner: string[] = [];
   let i = start;
@@ -310,7 +321,7 @@ function parseQuote(
       children: [{ type: "text", text: joined.replace(/^ {0,3}> ?/gm, "") }],
     });
   } else {
-    blocks.push({ type: "quote", children: parseBlocks(inner, depth + 1) });
+    blocks.push({ type: "quote", children: parseBlocks(inner, depth + 1, relative) });
   }
   return i;
 }
@@ -321,6 +332,7 @@ function parseList(
   marker: ListMarker,
   depth: number,
   blocks: MdBlock[],
+  relative: boolean,
 ): number {
   if (depth >= MAX_NESTING) {
     // Terlalu dalam: semua baris daftar menjadi satu paragraf teks.
@@ -399,7 +411,7 @@ function parseList(
   }
   flush();
 
-  const items = itemLines.map((item) => parseBlocks(item, depth + 1));
+  const items = itemLines.map((item) => parseBlocks(item, depth + 1, relative));
   blocks.push(
     marker.ordered
       ? { type: "list", ordered: true, start: marker.start, items }
@@ -414,6 +426,7 @@ function parseTable(
   headerCells: string[],
   delimiterCells: string[],
   blocks: MdBlock[],
+  relative: boolean,
 ): number {
   const aligns = delimiterCells.map(alignmentOf);
   const rows: MdInline[][][] = [];
@@ -424,14 +437,14 @@ function parseTable(
     const cells = splitTableRow(line);
     const row: MdInline[][] = [];
     for (let column = 0; column < headerCells.length; column += 1) {
-      row.push(parseInline(cells[column] ?? "", 0, false));
+      row.push(parseInline(cells[column] ?? "", 0, false, relative));
     }
     rows.push(row);
     i += 1;
   }
   const table: MdBlock = {
     type: "table",
-    header: headerCells.map((cell) => parseInline(cell, 0, false)),
+    header: headerCells.map((cell) => parseInline(cell, 0, false, relative)),
     aligns,
     rows,
   };
@@ -439,7 +452,12 @@ function parseTable(
   return i;
 }
 
-function parseParagraph(lines: string[], start: number, blocks: MdBlock[]): number {
+function parseParagraph(
+  lines: string[],
+  start: number,
+  blocks: MdBlock[],
+  relative: boolean,
+): number {
   const parts: string[] = [];
   let hardBreak = false;
   let i = start;
@@ -465,7 +483,7 @@ function parseParagraph(lines: string[], start: number, blocks: MdBlock[]): numb
   }
   blocks.push({
     type: "paragraph",
-    children: parseInline(parts.join(""), 0, false),
+    children: parseInline(parts.join(""), 0, false, relative),
   });
   return i;
 }
@@ -551,7 +569,12 @@ function trimUrl(url: string): string {
   return result;
 }
 
-function parseInline(source: string, depth: number, insideLink: boolean): MdInline[] {
+function parseInline(
+  source: string,
+  depth: number,
+  insideLink: boolean,
+  relative: boolean,
+): MdInline[] {
   if (source === "") return [];
   if (depth > MAX_INLINE_DEPTH) return [{ type: "text", text: source }];
 
@@ -631,8 +654,8 @@ function parseInline(source: string, depth: number, insideLink: boolean): MdInli
         flush();
         out.push(
           double
-            ? { type: "strong", children: parseInline(emphasis.content, depth + 1, insideLink) }
-            : { type: "em", children: parseInline(emphasis.content, depth + 1, insideLink) },
+            ? { type: "strong", children: parseInline(emphasis.content, depth + 1, insideLink, relative) }
+            : { type: "em", children: parseInline(emphasis.content, depth + 1, insideLink, relative) },
         );
         i = emphasis.end;
         continue;
@@ -672,12 +695,12 @@ function parseInline(source: string, depth: number, insideLink: boolean): MdInli
         continue;
       }
       const label = source.slice(i + 1, open);
-      const href = safeHref(source.slice(open + 2, close));
+      const href = safeHref(source.slice(open + 2, close), relative);
       flush();
       if (href === undefined) {
         out.push({ type: "text", text: source.slice(i, close + 1) });
       } else {
-        out.push({ type: "link", href, children: parseInline(label, depth + 1, true) });
+        out.push({ type: "link", href, children: parseInline(label, depth + 1, true, relative) });
       }
       i = close + 1;
       continue;
