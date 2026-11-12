@@ -56,9 +56,11 @@ import { runnerRoutes } from "./routes/runner";
 import { RunnerService } from "./runner/runner-service";
 import { FileRunnerStore, runnerPath as runnerStorePath } from "./runner/runner-store";
 import { indexerRoutes } from "./routes/indexer";
+import { wikiRoutes } from "./routes/wiki";
 import { defaultGitProviderStore, type GitProviderStore } from "./gitprovider/provider-store";
 import type { AdapterDeps } from "./gitprovider/adapters";
 import { RepoIndexer, indexRoot } from "./indexer/repo-indexer";
+import { WikiService, defaultResolveRepo, wikiRoot } from "./wiki/wiki-service";
 import { questionRoutes } from "./routes/questions";
 import { QuestionService } from "./questions/question-service";
 import { defaultQuestionStore, type QuestionStore } from "./questions/question-store";
@@ -144,6 +146,10 @@ export interface CreateAppOptions {
   /** Penyedia git dan indexer repo; tanpa keduanya rute 503 dan tool index_* tidak ada. */
   gitProviders?: GitProviderStore;
   indexer?: RepoIndexer;
+  /** Layanan wiki proyek; tanpa ini rute wiki menjawab 503. */
+  wikiService?: WikiService;
+  /** Folder cache wiki; default `<jejakHome(env)>/cache/wikis`. */
+  wikiRoot?: string;
   /** Dependensi adapter git (mis. fetch palsu untuk tes). */
   gitAdapterDeps?: AdapterDeps;
   /** Terminal PTY (akses shell penuh, tanpa sandbox); tanpa manajer rute 503. */
@@ -303,6 +309,17 @@ export function createApp(options: CreateAppOptions = {}) {
     (sessionId) => manager.hasActiveGoal(sessionId),
   );
 
+  // Folder yang boleh dipakai: folder sesi aktif (dan worktree miliknya).
+  const sessionCwds = (): string[] => {
+    const paths: string[] = [];
+    for (const session of manager.list()) {
+      if (session.archivedAt !== undefined) continue;
+      paths.push(session.cwd);
+      if (session.worktree?.path !== undefined) paths.push(session.worktree.path);
+    }
+    return paths;
+  };
+
   // Peluncur perintah: folder yang boleh dipakai adalah folder sesi aktif
   // (dan worktree miliknya); perintah hanya dijalankan lewat terminal.
   const runnerService =
@@ -310,17 +327,20 @@ export function createApp(options: CreateAppOptions = {}) {
     new RunnerService({
       store: new FileRunnerStore(options.runnerPath ?? runnerStorePath(env)),
       terminal: options.terminal,
-      allowedCwds: () => {
-        const paths: string[] = [];
-        for (const session of manager.list()) {
-          if (session.archivedAt !== undefined) continue;
-          paths.push(session.cwd);
-          if (session.worktree?.path !== undefined) paths.push(session.worktree.path);
-        }
-        return paths;
-      },
+      allowedCwds: sessionCwds,
       audit: options.audit,
     });
+
+  // Wiki proyek: hanya aktif bila ada penyedia git.
+  const wikiService =
+    options.wikiService ??
+    (options.gitProviders === undefined
+      ? undefined
+      : new WikiService({
+          root: options.wikiRoot ?? wikiRoot(env),
+          providers: options.gitProviders,
+          resolveRepo: defaultResolveRepo(options.gitProviders, options.gitAdapterDeps),
+        }));
 
   // Autentikasi opsional: penjaga dipasang sesudah penjaga lokal (Host/Origin),
   // rute auth dipasang lebih dulu agar status dan login terjangkau.
@@ -403,6 +423,14 @@ export function createApp(options: CreateAppOptions = {}) {
         indexer: options.indexer,
         audit: options.audit,
         adapterDeps: options.gitAdapterDeps,
+      }),
+    )
+    .use(
+      wikiRoutes({
+        wiki: wikiService,
+        providers: options.gitProviders,
+        audit: options.audit,
+        allowedCwds: sessionCwds,
       }),
     )
     .use(workspaceRoutes({ service: options.workspaces, audit: options.audit }))
