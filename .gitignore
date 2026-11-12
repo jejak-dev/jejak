@@ -10,3 +10,6 @@ dist/
 *.sqlite-journal
 coverage/
 *.tgz
+
+# Dokumen internal (desain, roadmap): tidak ikut repo
+docs/
