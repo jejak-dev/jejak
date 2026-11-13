@@ -302,6 +302,11 @@ export async function resolveActiveSdkEntry(root: string): Promise<string | null
 
 let installLockHeld = false;
 
+/** True bila pemasangan SDK sedang berjalan di proses ini. */
+export function isInstallBusy(): boolean {
+  return installLockHeld;
+}
+
 /**
  * Kunci eksklusif dalam proses untuk pemasangan SDK.
  *

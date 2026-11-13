@@ -66,6 +66,7 @@ import { QuestionService } from "./questions/question-service";
 import { defaultQuestionStore, type QuestionStore } from "./questions/question-store";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
+import { sdkRoutes } from "./routes/sdk";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import {
   SessionManager,
@@ -162,6 +163,8 @@ export interface CreateAppOptions {
   home?: string;
   /** Host yang diizinkan pada penjaga Host/Origin; default hanya loopback. */
   allowedHosts?: string[];
+  /** Pengaturan SDK terpasang; `root` menimpa folder penyimpanan bawaan. */
+  sdk?: { root?: string };
   /** Autentikasi opsional; bila diisi, guard dan rute auth dipasang. */
   auth?: AuthOptions;
 }
@@ -382,6 +385,14 @@ export function createApp(options: CreateAppOptions = {}) {
     )
     .use(authPlugins)
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch, audit: options.audit }))
+    .use(
+      sdkRoutes({
+        ...(options.sdk?.root === undefined ? {} : { root: options.sdk.root }),
+        env: options.env,
+        fetch: options.fetch,
+        audit: options.audit,
+      }),
+    )
     .use(sessionRoutes({ manager, workspaces: workspaceResolver, audit: options.audit }))
     .use(goalRoutes({ manager, audit: options.audit }))
     .use(worktreeRoutes({ manager, service: worktrees, audit: options.audit }))
