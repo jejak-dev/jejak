@@ -237,6 +237,8 @@ export function sdkRoutes(options: SdkRoutesOptions = {}): Elysia {
             latest: packument.latest,
             candidate: picked.version,
             ...(picked.note === undefined ? {} : { note: picked.note }),
+            // Perkiraan ukuran terpasang; UI memakai ini sebelum persetujuan.
+            ...(picked.unpackedSize === undefined ? {} : { unpackedSize: picked.unpackedSize }),
             installedVersion,
             updateAvailable:
               installedVersion !== null && installedVersion !== picked.version,

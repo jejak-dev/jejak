@@ -191,6 +191,7 @@ describe("POST /api/sdk/check", () => {
     expect(body.candidate).toBe("0.3.2");
     expect(body.installedVersion).toBeNull();
     expect(body.updateAvailable).toBe(false);
+    expect(body.unpackedSize).toBe(1234);
 
     const status = await isi(await get(app, "/api/sdk"));
     const lastCheck = status.lastCheck as { latest: string; checkedAt: string };

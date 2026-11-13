@@ -409,6 +409,39 @@ export interface SandboxState {
 
 export type SandboxPatch = Partial<SandboxConfigItem>;
 
+/** SDK yang terpasang di folder JEJAK_HOME. */
+export interface SdkInstalled {
+  version: string;
+  installedAt: string;
+}
+
+/** Status SDK di server; `busy` true saat pemasangan sedang berjalan. */
+export interface SdkStatus {
+  installed: SdkInstalled | null;
+  previous: string | null;
+  supportedRange: string;
+  lastCheck: { latest: string | null; checkedAt: string; note?: string } | null;
+  busy: boolean;
+}
+
+/** Hasil pemeriksaan versi di registry npm. */
+export interface SdkCheckResult {
+  latest: string | null;
+  /** Versi yang dipasang bila pengguna menyetujui. */
+  candidate: string;
+  note?: string;
+  installedVersion: string | null;
+  updateAvailable: boolean;
+  /** Ukuran isi paket setelah diekstrak, bila registry menyodorkannya. */
+  unpackedSize?: number;
+}
+
+/** Hasil pemasangan atau pengembalian versi; `installed` null bila tidak ada. */
+export interface SdkInstallResult {
+  installed: SdkInstalled | null;
+  note?: string;
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   /** Status autentikasi server (apakah login diperlukan). */
@@ -579,6 +612,14 @@ export interface ApiClient {
   getBudgetStatus(sessionId?: string): Promise<BudgetStatusResult>;
   getSandbox(): Promise<SandboxState>;
   putSandbox(patch: SandboxPatch): Promise<SandboxConfigItem>;
+  /** Status SDK yang dipasang pengguna. */
+  getSdk(): Promise<SdkStatus>;
+  /** Periksa versi terbaru di registry npm; tidak memasang apa pun. */
+  checkSdk(): Promise<SdkCheckResult>;
+  /** Pasang SDK; `version` dikirim persis seperti ditampilkan ke pengguna. */
+  installSdk(version?: string): Promise<SdkInstallResult>;
+  /** Kembalikan ke versi sebelumnya. */
+  rollbackSdk(): Promise<SdkInstallResult>;
   getClaudeConfig(): Promise<ClaudeConfigItem>;
   putClaudeConfig(patch: ClaudeConfigPatch): Promise<ClaudeConfigItem>;
   getInstructions(scope: ClaudeScope, cwd?: string): Promise<ClaudeInstructions>;
@@ -901,6 +942,57 @@ function sandboxStateFrom(payload: unknown): SandboxState {
       detail: typeof available.detail === "string" ? available.detail : "",
     },
   };
+}
+
+function sdkInstalledFrom(payload: unknown): SdkInstalled | null {
+  if (!isRecord(payload)) return null;
+  const version = typeof payload.version === "string" ? payload.version : "";
+  if (version === "") return null;
+  return {
+    version,
+    installedAt: typeof payload.installedAt === "string" ? payload.installedAt : "",
+  };
+}
+
+function sdkStatusFrom(payload: unknown): SdkStatus {
+  if (!isRecord(payload)) throw invalidResponse();
+  const check = isRecord(payload.lastCheck) ? payload.lastCheck : null;
+  return {
+    installed: sdkInstalledFrom(payload.installed),
+    previous: typeof payload.previous === "string" ? payload.previous : null,
+    supportedRange: typeof payload.supportedRange === "string" ? payload.supportedRange : "",
+    lastCheck:
+      check === null
+        ? null
+        : {
+            latest: typeof check.latest === "string" ? check.latest : null,
+            checkedAt: typeof check.checkedAt === "string" ? check.checkedAt : "",
+            ...(typeof check.note === "string" ? { note: check.note } : {}),
+          },
+    busy: payload.busy === true,
+  };
+}
+
+function sdkCheckFrom(payload: unknown): SdkCheckResult {
+  if (!isRecord(payload)) throw invalidResponse();
+  const result: SdkCheckResult = {
+    latest: typeof payload.latest === "string" ? payload.latest : null,
+    candidate: typeof payload.candidate === "string" ? payload.candidate : "",
+    installedVersion:
+      typeof payload.installedVersion === "string" ? payload.installedVersion : null,
+    updateAvailable: payload.updateAvailable === true,
+  };
+  if (typeof payload.note === "string") result.note = payload.note;
+  const size = finiteOrUndefined(payload.unpackedSize);
+  if (size !== undefined) result.unpackedSize = size;
+  return result;
+}
+
+function sdkInstallFrom(payload: unknown): SdkInstallResult {
+  if (!isRecord(payload)) throw invalidResponse();
+  const result: SdkInstallResult = { installed: sdkInstalledFrom(payload.installed) };
+  if (typeof payload.note === "string") result.note = payload.note;
+  return result;
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {  if (params === undefined) return "";
@@ -2058,6 +2150,24 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       if (patch.allowLocalBinding !== undefined) body.allowLocalBinding = patch.allowLocalBinding;
       const data = await request("PUT", "/api/sandbox", body);
       return sandboxConfigFrom(field(data, "config"));
+    },
+
+    async getSdk() {
+      return sdkStatusFrom(await request("GET", "/api/sdk"));
+    },
+
+    async checkSdk() {
+      return sdkCheckFrom(await request("POST", "/api/sdk/check", {}));
+    },
+
+    async installSdk(version) {
+      // Penjaga server mewajibkan content-type JSON di setiap POST, jadi body tidak boleh kosong.
+      const body = version === undefined ? {} : { version };
+      return sdkInstallFrom(await request("POST", "/api/sdk/install", body));
+    },
+
+    async rollbackSdk() {
+      return sdkInstallFrom(await request("POST", "/api/sdk/rollback", {}));
     },
 
     async getClaudeConfig() {
