@@ -415,6 +415,19 @@ export interface SdkInstalled {
   installedAt: string;
 }
 
+/** Sumber CLI `claude` yang dipakai Jejak. */
+export type SdkClaudeSource = "env" | "setting" | "path" | "common";
+
+/** Status CLI `claude` milik pengguna di server. */
+export interface SdkClaude {
+  found: boolean;
+  path: string | null;
+  version: string | null;
+  source: SdkClaudeSource | null;
+  /** Jalur yang tersimpan di pengaturan Jejak; null bila belum diatur. */
+  configuredPath: string | null;
+}
+
 /** Status SDK di server; `busy` true saat pemasangan sedang berjalan. */
 export interface SdkStatus {
   installed: SdkInstalled | null;
@@ -422,6 +435,7 @@ export interface SdkStatus {
   supportedRange: string;
   lastCheck: { latest: string | null; checkedAt: string; note?: string } | null;
   busy: boolean;
+  claude: SdkClaude;
 }
 
 /** Hasil pemeriksaan versi di registry npm. */
@@ -620,6 +634,8 @@ export interface ApiClient {
   installSdk(version?: string): Promise<SdkInstallResult>;
   /** Kembalikan ke versi sebelumnya. */
   rollbackSdk(): Promise<SdkInstallResult>;
+  /** Simpan atau hapus jalur CLI `claude` milik pengguna. */
+  setClaudePath(path: string | null): Promise<SdkClaude>;
   getClaudeConfig(): Promise<ClaudeConfigItem>;
   putClaudeConfig(patch: ClaudeConfigPatch): Promise<ClaudeConfigItem>;
   getInstructions(scope: ClaudeScope, cwd?: string): Promise<ClaudeInstructions>;
@@ -954,6 +970,26 @@ function sdkInstalledFrom(payload: unknown): SdkInstalled | null {
   };
 }
 
+/** Bentuk aman untuk status CLI `claude`; sumber di luar daftar diabaikan. */
+function sdkClaudeFrom(payload: unknown): SdkClaude {
+  if (!isRecord(payload)) {
+    return { found: false, path: null, version: null, source: null, configuredPath: null };
+  }
+  const source = payload.source;
+  const known: SdkClaudeSource[] = ["env", "setting", "path", "common"];
+  return {
+    found: payload.found === true,
+    path: typeof payload.path === "string" ? payload.path : null,
+    version: typeof payload.version === "string" ? payload.version : null,
+    source:
+      typeof source === "string" && (known as string[]).includes(source)
+        ? (source as SdkClaudeSource)
+        : null,
+    configuredPath:
+      typeof payload.configuredPath === "string" ? payload.configuredPath : null,
+  };
+}
+
 function sdkStatusFrom(payload: unknown): SdkStatus {
   if (!isRecord(payload)) throw invalidResponse();
   const check = isRecord(payload.lastCheck) ? payload.lastCheck : null;
@@ -970,6 +1006,7 @@ function sdkStatusFrom(payload: unknown): SdkStatus {
             ...(typeof check.note === "string" ? { note: check.note } : {}),
           },
     busy: payload.busy === true,
+    claude: sdkClaudeFrom(payload.claude),
   };
 }
 
@@ -2168,6 +2205,11 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async rollbackSdk() {
       return sdkInstallFrom(await request("POST", "/api/sdk/rollback", {}));
+    },
+
+    async setClaudePath(path) {
+      // Penjaga server mewajibkan content-type JSON; body selalu berisi `path`.
+      return sdkClaudeFrom(await request("POST", "/api/sdk/claude-path", { path }));
     },
 
     async getClaudeConfig() {

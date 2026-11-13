@@ -1,4 +1,4 @@
-import { ApiError, type SdkCheckResult, type SdkStatus } from "./api";
+import { ApiError, type SdkCheckResult, type SdkClaude, type SdkClaudeSource, type SdkStatus } from "./api";
 import { formatSize as formatBytes } from "./files";
 
 /** Nama paket SDK; sama dengan yang dipakai server. */
@@ -77,6 +77,53 @@ export function sdkInstallIntent(
   if (candidate === undefined || candidate.candidate === "") return { kind: "tunggu" };
   if (!approved) return { kind: "tunggu" };
   return { kind: "pasang", version: candidate.candidate };
+}
+
+/** Label sumber CLI `claude` dalam bahasa Indonesia. */
+export function claudeSourceLabel(source: SdkClaudeSource): string {
+  if (source === "env") return "variabel JEJAK_CLAUDE_PATH";
+  if (source === "setting") return "pengaturan Jejak";
+  if (source === "path") return "PATH sistem";
+  return "lokasi umum";
+}
+
+/** Status CLI `claude` dalam satu baris. */
+export function claudeStatusLine(claude: SdkClaude): string {
+  if (!claude.found) return "claude tidak ditemukan";
+  return `claude ditemukan: ${claude.version ?? "versi tidak diketahui"}`;
+}
+
+/** Fakta CLI `claude`: jalur dan sumbernya. */
+export function claudeStatusFacts(claude: SdkClaude): string[] {
+  const facts: string[] = [];
+  if (claude.path !== null && claude.path !== "") {
+    facts.push(`Jalur: ${claude.path}`);
+  }
+  if (claude.source !== null) {
+    facts.push(`Sumber: ${claudeSourceLabel(claude.source)}`);
+  }
+  return facts;
+}
+
+/** Petunjuk singkat saat CLI `claude` belum ditemukan. */
+export const CLAUDE_MISSING_HINT =
+  "Pasang Claude Code resmi dari terminal, atau isi jalur CLI di bawah bila sudah terpasang di tempat lain.";
+
+/** Pesan ramah untuk galat pengaturan jalur CLI. */
+export function describeClaudeError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 400 && error.message !== "") return error.message;
+    if (error.status === 404 || error.status === 409 || error.status === 502) {
+      return error.message === ""
+        ? "Permintaan ditolak server."
+        : error.message;
+    }
+    return error.message === ""
+      ? "Terjadi kesalahan saat menangani pengaturan claude."
+      : error.message;
+  }
+  if (error instanceof Error && error.message !== "") return error.message;
+  return "Terjadi kesalahan saat menangani pengaturan claude.";
 }
 
 /** Pesan ramah untuk galat SDK; status HTTP dipetakan ke penjelasan. */

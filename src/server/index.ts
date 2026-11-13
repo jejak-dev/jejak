@@ -67,6 +67,7 @@ import { defaultQuestionStore, type QuestionStore } from "./questions/question-s
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
 import { sdkRoutes } from "./routes/sdk";
+import type { LocateOptions } from "./sdk/claude-locator";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import {
   SessionManager,
@@ -164,7 +165,7 @@ export interface CreateAppOptions {
   /** Host yang diizinkan pada penjaga Host/Origin; default hanya loopback. */
   allowedHosts?: string[];
   /** Pengaturan SDK terpasang; `root` menimpa folder penyimpanan bawaan. */
-  sdk?: { root?: string };
+  sdk?: { root?: string; locate?: LocateOptions };
   /** Autentikasi opsional; bila diisi, guard dan rute auth dipasang. */
   auth?: AuthOptions;
 }
@@ -388,6 +389,7 @@ export function createApp(options: CreateAppOptions = {}) {
     .use(
       sdkRoutes({
         ...(options.sdk?.root === undefined ? {} : { root: options.sdk.root }),
+        ...(options.sdk?.locate === undefined ? {} : { locate: options.sdk.locate }),
         env: options.env,
         fetch: options.fetch,
         audit: options.audit,

@@ -1,18 +1,34 @@
 import { describe, expect, test } from "bun:test";
-import { ApiError, type SdkCheckResult, type SdkStatus } from "../src/client/lib/api";
+import { ApiError, type SdkCheckResult, type SdkClaude, type SdkStatus } from "../src/client/lib/api";
 import {
+  CLAUDE_MISSING_HINT,
   SDK_CONSENT_TEXT,
   SDK_PACKAGE_NAME,
   SDK_REGISTRY_HOST,
   SDK_TERMS_URL,
   canRollback,
+  claudeSourceLabel,
+  claudeStatusFacts,
+  claudeStatusLine,
   confirmationFacts,
+  describeClaudeError,
   describeSdkError,
   formatSize,
   sdkInstallIntent,
   sdkStatusFacts,
   sdkStatusLine,
 } from "../src/client/lib/sdk";
+
+function claude(overrides: Partial<SdkClaude> = {}): SdkClaude {
+  return {
+    found: false,
+    path: null,
+    version: null,
+    source: null,
+    configuredPath: null,
+    ...overrides,
+  };
+}
 
 function status(overrides: Partial<SdkStatus> = {}): SdkStatus {
   return {
@@ -21,6 +37,7 @@ function status(overrides: Partial<SdkStatus> = {}): SdkStatus {
     supportedRange: ">=0.3.0 <1",
     lastCheck: null,
     busy: false,
+    claude: claude(),
     ...overrides,
   };
 }
@@ -115,6 +132,63 @@ describe("sdkInstallIntent", () => {
   test("setelah persetujuan memasang versi kandidat persis", () => {
     const intent = sdkInstallIntent(kandidat({ candidate: "0.3.322" }), true);
     expect(intent).toEqual({ kind: "pasang", version: "0.3.322" });
+  });
+});
+
+describe("claudeStatusLine", () => {
+  test("menyebut versi yang ditemukan", () => {
+    expect(
+      claudeStatusLine(
+        claude({ found: true, path: "/usr/local/bin/claude", version: "2.1.0", source: "path" }),
+      ),
+    ).toBe("claude ditemukan: 2.1.0");
+  });
+
+  test("bilang tidak ditemukan", () => {
+    expect(claudeStatusLine(claude())).toBe("claude tidak ditemukan");
+  });
+});
+
+describe("claudeStatusFacts", () => {
+  test("menyebut jalur dan sumbernya", () => {
+    const facts = claudeStatusFacts(
+      claude({ found: true, path: "/usr/local/bin/claude", version: "2.1.0", source: "setting" }),
+    );
+    expect(facts).toContain("Jalur: /usr/local/bin/claude");
+    expect(facts).toContain("Sumber: pengaturan Jejak");
+  });
+
+  test("tanpa lokasi tidak ada fakta", () => {
+    expect(claudeStatusFacts(claude())).toEqual([]);
+  });
+});
+
+describe("claudeSourceLabel", () => {
+  test("setiap sumber punya label Indonesia", () => {
+    expect(claudeSourceLabel("env")).toBe("variabel JEJAK_CLAUDE_PATH");
+    expect(claudeSourceLabel("setting")).toBe("pengaturan Jejak");
+    expect(claudeSourceLabel("path")).toBe("PATH sistem");
+    expect(claudeSourceLabel("common")).toBe("lokasi umum");
+  });
+});
+
+describe("describeClaudeError", () => {
+  test("400 meneruskan pesan server", () => {
+    expect(describeClaudeError(new ApiError("Jalur harus absolut.", 400))).toBe(
+      "Jalur harus absolut.",
+    );
+  });
+
+  test("galat lain memakai pesan galat atau kalimat bawaan", () => {
+    expect(describeClaudeError(new Error("rusak"))).toBe("rusak");
+    expect(describeClaudeError(undefined)).toContain("kesalahan");
+  });
+});
+
+describe("petunjuk CLI claude", () => {
+  test("menyebut pemasangan resmi dan isi jalur manual", () => {
+    expect(CLAUDE_MISSING_HINT).toContain("Claude Code");
+    expect(CLAUDE_MISSING_HINT).toContain("jalur");
   });
 });
 

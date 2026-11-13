@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import { type ApiClient, type SdkCheckResult, type SdkStatus } from "../lib/api";
+import { type ApiClient, type SdkCheckResult, type SdkClaude, type SdkStatus } from "../lib/api";
 import {
+  CLAUDE_MISSING_HINT,
   SDK_CONSENT_TEXT,
   SDK_TERMS_URL,
   canRollback,
+  claudeStatusFacts,
+  claudeStatusLine,
   confirmationFacts,
+  describeClaudeError,
   describeSdkError,
   sdkInstallIntent,
   sdkStatusFacts,
@@ -31,10 +35,16 @@ export function SdkSettings({ api }: SdkSettingsProps) {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [message, setMessage] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  const [claudePath, setClaudePath] = useState("");
+  const [savingClaude, setSavingClaude] = useState(false);
+  const [claudeMessage, setClaudeMessage] = useState<string | undefined>(undefined);
+  const [claudeError, setClaudeError] = useState<string | undefined>(undefined);
 
   const requestRef = useRef(0);
   const installButtonRef = useRef<HTMLButtonElement>(null);
   const rollbackButtonRef = useRef<HTMLButtonElement>(null);
+  // Jalur yang terakhir datang dari server; dipakai agar ketikan pengguna tak tertimpa.
+  const configuredRef = useRef<string | undefined>(undefined);
 
   const load = useCallback(
     async (silent = false): Promise<void> => {
@@ -46,6 +56,11 @@ export function SdkSettings({ api }: SdkSettingsProps) {
         const next = await api.getSdk();
         if (ticket !== requestRef.current) return;
         setStatus(next);
+        const configured = next.claude.configuredPath ?? "";
+        if (configuredRef.current !== configured) {
+          configuredRef.current = configured;
+          setClaudePath(configured);
+        }
       } catch (caught) {
         if (ticket !== requestRef.current) return;
         setLoadError(describeSdkError(caught));
@@ -63,6 +78,7 @@ export function SdkSettings({ api }: SdkSettingsProps) {
   const busy = status?.busy === true || installing || rollingBack;
   const statusFacts = status === undefined ? [] : sdkStatusFacts(status);
   const facts = candidate === undefined ? [] : confirmationFacts(candidate);
+  const claudeFacts = status === undefined ? [] : claudeStatusFacts(status.claude);
 
   const onCheck = (): void => {
     if (checking || busy) return;
@@ -174,6 +190,50 @@ export function SdkSettings({ api }: SdkSettingsProps) {
     rollbackButtonRef.current?.focus();
   };
 
+  /** Status CLI `claude` baru langsung dipasang ke state tanpa memuat ulang. */
+  const applyClaude = (next: SdkClaude): void => {
+    setStatus((prev) => (prev === undefined ? prev : { ...prev, claude: next }));
+  };
+
+  const onSaveClaudePath = (): void => {
+    if (savingClaude) return;
+    const trimmed = claudePath.trim();
+    setSavingClaude(true);
+    setClaudeError(undefined);
+    setClaudeMessage(undefined);
+    void (async () => {
+      try {
+        const next = await api.setClaudePath(trimmed === "" ? null : trimmed);
+        applyClaude(next);
+        setClaudeMessage("Jalur claude disimpan.");
+        await load(true);
+      } catch (caught) {
+        setClaudeError(describeClaudeError(caught));
+      } finally {
+        setSavingClaude(false);
+      }
+    })();
+  };
+
+  const onClearClaudePath = (): void => {
+    if (savingClaude) return;
+    setSavingClaude(true);
+    setClaudeError(undefined);
+    setClaudeMessage(undefined);
+    void (async () => {
+      try {
+        const next = await api.setClaudePath(null);
+        applyClaude(next);
+        setClaudeMessage("Pengaturan jalur claude dihapus.");
+        await load(true);
+      } catch (caught) {
+        setClaudeError(describeClaudeError(caught));
+      } finally {
+        setSavingClaude(false);
+      }
+    })();
+  };
+
   return (
     <section class="jk-sdk" aria-labelledby="jk-sdk-title">
       <h2 class="jk-sdk-title" id="jk-sdk-title">
@@ -250,6 +310,68 @@ export function SdkSettings({ api }: SdkSettingsProps) {
               >
                 Kembalikan versi sebelumnya
               </button>
+            )}
+          </div>
+
+          <div class="jk-sdk-claude">
+            <p class="jk-label">Claude Code (CLI)</p>
+            <p class="jk-note">{claudeStatusLine(status.claude)}</p>
+            {!status.claude.found && <p class="jk-help">{CLAUDE_MISSING_HINT}</p>}
+            {claudeFacts.length > 0 && (
+              <ul class="jk-sdk-facts">
+                {claudeFacts.map((fact) => (
+                  <li key={fact}>{fact}</li>
+                ))}
+              </ul>
+            )}
+            <label class="jk-label" for="jk-sdk-claude-path">
+              Jalur CLI claude (absolut)
+            </label>
+            <input
+              id="jk-sdk-claude-path"
+              class="jk-input jk-input-code"
+              type="text"
+              value={claudePath}
+              placeholder="/usr/local/bin/claude"
+              onInput={(event) => setClaudePath(event.currentTarget.value)}
+            />
+            <div class="jk-form-actions">
+              <button
+                type="button"
+                class="jk-button jk-button-secondary"
+                disabled={savingClaude}
+                onClick={onSaveClaudePath}
+              >
+                Simpan jalur
+              </button>
+              {status.claude.configuredPath !== null && (
+                <button
+                  type="button"
+                  class="jk-button jk-button-secondary"
+                  disabled={savingClaude}
+                  onClick={onClearClaudePath}
+                >
+                  Hapus pengaturan
+                </button>
+              )}
+              <button
+                type="button"
+                class="jk-button jk-button-secondary"
+                disabled={savingClaude}
+                onClick={() => void load(true)}
+              >
+                Periksa lagi
+              </button>
+            </div>
+            {claudeMessage !== undefined && (
+              <p class="jk-note" role="status" aria-live="polite">
+                {claudeMessage}
+              </p>
+            )}
+            {claudeError !== undefined && (
+              <p class="jk-error-line" role="alert">
+                {claudeError}
+              </p>
             )}
           </div>
 

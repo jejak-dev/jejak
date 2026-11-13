@@ -4759,6 +4759,14 @@ h2.jk-md-heading {
   border-radius: 12px;
 }
 
+.jk-sdk-claude {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
 .jk-worktree-notice {
   display: flex;
   align-items: baseline;

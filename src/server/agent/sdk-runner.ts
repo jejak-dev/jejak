@@ -1,6 +1,13 @@
 import { toSdkEnv, type ResolvedProvider } from "../provider";
 import {
+  cachedClaude,
+  locateClaude as defaultLocateClaude,
+  nextClaudeCacheKey,
+  type ClaudeLocation,
+} from "../sdk/claude-locator";
+import {
   defaultSdkLoader,
+  detectCompiled,
   SDK_NOT_INSTALLED_MESSAGE,
   SdkBrokenInstallError,
   SdkNotInstalledError,
@@ -33,6 +40,12 @@ const DELTA_FLUSH_MS = 50;
 export interface SdkRunnerOptions {
   load?: () => Promise<SdkModule>;
   baseEnv?: Record<string, string | undefined>;
+  /** Pencari CLI `claude` milik pengguna; bawaan `locateClaude`. */
+  locateClaude?: () => Promise<ClaudeLocation | null>;
+  /** Deteksi binary terkompilasi; bawaan `detectCompiled`. */
+  isCompiled?: () => boolean;
+  /** Jam untuk cache pencarian; bawaan `Date.now`. */
+  now?: () => number;
 }
 
 const defaultLoad = defaultSdkLoader;
@@ -227,6 +240,12 @@ export function withMaxRetries(
 export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
   const load = options.load ?? defaultLoad;
   const baseEnv = options.baseEnv ?? process.env;
+  const locate =
+    options.locateClaude ?? ((): Promise<ClaudeLocation | null> => defaultLocateClaude());
+  const isCompiled = options.isCompiled ?? detectCompiled;
+  const now = options.now ?? Date.now;
+  // Kunci cache unik per runner supaya dua runner di proses yang sama tidak saling menimpa.
+  const cacheKey = nextClaudeCacheKey("runner");
 
   return {
     async *run(input: RunInput) {
@@ -406,6 +425,24 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
             return { behavior: "deny", message: "izin gagal diproses" };
           }
         };
+      }
+
+      // CLI `claude` milik pengguna diteruskan ke SDK bila sumbernya eksplisit
+      // (env atau pengaturan Jejak) atau Jejak berjalan sebagai binary
+      // terkompilasi. Di mode dev dengan auto-deteksi, perilaku SDK dibiarkan.
+      let location: ClaudeLocation | null = null;
+      try {
+        location = await cachedClaude(cacheKey, locate, now);
+      } catch {
+        location = null;
+      }
+      if (
+        location !== null &&
+        (location.source === "env" ||
+          location.source === "setting" ||
+          isCompiled())
+      ) {
+        sdkOptions.pathToClaudeCodeExecutable = location.path;
       }
 
       let query: SdkQuery | undefined;

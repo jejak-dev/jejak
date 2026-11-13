@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ApiError, createApiClient } from "../src/client/lib/api";
+import { ApiError, createApiClient, type SdkStatus } from "../src/client/lib/api";
 
 interface Call {
   url: string;
@@ -24,12 +24,19 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
-const STATUS = {
+const STATUS: SdkStatus = {
   installed: { version: "0.3.323", installedAt: "2026-11-12T10:00:00.000Z" },
   previous: "0.3.322",
   supportedRange: ">=0.3.0 <1",
   lastCheck: { latest: "0.3.323", checkedAt: "2026-11-12T10:05:00.000Z" },
   busy: false,
+  claude: {
+    found: true,
+    path: "/usr/local/bin/claude",
+    version: "2.1.0",
+    source: "setting",
+    configuredPath: "/usr/local/bin/claude",
+  },
 };
 
 describe("getSdk", () => {
@@ -55,6 +62,13 @@ describe("getSdk", () => {
       supportedRange: "",
       lastCheck: null,
       busy: false,
+      claude: {
+        found: false,
+        path: null,
+        version: null,
+        source: null,
+        configuredPath: null,
+      },
     });
   });
 
@@ -153,6 +167,69 @@ describe("installSdk", () => {
     const error = await api.installSdk("0.3.322").catch((caught) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect(error.status).toBe(409);
+  });
+});
+
+describe("setClaudePath", () => {
+  test("mengirim POST dengan body path persis", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        found: true,
+        path: "/usr/local/bin/claude",
+        version: "2.1.0",
+        source: "setting",
+        configuredPath: "/usr/local/bin/claude",
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    const result = await api.setClaudePath("/usr/local/bin/claude");
+    expect(result.found).toBe(true);
+    expect(result.path).toBe("/usr/local/bin/claude");
+    expect(result.source).toBe("setting");
+    expect(calls[0]?.url).toBe("/api/sdk/claude-path");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ path: "/usr/local/bin/claude" }));
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+  });
+
+  test("null berarti hapus pengaturan", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        found: false,
+        path: null,
+        version: null,
+        source: null,
+        configuredPath: null,
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    const result = await api.setClaudePath(null);
+    expect(result.configuredPath).toBeNull();
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ path: null }));
+  });
+
+  test("sumber di luar daftar menjadi null", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ found: true, path: "/x", version: "1", source: "aneh" }),
+    );
+    const api = createApiClient({ fetch });
+
+    const result = await api.setClaudePath("/x");
+    expect(result.source).toBeNull();
+  });
+
+  test("400 menjadi ApiError dengan pesan server", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Jalur harus absolut." }, 400),
+    );
+    const api = createApiClient({ fetch });
+
+    const error = await api.setClaudePath("bin/claude").catch((caught) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(400);
+    expect(error.message).toBe("Jalur harus absolut.");
   });
 });
 

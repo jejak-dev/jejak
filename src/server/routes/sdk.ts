@@ -2,6 +2,19 @@ import { Elysia } from "elysia";
 import type { AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
 import {
+  cachedClaude,
+  defaultExists,
+  defaultRunVersion,
+  invalidateClaudeCache,
+  locateClaude,
+  nextClaudeCacheKey,
+  readClaudeSetting,
+  validateClaudePath,
+  writeClaudeSetting,
+  type ClaudeSource,
+  type LocateOptions,
+} from "../sdk/claude-locator";
+import {
   downloadTarball,
   fetchPackument,
   pickVersion,
@@ -38,6 +51,8 @@ export interface SdkRoutesOptions {
   audit?: AuditStore;
   /** Waktu ISO-8601 sekarang; untuk pengujian. */
   now?: () => string;
+  /** Opsi pencarian CLI `claude`; untuk pengujian agar tak menjalankan claude sungguhan. */
+  locate?: LocateOptions;
 }
 
 interface LastCheck {
@@ -46,7 +61,17 @@ interface LastCheck {
   note?: string;
 }
 
+/** Status CLI `claude` milik pengguna yang dilaporkan ke klien. */
+export interface SdkClaudeStatus {
+  found: boolean;
+  path: string | null;
+  version: string | null;
+  source: ClaudeSource | null;
+  configuredPath: string | null;
+}
+
 const INSTALL_BODY_FIELDS = new Set(["version"]);
+const CLAUDE_PATH_BODY_FIELDS = new Set(["path"]);
 
 function jsonResponse(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -102,6 +127,39 @@ function parseInstallBody(body: unknown): { version?: string } {
     throw new BadRequestError(`Versi "${trimmed}" bukan semver yang valid.`);
   }
   return { version: trimmed };
+}
+
+/**
+ * Body pengaturan jalur CLI: hanya field `path` yang diterima.
+ *
+ * `path` kosong atau `null` berarti hapus pengaturan; string lain harus
+ * lolos pemeriksaan jalur.
+ */
+function parseClaudePathBody(body: unknown): { path: string | null } {
+  const parsed = parseJsonObject(body);
+  for (const key of Object.keys(parsed)) {
+    if (!CLAUDE_PATH_BODY_FIELDS.has(key)) {
+      throw new BadRequestError(`Field "${key}" tidak dikenal pada permintaan ini.`);
+    }
+  }
+  const raw = parsed["path"];
+  if (raw === undefined || raw === null) return { path: null };
+  if (typeof raw !== "string") {
+    throw new BadRequestError("Field path harus berupa string.");
+  }
+  const trimmed = raw.trim();
+  if (trimmed === "") return { path: null };
+  return { path: trimmed };
+}
+
+/** Pesan galat yang jelas untuk tiap alasan penolakan jalur. */
+function claudePathMessage(reason: string): string {
+  if (reason === "bukan-absolut") return "Jalur harus absolut.";
+  if (reason === "karakter-kontrol") {
+    return "Jalur tidak valid: karakter kontrol tidak diizinkan.";
+  }
+  if (reason === "terlalu-panjang") return "Jalur terlalu panjang.";
+  return "Jalur harus berupa teks.";
 }
 
 /** Kode singkat untuk audit; bukan pesan galat. */
@@ -185,6 +243,32 @@ export function sdkRoutes(options: SdkRoutesOptions = {}): Elysia {
   const now = options.now ?? ((): string => new Date().toISOString());
   const fetchImpl = options.fetch;
 
+  // Opsi pencarian CLI `claude`; dapat diinjeksi agar tes tak menjalankan claude sungguhan.
+  const locateOptions: LocateOptions = {
+    ...(options.locate ?? {}),
+    env: options.locate?.env ?? env,
+  };
+  const existsImpl = locateOptions.exists ?? defaultExists;
+  const runVersionImpl = locateOptions.runVersion ?? defaultRunVersion;
+  const timeoutMs = locateOptions.timeoutMs ?? 5000;
+  const claudeCacheKey = nextClaudeCacheKey("route");
+
+  /** Status CLI `claude`; sumber dan jalur hasil pencarian. */
+  const claudeStatus = async (): Promise<SdkClaudeStatus> => {
+    const location = await cachedClaude(
+      claudeCacheKey,
+      () => locateClaude(locateOptions),
+    );
+    const configured = await readClaudeSetting(locateOptions.env ?? env);
+    return {
+      found: location !== null,
+      path: location?.path ?? null,
+      version: location?.version ?? null,
+      source: location?.source ?? null,
+      configuredPath: configured,
+    };
+  };
+
   // Hasil pemeriksaan terakhir; cukup disimpan di memori proses.
   let lastCheck: LastCheck | null = null;
 
@@ -204,11 +288,68 @@ export function sdkRoutes(options: SdkRoutesOptions = {}): Elysia {
           supportedRange: SDK_SUPPORTED_RANGE,
           lastCheck,
           busy: isInstallBusy(),
+          claude: await claudeStatus(),
         };
       } catch {
         return jsonResponse(500, { error: "Terjadi kesalahan tak terduga." });
       }
     })
+    .post(
+      "/api/sdk/claude-path",
+      async ({ body }) => {
+        let requested: string | null;
+        try {
+          requested = parseClaudePathBody(body).path;
+        } catch (error) {
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Pengaturan jalur claude gagal",
+            meta: { aksi: "claude-jalur", ok: false, hasil: "gagal", galat: errorCode(error) },
+          });
+          return errorResponse(error);
+        }
+
+        try {
+          if (requested !== null) {
+            const check = validateClaudePath(requested);
+            if (!check.ok) throw new BadRequestError(claudePathMessage(check.reason));
+            if (!(await existsImpl(requested))) {
+              throw new BadRequestError("Berkas tidak ditemukan.");
+            }
+            const version = await runVersionImpl(requested, timeoutMs);
+            if (version === null) {
+              throw new BadRequestError("Berkas tidak menjawab --version.");
+            }
+          }
+
+          await writeClaudeSetting(requested, locateOptions.env ?? env);
+          invalidateClaudeCache();
+
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary:
+              requested === null
+                ? "Pengaturan jalur claude dihapus"
+                : "Pengaturan jalur claude disimpan",
+            // Jalur penuh tidak pernah masuk audit.
+            meta: {
+              aksi: "claude-jalur",
+              ok: true,
+              hasil: requested === null ? "hapus" : "simpan",
+            },
+          });
+          return await claudeStatus();
+        } catch (error) {
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Pengaturan jalur claude gagal",
+            meta: { aksi: "claude-jalur", ok: false, hasil: "gagal", galat: errorCode(error) },
+          });
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
     .post(
       "/api/sdk/check",
       async () => {

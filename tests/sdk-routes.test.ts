@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp, type CreateAppOptions } from "../src/server";
 import { SqliteAuditStore, type AuditEntry } from "../src/server/audit/audit-store";
+import { claudeSettingPath, type LocateOptions } from "../src/server/sdk/claude-locator";
 import { PACKUMENT_URL, buildTarballUrl } from "../src/server/sdk/registry";
 import { computeIntegrity } from "../src/server/sdk/tarball";
 import { buildTar, gzipOf, packageEntries } from "./helpers/tar-builder";
@@ -90,7 +91,14 @@ interface Harness {
 }
 
 /** Aplikasi dengan `fetch` palsu; handler bawaan melayani packument dan tarball. */
-function makeApp(options: { handler?: Handler; auth?: boolean; tanpaRoot?: boolean } = {}): Harness {
+function makeApp(
+  options: {
+    handler?: Handler;
+    auth?: boolean;
+    tanpaRoot?: boolean;
+    locate?: Partial<LocateOptions>;
+  } = {},
+): Harness {
   const calls: FetchCall[] = [];
   const bawaan: Handler = (call) => {
     if (call.url === PACKUMENT_URL) {
@@ -110,12 +118,22 @@ function makeApp(options: { handler?: Handler; auth?: boolean; tanpaRoot?: boole
     return await handler(call);
   }) as unknown as typeof fetch;
 
+  // Pencarian CLI claude selalu palsu supaya tes tak menjalankan claude sungguhan.
+  const locate: LocateOptions = {
+    which: () => null,
+    exists: async () => false,
+    runVersion: async () => null,
+    ...(options.locate ?? {}),
+  };
+
   const base: CreateAppOptions = {
     providersPath: providersFile,
     env: { MOCK: "true", JEJAK_HOME: home },
     fetch: fake,
     audit,
-    ...(options.tanpaRoot === true ? {} : { sdk: { root } }),
+    ...(options.tanpaRoot === true
+      ? { sdk: { locate } }
+      : { sdk: { root, locate } }),
     ...(options.auth === true ? { auth: { password: SANDI, port: 3000 } } : {}),
   };
   return { app: createApp(base), calls };
@@ -171,6 +189,34 @@ describe("GET /api/sdk", () => {
     expect(body.lastCheck).toBeNull();
     expect(body.busy).toBe(false);
     expect(calls.length).toBe(0);
+  });
+
+  test("menyertakan status CLI claude", async () => {
+    const { app } = makeApp();
+    const body = await isi(await get(app, "/api/sdk"));
+    const claude = body.claude as {
+      found: boolean;
+      path: string | null;
+      version: string | null;
+      source: string | null;
+      configuredPath: string | null;
+    };
+    expect(claude.found).toBe(false);
+    expect(claude.path).toBeNull();
+    expect(claude.version).toBeNull();
+    expect(claude.source).toBeNull();
+    expect(claude.configuredPath).toBeNull();
+  });
+
+  test("melaporkan CLI claude yang ditemukan beserta sumbernya", async () => {
+    const { app } = makeApp({
+      locate: { which: () => "/which/claude", exists: async () => true, runVersion: async () => "2.1.0" },
+    });
+    const body = await isi(await get(app, "/api/sdk"));
+    const claude = body.claude as { found: boolean; path: string; source: string };
+    expect(claude.found).toBe(true);
+    expect(claude.path).toBe("/which/claude");
+    expect(claude.source).toBe("path");
   });
 
   test("folder penyimpanan mengikuti JEJAK_HOME bila root tidak diberi", async () => {
@@ -379,6 +425,100 @@ describe("POST /api/sdk/rollback", () => {
     await post(app, "/api/sdk/install");
     const kedua = await post(app, "/api/sdk/rollback");
     expect(kedua.status).toBe(404);
+  });
+});
+
+describe("POST /api/sdk/claude-path", () => {
+  test("menyimpan jalur absolut yang valid", async () => {
+    const { app } = makeApp({
+      locate: { exists: async () => true, runVersion: async () => "2.1.0 (Claude Code)" },
+    });
+    const res = await post(app, "/api/sdk/claude-path", { path: "/opt/claude" });
+    expect(res.status).toBe(200);
+    const claude = (await isi(res)) as {
+      found: boolean;
+      path: string | null;
+      source: string | null;
+      configuredPath: string | null;
+    };
+    expect(claude.found).toBe(true);
+    expect(claude.path).toBe("/opt/claude");
+    expect(claude.source).toBe("setting");
+    expect(claude.configuredPath).toBe("/opt/claude");
+    expect(existsSync(claudeSettingPath({ JEJAK_HOME: home }))).toBe(true);
+  });
+
+  test("null menghapus pengaturan", async () => {
+    const { app } = makeApp({
+      locate: { exists: async () => true, runVersion: async () => "2.1.0" },
+    });
+    await post(app, "/api/sdk/claude-path", { path: "/opt/claude" });
+    const res = await post(app, "/api/sdk/claude-path", { path: null });
+    expect(res.status).toBe(200);
+    const claude = (await isi(res)) as { configuredPath: string | null };
+    expect(claude.configuredPath).toBeNull();
+    expect(existsSync(claudeSettingPath({ JEJAK_HOME: home }))).toBe(false);
+  });
+
+  test("string kosong menghapus pengaturan", async () => {
+    const { app } = makeApp({
+      locate: { exists: async () => true, runVersion: async () => "2.1.0" },
+    });
+    await post(app, "/api/sdk/claude-path", { path: "/opt/claude" });
+    const res = await post(app, "/api/sdk/claude-path", { path: "  " });
+    expect(res.status).toBe(200);
+    expect(existsSync(claudeSettingPath({ JEJAK_HOME: home }))).toBe(false);
+  });
+
+  test("jalur relatif ditolak 400", async () => {
+    const { app } = makeApp();
+    const res = await post(app, "/api/sdk/claude-path", { path: "bin/claude" });
+    expect(res.status).toBe(400);
+    expect(String((await isi(res)).error)).toContain("Jalur harus absolut");
+  });
+
+  test("berkas yang tidak ada ditolak 400", async () => {
+    const { app } = makeApp({ locate: { exists: async () => false } });
+    const res = await post(app, "/api/sdk/claude-path", { path: "/opt/claude" });
+    expect(res.status).toBe(400);
+    expect(String((await isi(res)).error)).toContain("Berkas tidak ditemukan");
+  });
+
+  test("berkas yang tidak menjawab --version ditolak 400", async () => {
+    const { app } = makeApp({
+      locate: { exists: async () => true, runVersion: async () => null },
+    });
+    const res = await post(app, "/api/sdk/claude-path", { path: "/opt/claude" });
+    expect(res.status).toBe(400);
+    expect(String((await isi(res)).error)).toContain("--version");
+  });
+
+  test("field asing ditolak 400", async () => {
+    const { app } = makeApp();
+    const res = await post(app, "/api/sdk/claude-path", { path: "/opt/claude", url: "https://lain" });
+    expect(res.status).toBe(400);
+    expect(String((await isi(res)).error)).toContain("tidak dikenal");
+  });
+
+  test("audit mencatat aksi tanpa menyimpan jalur penuh", async () => {
+    const { app } = makeApp({
+      locate: { exists: async () => true, runVersion: async () => "2.1.0" },
+    });
+    await post(app, "/api/sdk/claude-path", { path: "/opt/claude-rahasia" });
+    const entries = await entriAudit();
+    const aksi = entries.find((entry) => entry.meta["aksi"] === "claude-jalur");
+    expect(aksi?.meta["ok"]).toBe(true);
+    expect(aksi?.meta["hasil"]).toBe("simpan");
+    expect(JSON.stringify(entries)).not.toContain("/opt/claude-rahasia");
+  });
+
+  test("audit mencatat kegagalan dengan kode galat singkat", async () => {
+    const { app } = makeApp();
+    await post(app, "/api/sdk/claude-path", { path: "bin/claude" });
+    const entries = await entriAudit();
+    const gagal = entries.find((entry) => entry.meta["aksi"] === "claude-jalur");
+    expect(gagal?.meta["ok"]).toBe(false);
+    expect(gagal?.meta["galat"]).toBe("invalid");
   });
 });
 
