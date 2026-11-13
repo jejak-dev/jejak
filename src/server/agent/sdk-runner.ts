@@ -1,4 +1,12 @@
 import { toSdkEnv, type ResolvedProvider } from "../provider";
+import {
+  defaultSdkLoader,
+  SDK_NOT_INSTALLED_MESSAGE,
+  SdkBrokenInstallError,
+  SdkNotInstalledError,
+  type SdkModule,
+  type SdkQuery,
+} from "../sdk/sdk-loader";
 import type {
   AgentRunner,
   RunInput,
@@ -7,11 +15,7 @@ import type {
 } from "./events";
 import { assistantUuidOf, contextTokensOf, contextWindowOf, mapSdkMessage } from "./sdk-mapper";
 
-const SDK_MODULE: string = "@anthropic-ai/claude-agent-sdk";
-
-const SDK_NOT_INSTALLED =
-  "Claude Agent SDK belum terpasang. Pasang paket @anthropic-ai/claude-agent-sdk sendiri " +
-  "(lisensi Anthropic; tidak dibundel dengan Jejak) atau jalankan dengan MOCK=true.";
+export type { SdkModule, SdkQuery } from "../sdk/sdk-loader";
 
 const PROFILE_ENV_KEYS = [
   "ANTHROPIC_API_KEY",
@@ -26,23 +30,12 @@ const PROFILE_ENV_KEYS = [
 
 const DELTA_FLUSH_MS = 50;
 
-export interface SdkQuery extends AsyncIterable<unknown> {
-  close?(): void;
-}
-
-export interface SdkModule {
-  query(args: { prompt: string; options?: Record<string, unknown> }): SdkQuery;
-}
-
 export interface SdkRunnerOptions {
   load?: () => Promise<SdkModule>;
   baseEnv?: Record<string, string | undefined>;
 }
 
-async function defaultLoad(): Promise<SdkModule> {
-  const imported: unknown = await import(SDK_MODULE);
-  return imported as SdkModule;
-}
+const defaultLoad = defaultSdkLoader;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -57,6 +50,18 @@ function requireSdkModule(value: unknown): SdkModule {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Pesan galat saat SDK gagal dimuat.
+ *
+ * SDK terkelola yang rusak punya pesan sendiri (menyebut versi aktif);
+ * galat lain tetap memakai pesan "belum terpasang" dengan detail aslinya.
+ */
+function loadFailureMessage(error: unknown): string {
+  if (error instanceof SdkNotInstalledError) return SDK_NOT_INSTALLED_MESSAGE;
+  if (error instanceof SdkBrokenInstallError) return error.message;
+  return `${SDK_NOT_INSTALLED_MESSAGE} (${errorMessage(error)})`;
 }
 
 function sanitize(
@@ -228,9 +233,10 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       let sdk: SdkModule;
       try {
         sdk = requireSdkModule(await load());
-      } catch {
-        yield { type: "error", message: SDK_NOT_INSTALLED };
-        yield { type: "result", ok: false, error: SDK_NOT_INSTALLED };
+      } catch (error) {
+        const message = loadFailureMessage(error);
+        yield { type: "error", message };
+        yield { type: "result", ok: false, error: message };
         return;
       }
 
