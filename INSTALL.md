@@ -8,6 +8,7 @@ remove the app again.
 - [Install on macOS](#install-on-macos)
 - [Gatekeeper warning on macOS](#gatekeeper-warning-on-macos)
 - [Install on Windows (beta)](#install-on-windows-beta)
+- [Windows (beta): limitations](#windows-beta-limitations)
 - [Automatic updates](#automatic-updates)
 - [Where your data lives](#where-your-data-lives)
 - [Troubleshooting](#troubleshooting)
@@ -196,6 +197,32 @@ retries later.
 **Sessions or memory look empty after moving machines.** Copy the whole
 `~/.jejak` folder to the new machine. Do not copy only `memory/`, because
 session state and provider settings live next to it.
+
+## Windows (beta): limitations
+
+The Windows build is beta. Jejak starts and works, but these parts are
+missing or limited on Windows:
+
+- **The Terminal panel and the command launcher (Commands) are off.** The
+  terminal needs a POSIX shell (`/bin/sh`), which Windows does not have. Run
+  your commands from **Command Prompt** or **Git Bash** instead.
+- **There is no sandbox for the Bash tool.** Windows has neither
+  `sandbox-exec` (macOS) nor `bwrap` (Linux), so the sandbox reports itself
+  as unavailable. While the sandbox mode is not **Mati** (off), new sessions
+  fail; set the sandbox mode to **Mati** in the sandbox settings first.
+- **There is no native folder picker.** The macOS Finder dialog has no
+  Windows counterpart, so type or paste the folder path instead.
+- **Dictation is not available.** It relies on the browser's Web Speech API,
+  which the Windows WebView2 runtime does not provide, so the dictation
+  button never appears.
+- **Git for Windows is required.** `jejak doctor` checks that `git` is on
+  `PATH`; the Bash tool of the Agent SDK also needs Git Bash
+  (`C:\Program Files\Git\bin\bash.exe`), or set `CLAUDE_CODE_GIT_BASH_PATH`.
+- **`chmod` means nothing here.** Provider keys live in
+  `%USERPROFILE%\.jejak`; on Windows the file mode carries no meaning, so
+  their protection depends on the permissions of your Windows account.
+- **Not verified on real Windows hardware yet.** The Windows build is
+  released as a beta and has not been tested on an actual Windows machine.
 
 ## Uninstall
 

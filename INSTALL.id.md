@@ -8,6 +8,7 @@ dan cara mencabut aplikasinya lagi.
 - [Pemasangan di macOS](#pemasangan-di-macos)
 - [Peringatan Gatekeeper di macOS](#peringatan-gatekeeper-di-macos)
 - [Pemasangan di Windows (beta)](#pemasangan-di-windows-beta)
+- [Windows (beta): batasan](#windows-beta-batasan)
 - [Pembaruan otomatis](#pembaruan-otomatis)
 - [Letak data Anda](#letak-data-anda)
 - [Mengatasi masalah](#mengatasi-masalah)
@@ -201,6 +202,32 @@ dicoba lagi nanti.
 **Sesi atau memory terlihat kosong setelah pindah mesin.** Salin seluruh
 folder `~/.jejak` ke mesin baru. Jangan hanya menyalin `memory/`, karena
 status sesi dan pengaturan penyedia ada di sebelahnya.
+
+## Windows (beta): batasan
+
+Build Windows masih beta. Jejak bisa dijalankan dan dipakai, tetapi bagian
+berikut ini tak ada atau terbatas di Windows:
+
+- **Panel Terminal dan peluncur perintah (Commands) dimatikan.** Terminal
+  butuh shell POSIX (`/bin/sh`), sedangkan Windows tak memilikinya. Jalankan
+  perintah Anda dari **Command Prompt** atau **Git Bash**.
+- **Tak ada sandbox untuk tool Bash.** Windows tak punya `sandbox-exec`
+  (macOS) maupun `bwrap` (Linux), jadi sandbox melaporkan dirinya tak
+  tersedia. Selama mode sandbox bukan **Mati**, sesi baru akan gagal; setel
+  mode sandbox ke **Mati** di pengaturan sandbox lebih dulu.
+- **Tak ada folder picker native.** Dialog Finder milik macOS tak punya
+  padanan di Windows, jadi ketik atau tempel path foldernya.
+- **Dikte tak tersedia.** Dikte memakai Web Speech API peramban, dan runtime
+  WebView2 di Windows tak menyediakannya, jadi tombol dikte tak pernah muncul.
+- **Git for Windows wajib.** `jejak doctor` memeriksa `git` ada di `PATH`;
+  tool Bash milik Agent SDK juga butuh Git Bash
+  (`C:\Program Files\Git\bin\bash.exe`), atau setel
+  `CLAUDE_CODE_GIT_BASH_PATH`.
+- **`chmod` tak bermakna di sini.** Kunci penyedia disimpan di
+  `%USERPROFILE%\.jejak`; di Windows mode berkas tak berarti apa pun, jadi
+  perlindungannya bergantung pada izin akun Windows Anda.
+- **Belum diuji di Windows sungguhan.** Build Windows diterbitkan sebagai
+  beta dan belum pernah dicoba di mesin Windows yang sebenarnya.
 
 ## Mencabut pemasangan
 
