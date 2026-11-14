@@ -2679,8 +2679,52 @@ h2.jk-md-heading {
 }
 
 /* Garis pemisah tipis antara jendela yang bersebelahan. */
-.jk-pane + .jk-pane {
-  border-top: 1px solid var(--line);
+/* Pembatas tinggi antar jendela; seret, panah, atau klik dua kali. */
+.jk-pane-divider {
+  position: relative;
+  z-index: 2;
+  flex: none;
+  height: 9px;
+  margin: -4.5px 0;
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.jk-pane-divider::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 3.5px;
+  height: 2px;
+  background: var(--line);
+  transition: background 0.12s;
+}
+
+.jk-pane-divider:hover::after,
+.jk-pane-divider:focus-visible::after,
+.jk-pane-divider-active::after {
+  background: var(--accent, var(--t3));
+}
+
+.jk-pane-divider:focus-visible {
+  outline: none;
+}
+
+.jk-app:has(.jk-pane-divider-active) {
+  cursor: row-resize;
+  user-select: none;
+}
+
+@media (pointer: coarse) {
+  .jk-pane-divider {
+    height: 16px;
+    margin: -8px 0;
+  }
+
+  .jk-pane-divider::after {
+    top: 7px;
+  }
 }
 
 .jk-pane-head {
@@ -2784,6 +2828,13 @@ h2.jk-md-heading {
   flex: none;
 }
 
+/* Tombol opsi jendela dan menu perpindahan. */
+.jk-pane-options {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+
 .jk-pane-menu {
   position: absolute;
   top: calc(100% + 4px);
@@ -2816,6 +2867,16 @@ h2.jk-md-heading {
 
 .jk-pane-menu-item:hover {
   background: var(--hover);
+}
+
+.jk-pane-menu-item:disabled {
+  color: var(--t3);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.jk-pane-menu-item:disabled:hover {
+  background: none;
 }
 
 .jk-panel-tabs {

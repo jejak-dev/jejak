@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   MAX_PANES,
   MIN_SIZE,
+  canMoveTab,
   closePane,
   closeTab,
   defaultLayout,
+  evenBoundary,
+  flattenForNarrow,
   focusTarget,
   moveTab,
   normalizeLayout,
@@ -15,6 +18,7 @@ import {
   resizeBoundaryByKey,
   setActive,
   toggleMaximize,
+  visibleLayout,
   type PaneLayout,
 } from "../src/client/lib/pane-layout";
 import { readPaneLayout, writePaneLayout } from "../src/client/lib/pane-prefs";
@@ -567,8 +571,131 @@ describe("tata letak jendela: resizeBoundary", () => {
   });
 });
 
-describe("tata letak jendela: maximize dan pembacaan", () => {
-  test("maximized dinyalakan lalu dimatikan", () => {
+describe("tata letak jendela: evenBoundary", () => {
+  const tiga: PaneLayout = {
+    panes: [
+      { id: "p1", tabs: ["changes"], active: "changes" },
+      { id: "p2", tabs: ["git"], active: "git" },
+      { id: "p3", tabs: ["todos"], active: "todos" },
+    ],
+    sizes: [0.5, 0.3, 0.2],
+  };
+
+  test("dua tetangga dibagi rata dan jendela lain tidak berubah", () => {
+    const hasil = evenBoundary(tiga, 0);
+    expect(hasil.sizes[0]).toBeCloseTo(0.4, 10);
+    expect(hasil.sizes[1]).toBeCloseTo(0.4, 10);
+    expect(hasil.sizes[2]).toBeCloseTo(0.2, 10);
+    cekInvarian(hasil);
+  });
+
+  test("pembatas kedua membagi dua jendela terakhir", () => {
+    const hasil = evenBoundary(tiga, 1);
+    expect(hasil.sizes[0]).toBeCloseTo(0.5, 10);
+    expect(hasil.sizes[1]).toBeCloseTo(0.25, 10);
+    expect(hasil.sizes[2]).toBeCloseTo(0.25, 10);
+    cekInvarian(hasil);
+  });
+
+  test("indeks di luar rentang tidak mengubah apa pun", () => {
+    expect(evenBoundary(tiga, 5).sizes).toEqual(tiga.sizes);
+    expect(evenBoundary(tiga, -1).sizes).toEqual(tiga.sizes);
+    expect(evenBoundary(defaultLayout("changes"), 0).sizes).toEqual([1]);
+  });
+
+  test("masukan tidak berubah", () => {
+    const salinan = JSON.stringify(tiga);
+    evenBoundary(tiga, 0);
+    expect(JSON.stringify(tiga)).toBe(salinan);
+  });
+});
+
+describe("tata letak jendela: flattenForNarrow", () => {
+  const dua: PaneLayout = {
+    panes: [
+      { id: "p1", tabs: ["changes", "git"], active: "git" },
+      { id: "p2", tabs: ["todos"], active: "todos" },
+    ],
+    sizes: [0.6, 0.4],
+  };
+
+  test("seluruh tab digabung dalam urutan jendela", () => {
+    const hasil = flattenForNarrow(dua);
+    expect(hasil.panes).toHaveLength(1);
+    expect(hasil.panes[0]?.tabs).toEqual(["changes", "git", "todos"]);
+    expect(hasil.sizes).toEqual([1]);
+    expect(hasil.maximized).toBeUndefined();
+    cekInvarian(hasil);
+  });
+
+  test("tab aktif memakai jendela yang terakhir difokuskan", () => {
+    const hasil = flattenForNarrow(dua, "p1");
+    expect(hasil.panes[0]?.active).toBe("git");
+    const lain = flattenForNarrow(dua, "p2");
+    expect(lain.panes[0]?.active).toBe("todos");
+  });
+
+  test("tanpa fokus memakai jendela terakhir", () => {
+    const hasil = flattenForNarrow(dua);
+    expect(hasil.panes[0]?.active).toBe("todos");
+  });
+
+  test("keadaan diperbesar dibuang", () => {
+    const diperbesar: PaneLayout = { ...dua, maximized: "p2" };
+    const hasil = flattenForNarrow(diperbesar);
+    expect(hasil.maximized).toBeUndefined();
+    expect(hasil.panes).toHaveLength(1);
+    cekInvarian(hasil);
+  });
+
+  test("masukan tidak berubah", () => {
+    const salinan = JSON.stringify(dua);
+    flattenForNarrow(dua, "p1");
+    expect(JSON.stringify(dua)).toBe(salinan);
+  });
+});
+
+describe("tata letak jendela: perpindahan dan jendela terlihat", () => {
+  const tiga: PaneLayout = {
+    panes: [
+      { id: "p1", tabs: ["changes"], active: "changes" },
+      { id: "p2", tabs: ["git"], active: "git" },
+      { id: "p3", tabs: ["todos"], active: "todos" },
+    ],
+    sizes: [0.4, 0.3, 0.3],
+  };
+
+  test("canMoveTab_false bila hasil tata letak sama", () => {
+    // Sudah tiga jendela dan di tepi atas: tidak ada tempat untuk pindah.
+    expect(canMoveTab(tiga, "changes", "atas")).toBe(false);
+    expect(canMoveTab(tiga, "todos", "bawah")).toBe(false);
+    // Tab di tengah bisa pindah ke kedua arah.
+    expect(canMoveTab(tiga, "git", "atas")).toBe(true);
+    expect(canMoveTab(tiga, "git", "bawah")).toBe(true);
+  });
+
+  test("tab tunggal di satu-satunya jendela tidak bisa dipindah", () => {
+    expect(canMoveTab(defaultLayout("changes"), "changes", "atas")).toBe(false);
+    expect(canMoveTab(defaultLayout("changes"), "changes", "bawah")).toBe(false);
+  });
+
+  test("jendela diperbesar menyembunyikan jendela lain tanpa melepasnya", () => {
+    const hasil = visibleLayout({ ...tiga, maximized: "p2" });
+    expect(hasil.panes).toHaveLength(1);
+    expect(hasil.panes[0]?.id).toBe("p2");
+    expect(hasil.sizes).toEqual([1]);
+    // Tata letak asal tetap menyimpan seluruh jendela.
+    expect(tiga.panes).toHaveLength(3);
+  });
+
+  test("tanpa keadaan diperbesar seluruh jendela tetap terlihat", () => {
+    const hasil = visibleLayout(tiga);
+    expect(hasil.panes).toHaveLength(3);
+    expect(hasil.sizes).toEqual([0.4, 0.3, 0.3]);
+  });
+});
+
+describe("tata letak jendela: maximize dan pembacaan", () => {  test("maximized dinyalakan lalu dimatikan", () => {
     const menyala = toggleMaximize(defaultLayout("changes"), "p1");
     expect(menyala.maximized).toBe("p1");
     const mati = toggleMaximize(menyala, "p1");
@@ -717,7 +844,7 @@ describe("uji berbasis properti tata letak jendela", () => {
       const kunci = ["ArrowUp", "ArrowDown", "Home", "End", "Enter"][Math.floor(acak() * 5)] as string;
       const paneId = layout.panes[Math.floor(acak() * layout.panes.length)]?.id ?? "p1";
 
-      switch (Math.floor(acak() * 8)) {
+      switch (Math.floor(acak() * 10)) {
         case 0:
           layout = openTool(layout, tab);
           break;
@@ -739,8 +866,14 @@ describe("uji berbasis properti tata letak jendela", () => {
         case 6:
           layout = toggleMaximize(layout, paneId);
           break;
-        default:
+        case 7:
           layout = resizeBoundaryByKey(layout, indeks, kunci) ?? layout;
+          break;
+        case 8:
+          layout = evenBoundary(layout, indeks);
+          break;
+        default:
+          layout = flattenForNarrow(layout, paneId);
           break;
       }
 

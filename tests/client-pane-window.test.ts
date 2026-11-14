@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ComponentChild, VNode } from "preact";
 import { PaneWindowView } from "../src/client/components/PaneWindow";
-import type { Pane } from "../src/client/lib/pane-layout";
+import { toggleMaximize, visibleLayout, type Pane, type PaneLayout } from "../src/client/lib/pane-layout";
 import type { PanelTab } from "../src/client/lib/panel-prefs";
 import { PANEL_RAIL_TABS } from "../src/client/lib/panel-rail";
 
@@ -77,12 +77,20 @@ interface RenderOptions {
   repoOptions?: { value: string; label: string; missing: boolean }[];
   showRefresh?: boolean;
   menuOpen?: boolean;
+  optionsOpen?: boolean;
+  narrow?: boolean;
+  maximized?: boolean;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   onSelectTab?: (tab: PanelTab) => void;
   onCloseTab?: (tab: PanelTab) => void;
   onOpenTool?: (tab: PanelTab) => void;
   onClosePane?: () => void;
   onClosePanel?: () => void;
   onRefresh?: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onToggleMaximize?: () => void;
   children?: ComponentChild;
 }
 
@@ -100,12 +108,20 @@ function render(options: RenderOptions = {}): ComponentChild {
     repoOptions: options.repoOptions ?? [],
     showRefresh: options.showRefresh ?? false,
     menuOpen: options.menuOpen ?? false,
+    optionsOpen: options.optionsOpen ?? false,
+    narrow: options.narrow ?? false,
+    maximized: options.maximized ?? false,
+    canMoveUp: options.canMoveUp ?? true,
+    canMoveDown: options.canMoveDown ?? true,
     onSelectTab: options.onSelectTab ?? NOOP,
     onCloseTab: options.onCloseTab ?? NOOP,
     onOpenTool: options.onOpenTool ?? NOOP,
     onClosePane: options.onClosePane ?? NOOP,
     onClosePanel: options.onClosePanel ?? NOOP,
     onRefresh: options.onRefresh ?? NOOP,
+    onMoveUp: options.onMoveUp ?? NOOP,
+    onMoveDown: options.onMoveDown ?? NOOP,
+    onToggleMaximize: options.onToggleMaximize ?? NOOP,
     children: options.children ?? null,
   }) as unknown as ComponentChild;
 }
@@ -285,6 +301,120 @@ describe("jendela bertumpuk: tombol header", () => {
     (propsOf(byAriaLabel(node, "Tutup panel")[0])["onClick"] as () => void)();
     expect(jendela).toBe(1);
     expect(panel).toBe(1);
+  });
+});
+
+/* ---------- Menu opsi jendela ---------- */
+
+describe("jendela bertumpuk: menu opsi jendela", () => {
+  test("tombol opsi memakai aria menu dan state terbuka", () => {
+    const node = render({ optionsOpen: false });
+    const tombol = byAriaLabel(node, "Opsi jendela");
+    expect(tombol).toHaveLength(1);
+    expect(propsOf(tombol[0])["aria-haspopup"]).toBe("menu");
+    expect(propsOf(tombol[0])["aria-expanded"]).toBe(false);
+    expect(byRole(node, "menu")).toHaveLength(0);
+  });
+
+  test("menu terbuka memuat pindah dan perbesar", () => {
+    const node = render({ optionsOpen: true });
+    expect(propsOf(byAriaLabel(node, "Opsi jendela")[0])["aria-expanded"]).toBe(true);
+    const items = byRole(node, "menuitem");
+    expect(items).toHaveLength(3);
+    expect(textOf(items[0] as ComponentChild)).toContain("Pindahkan ke jendela atas");
+    expect(textOf(items[1] as ComponentChild)).toContain("Pindahkan ke jendela bawah");
+    expect(textOf(items[2] as ComponentChild)).toContain("Perbesar jendela");
+  });
+
+  test("item pindah dinonaktifkan bila hasil tata letak sama", () => {
+    const node = render({ optionsOpen: true, canMoveUp: false, canMoveDown: true });
+    const items = byRole(node, "menuitem");
+    expect(propsOf(items[0])["disabled"]).toBe(true);
+    expect(propsOf(items[0])["aria-disabled"]).toBe(true);
+    expect(propsOf(items[1])["disabled"]).toBe(false);
+  });
+
+  test("memilih arah memindahkan tab dan menutup menu", () => {
+    let atas = 0;
+    let bawah = 0;
+    const node = render({
+      optionsOpen: true,
+      onMoveUp: () => {
+        atas += 1;
+      },
+      onMoveDown: () => {
+        bawah += 1;
+      },
+    });
+    const items = byRole(node, "menuitem");
+    (propsOf(items[0])["onClick"] as () => void)();
+    (propsOf(items[1])["onClick"] as () => void)();
+    expect(atas).toBe(1);
+    expect(bawah).toBe(1);
+  });
+
+  test("menu memperbesar memakai kalimat berlawanan saat diperbesar", () => {
+    const node = render({ optionsOpen: true, maximized: true });
+    const items = byRole(node, "menuitem");
+    expect(textOf(items[2] as ComponentChild)).toContain("Pulihkan ukuran");
+  });
+
+  test("menu disembunyikan di layar sempit", () => {
+    const node = render({ optionsOpen: true, narrow: true });
+    expect(byAriaLabel(node, "Opsi jendela")).toHaveLength(0);
+    expect(byRole(node, "menu")).toHaveLength(0);
+  });
+});
+
+/* ---------- Tombol perbesar ---------- */
+
+describe("jendela bertumpuk: tombol perbesar", () => {
+  test("tombol perbesar memakai aria-pressed", () => {
+    const node = render({ maximized: false });
+    const tombol = byAriaLabel(node, "Perbesar jendela");
+    expect(tombol).toHaveLength(1);
+    expect(propsOf(tombol[0])["aria-pressed"]).toBe(false);
+  });
+
+  test("jendela diperbesar memakai tombol pulihkan ukuran", () => {
+    const node = render({ maximized: true });
+    const tombol = byAriaLabel(node, "Pulihkan ukuran");
+    expect(tombol).toHaveLength(1);
+    expect(propsOf(tombol[0])["aria-pressed"]).toBe(true);
+  });
+
+  test("tombol memanggil penangan perbesar", () => {
+    let dipanggil = 0;
+    const node = render({
+      onToggleMaximize: () => {
+        dipanggil += 1;
+      },
+    });
+    (propsOf(byAriaLabel(node, "Perbesar jendela")[0])["onClick"] as () => void)();
+    expect(dipanggil).toBe(1);
+  });
+
+  test("tombol perbesar disembunyikan di layar sempit", () => {
+    const node = render({ narrow: true });
+    expect(byAriaLabel(node, "Perbesar jendela")).toHaveLength(0);
+    expect(byAriaLabel(node, "Pulihkan ukuran")).toHaveLength(0);
+  });
+
+  test("jendela diperbesar menyembunyikan jendela lain", () => {
+    const layout: PaneLayout = {
+      panes: [
+        { id: "p1", tabs: ["changes"], active: "changes" },
+        { id: "p2", tabs: ["git"], active: "git" },
+      ],
+      sizes: [0.5, 0.5],
+    };
+    const diperbesar = toggleMaximize(layout, "p2");
+    const tampil = visibleLayout(diperbesar);
+    expect(tampil.panes).toHaveLength(1);
+    expect(tampil.panes[0]?.id).toBe("p2");
+    expect(tampil.sizes).toEqual([1]);
+    // Jendela lain tetap ada di tata letak, hanya tidak digambar.
+    expect(diperbesar.panes).toHaveLength(2);
   });
 });
 

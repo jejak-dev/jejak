@@ -37,6 +37,16 @@ export interface PaneWindowViewProps {
   showRefresh?: boolean;
   /** Menu tambah tab sedang terbuka. */
   menuOpen?: boolean;
+  /** Menu opsi jendela sedang terbuka. */
+  optionsOpen?: boolean;
+  /** Layar sempit: tombol pindah dan perbesar disembunyikan. */
+  narrow?: boolean;
+  /** Jendela ini sedang diperbesar. */
+  maximized?: boolean;
+  /** Pindah tab aktif ke jendela atas boleh (hasil tata letak berubah). */
+  canMoveUp?: boolean;
+  /** Pindah tab aktif ke jendela bawah boleh (hasil tata letak berubah). */
+  canMoveDown?: boolean;
   /** Dipanggil saat tab diklik pada strip. */
   onSelectTab: (tab: PanelTab) => void;
   /** Dipanggil saat tombol tutup tab diklik. */
@@ -53,6 +63,16 @@ export interface PaneWindowViewProps {
   onMenuToggle?: () => void;
   /** Menutup menu tambah tab. */
   onMenuClose?: () => void;
+  /** Membuka atau menutup menu opsi jendela. */
+  onOptionsToggle?: () => void;
+  /** Menutup menu opsi jendela. */
+  onOptionsClose?: () => void;
+  /** Pindahkan tab aktif ke jendela atas. */
+  onMoveUp?: () => void;
+  /** Pindahkan tab aktif ke jendela bawah. */
+  onMoveDown?: () => void;
+  /** Perbesar atau pulihkan ukuran jendela ini. */
+  onToggleMaximize?: () => void;
   /** Penangan keyboard pada strip tab. */
   onTabKeyDown?: (event: KeyboardEvent, tab: PanelTab) => void;
   /** Referensi tombol tutup panel untuk fokus awal. */
@@ -61,6 +81,10 @@ export interface PaneWindowViewProps {
   addRef?: { current: HTMLButtonElement | null };
   /** Referensi menu tambah tab. */
   menuRef?: { current: HTMLDivElement | null };
+  /** Referensi tombol opsi jendela. */
+  optionsRef?: { current: HTMLButtonElement | null };
+  /** Referensi menu opsi jendela. */
+  optionsMenuRef?: { current: HTMLDivElement | null };
   /** Referensi tombol tab untuk navigasi keyboard. */
   tabRefs?: Record<string, HTMLButtonElement | null>;
   /** Isi tab aktif. */
@@ -85,6 +109,11 @@ export function PaneWindowView(props: PaneWindowViewProps) {
     onRepoChange,
     showRefresh,
     menuOpen,
+    optionsOpen,
+    narrow,
+    maximized,
+    canMoveUp,
+    canMoveDown,
     onSelectTab,
     onCloseTab,
     onOpenTool,
@@ -93,10 +122,17 @@ export function PaneWindowView(props: PaneWindowViewProps) {
     onRefresh,
     onMenuToggle,
     onMenuClose,
+    onOptionsToggle,
+    onOptionsClose,
+    onMoveUp,
+    onMoveDown,
+    onToggleMaximize,
     onTabKeyDown,
     closeRef,
     addRef,
     menuRef,
+    optionsRef,
+    optionsMenuRef,
     tabRefs,
     children,
   } = props;
@@ -104,6 +140,8 @@ export function PaneWindowView(props: PaneWindowViewProps) {
   const active = pane.active;
   // Tab terakhir pada satu-satunya jendela tidak bisa ditutup.
   const canCloseTab = !(paneCount === 1 && pane.tabs.length === 1);
+  // Layar sempit hanya satu jendela: pindah dan perbesar tidak relevan.
+  const controlsHidden = narrow === true;
 
   return (
     <section
@@ -233,6 +271,85 @@ export function PaneWindowView(props: PaneWindowViewProps) {
           </button>
         )}
 
+        {!controlsHidden && (
+          <button
+            type="button"
+            class="jk-icon-btn jk-pane-max"
+            aria-label={maximized === true ? "Pulihkan ukuran" : "Perbesar jendela"}
+            title={maximized === true ? "Pulihkan ukuran" : "Perbesar jendela"}
+            aria-pressed={maximized === true}
+            onClick={() => onToggleMaximize?.()}
+          >
+            <Icon name={maximized === true ? "collapse" : "expand"} />
+          </button>
+        )}
+
+        {!controlsHidden && (
+          <div class="jk-pane-options">
+            <button
+              ref={optionsRef}
+              type="button"
+              class="jk-icon-btn jk-pane-options-btn"
+              aria-label="Opsi jendela"
+              title="Opsi jendela"
+              aria-haspopup="menu"
+              aria-expanded={optionsOpen === true}
+              onClick={() => onOptionsToggle?.()}
+            >
+              <Icon name="dots" />
+            </button>
+            {optionsOpen === true && (
+              <div
+                ref={optionsMenuRef}
+                class="jk-pane-menu"
+                role="menu"
+                aria-label="Opsi jendela"
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-pane-menu-item"
+                  disabled={canMoveUp !== true}
+                  aria-disabled={canMoveUp !== true}
+                  onClick={() => {
+                    onOptionsClose?.();
+                    onMoveUp?.();
+                  }}
+                >
+                  <Icon name="up" />
+                  <span>Pindahkan ke jendela atas</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-pane-menu-item"
+                  disabled={canMoveDown !== true}
+                  aria-disabled={canMoveDown !== true}
+                  onClick={() => {
+                    onOptionsClose?.();
+                    onMoveDown?.();
+                  }}
+                >
+                  <Icon name="down" />
+                  <span>Pindahkan ke jendela bawah</span>
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-pane-menu-item"
+                  onClick={() => {
+                    onOptionsClose?.();
+                    onToggleMaximize?.();
+                  }}
+                >
+                  <Icon name={maximized === true ? "collapse" : "expand"} />
+                  <span>{maximized === true ? "Pulihkan ukuran" : "Perbesar jendela"}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {paneCount > 1 && (
           <button
             type="button"
@@ -273,12 +390,16 @@ export function PaneWindowView(props: PaneWindowViewProps) {
 
 export type PaneWindowProps = PaneWindowViewProps;
 
-/** Satu jendela bertumpuk: menangani menu tambah tab dan fokus strip tab. */
+/** Satu jendela bertumpuk: menangani menu tambah tab, menu opsi, dan fokus strip tab. */
 export function PaneWindow(props: PaneWindowProps) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const addRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
-  const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const optionsRef = useRef<HTMLButtonElement | null>(null);
+  const optionsMenuRef = useRef<HTMLDivElement | null>(null);
+  const internalTabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  const tabRefs = props.tabRefs ?? internalTabRefs.current;
 
   // Menu tertutup saat klik di luar atau tekan Escape; fokus kembali ke tombol +.
   useEffect(() => {
@@ -302,10 +423,37 @@ export function PaneWindow(props: PaneWindowProps) {
     };
   }, [menuOpen]);
 
+  // Menu opsi tertutup saat klik di luar atau tekan Escape; fokus kembali ke tombol opsi.
+  useEffect(() => {
+    if (!optionsOpen) return;
+    const onPointer = (event: Event): void => {
+      const target = event.target as Node;
+      const diTombol = optionsRef.current?.contains(target) === true;
+      const diMenu = optionsMenuRef.current?.contains(target) === true;
+      if (!diTombol && !diMenu) setOptionsOpen(false);
+    };
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      setOptionsOpen(false);
+      optionsRef.current?.focus();
+    };
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [optionsOpen]);
+
   // Menu ditutup sendiri bila semua alat sudah terbuka.
   useEffect(() => {
     if (menuOpen && props.availableTools.length === 0) setMenuOpen(false);
   }, [menuOpen, props.availableTools.length]);
+
+  // Layar sempit tidak punya tombol opsi; menu yang terbuka ditutup.
+  useEffect(() => {
+    if (props.narrow === true && optionsOpen) setOptionsOpen(false);
+  }, [props.narrow, optionsOpen]);
 
   const onTabKeyDown = (event: KeyboardEvent, tab: PanelTab): void => {
     const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
@@ -315,18 +463,29 @@ export function PaneWindow(props: PaneWindowProps) {
     const next = props.pane.tabs[nextPaneTabIndex(event.key, index, props.pane.tabs.length)];
     if (next === undefined) return;
     props.onSelectTab(next);
-    tabRefs.current[next]?.focus();
+    tabRefs[next]?.focus();
   };
 
   return (
     <PaneWindowView
       {...props}
       menuOpen={menuOpen}
+      optionsOpen={optionsOpen}
       addRef={addRef}
       menuRef={menuRef}
-      tabRefs={tabRefs.current}
-      onMenuToggle={() => setMenuOpen((current) => !current)}
+      optionsRef={optionsRef}
+      optionsMenuRef={optionsMenuRef}
+      tabRefs={tabRefs}
+      onMenuToggle={() => {
+        setMenuOpen((current) => !current);
+        setOptionsOpen(false);
+      }}
       onMenuClose={() => setMenuOpen(false)}
+      onOptionsToggle={() => {
+        setOptionsOpen((current) => !current);
+        setMenuOpen(false);
+      }}
+      onOptionsClose={() => setOptionsOpen(false)}
       onTabKeyDown={onTabKeyDown}
     />
   );

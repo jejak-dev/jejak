@@ -1,16 +1,28 @@
+import { Fragment } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type { ApiClient } from "../lib/api";
 import {
+  canMoveTab,
   closePane,
   closeTab,
+  evenBoundary,
+  flattenForNarrow,
   focusTarget,
+  moveTab,
   openTool,
   openTools,
   paneOfTool,
+  resizeBoundary,
+  resizeBoundaryByKey,
   setActive,
+  toggleMaximize,
+  visibleLayout,
+  type MoveDirection,
+  type Pane,
   type PaneLayout,
 } from "../lib/pane-layout";
+import { useNarrowViewport } from "../lib/pane-narrow";
 import { readPaneLayout, writePaneLayout } from "../lib/pane-prefs";
 import type { PanelTab } from "../lib/panel-prefs";
 import {
@@ -34,6 +46,7 @@ import { CheckpointsTab } from "./CheckpointsTab";
 import { FilesTab } from "./FilesTab";
 import { GitTab } from "./GitTab";
 import { PanelRail } from "./PanelRail";
+import { PaneDivider } from "./PaneDivider";
 import { PaneWindow } from "./PaneWindow";
 import { RunnerTab } from "./RunnerTab";
 import { SecretsTab } from "./SecretsTab";
@@ -211,6 +224,14 @@ export function Panel({
   const [layout, setLayout] = useState<PaneLayout>(() => readPaneLayout());
   // Jendela yang terakhir difokuskan; menentukan tab aktif pada rel ikon.
   const [focusPaneId, setFocusPaneId] = useState<string | undefined>(undefined);
+  // Layar sempit: satu jendela dengan seluruh tab digabung.
+  const sempit = useNarrowViewport();
+  // Sedang menyeret pembatas; penyimpanan ditunda sampai pembatas dilepas.
+  const [menggeser, setMenggeser] = useState(false);
+  // Permintaan memfokuskan sebuah tombol tab setelah tata letak berubah.
+  const [fokusTab, setFokusTab] = useState<{ paneId: string; tab: PanelTab } | undefined>(
+    undefined,
+  );
   // Indeks tombol rel yang punya fokus keyboard.
   const [railFocus, setRailFocus] = useState(0);
   const [fileCount, setFileCount] = useState<number | undefined>(undefined);
@@ -226,6 +247,8 @@ export function Panel({
   const [terminalToAttach, setTerminalToAttach] = useState<string | undefined>(undefined);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const railRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+  // Tombol tab per jendela; dipakai untuk memfokuskan tab yang berpindah.
+  const tabRefs = useRef<Record<string, Record<string, HTMLButtonElement | null>>>({});
 
   const repos = useSessionRepos(api, sessionId, status).repos;
   const multiRepo = repos !== undefined && repos.length > 1;
@@ -253,9 +276,18 @@ export function Panel({
     [terbuka],
   );
 
+  // Tata letak yang digambar: layar sempit menggabungkan seluruh tab, dan
+  // jendela yang diperbesar menyembunyikan jendela lain tanpa melepasnya.
+  const renderLayout = useMemo(() => {
+    if (sempit) return flattenForNarrow(layout, focusPaneId);
+    return visibleLayout(layout);
+  }, [sempit, layout, focusPaneId]);
+
+  // Penyimpanan ditunda selama pembatas diseret; ditulis lagi saat dilepas.
   useEffect(() => {
+    if (menggeser) return;
     writePaneLayout(layout);
-  }, [layout]);
+  }, [layout, menggeser]);
 
   useEffect(() => {
     if (open) closeRef.current?.focus();
@@ -266,6 +298,14 @@ export function Panel({
     const index = PANEL_RAIL_TABS.findIndex((entry) => entry.id === railActiveId);
     if (index >= 0) setRailFocus(index);
   }, [railActiveId]);
+
+  // Tab yang baru berpindah atau jendela yang baru jadi aktif difokuskan.
+  useEffect(() => {
+    if (fokusTab === undefined) return;
+    const tombol = tabRefs.current[fokusTab.paneId]?.[fokusTab.tab];
+    if (tombol !== undefined && tombol !== null) tombol.focus();
+    setFokusTab(undefined);
+  }, [fokusTab, layout]);
 
   /** Buka sebuah alat; tab baru masuk ke jendela yang difokuskan. */
   const bukaTool = (tab: PanelTab, paneId?: string): void => {
@@ -278,19 +318,85 @@ export function Panel({
 
   /** Jadikan tab aktif pada sebuah jendela dan fokuskan jendela itu. */
   const pilihTab = (paneId: string, tab: PanelTab): void => {
+    // Layar sempit menggabungkan jendela; tab aktif mengikuti pemiliknya.
+    if (sempit) {
+      const pemilik = paneOfTool(layout, tab);
+      if (pemilik === undefined) return;
+      setLayout((current) => setActive(current, pemilik.id, tab));
+      setFocusPaneId(pemilik.id);
+      return;
+    }
     setLayout((current) => setActive(current, paneId, tab));
     setFocusPaneId(paneId);
   };
 
   /** Tutup sebuah tab; jendela yang jadi kosong ikut hilang. */
   const tutupTab = (tab: PanelTab): void => {
-    setLayout((current) => closeTab(current, tab));
+    const pemilik = paneOfTool(layout, tab);
+    const next = closeTab(layout, tab);
+    setLayout(next);
+    // Jendela yang jadi kosong hilang; fokus pindah ke jendela tetangga.
+    if (pemilik === undefined) return;
+    if (next.panes.some((entry) => entry.id === pemilik.id)) return;
+    const index = layout.panes.findIndex((entry) => entry.id === pemilik.id);
+    const tetangga = next.panes[index] ?? next.panes[index - 1] ?? next.panes[0];
+    if (tetangga === undefined) return;
+    setFocusPaneId(tetangga.id);
+    setFokusTab({ paneId: tetangga.id, tab: tetangga.active });
   };
 
   /** Tutup sebuah jendela beserta seluruh tabnya. */
   const tutupJendela = (paneId: string): void => {
-    setLayout((current) => closePane(current, paneId));
+    const index = layout.panes.findIndex((entry) => entry.id === paneId);
+    const next = closePane(layout, paneId);
+    setLayout(next);
     setFocusPaneId((current) => (current === paneId ? undefined : current));
+    // Fokus tidak boleh hilang; pindah ke tab aktif jendela tetangga.
+    const tetangga = next.panes[index] ?? next.panes[index - 1] ?? next.panes[0];
+    if (tetangga === undefined) return;
+    setFocusPaneId(tetangga.id);
+    setFokusTab({ paneId: tetangga.id, tab: tetangga.active });
+  };
+
+  /** Pindahkan tab aktif sebuah jendela ke arah atas atau bawah. */
+  const pindahkanTab = (tab: PanelTab, arah: MoveDirection): void => {
+    const next = moveTab(layout, tab, arah);
+    if (next === layout) return;
+    setLayout(next);
+    const pemilik = paneOfTool(next, tab);
+    if (pemilik === undefined) return;
+    setFocusPaneId(pemilik.id);
+    setFokusTab({ paneId: pemilik.id, tab });
+  };
+
+  /** Perbesar atau pulihkan ukuran sebuah jendela. */
+  const perbesar = (paneId: string): void => {
+    setLayout((current) => toggleMaximize(current, paneId));
+  };
+
+  /** Geser pembatas; dipakai saat pembatas diseret. */
+  const geserPembatas = (index: number, sizeAbove: number): void => {
+    setLayout((current) => {
+      const delta = sizeAbove - (current.sizes[index] ?? 0);
+      return resizeBoundary(current, index, delta);
+    });
+  };
+
+  /** Geser pembatas dengan keyboard. */
+  const geserPembatasKunci = (index: number, key: string): void => {
+    setLayout((current) => resizeBoundaryByKey(current, index, key) ?? current);
+  };
+
+  /** Bagi rata dua jendela tetangga di sekitar pembatas. */
+  const bagiRata = (index: number): void => {
+    setLayout((current) => evenBoundary(current, index));
+  };
+
+  /** Bolehkah tab aktif sebuah jendela dipindah ke arah tertentu? */
+  const bisaPindah = (pane: Pane, arah: MoveDirection): boolean => {
+    if (sempit) return false;
+    if (layout.maximized !== undefined) return false;
+    return canMoveTab(layout, pane.active, arah);
   };
 
   useEffect(() => {
@@ -335,54 +441,77 @@ export function Panel({
       style={width === undefined ? undefined : { width: `${width}px` }}
       aria-label={PANEL_LABEL}>
       <div class="jk-pane-stack">
-        {layout.panes.map((pane, index) => (
-          <PaneWindow
-            key={pane.id}
-            pane={pane}
-            size={layout.sizes[index] ?? 1}
-            isFirst={index === 0}
-            paneCount={layout.panes.length}
-            availableTools={tersedia}
-            countFor={countFor}
-            showRepo={multiRepo && TABS_WITH_REPO.includes(pane.active)}
-            repoLabel={effective}
-            repoOptions={repoOptions}
-            onRepoChange={setRepoChoice}
-            showRefresh={TABS_WITH_REFRESH.includes(pane.active)}
-            onSelectTab={(tab) => pilihTab(pane.id, tab)}
-            onCloseTab={tutupTab}
-            onOpenTool={(tab) => bukaTool(tab, pane.id)}
-            onClosePane={() => tutupJendela(pane.id)}
-            onClosePanel={() => onOpenChange(false)}
-            onRefresh={() => setRefreshToken((value) => value + 1)}
-            closeRef={index === 0 ? closeRef : undefined}
-          >
-            <PanelTabBody
-              tab={pane.active}
-              api={api}
-              sessionId={sessionId}
-              session={session}
-              open={open}
-              eventCount={eventCount}
-              status={status}
-              refreshToken={refreshToken}
-              repo={repo}
-              todos={todos}
-              checkpointNote={checkpointNote}
-              commitDraft={commitDraft}
-              terminalToAttach={terminalToAttach}
-              onDraftChange={setCommitDraft}
-              onOpenChanges={() => bukaTool("changes")}
-              onOpenTerminal={onOpenTerminal}
-              onFileCount={setFileCount}
-              onGitCount={setGitCount}
-              onCheckpointCount={setCheckpointCount}
-              onChanged={() => setRefreshToken((value) => value + 1)}
-              onSessionChanged={onSessionChanged}
-              onQuote={onQuote}
-            />
-          </PaneWindow>
-        ))}
+        {renderLayout.panes.map((pane, index) => {
+          const refsTab = tabRefs.current[pane.id] ?? (tabRefs.current[pane.id] = {});
+          return (
+            <Fragment key={pane.id}>
+              {index > 0 && (
+                <PaneDivider
+                  index={index - 1}
+                  sizeAbove={renderLayout.sizes[index - 1] ?? 0}
+                  onDragStart={() => setMenggeser(true)}
+                  onResize={(size) => geserPembatas(index - 1, size)}
+                  onCommit={() => setMenggeser(false)}
+                  onKeyResize={(key) => geserPembatasKunci(index - 1, key)}
+                  onEven={() => bagiRata(index - 1)}
+                />
+              )}
+              <PaneWindow
+                pane={pane}
+                size={renderLayout.sizes[index] ?? 1}
+                isFirst={index === 0}
+                paneCount={renderLayout.panes.length}
+                availableTools={tersedia}
+                countFor={countFor}
+                showRepo={multiRepo && TABS_WITH_REPO.includes(pane.active)}
+                repoLabel={effective}
+                repoOptions={repoOptions}
+                onRepoChange={setRepoChoice}
+                showRefresh={TABS_WITH_REFRESH.includes(pane.active)}
+                narrow={sempit}
+                maximized={layout.maximized === pane.id}
+                canMoveUp={bisaPindah(pane, "atas")}
+                canMoveDown={bisaPindah(pane, "bawah")}
+                onSelectTab={(tab) => pilihTab(pane.id, tab)}
+                onCloseTab={tutupTab}
+                onOpenTool={(tab) => bukaTool(tab, pane.id)}
+                onClosePane={() => tutupJendela(pane.id)}
+                onClosePanel={() => onOpenChange(false)}
+                onRefresh={() => setRefreshToken((value) => value + 1)}
+                onMoveUp={() => pindahkanTab(pane.active, "atas")}
+                onMoveDown={() => pindahkanTab(pane.active, "bawah")}
+                onToggleMaximize={() => perbesar(pane.id)}
+                closeRef={index === 0 ? closeRef : undefined}
+                tabRefs={refsTab}
+              >
+                <PanelTabBody
+                  tab={pane.active}
+                  api={api}
+                  sessionId={sessionId}
+                  session={session}
+                  open={open}
+                  eventCount={eventCount}
+                  status={status}
+                  refreshToken={refreshToken}
+                  repo={repo}
+                  todos={todos}
+                  checkpointNote={checkpointNote}
+                  commitDraft={commitDraft}
+                  terminalToAttach={terminalToAttach}
+                  onDraftChange={setCommitDraft}
+                  onOpenChanges={() => bukaTool("changes")}
+                  onOpenTerminal={onOpenTerminal}
+                  onFileCount={setFileCount}
+                  onGitCount={setGitCount}
+                  onCheckpointCount={setCheckpointCount}
+                  onChanged={() => setRefreshToken((value) => value + 1)}
+                  onSessionChanged={onSessionChanged}
+                  onQuote={onQuote}
+                />
+              </PaneWindow>
+            </Fragment>
+          );
+        })}
       </div>
 
       <PanelRail

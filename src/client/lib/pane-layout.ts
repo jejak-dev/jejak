@@ -301,6 +301,56 @@ export function moveTab(
 }
 
 /**
+ * Pecahan tinggi jendela di atas pembatas setelah digeser `dy` piksel.
+ * Perpindahan dibagi tinggi tumpukan; tinggi yang tidak sah diabaikan.
+ */
+export function draggedSizeAbove(sizeAbove: number, dy: number, stackHeight: number): number {
+  if (!Number.isFinite(sizeAbove) || !Number.isFinite(dy)) return sizeAbove;
+  if (!Number.isFinite(stackHeight) || stackHeight <= 0) return sizeAbove;
+  return sizeAbove + dy / stackHeight;
+}
+
+/**
+ * Bandingkan dua tata letak: sama bila jendela, tab, ukuran, dan keadaan
+ * perbesar sama persis.
+ */
+function sameLayout(kiri: PaneLayout, kanan: PaneLayout): boolean {
+  if (kiri.panes.length !== kanan.panes.length) return false;
+  if (kiri.sizes.length !== kanan.sizes.length) return false;
+  if ((kiri.maximized ?? "") !== (kanan.maximized ?? "")) return false;
+  for (let index = 0; index < kiri.panes.length; index += 1) {
+    const a = kiri.panes[index]!;
+    const b = kanan.panes[index]!;
+    if (a.id !== b.id) return false;
+    if (a.active !== b.active) return false;
+    if (a.tabs.length !== b.tabs.length) return false;
+    for (let t = 0; t < a.tabs.length; t += 1) {
+      if (a.tabs[t] !== b.tabs[t]) return false;
+    }
+  }
+  for (let index = 0; index < kiri.sizes.length; index += 1) {
+    if (Math.abs((kiri.sizes[index] ?? 0) - (kanan.sizes[index] ?? 0)) > SIZE_EPSILON) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Apakah memindahkan sebuah tab ke arah tertentu benar-benar mengubah tata
+ * letak. Bila hasilnya sama dengan masukan (mis. sudah di tepi dengan tiga
+ * jendela, atau tab tunggal di satu-satunya jendela), jawabannya tidak.
+ */
+export function canMoveTab(
+  layout: PaneLayout,
+  tab: PanelTab,
+  direction: MoveDirection,
+): boolean {
+  const next = moveTab(layout, tab, direction);
+  return !sameLayout(layout, next);
+}
+
+/**
  * Geser pembatas antara jendela `index` dan `index+1` sebesar `deltaFraction`.
  * Hanya dua jendela itu yang berubah dan keduanya tidak boleh di bawah
  * {@link MIN_SIZE}; nilai di luar batas dijepit, bukan digagalkan.
@@ -347,6 +397,55 @@ export function resizeBoundaryByKey(
     return resizeBoundary(layout, index, target - atas);
   }
   return undefined;
+}
+
+/**
+ * Bagi rata dua jendela tetangga di sekitar pembatas `index`: keduanya
+ * memakai setengah tinggi gabungan. Indeks di luar rentang tidak mengubah
+ * apa pun.
+ */
+export function evenBoundary(layout: PaneLayout, index: number): PaneLayout {
+  if (!Number.isFinite(index) || index < 0 || index >= layout.panes.length - 1) return layout;
+  const atas = layout.sizes[index];
+  const bawah = layout.sizes[index + 1];
+  if (atas === undefined || bawah === undefined) return layout;
+  const total = atas + bawah;
+  if (!Number.isFinite(total) || total <= 0) return layout;
+  const next = cloneLayout(layout);
+  next.sizes[index] = total / 2;
+  next.sizes[index + 1] = total / 2;
+  return next;
+}
+
+/**
+ * Gabungkan seluruh jendela menjadi satu jendela untuk tampilan sempit: tab
+ * digabung berurutan jendela, tab aktif memakai tab aktif jendela yang
+ * terakhir difokuskan, ukuran penuh, dan tanpa keadaan diperbesar. Hasilnya
+ * hanya untuk ditampilkan; tata letak asli tidak berubah.
+ */
+export function flattenForNarrow(layout: PaneLayout, focusPaneId?: string): PaneLayout {
+  const tabs = layout.panes.flatMap((pane) => [...pane.tabs]);
+  if (tabs.length === 0) return defaultLayout();
+  const difokuskan =
+    layout.panes.find((pane) => pane.id === focusPaneId) ??
+    layout.panes[layout.panes.length - 1];
+  const aktif = difokuskan !== undefined && tabs.includes(difokuskan.active)
+    ? difokuskan.active
+    : tabs[0]!;
+  const id = layout.panes[0]?.id ?? "p1";
+  return { panes: [{ id, tabs, active: aktif }], sizes: [1] };
+}
+
+/**
+ * Jendela yang digambar beserta ukurannya. Jendela yang diperbesar
+ * menyembunyikan jendela lain tanpa melepasnya dari tata letak.
+ */
+export function visibleLayout(layout: PaneLayout): PaneLayout {
+  const maks = layout.maximized;
+  if (maks === undefined) return layout;
+  const pane = layout.panes.find((entry) => entry.id === maks);
+  if (pane === undefined) return layout;
+  return { panes: [pane], sizes: [1] };
 }
 
 /** Nyalakan atau matikan keadaan diperbesar sebuah jendela. */
