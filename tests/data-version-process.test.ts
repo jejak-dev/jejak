@@ -18,8 +18,8 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-/** Versi yang pasti lebih tua dari versi aplikasi berjalan. */
-const VERSI_LAMA = `${VERSION}-0`;
+/** Versi yang pasti lebih tua dari versi aplikasi berjalan (juga bila itu pra-rilis). */
+const VERSI_LAMA = "0.0.0-0";
 /** Versi yang pasti lebih baru dari versi aplikasi berjalan. */
 const VERSI_BARU = "99.0.0";
 
