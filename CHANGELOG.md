@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Diubah
+
+- Workflow GitHub memakai `actions/checkout` v5 (Node 24).
+
 ## [0.1.0-beta.2] - 2026-11-14
 
 ### Diperbaiki
