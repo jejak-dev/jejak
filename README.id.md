@@ -47,9 +47,15 @@ pekerjaan itu lewat timeline.
 
 ## Memasang aplikasi desktop
 
-Unduh installer sesuai platform Anda dari
-[GitHub Releases](https://github.com/jejak-dev/jejak/releases). Build tersedia untuk
-macOS (Apple silicon dan Intel) serta Windows (x64).
+Di macOS, satu baris memasang `Jejak.app` ke `~/Applications` (tanpa `sudo`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jejak-dev/jejak/main/install.sh | sh
+```
+
+Alternatifnya seret `Jejak.app` dari `.dmg` ke Applications. Di Windows, unduh
+`.exe` dari [GitHub Releases](https://github.com/jejak-dev/jejak/releases). Build
+tersedia untuk macOS (Apple silicon dan Intel) serta Windows (x64).
 
 Dua catatan jujur, karena aplikasi **tidak ditandatangani dengan sertifikat
 vendor sistem**:
@@ -63,6 +69,9 @@ vendor sistem**:
 Pembaruan dikirim oleh aplikasi itu sendiri. Setiap pembaruan ditandatangani dengan
 kunci minisign yang kunci publiknya tertanam di aplikasi, jadi bundel yang dimanipulasi
 tidak akan terpasang.
+
+Langkah lengkap, letak data, pemecahan masalah, dan cara mencabut pemasangan:
+[INSTALL.id.md](INSTALL.id.md).
 
 ## Menjalankan dari sumber
 

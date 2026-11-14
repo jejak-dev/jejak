@@ -47,9 +47,15 @@ machine, an agent drives it, and you watch the work in a timeline.
 
 ## Install the desktop app
 
-Download the installer for your platform from
-[GitHub Releases](https://github.com/jejak-dev/jejak/releases). Builds are published
-for macOS (Apple silicon and Intel) and Windows (x64).
+On macOS, one line installs `Jejak.app` into `~/Applications` (no `sudo` needed):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jejak-dev/jejak/main/install.sh | sh
+```
+
+You can also drag `Jejak.app` out of the `.dmg` into Applications. On Windows,
+download the `.exe` from [GitHub Releases](https://github.com/jejak-dev/jejak/releases).
+Builds are published for macOS (Apple silicon and Intel) and Windows (x64).
 
 Two honest caveats, because the app is **not signed with an OS vendor certificate**:
 
@@ -61,6 +67,9 @@ Two honest caveats, because the app is **not signed with an OS vendor certificat
 
 Updates are delivered by the app itself. Each update is signed with a minisign key
 whose public key is pinned in the application, so a tampered bundle will not install.
+
+Full steps, data locations, troubleshooting, and uninstall instructions:
+[INSTALL.md](INSTALL.md).
 
 ## Run from source
 

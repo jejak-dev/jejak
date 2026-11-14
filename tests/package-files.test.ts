@@ -30,7 +30,9 @@ test("private tetap true agar tidak terpublikasi tidak sengaja", async () => {
 test("files tidak memuat tests dan memuat src", async () => {
   const files = (await readManifest()).files as string[];
   expect(files).toContain("src/");
-  expect(files).toContain("docs/PASANG.md");
+  expect(files).toContain("INSTALL.md");
+  expect(files).toContain("INSTALL.id.md");
+  expect(files).toContain("install.sh");
   expect(files.some((entry) => entry.startsWith("tests"))).toBe(false);
   expect(files.some((entry) => entry.includes("ROADMAP"))).toBe(false);
 });
