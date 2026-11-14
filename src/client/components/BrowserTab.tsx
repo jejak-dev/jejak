@@ -3,16 +3,29 @@ import type { ApiClient } from "../lib/api";
 import { featureOffHint, openFeatureSettings, type FeatureState } from "../lib/features";
 import { parseSse } from "../lib/sse";
 import {
-  browserErrorText,
+  browserActivateTab,
+  browserBack,
+  browserClose,
+  browserCloseTab,
+  browserForward,
   browserFrameUrl,
-  browserStatusText,
+  browserNavigate,
+  browserNewTab,
+  browserReload,
+  browserStop,
   browserView,
+  activeTab,
+  dialogLabel,
   fitFrameSize,
   parseBrowserEvent,
   parseBrowserState,
+  statusLabel,
+  type BrowserActionResult,
   type BrowserFrameInfo,
   type BrowserStateInfo,
 } from "../lib/browser";
+import { BrowserTabStrip } from "./BrowserTabStrip";
+import { BrowserToolbar } from "./BrowserToolbar";
 
 const NOTE =
   "Browser memakai profil terpisah milik Jejak dan berjalan di latar belakang. Panel ini hanya menampilkan halaman; belum ada klik atau ketikan. Tutup browser saat tidak dipakai.";
@@ -37,12 +50,16 @@ export interface BrowserTabProps {
 
 export function BrowserTab({ api }: BrowserTabProps) {
   const [status, setStatus] = useState<number | undefined>(undefined);
-  const [message, setMessage] = useState<string | undefined>(undefined);
+  const [galat, setGalat] = useState<string | undefined>(undefined);
   const [fitur, setFitur] = useState<FeatureState | undefined>(undefined);
   const [state, setState] = useState<BrowserStateInfo | undefined>(undefined);
   const [frame, setFrame] = useState<BrowserFrameInfo | undefined>(undefined);
-  const [url, setUrl] = useState("");
+  /** Apakah kolom URL sedang disunting (pengguna fokus)? */
+  const [sunting, setSunting] = useState(false);
+  /** Teks yang diketik pengguna. */
+  const [ketikan, setKetikan] = useState("");
   const [busy, setBusy] = useState(false);
+  const [ditutup, setDitutup] = useState(false);
   const [streamKey, setStreamKey] = useState(0);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamAktif = useRef(false);
@@ -61,7 +78,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
         if (!response.ok) {
           const err = await readError(response);
           setStatus(response.status);
-          setMessage(err);
+          setGalat(err);
           if (response.status === 503) {
             // Status fitur diketahui supaya tahu saklar terkunci env atau tidak.
             void api
@@ -75,7 +92,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
         if (parsed !== undefined) setState(parsed);
       } catch (caught) {
         if (controller.signal.aborted) return;
-        setMessage(caught instanceof Error ? caught.message : "Permintaan gagal.");
+        setGalat(caught instanceof Error ? caught.message : "Permintaan gagal.");
       }
     })();
     void (async () => {
@@ -84,7 +101,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
         if (!response.ok) {
           const err = await readError(response);
           setStatus(response.status);
-          setMessage(err);
+          setGalat(err);
           return;
         }
         if (response.body === null) return;
@@ -93,6 +110,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
           const parsed = parseBrowserEvent(item.event, item.data);
           if (parsed === undefined) continue;
           if (parsed.kind === "state") {
+            // State baru menggantikan seluruh state lama (tab, viewport, dialog).
             setState(parsed.state);
           } else {
             setFrame(parsed.frame);
@@ -101,7 +119,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
         streamAktif.current = false;
       } catch (caught) {
         if (controller.signal.aborted) return;
-        setMessage(caught instanceof Error ? caught.message : "Aliran browser terputus.");
+        setGalat(caught instanceof Error ? caught.message : "Aliran browser terputus.");
       }
     })();
     return () => {
@@ -128,57 +146,67 @@ export function BrowserTab({ api }: BrowserTabProps) {
     image.src = browserFrameUrl(frame.data);
   }, [frame]);
 
-  const navigate = async (): Promise<void> => {
-    const target = url.trim();
-    if (target === "" || busy) return;
+  /** Jalankan aksi browser; state dari respons langsung dipakai. */
+  const jalankan = useCallback(async (aksi: () => Promise<BrowserActionResult>): Promise<boolean> => {
     setBusy(true);
-    // Aliran yang sudah terputus (mis. browser ditutup) dinyalakan lagi.
-    if (!streamAktif.current) setStreamKey((key) => key + 1);
     try {
-      const response = await fetch("/api/browser/navigate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ url: target }),
-      });
-      if (!response.ok) {
-        const err = await readError(response);
-        setStatus(response.status);
-        setMessage(browserErrorText(response.status, err));
-        return;
+      const hasil = await aksi();
+      if (!hasil.ok) {
+        setGalat(hasil.error ?? "Permintaan gagal.");
+        if (hasil.status !== undefined) setStatus(hasil.status);
+        return false;
       }
-      const parsed = parseBrowserState(await response.json());
-      if (parsed !== undefined) setState(parsed);
+      setGalat(undefined);
       setStatus(undefined);
-      setMessage(undefined);
-    } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "Permintaan gagal.");
+      if (hasil.state !== undefined) setState(hasil.state);
+      return true;
     } finally {
       setBusy(false);
     }
+  }, []);
+
+  const navigate = useCallback(
+    async (target: string): Promise<void> => {
+      const trimmed = target.trim();
+      if (trimmed === "") return;
+      // Aliran yang sudah terputus (mis. browser ditutup) dinyalakan lagi.
+      if (!streamAktif.current) setStreamKey((key) => key + 1);
+      const ok = await jalankan(() => browserNavigate(trimmed));
+      // Setelah sukses, kolom URL kembali mengikuti state server.
+      if (ok) setSunting(false);
+    },
+    [jalankan],
+  );
+
+  const closeBrowser = useCallback(async (): Promise<void> => {
+    const ok = await jalankan(() => browserClose());
+    if (!ok) return;
+    setState(undefined);
+    setFrame(undefined);
+    setDitutup(true);
+  }, [jalankan]);
+
+  const onUrlInput = (value: string): void => {
+    setSunting(true);
+    setKetikan(value);
   };
 
-  const closeBrowser = async (): Promise<void> => {
-    try {
-      const response = await fetch("/api/browser", {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      });
-      if (!response.ok) {
-        const err = await readError(response);
-        setMessage(browserErrorText(response.status, err));
-        return;
-      }
-      setState(undefined);
-      setFrame(undefined);
-      setStatus(undefined);
-      setMessage("Browser ditutup.");
-    } catch (caught) {
-      setMessage(caught instanceof Error ? caught.message : "Permintaan gagal.");
-    }
+  const onUrlFocus = (): void => {
+    setSunting(true);
+    setKetikan(state?.url ?? "");
   };
 
-  const view = browserView({ status, message, adaFrame: frame !== undefined, state });
+  const onUrlBlur = (): void => {
+    setSunting(false);
+  };
+
+  const onUrlSubmit = (): void => {
+    const target = sunting ? ketikan : (state?.url ?? "");
+    void navigate(target);
+  };
+
+  const view = browserView({ status, message: galat, adaFrame: frame !== undefined, state });
+  const dialog = dialogLabel(state?.lastDialog);
 
   if (view.kind === "mati") {
     const hint = featureOffHint("browser", fitur);
@@ -203,50 +231,37 @@ export function BrowserTab({ api }: BrowserTabProps) {
 
   return (
     <div class="jk-browser">
-      <div class="jk-browser-bar">
-        <input
-          class="jk-input jk-browser-url"
-          type="text"
-          value={url}
-          placeholder="https://example.com"
-          aria-label="Alamat situs yang dibuka"
-          onInput={(event) => setUrl((event.currentTarget as HTMLInputElement).value)}
-          onKeyDown={(event) => {
-            if (event.key !== "Enter") return;
-            event.preventDefault();
-            void navigate();
-          }}
-        />
-        <button
-          type="button"
-          class="jk-button"
-          disabled={busy || url.trim() === ""}
-          aria-label="Buka alamat di browser"
-          onClick={() => void navigate()}
-        >
-          Buka
-        </button>
-        <button
-          type="button"
-          class="jk-button"
-          aria-label="Tutup browser"
-          onClick={() => void closeBrowser()}
-        >
-          Tutup browser
-        </button>
-        <span class="jk-help" role="status">
-          {busy ? "Membuka…" : browserStatusText(state)}
-        </span>
-      </div>
+      <BrowserToolbar
+        state={state}
+        editing={sunting}
+        urlText={ketikan}
+        onUrlInput={onUrlInput}
+        onUrlFocus={onUrlFocus}
+        onUrlBlur={onUrlBlur}
+        onUrlSubmit={onUrlSubmit}
+        onBack={() => void jalankan(browserBack)}
+        onForward={() => void jalankan(browserForward)}
+        onReload={() => void jalankan(browserReload)}
+        onStop={() => void jalankan(browserStop)}
+        onClose={() => void closeBrowser()}
+      />
+      <BrowserTabStrip
+        tabs={state?.tabs ?? []}
+        activeId={activeTab(state)?.id}
+        onActivate={(id) => void jalankan(() => browserActivateTab(id))}
+        onClose={(id) => void jalankan(() => browserCloseTab(id))}
+        onNew={() => void jalankan(() => browserNewTab(undefined))}
+      />
       {view.kind === "galat" && (
         <p class="jk-error-line" role="alert">
           {view.pesan}
         </p>
       )}
+      {dialog !== "" && <p class="jk-note">{dialog}</p>}
       <div class="jk-browser-view">
         {frame === undefined ? (
           <p class="jk-note jk-browser-waiting" role="status">
-            Menunggu frame pertama…
+            {ditutup ? "Browser ditutup." : "Menunggu frame pertama…"}
           </p>
         ) : (
           <canvas
@@ -257,6 +272,9 @@ export function BrowserTab({ api }: BrowserTabProps) {
           />
         )}
       </div>
+      <p class="jk-note jk-browser-status" role="status">
+        {busy ? "Memproses…" : statusLabel(state)}
+      </p>
       <p class="jk-note">{NOTE}</p>
     </div>
   );
