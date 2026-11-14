@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { MemoryImportResult, MemoryItem } from "../src/client/lib/api";
+import type { ComponentChild, VNode } from "preact";
+import { createApiClient, type MemoryImportResult, type MemoryItem } from "../src/client/lib/api";
 import {
   MEMORY_BODY_MAX,
   MEMORY_TITLE_MAX,
+  acceptAriaLabel,
+  acceptLabel,
   canAccept,
   canArchive,
   canEdit,
@@ -11,15 +14,100 @@ import {
   filterByLayer,
   groupSkipped,
   importSummary,
+  isRevision,
   layerLabel,
   memoryDateLabel,
   originLabel,
   projectLabel,
+  revisionBodyChanged,
+  revisionTitleChanged,
   skippedReasonLabel,
   staleLabel,
   statusLabel,
   validateDraft,
 } from "../src/client/lib/memory";
+import { MemoryRowView } from "../src/client/components/MemoryRow";
+
+/* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
+
+function textOf(node: ComponentChild): string {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  const vnode = node as VNode;
+  if (typeof vnode.type === "function") {
+    return textOf((vnode.type as (props: unknown) => ComponentChild)(vnode.props));
+  }
+  return textOf(vnode.props.children as ComponentChild);
+}
+
+function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): VNode[] {
+  if (node === null || node === undefined || typeof node === "boolean") return [];
+  if (typeof node === "string" || typeof node === "number") return [];
+  if (Array.isArray(node)) return node.flatMap((child) => findNodes(child, predicate));
+  const vnode = node as VNode;
+  if (typeof vnode.type === "function") {
+    const rendered = (vnode.type as (props: unknown) => ComponentChild)(vnode.props);
+    return findNodes(rendered, predicate);
+  }
+  const self = predicate(vnode) ? [vnode] : [];
+  return self.concat(findNodes(vnode.props.children as ComponentChild, predicate));
+}
+
+function byClass(node: ComponentChild, className: string): VNode[] {
+  return findNodes(node, (vnode) => {
+    const value = (vnode.props as Record<string, unknown>).class;
+    return typeof value === "string" && value.split(" ").includes(className);
+  });
+}
+
+function propsOf(vnode: VNode | undefined): Record<string, unknown> {
+  return (vnode?.props ?? {}) as Record<string, unknown>;
+}
+
+function buttonByLabel(node: ComponentChild, label: string): VNode | undefined {
+  return findNodes(node, (vnode) => {
+    if (vnode.type !== "button") return false;
+    const props = propsOf(vnode);
+    return props["aria-label"] === label || textOf(props.children as ComponentChild) === label;
+  })[0];
+}
+
+const NOOP = (): void => {};
+
+/** Fetch palsu yang selalu membalas JSON. */
+function fakeJsonFetch(body: unknown): typeof fetch {
+  return (async () =>
+    new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    })) as unknown as typeof fetch;
+}
+
+/** Baris memory dengan props default; dipakai uji render. */
+function renderRow(item: MemoryItem): ComponentChild {
+  return MemoryRowView({
+    item,
+    projects: [],
+    open: true,
+    editing: false,
+    confirmingReject: false,
+    confirmingDelete: false,
+    busy: false,
+    cancelRef: { current: null },
+    onToggleOpen: NOOP,
+    onSubmitEdit: NOOP,
+    onCancelEdit: NOOP,
+    onAskReject: NOOP,
+    onAskDelete: NOOP,
+    onCancelConfirm: NOOP,
+    onConfirmReject: NOOP,
+    onConfirmDelete: NOOP,
+    onArchive: NOOP,
+    onAccept: NOOP,
+    onStartEdit: NOOP,
+  }) as unknown as ComponentChild;
+}
 
 function make(overrides: Partial<MemoryItem> = {}): MemoryItem {
   return {
@@ -36,6 +124,7 @@ function make(overrides: Partial<MemoryItem> = {}): MemoryItem {
     updatedAt: "2026-11-08T10:00:00.000Z",
     decidedAt: null,
     replaces: null,
+    revises: null,
     ...overrides,
   };
 }
@@ -306,5 +395,175 @@ describe("importSummary", () => {
     expect(importSummary(result({ created: many }))).toBe(
       "4 usulan baru dari AGENTS.md.",
     );
+  });
+});
+
+/* ---------- Revisi memory ---------- */
+
+describe("isRevision", () => {
+  test("memory biasa bukan revisi", () => {
+    expect(isRevision(make())).toBe(false);
+    expect(isRevision(make({ replaces: null }))).toBe(false);
+  });
+
+  test("replaces terisi berarti usulan revisi", () => {
+    expect(isRevision(make({ replaces: "abc" }))).toBe(true);
+    expect(isRevision(make({ replaces: "" }))).toBe(false);
+  });
+
+  test("revises terisi tanpa replaces tetap dianggap revisi", () => {
+    expect(
+      isRevision(make({ revises: { id: "abc", title: "Lama", body: "Isi lama" } })),
+    ).toBe(true);
+  });
+});
+
+describe("acceptLabel", () => {
+  test("usulan biasa memakai Terima, revisi memakai Terapkan revisi", () => {
+    expect(acceptLabel(make())).toBe("Terima");
+    expect(acceptLabel(make({ replaces: "abc" }))).toBe("Terapkan revisi");
+  });
+
+  test("label aksesibel mengikuti jenisnya", () => {
+    expect(acceptAriaLabel(make({ title: "Judul" }))).toBe("Terima usulan Judul");
+    expect(acceptAriaLabel(make({ title: "Judul", replaces: "abc" }))).toBe(
+      "Terapkan revisi Judul",
+    );
+  });
+});
+
+describe("penanda perubahan revisi", () => {
+  const target = { id: "abc", title: "Judul lama", body: "Isi lama" };
+
+  test("judul dan isi dibandingkan dengan target", () => {
+    expect(revisionTitleChanged({ title: "Judul lama" }, target)).toBe(false);
+    expect(revisionTitleChanged({ title: "Judul baru" }, target)).toBe(true);
+    expect(revisionBodyChanged({ body: "Isi lama" }, target)).toBe(false);
+    expect(revisionBodyChanged({ body: "Isi baru" }, target)).toBe(true);
+  });
+
+  test("tanpa target tidak ada perubahan yang ditandai", () => {
+    expect(revisionTitleChanged({ title: "Judul baru" }, null)).toBe(false);
+    expect(revisionBodyChanged({ body: "Isi baru" }, null)).toBe(false);
+  });
+});
+
+describe("tampilan revisi di baris memory", () => {
+  const target = { id: "abc", title: "Judul lama", body: "Isi lama" };
+
+  test("usulan revisi memakai lencana Revisi", () => {
+    const node = renderRow(make({ status: "proposed", replaces: "abc", revises: target }));
+    const badge = byClass(node, "jk-memory-flag-revisi")[0];
+    expect(badge).toBeDefined();
+    expect(textOf(propsOf(badge).children as ComponentChild)).toBe("Revisi");
+  });
+
+  test("memory biasa tanpa lencana revisi", () => {
+    const node = renderRow(make({ status: "proposed" }));
+    expect(byClass(node, "jk-memory-flag-revisi").length).toBe(0);
+  });
+
+  test("tombol terima untuk revisi memakai Terapkan revisi", () => {
+    const node = renderRow(make({ status: "proposed", replaces: "abc", revises: target }));
+    const button = buttonByLabel(node, "Terapkan revisi");
+    expect(button).toBeDefined();
+    expect(textOf(propsOf(button).children as ComponentChild)).toBe("Terapkan revisi");
+    expect(propsOf(button)["aria-label"]).toBe("Terapkan revisi Judul");
+  });
+
+  test("blok sebelum dan sesudah menampilkan isi target dan usulan", () => {
+    const node = renderRow(
+      make({
+        status: "proposed",
+        title: "Judul baru",
+        body: "Isi baru",
+        replaces: "abc",
+        revises: target,
+      }),
+    );
+
+    const labels = byClass(node, "jk-memory-revision-label").map((vnode) =>
+      textOf(propsOf(vnode).children as ComponentChild),
+    );
+    expect(labels).toEqual(["Sebelum", "Sesudah"]);
+
+    const bodies = byClass(node, "jk-memory-revision-body").map((vnode) =>
+      textOf(propsOf(vnode).children as ComponentChild),
+    );
+    expect(bodies).toEqual(["Isi lama", "Isi baru"]);
+
+    const titles = byClass(node, "jk-memory-revision-title").map((vnode) =>
+      textOf(propsOf(vnode).children as ComponentChild),
+    );
+    expect(titles[0]).toContain("Judul lama");
+    expect(titles[1]).toContain("Judul baru");
+
+    // Judul yang berubah diberi tanda.
+    const marks = byClass(node, "jk-memory-revision-mark").map((vnode) =>
+      textOf(propsOf(vnode).children as ComponentChild),
+    );
+    expect(marks).toContain("berubah");
+  });
+
+  test("target hilang: pesan target tidak ada dan tombol dinonaktifkan", () => {
+    const node = renderRow(make({ status: "proposed", replaces: "abc", revises: null }));
+    expect(textOf(node)).toContain("Memory yang direvisi sudah tidak ada. Tolak usulan ini.");
+    expect(byClass(node, "jk-memory-revision").length).toBe(0);
+
+    const button = buttonByLabel(node, "Terapkan revisi");
+    expect(button).toBeDefined();
+    expect(propsOf(button).disabled).toBe(true);
+  });
+});
+
+describe("normalisasi respons memory", () => {
+  test("field revisi yang tidak ada menjadi null", async () => {
+    const item = {
+      id: "m1",
+      layer: "profile",
+      projectKey: null,
+      title: "Judul",
+      body: "Isi",
+      status: "proposed",
+      confidence: "inferred",
+      origin: { kind: "session", at: "2026-11-08T10:00:00.000Z" },
+      staleReason: null,
+      createdAt: "2026-11-08T10:00:00.000Z",
+      updatedAt: "2026-11-08T10:00:00.000Z",
+      decidedAt: null,
+    };
+    const api = createApiClient({
+      fetch: fakeJsonFetch({
+        items: [item],
+        counts: { proposed: 1, active: 0 },
+        problems: [],
+      }),
+    });
+
+    const result = await api.listMemory({ status: "proposed" });
+    expect(result.items[0]?.replaces).toBeNull();
+    expect(result.items[0]?.revises).toBeNull();
+  });
+
+  test("target revisi diteruskan apa adanya", async () => {
+    const api = createApiClient({
+      fetch: fakeJsonFetch({
+        items: [
+          {
+            ...make({ status: "proposed", replaces: "abc" }),
+            revises: { id: "abc", title: "Judul lama", body: "Isi lama" },
+          },
+        ],
+        counts: { proposed: 1, active: 0 },
+        problems: [],
+      }),
+    });
+
+    const result = await api.listMemory({ status: "proposed" });
+    expect(result.items[0]?.revises).toEqual({
+      id: "abc",
+      title: "Judul lama",
+      body: "Isi lama",
+    });
   });
 });

@@ -4,6 +4,7 @@ import type {
   MemoryItem,
   MemoryLayer,
   MemoryOrigin,
+  MemoryRevises,
   MemoryStatus,
 } from "./api";
 import { folderName } from "./format";
@@ -102,6 +103,48 @@ export function canEdit(status: MemoryStatus): boolean {
 export function staleLabel(reason: string | null): string | undefined {
   if (reason === null || reason.trim() === "") return undefined;
   return `Mungkin basi: ${reason}`;
+}
+
+/** Bagian item memory yang menentukan apakah ia usulan revisi. */
+interface Revisionish {
+  replaces?: string | null;
+  revises?: MemoryRevises | null;
+}
+
+/** True bila memory ini mengusulkan revisi memory lain. */
+export function isRevision(item: Revisionish): boolean {
+  if (typeof item.replaces === "string" && item.replaces !== "") return true;
+  return item.revises !== undefined && item.revises !== null;
+}
+
+/** Label tombol terima; usulan revisi memakai "Terapkan revisi". */
+export function acceptLabel(item: Revisionish): string {
+  return isRevision(item) ? "Terapkan revisi" : "Terima";
+}
+
+/** Label aksesibel tombol terima sesuai jenisnya. */
+export function acceptAriaLabel(item: { title: string } & Revisionish): string {
+  return isRevision(item)
+    ? `Terapkan revisi ${item.title}`
+    : `Terima usulan ${item.title}`;
+}
+
+/** True bila judul usulan berbeda dari judul memory yang direvisi. */
+export function revisionTitleChanged(
+  item: { title: string },
+  target: MemoryRevises | null,
+): boolean {
+  if (target === null) return false;
+  return target.title !== item.title;
+}
+
+/** True bila isi usulan berbeda dari isi memory yang direvisi. */
+export function revisionBodyChanged(
+  item: { body: string },
+  target: MemoryRevises | null,
+): boolean {
+  if (target === null) return false;
+  return target.body !== item.body;
 }
 
 export interface MemoryDraft {

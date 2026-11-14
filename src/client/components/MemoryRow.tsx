@@ -1,15 +1,20 @@
 import { useEffect, useRef } from "preact/hooks";
 import type { MemoryItem } from "../lib/api";
 import {
+  acceptAriaLabel,
+  acceptLabel,
   canAccept,
   canArchive,
   canEdit,
   canReject,
   confidenceLabel,
+  isRevision,
   layerLabel,
   memoryDateLabel,
   originLabel,
   projectLabel,
+  revisionBodyChanged,
+  revisionTitleChanged,
   staleLabel,
   type MemoryDraft,
 } from "../lib/memory";
@@ -38,29 +43,14 @@ export interface MemoryRowProps {
   onStartEdit: () => void;
 }
 
-export function MemoryRow({
-  item,
-  projects,
-  open,
-  editing,
-  confirmingReject,
-  confirmingDelete,
-  busy,
-  failure,
-  onToggleOpen,
-  onSubmitEdit,
-  onCancelEdit,
-  onAskReject,
-  onAskDelete,
-  onCancelConfirm,
-  onConfirmReject,
-  onConfirmDelete,
-  onArchive,
-  onAccept,
-  onStartEdit,
-}: MemoryRowProps) {
+/** Sifat baris tanpa hook; dipakai uji render tanpa DOM. */
+export interface MemoryRowViewProps extends MemoryRowProps {
+  cancelRef: { current: HTMLButtonElement | null };
+}
+
+export function MemoryRow(props: MemoryRowProps) {
   const cancelRef = useRef<HTMLButtonElement | null>(null);
-  const confirming = confirmingReject || confirmingDelete;
+  const confirming = props.confirmingReject || props.confirmingDelete;
 
   useEffect(() => {
     if (confirming) cancelRef.current?.focus();
@@ -69,23 +59,43 @@ export function MemoryRow({
   useEffect(() => {
     if (!confirming) return;
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== "Escape" || busy) return;
+      if (event.key !== "Escape" || props.busy) return;
       event.preventDefault();
-      onCancelConfirm();
+      props.onCancelConfirm();
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [busy, confirming, onCancelConfirm]);
+  }, [props.busy, confirming, props.onCancelConfirm]);
+
+  return <MemoryRowView {...props} cancelRef={cancelRef} />;
+}
+
+export function MemoryRowView(props: MemoryRowViewProps) {
+  const {
+    item,
+    projects,
+    open,
+    editing,
+    confirmingReject,
+    confirmingDelete,
+    busy,
+    failure,
+    cancelRef,
+  } = props;
 
   const stale = staleLabel(item.staleReason);
   const dateLabel = memoryDateLabel(item.updatedAt);
+  const revision = isRevision(item);
+  const target = item.revises ?? null;
+  const titleChanged = revisionTitleChanged(item, target);
+  const bodyChanged = revisionBodyChanged(item, target);
 
   return (
     <details
       class="jk-memory-row"
       data-id={item.id}
       open={open || editing}
-      onToggle={(event) => onToggleOpen(event.currentTarget.open)}
+      onToggle={(event) => props.onToggleOpen(event.currentTarget.open)}
     >
       <summary
         onClick={(event) => {
@@ -97,6 +107,11 @@ export function MemoryRow({
           <Icon name="chevron" />
         </span>
         <span class="jk-memory-title">{item.title}</span>
+        {revision && (
+          <span class="jk-memory-flag jk-memory-flag-revisi" title="Usulan revisi memory lain">
+            Revisi
+          </span>
+        )}
         {stale !== undefined && (
           <span class="jk-memory-flag" title={stale}>
             mungkin basi
@@ -120,15 +135,43 @@ export function MemoryRow({
             lockedLayer
             busy={busy}
             serverError={failure}
-            onSubmit={onSubmitEdit}
-            onCancel={onCancelEdit}
+            onSubmit={props.onSubmitEdit}
+            onCancel={props.onCancelEdit}
           />
         ) : (
           <>
             {stale !== undefined && (
               <p class="jk-memory-stale">{stale}</p>
             )}
-            <p class="jk-memory-body">{item.body}</p>
+            {revision && target === null && (
+              <p class="jk-memory-missing">
+                Memory yang direvisi sudah tidak ada. Tolak usulan ini.
+              </p>
+            )}
+            {revision && target !== null ? (
+              <div class="jk-memory-revision">
+                <div class="jk-memory-revision-col">
+                  <span class="jk-memory-revision-label">Sebelum</span>
+                  <span class="jk-memory-revision-title">{target.title}</span>
+                  <p class="jk-memory-revision-body">{target.body}</p>
+                </div>
+                <div class="jk-memory-revision-col">
+                  <span class="jk-memory-revision-label">Sesudah</span>
+                  <span class="jk-memory-revision-title">
+                    {item.title}
+                    {titleChanged && (
+                      <span class="jk-memory-revision-mark">berubah</span>
+                    )}
+                  </span>
+                  <p class="jk-memory-revision-body">{item.body}</p>
+                  {bodyChanged && (
+                    <span class="jk-memory-revision-mark">isi berubah</span>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p class="jk-memory-body">{item.body}</p>
+            )}
             <p class="jk-memory-meta">
               {confidenceLabel(item.confidence)} · {originLabel(item.origin)}
               {dateLabel === "" ? "" : ` · ${dateLabel}`}
@@ -148,7 +191,7 @@ export function MemoryRow({
                       class="jk-button jk-button-caution"
                       disabled={busy}
                       aria-label={`Konfirmasi tolak usulan ${item.title}`}
-                      onClick={onConfirmReject}
+                      onClick={props.onConfirmReject}
                     >
                       {busy ? "Menolak…" : "Tolak"}
                     </button>
@@ -158,7 +201,7 @@ export function MemoryRow({
                       class="jk-button"
                       disabled={busy}
                       aria-label={`Batal menolak usulan ${item.title}`}
-                      onClick={onCancelConfirm}
+                      onClick={props.onCancelConfirm}
                     >
                       Batal
                     </button>
@@ -173,7 +216,7 @@ export function MemoryRow({
                       class="jk-button jk-button-caution"
                       disabled={busy}
                       aria-label={`Konfirmasi hapus permanen ${item.title}`}
-                      onClick={onConfirmDelete}
+                      onClick={props.onConfirmDelete}
                     >
                       {busy ? "Menghapus…" : "Hapus"}
                     </button>
@@ -183,7 +226,7 @@ export function MemoryRow({
                       class="jk-button"
                       disabled={busy}
                       aria-label={`Batal menghapus ${item.title}`}
-                      onClick={onCancelConfirm}
+                      onClick={props.onCancelConfirm}
                     >
                       Batal
                     </button>
@@ -195,11 +238,11 @@ export function MemoryRow({
                     <button
                       type="button"
                       class="jk-link-btn"
-                      disabled={busy}
-                      aria-label={`Terima usulan ${item.title}`}
-                      onClick={onAccept}
+                      disabled={busy || (revision && target === null)}
+                      aria-label={acceptAriaLabel(item)}
+                      onClick={props.onAccept}
                     >
-                      Terima
+                      {acceptLabel(item)}
                     </button>
                   )}
                   {canEdit(item.status) && (
@@ -208,7 +251,7 @@ export function MemoryRow({
                       class="jk-link-btn"
                       disabled={busy}
                       aria-label={`Ubah memory ${item.title}`}
-                      onClick={onStartEdit}
+                      onClick={props.onStartEdit}
                     >
                       Ubah
                     </button>
@@ -219,7 +262,7 @@ export function MemoryRow({
                       class="jk-link-btn jk-memory-danger"
                       disabled={busy}
                       aria-label={`Tolak usulan ${item.title}`}
-                      onClick={onAskReject}
+                      onClick={props.onAskReject}
                     >
                       Tolak
                     </button>
@@ -230,7 +273,7 @@ export function MemoryRow({
                       class="jk-link-btn"
                       disabled={busy}
                       aria-label={`Arsipkan memory ${item.title}`}
-                      onClick={onArchive}
+                      onClick={props.onArchive}
                     >
                       Arsipkan
                     </button>
@@ -241,7 +284,7 @@ export function MemoryRow({
                       class="jk-link-btn jk-memory-danger"
                       disabled={busy}
                       aria-label={`Hapus permanen memory ${item.title}`}
-                      onClick={onAskDelete}
+                      onClick={props.onAskDelete}
                     >
                       Hapus
                     </button>

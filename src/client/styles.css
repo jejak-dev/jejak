@@ -3756,6 +3756,14 @@ h2.jk-md-heading {
   font-size: 11.5px;
 }
 
+.jk-memory-flag-revisi {
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--t2);
+  font-size: 11px;
+}
+
 .jk-memory-scope {
   flex: none;
   color: var(--t3);
@@ -3780,6 +3788,59 @@ h2.jk-md-heading {
   color: var(--t2);
   font-size: 12.5px;
   line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.jk-memory-missing {
+  margin: 0;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.jk-memory-revision {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.jk-memory-revision-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.jk-memory-revision-label {
+  color: var(--t3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.jk-memory-revision-title {
+  color: var(--t1);
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.jk-memory-revision-mark {
+  margin-left: 6px;
+  color: var(--warn);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.jk-memory-revision-body {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -3844,6 +3905,10 @@ h2.jk-md-heading {
 
   .jk-memory-head-actions {
     margin-left: 0;
+  }
+
+  .jk-memory-revision {
+    grid-template-columns: 1fr;
   }
 }
 

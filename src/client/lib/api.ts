@@ -126,7 +126,21 @@ export type {
   ImportSkipReason,
 } from "../../server/memory/memory-service";
 
-export type MemoryItem = Memory;
+/** Target revisi yang masih ada: id, judul, dan isi memory yang direvisi. */
+export interface MemoryRevises {
+  id: string;
+  title: string;
+  body: string;
+}
+
+/**
+ * Item memory sisi klien. `replaces` menunjuk memory yang direvisi;
+ * `revises` memuat isi target saat ini (null bila target sudah hilang).
+ */
+export type MemoryItem = Omit<Memory, "replaces"> & {
+  replaces?: string | null;
+  revises?: MemoryRevises | null;
+};
 export type MemoryImportResult = ImportResult;
 
 export type { ServiceKind, WorkspaceProblem } from "../../server/workspaces/workspace-files";
@@ -752,12 +766,31 @@ function goalFrom(payload: unknown): { goal: GoalView | null } {
   return { goal: goal as unknown as GoalView };
 }
 
-function memoryFrom(payload: unknown): MemoryItem {
-  const item = field(payload, "item");
-  if (!isRecord(item)) {
+/** Bentuk revisi dari server; bentuk rusak menjadi null. */
+function memoryRevisesFrom(value: unknown): MemoryRevises | null {
+  if (!isRecord(value)) return null;
+  const { id, title, body } = value;
+  if (typeof id !== "string" || typeof title !== "string" || typeof body !== "string") {
+    return null;
+  }
+  return { id, title, body };
+}
+
+/** Lengkapi field revisi pada item memory; bentuk tidak dikenal ditolak. */
+function memoryItemFrom(value: unknown): MemoryItem {
+  if (!isRecord(value)) {
     throw new ApiError("respons server tidak valid", 200);
   }
-  return item as unknown as MemoryItem;
+  const replaces = typeof value.replaces === "string" ? value.replaces : null;
+  return {
+    ...value,
+    replaces,
+    revises: memoryRevisesFrom(value.revises),
+  } as unknown as MemoryItem;
+}
+
+function memoryFrom(payload: unknown): MemoryItem {
+  return memoryItemFrom(field(payload, "item"));
 }
 
 function memoryImportFrom(payload: unknown): MemoryImportResult {
@@ -1922,7 +1955,7 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const proposed = field(counts, "proposed");
       const active = field(counts, "active");
       return {
-        items: items as MemoryItem[],
+        items: items.map((entry) => memoryItemFrom(entry)),
         counts: {
           proposed: typeof proposed === "number" ? proposed : 0,
           active: typeof active === "number" ? active : 0,

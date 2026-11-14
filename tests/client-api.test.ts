@@ -662,6 +662,7 @@ const MEMORY = {
   updatedAt: "2026-11-08T10:00:00.000Z",
   decidedAt: null,
   replaces: null,
+  revises: null,
 };
 
 describe("createApiClient: memory", () => {
