@@ -58,6 +58,31 @@ export const PANEL_RAIL_TABS: readonly PanelRailTab[] = PANEL_RAIL_GROUPS.flatMa
   (group) => group.tabs,
 );
 
+/**
+ * Tab yang memakai tombol "Muat ulang" dan pemilih repo. Tab lain
+ * (Langkah, Perintah, Terminal, Browser, Wiki, Rahasia) tidak punya data
+ * yang perlu disegarkan.
+ */
+export const TABS_WITH_REFRESH: readonly PanelTab[] = [
+  "changes",
+  "git",
+  "files",
+  "checkpoints",
+];
+
+/** Tab yang menampilkan chip repo di header jendela. */
+export const TABS_WITH_REPO: readonly PanelTab[] = [
+  "changes",
+  "git",
+  "files",
+  "checkpoints",
+];
+
+/** Ikon untuk sebuah id tab; jatuh ke ikon berkas bila id tak dikenal. */
+export function panelTabIcon(id: PanelTab): IconName {
+  return PANEL_RAIL_TABS.find((entry) => entry.id === id)?.icon ?? "file";
+}
+
 /** Label Bahasa Indonesia untuk sebuah id tab; id itself sebagai cadangan. */
 export function panelTabLabel(id: PanelTab): string {
   return PANEL_RAIL_TABS.find((entry) => entry.id === id)?.label ?? id;
@@ -85,6 +110,28 @@ export function nextPanelTabIndex(
     case "ArrowUp":
       return (current - 1 + total) % total;
     case "ArrowDown":
+      return (current + 1) % total;
+    case "Home":
+      return 0;
+    case "End":
+      return total - 1;
+    default:
+      return current;
+  }
+}
+
+/**
+ * Indeks tab berikutnya untuk navigasi keyboard pada strip tab horizontal
+ * sebuah jendela. Panah kiri/kanan berpindah tab, Home ke tab pertama, End
+ * ke tab terakhir. Kunci lain mengembalikan indeks saat ini.
+ */
+export function nextPaneTabIndex(key: string, index: number, total: number): number {
+  if (total <= 0) return 0;
+  const current = ((index % total) + total) % total;
+  switch (key) {
+    case "ArrowLeft":
+      return (current - 1 + total) % total;
+    case "ArrowRight":
       return (current + 1) % total;
     case "Home":
       return 0;

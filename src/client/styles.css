@@ -2651,10 +2651,8 @@ h2.jk-md-heading {
 .jk-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 44px;
-  grid-template-rows: auto minmax(0, 1fr);
-  grid-template-areas:
-    "head rail"
-    "content rail";
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "stack rail";
   flex: none;
   width: 460px;
   max-width: 80%;
@@ -2663,26 +2661,161 @@ h2.jk-md-heading {
   background: var(--bg);
 }
 
-.jk-panel-head {
-  grid-area: head;
+/* Tumpukan jendela bertumpuk; tinggi tiap jendela mengikuti layout. */
+.jk-pane-stack {
+  grid-area: stack;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.jk-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Garis pemisah tipis antara jendela yang bersebelahan. */
+.jk-pane + .jk-pane {
+  border-top: 1px solid var(--line);
+}
+
+.jk-pane-head {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: none;
   min-height: 46px;
-  padding: 0 6px 0 12px;
+  padding: 0 6px 0 10px;
   border-bottom: 1px solid var(--line);
 }
 
-.jk-panel-title {
+/* Strip tab horizontal di header jendela; meluber digulir mendatar. */
+.jk-pane-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   flex: 1;
   min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.jk-pane-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.jk-pane-tab-wrap {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+}
+
+.jk-pane-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  max-width: 160px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--t2);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.jk-pane-tab:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-pane-tab:focus-visible {
+  outline: 2px solid var(--t2);
+  outline-offset: 1px;
+}
+
+.jk-pane-tab-active {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-pane-tab-label {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.jk-pane-count {
+  color: var(--t3);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-pane-tab-close {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--t3);
+}
+
+.jk-pane-tab-close:hover {
+  background: var(--hover);
   color: var(--t1);
-  font-size: 13.5px;
-  font-weight: 600;
+}
+
+.jk-pane-tab-close .jk-icon {
+  width: 10px;
+  height: 10px;
+}
+
+/* Tombol tambah tab dan menu kecil alat yang belum terbuka. */
+.jk-pane-add {
+  position: relative;
+  display: flex;
+  flex: none;
+}
+
+.jk-pane-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  min-width: 168px;
+  max-height: 320px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.jk-pane-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--t1);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.jk-pane-menu-item:hover {
+  background: var(--hover);
 }
 
 .jk-panel-tabs {
@@ -2732,6 +2865,18 @@ h2.jk-md-heading {
 
 .jk-panel-refresh {
   margin-left: auto;
+}
+
+/* Ikon alat yang tabnya sudah terbuka; titik halus di sudut kanan. */
+.jk-rail-btn-open::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--t3);
 }
 
 /* Rel ikon vertikal di tepi kanan panel (menggantikan strip tab teks). */
@@ -2823,8 +2968,7 @@ h2.jk-md-heading {
   font-variant-numeric: tabular-nums;
 }
 
-.jk-panel-content {
-  grid-area: content;
+.jk-pane-body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -3654,14 +3798,17 @@ h2.jk-md-heading {
     border-left: 0;
     overflow-y: auto;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
-      "head"
       "rail"
-      "content";
+      "stack";
   }
 
-  .jk-panel-head {
+  .jk-pane-stack {
+    overflow-y: auto;
+  }
+
+  .jk-pane-head {
     position: sticky;
     top: 0;
     z-index: 1;
@@ -6122,13 +6269,10 @@ h2.jk-md-heading {
   line-height: 1.6;
 }
 
-/* Muat ulang panel dipisah dari deretan tab */
+/* Muat ulang panel di sisi kanan header jendela */
 .jk-panel-refresh {
   flex: none;
   margin-left: 2px;
-  padding-left: 8px;
-  border-left: 1px solid var(--line);
-  border-radius: 0;
 }
 
 .jk-chip-btn { background: none; font-family: inherit; }
@@ -6726,7 +6870,7 @@ h2.jk-md-heading {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
-.jk-panel-head {
+.jk-pane:first-child .jk-pane-head {
   min-height: calc(46px + env(safe-area-inset-top, 0px));
   padding-top: env(safe-area-inset-top, 0px);
 }
@@ -6753,7 +6897,8 @@ h2.jk-md-heading {
   .jk-chip,
   .jk-session-actions > button,
   .jk-perm-actions .jk-button,
-  .jk-panel-tab {
+  .jk-panel-tab,
+  .jk-pane-tab {
     min-height: 40px;
   }
 
