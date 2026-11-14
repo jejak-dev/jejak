@@ -455,3 +455,453 @@ export function browserStop(fetchImpl: typeof fetch = fetch): Promise<BrowserAct
 export function browserClose(fetchImpl: typeof fetch = fetch): Promise<BrowserActionResult> {
   return browserRequest("/api/browser", { method: "DELETE", body: {} }, fetchImpl, false);
 }
+
+/* ---------- Input browser ---------- */
+
+/** Bitmask modifier CDP: alt=1, ctrl=2, meta=4, shift=8. */
+export const MODIFIER_ALT = 1;
+export const MODIFIER_CTRL = 2;
+export const MODIFIER_META = 4;
+export const MODIFIER_SHIFT = 8;
+
+/** Tombol mouse yang dikenali server. */
+export type BrowserMouseButton = "left" | "middle" | "right" | "none";
+
+/** Jenis gerakan mouse. */
+export type BrowserMouseType = "move" | "down" | "up" | "wheel";
+
+/** Jenis event keyboard (tahan atau lepas). */
+export type BrowserKeyType = "down" | "up";
+
+/** Event mouse untuk tab aktif. */
+export interface BrowserMouseEvent {
+  kind: "mouse";
+  type: BrowserMouseType;
+  /** X dalam koordinat halaman (sudah diklem ke ukuran tampilan). */
+  x: number;
+  /** Y dalam koordinat halaman (sudah diklem ke ukuran tampilan). */
+  y: number;
+  button?: BrowserMouseButton;
+  clickCount?: number;
+  deltaX?: number;
+  deltaY?: number;
+  /** Bitmask modifier CDP. */
+  modifiers: number;
+}
+
+/** Event keyboard untuk tab aktif. */
+export interface BrowserKeyEvent {
+  kind: "key";
+  type: BrowserKeyType;
+  key: string;
+  code: string;
+  /** Teks yang dicetak (hanya tombol cetak tunggal). */
+  text?: string;
+  /** Bitmask modifier CDP. */
+  modifiers: number;
+  /** Kode numerik tombol (untuk CDP). */
+  keyCode: number;
+}
+
+/** Tempel teks (misalnya hasil IME atau Cmd/Ctrl+V). */
+export interface BrowserTextEvent {
+  kind: "text";
+  text: string;
+}
+
+/** Seluruh bentuk event input yang dikirim ke server. */
+export type BrowserInputEvent = BrowserMouseEvent | BrowserKeyEvent | BrowserTextEvent;
+
+/** Kotak kanvas dalam piksel CSS (hasil getBoundingClientRect). */
+export interface BrowserCanvasRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** Sumber event mouse (MouseEvent atau objek mirip). */
+export interface BrowserMouseSource {
+  clientX: number;
+  clientY: number;
+  /** 0 kiri, 1 tengah, 2 kanan. */
+  button?: number;
+  /** Bitmask tombol yang sedang ditekan. */
+  buttons?: number;
+  deltaX?: number;
+  deltaY?: number;
+  altKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+}
+
+/** Sumber event keyboard (KeyboardEvent atau objek mirip). */
+export interface BrowserKeySource {
+  type: string;
+  key: string;
+  code: string;
+  altKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+  keyCode?: number;
+}
+
+/**
+ * Koordinat halaman dari koordinat CSS pada kanvas.
+ *
+ * Kanvas digambar mengikuti rasio frame, jadi piksel CSS kanvas tak selalu
+ * sama dengan piksel halaman. Koordinat diskalakan ke ukuran tampilan lalu
+ * dibulatkan dan diklem ke area tampilan.
+ */
+export function canvasToPage(
+  clientX: number,
+  clientY: number,
+  rect: BrowserCanvasRect,
+  viewport: BrowserViewportInfo,
+): { x: number; y: number } {
+  const lebar = rect.width > 0 ? rect.width : viewport.width;
+  const tinggi = rect.height > 0 ? rect.height : viewport.height;
+  const skalaX = lebar > 0 ? viewport.width / lebar : 1;
+  const skalaY = tinggi > 0 ? viewport.height / tinggi : 1;
+  const x = Math.round((clientX - rect.left) * skalaX);
+  const y = Math.round((clientY - rect.top) * skalaY);
+  return {
+    x: Math.min(viewport.width, Math.max(0, x)),
+    y: Math.min(viewport.height, Math.max(0, y)),
+  };
+}
+
+/** Bitmask modifier dari event (alt=1, ctrl=2, meta=4, shift=8). */
+export function modifiersOf(event: {
+  altKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+}): number {
+  let bitmask = 0;
+  if (event.altKey === true) bitmask |= MODIFIER_ALT;
+  if (event.ctrlKey === true) bitmask |= MODIFIER_CTRL;
+  if (event.metaKey === true) bitmask |= MODIFIER_META;
+  if (event.shiftKey === true) bitmask |= MODIFIER_SHIFT;
+  return bitmask;
+}
+
+/** Tombol mouse dari sumber event; gerakan tanpa tombol ditekan berarti "none". */
+function tombolDari(event: BrowserMouseSource, type: BrowserMouseType): BrowserMouseButton {
+  if (type === "wheel") return "none";
+  if (type === "move") {
+    const buttons = event.buttons ?? 0;
+    if ((buttons & 1) !== 0) return "left";
+    if ((buttons & 4) !== 0) return "middle";
+    if ((buttons & 2) !== 0) return "right";
+    return "none";
+  }
+  const button = event.button ?? 0;
+  if (button === 1) return "middle";
+  if (button === 2) return "right";
+  if (button === 0) return "left";
+  return "none";
+}
+
+/**
+ * Terjemahkan event keyboard menjadi event input server.
+ *
+ * Cmd/Ctrl+C dan Cmd/Ctrl+V tidak diteruskan sebagai tombol karena keduanya
+ * ditangani Jejak (salin dan tempel). `undefined` berarti tak ada tombol yang
+ * boleh dikirim.
+ */
+export function keyEventFrom(event: BrowserKeySource): BrowserKeyEvent | undefined {
+  const type = event.type === "keydown" ? "down" : event.type === "keyup" ? "up" : undefined;
+  if (type === undefined) return undefined;
+  const key = event.key ?? "";
+  const code = event.code ?? "";
+  if (key === "" || code === "") return undefined;
+  if (event.ctrlKey === true || event.metaKey === true) {
+    const lower = key.toLowerCase();
+    if (lower === "c" || lower === "v") return undefined;
+  }
+  const out: BrowserKeyEvent = {
+    kind: "key",
+    type,
+    key,
+    code,
+    modifiers: modifiersOf(event),
+    keyCode: typeof event.keyCode === "number" ? event.keyCode : 0,
+  };
+  // Teks hanya untuk tombol cetak tunggal; ctrl/meta berarti pintasan.
+  if (type === "down" && key.length === 1 && event.ctrlKey !== true && event.metaKey !== true) {
+    out.text = key;
+  }
+  return out;
+}
+
+/**
+ * Terjemahkan event mouse menjadi event input server.
+ *
+ * Koordinat diubah ke koordinat halaman memakai kotak kanvas dan ukuran
+ * tampilan halaman.
+ */
+export function mouseEventFrom(
+  type: BrowserMouseType,
+  event: BrowserMouseSource,
+  rect: BrowserCanvasRect,
+  viewport: BrowserViewportInfo,
+  clickCount?: number,
+): BrowserMouseEvent {
+  const point = canvasToPage(event.clientX, event.clientY, rect, viewport);
+  const out: BrowserMouseEvent = {
+    kind: "mouse",
+    type,
+    x: point.x,
+    y: point.y,
+    button: tombolDari(event, type),
+    modifiers: modifiersOf(event),
+  };
+  if (clickCount !== undefined && clickCount > 0) out.clickCount = clickCount;
+  if (type === "wheel") {
+    out.deltaX = event.deltaX ?? 0;
+    out.deltaY = event.deltaY ?? 0;
+  }
+  return out;
+}
+
+/** Event tempel teks; teks kosong diabaikan. */
+export function textEvent(text: string): BrowserTextEvent | undefined {
+  return text === "" ? undefined : { kind: "text", text };
+}
+
+/** Opsi batcher input browser. */
+export interface InputBatcherOptions {
+  /** Fungsi kirim satu batch event (tanpa awaited). */
+  send: (events: BrowserInputEvent[]) => void;
+  /** Sumber waktu (ms) untuk penghitung laju. */
+  now?: () => number;
+  /** Penjadwac tunda; mengembalikan fungsi pembatal. */
+  schedule?: (callback: () => void, delayMs: number) => () => void;
+  /** Jeda antar batch (ms). */
+  intervalMs?: number;
+  /** Batas event per batch. */
+  maxBatch?: number;
+  /** Batas event per detik. */
+  maxPerSecond?: number;
+}
+
+/** Jeda antar batch (ms). */
+const INPUT_INTERVAL_MS = 16;
+/** Batas event per batch (sama dengan server). */
+const INPUT_MAX_BATCH = 100;
+/** Batas event per detik (sama dengan server). */
+const INPUT_MAX_PER_SECOND = 200;
+
+/** Penjadwac tunda bawaan. */
+function jadwalBawaan(callback: () => void, delayMs: number): () => void {
+  const handle = setTimeout(callback, delayMs);
+  return () => clearTimeout(handle);
+}
+
+/** Apakah event ini gerakan mouse (boleh dibuang saat laju terlampaui)? */
+function isMoveEvent(event: BrowserInputEvent): boolean {
+  return event.kind === "mouse" && event.type === "move";
+}
+
+/**
+ * Pengumpul event input browser.
+ *
+ * Event ditumpuk dan dikirim per batch (default 16 ms, maksimal 100 event).
+ * Gerak mouse berturut-turut digabung menjadi satu (yang terakhir). Saat laju
+ * 200 event/detik terlampaui, gerakan mouse dibuang lebih dulu; tombol dan
+ * teks tak pernah dibuang.
+ */
+export class InputBatcher {
+  private readonly kirim: (events: BrowserInputEvent[]) => void;
+  private readonly now: () => number;
+  private readonly schedule: (callback: () => void, delayMs: number) => () => void;
+  private readonly intervalMs: number;
+  private readonly maxBatch: number;
+  private readonly maxPerSecond: number;
+  private antrean: BrowserInputEvent[] = [];
+  private waktuKirim: number[] = [];
+  private batal: (() => void) | undefined;
+  private berhenti = false;
+
+  constructor(options: InputBatcherOptions) {
+    this.kirim = options.send;
+    this.now = options.now ?? ((): number => Date.now());
+    this.schedule = options.schedule ?? jadwalBawaan;
+    this.intervalMs = options.intervalMs ?? INPUT_INTERVAL_MS;
+    this.maxBatch = options.maxBatch ?? INPUT_MAX_BATCH;
+    this.maxPerSecond = options.maxPerSecond ?? INPUT_MAX_PER_SECOND;
+  }
+
+  /** Tambah satu event ke antrean. */
+  push(event: BrowserInputEvent): void {
+    if (this.berhenti) return;
+    const terakhir = this.antrean[this.antrean.length - 1];
+    if (terakhir !== undefined && isMoveEvent(terakhir) && isMoveEvent(event)) {
+      // Gerak berturut-turut digabung; yang terakhir yang dipakai.
+      this.antrean[this.antrean.length - 1] = event;
+    } else {
+      this.antrean.push(event);
+    }
+    this.jadwal();
+  }
+
+  /** Jumlah event yang menunggu dikirim. */
+  get panjang(): number {
+    return this.antrean.length;
+  }
+
+  /** Kirim semua antrean yang ada sekarang (batch maksimal 100 event). */
+  flush(): void {
+    if (this.berhenti) return;
+    this.batal?.();
+    this.batal = undefined;
+    while (this.antrean.length > 0) {
+      const batch = this.ambilBatch();
+      if (batch.length === 0) break;
+      this.kirim(batch);
+    }
+  }
+
+  /** Buang antrean dan hentikan penjadwac. */
+  dispose(): void {
+    this.berhenti = true;
+    this.batal?.();
+    this.batal = undefined;
+    this.antrean = [];
+  }
+
+  /** Jadwalkan tick berikutnya bila ada antrean. */
+  private jadwal(): void {
+    if (this.batal !== undefined || this.antrean.length === 0) return;
+    this.batal = this.schedule(() => {
+      this.batal = undefined;
+      this.tick();
+    }, this.intervalMs);
+  }
+
+  /** Satu tick: kirim satu batch lalu jadwalkan lagi bila masih ada sisa. */
+  private tick(): void {
+    if (this.berhenti) return;
+    const batch = this.ambilBatch();
+    if (batch.length > 0) this.kirim(batch);
+    if (this.antrean.length > 0) this.jadwal();
+  }
+
+  /** Ambil batch berikutnya; buang gerakan mouse bila laju terlampaui. */
+  private ambilBatch(): BrowserInputEvent[] {
+    const diambil = this.antrean.splice(0, this.maxBatch);
+    if (diambil.length === 0) return [];
+    const sekarang = this.now();
+    this.waktuKirim = this.waktuKirim.filter((waktu) => sekarang - waktu < 1000);
+    const kelebihan = this.waktuKirim.length + diambil.length - this.maxPerSecond;
+    let hasil = diambil;
+    if (kelebihan > 0) {
+      // Buang gerakan mouse terlama dulu; tombol dan teks tak pernah dibuang.
+      const indeksGerak: number[] = [];
+      diambil.forEach((event, index) => {
+        if (isMoveEvent(event)) indeksGerak.push(index);
+      });
+      const buang = new Set(indeksGerak.slice(0, Math.min(kelebihan, indeksGerak.length)));
+      hasil = diambil.filter((_, index) => !buang.has(index));
+    }
+    for (let index = 0; index < hasil.length; index += 1) this.waktuKirim.push(sekarang);
+    return hasil;
+  }
+}
+
+/** Clipboard pengguna (dipalsukan pada tes). */
+export interface ClipboardLike {
+  writeText(text: string): Promise<void>;
+}
+
+/**
+ * Salin teks pilihan halaman ke clipboard pengguna.
+ *
+ * Kegagalan diabaikan (galat tak boleh memuat isi halaman).
+ */
+export async function copySelectionToClipboard(
+  fetchImpl: typeof fetch = fetch,
+  clipboard: ClipboardLike | undefined = undefined,
+): Promise<boolean> {
+  const target =
+    clipboard ??
+    (typeof navigator === "undefined" ? undefined : (navigator.clipboard as ClipboardLike | undefined));
+  try {
+    const response = await fetchImpl("/api/browser/copy", {
+      method: "POST",
+      headers: { ...JSON_HEADERS },
+    });
+    if (!response.ok) return false;
+    const data: unknown = await response.json();
+    const text = isRecord(data) && typeof data.text === "string" ? data.text : "";
+    if (text === "" || target === undefined) return false;
+    await target.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Kirim daftar event input ke server.
+ *
+ * Galat tak pernah memuat isi input; pemanggil cukup tahu berhasil atau tidak.
+ */
+export async function browserSendInput(
+  events: BrowserInputEvent[],
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  try {
+    const response = await fetchImpl("/api/browser/input", {
+      method: "POST",
+      headers: { ...JSON_HEADERS },
+      body: JSON.stringify({ events }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ubah ukuran tampilan halaman di server.
+ *
+ * Server menglem ukuran; pemanggil cukup tahu berhasil atau tidak.
+ */
+export async function browserSetViewport(
+  width: number,
+  height: number,
+  fetchImpl: typeof fetch = fetch,
+): Promise<boolean> {
+  try {
+    const response = await fetchImpl("/api/browser/viewport", {
+      method: "POST",
+      headers: { ...JSON_HEADERS },
+      body: JSON.stringify({ width, height }),
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Batas ukuran tampilan (sama dengan server). */
+export const VIEWPORT_MIN_WIDTH = 320;
+export const VIEWPORT_MAX_WIDTH = 1920;
+export const VIEWPORT_MIN_HEIGHT = 240;
+export const VIEWPORT_MAX_HEIGHT = 1200;
+
+/**
+ * Klem ukuran tampilan ke batas yang diizinkan server.
+ *
+ * Klem di sisi klien supaya ukuran yang dikirim sama dengan ukuran yang
+ * dipakai server; koordinat klik tetap pas.
+ */
+export function clampViewportSize(width: number, height: number): BrowserViewportInfo {
+  const w = Math.min(VIEWPORT_MAX_WIDTH, Math.max(VIEWPORT_MIN_WIDTH, Math.round(width)));
+  const h = Math.min(VIEWPORT_MAX_HEIGHT, Math.max(VIEWPORT_MIN_HEIGHT, Math.round(height)));
+  return { width: w, height: h };
+}

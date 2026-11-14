@@ -12,23 +12,46 @@ import {
   browserNavigate,
   browserNewTab,
   browserReload,
+  browserSendInput,
+  browserSetViewport,
   browserStop,
   browserView,
   activeTab,
+  clampViewportSize,
+  copySelectionToClipboard,
   dialogLabel,
   fitFrameSize,
+  keyEventFrom,
+  mouseEventFrom,
   parseBrowserEvent,
   parseBrowserState,
   statusLabel,
+  textEvent,
+  InputBatcher,
   type BrowserActionResult,
+  type BrowserCanvasRect,
   type BrowserFrameInfo,
+  type BrowserInputEvent,
   type BrowserStateInfo,
+  type BrowserViewportInfo,
 } from "../lib/browser";
 import { BrowserTabStrip } from "./BrowserTabStrip";
 import { BrowserToolbar } from "./BrowserToolbar";
 
 const NOTE =
-  "Browser memakai profil terpisah milik Jejak dan berjalan di latar belakang. Panel ini hanya menampilkan halaman; belum ada klik atau ketikan. Tutup browser saat tidak dipakai.";
+  "Browser memakai profil terpisah milik Jejak dan berjalan di latar belakang. Klik layar untuk mengendalikan halaman (klik, gulir, ketik). Tutup browser saat tidak dipakai.";
+
+/** Pesan umum saat input gagal terkirim (isi input tak boleh ikut tampil). */
+const PESAN_INPUT_GAGAL = "Gagal mengirim input ke browser";
+
+/** Pesan umum saat salin gagal (isi halaman tak boleh ikut tampil). */
+const PESAN_SALIN_GAGAL = "Gagal menyalin teks dari browser";
+
+/** Jeda diam sebelum ukuran tampilan dikirim (ms). */
+const VIEWPORT_DEBOUNCE_MS = 250;
+
+/** Ukuran tampilan cadangan bila server belum melapor. */
+const VIEWPORT_BAWAAN: BrowserViewportInfo = { width: 1280, height: 800 };
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -54,6 +77,10 @@ export function BrowserTab({ api }: BrowserTabProps) {
   const [fitur, setFitur] = useState<FeatureState | undefined>(undefined);
   const [state, setState] = useState<BrowserStateInfo | undefined>(undefined);
   const [frame, setFrame] = useState<BrowserFrameInfo | undefined>(undefined);
+  /** Sudah ada frame? (dipakai untuk memount kanvas) */
+  const adaFrame = frame !== undefined;
+  /** Ukuran tampilan halaman menurut server. */
+  const viewport = state?.viewport;
   /** Apakah kolom URL sedang disunting (pengguna fokus)? */
   const [sunting, setSunting] = useState(false);
   /** Teks yang diketik pengguna. */
@@ -61,12 +88,49 @@ export function BrowserTab({ api }: BrowserTabProps) {
   const [busy, setBusy] = useState(false);
   const [ditutup, setDitutup] = useState(false);
   const [streamKey, setStreamKey] = useState(0);
+  /** Apakah kanvas sedang fokus (mode kontrol aktif)? */
+  const [fokus, setFokus] = useState(false);
+  /** Pesan galat input yang ditampilkan sebaris (sekali saja). */
+  const [galatInput, setGalatInput] = useState<string | undefined>(undefined);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamAktif = useRef(false);
+  /** Pengumpul event input; dibuat sekali saat komponen hidup. */
+  const batcherRef = useRef<InputBatcher | undefined>(undefined);
+  /** Galat yang sudah ditampilkan (tak diulang). */
+  const galatTampil = useRef(new Set<string>());
+  /** Ukuran tampilan terakhir yang dikirim ke server. */
+  const viewportTerkirim = useRef<BrowserViewportInfo | undefined>(undefined);
+  /** Frame terakhir (dipakai saat menghitung ukuran tampilan). */
+  const frameRef = useRef<BrowserFrameInfo | undefined>(undefined);
+  /** Apakah klik kanan terakhir sudah terkirim lewat pointerdown? */
+  const klikKanan = useRef(false);
 
   const stopStream = useCallback((): void => {
     streamAktif.current = false;
   }, []);
+
+  /** Tampilkan pesan galat input satu kali saja. */
+  const tampilGalat = useCallback((pesan: string): void => {
+    if (galatTampil.current.has(pesan)) return;
+    galatTampil.current.add(pesan);
+    setGalatInput(pesan);
+  }, []);
+
+  // Pengumpul input: event dikirim per batch ke server.
+  useEffect(() => {
+    const batcher = new InputBatcher({
+      send: (events: BrowserInputEvent[]) => {
+        void browserSendInput(events).then((ok) => {
+          if (!ok) tampilGalat(PESAN_INPUT_GAGAL);
+        });
+      },
+    });
+    batcherRef.current = batcher;
+    return () => {
+      batcher.dispose();
+      batcherRef.current = undefined;
+    };
+  }, [tampilGalat]);
 
   // Aliran SSE: state lalu frame. Ditutup saat komponen dilepas atau tab diganti.
   useEffect(() => {
@@ -128,6 +192,11 @@ export function BrowserTab({ api }: BrowserTabProps) {
     };
   }, [streamKey, stopStream, api]);
 
+  // Simpan frame terakhir buat perhitungan ukuran tampilan.
+  useEffect(() => {
+    frameRef.current = frame;
+  }, [frame]);
+
   // Gambar frame terakhir ke kanvas.
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -145,6 +214,41 @@ export function BrowserTab({ api }: BrowserTabProps) {
     };
     image.src = browserFrameUrl(frame.data);
   }, [frame]);
+
+  // Ukuran tampilan 1:1: ukuran halaman disamakan dengan ukuran kanvas.
+  // Lebar diambil dari kanvas (ikut lebar wadah); tinggi mengikuti rasio
+  // frame supaya ukuran halaman dan kanvas tidak saling chase.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ukur = (): void => {
+      timer = undefined;
+      const bingkai = frameRef.current;
+      const lebarKanvas = Math.round(canvas.clientWidth);
+      if (lebarKanvas <= 0 || bingkai === undefined || bingkai.width <= 0) return;
+      const tinggi = Math.round((lebarKanvas * bingkai.height) / bingkai.width);
+      if (tinggi <= 0) return;
+      // Ukuran diklem sama seperti server supaya koordinat klik tetap pas.
+      const ukuran = clampViewportSize(lebarKanvas, tinggi);
+      const sebelum = viewportTerkirim.current;
+      if (sebelum !== undefined && sebelum.width === ukuran.width && sebelum.height === ukuran.height) {
+        return;
+      }
+      viewportTerkirim.current = ukuran;
+      void browserSetViewport(ukuran.width, ukuran.height);
+    };
+    const observer = new ResizeObserver(() => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(ukur, VIEWPORT_DEBOUNCE_MS);
+    });
+    observer.observe(canvas);
+    ukur();
+    return () => {
+      observer.disconnect();
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [adaFrame]);
 
   /** Jalankan aksi browser; state dari respons langsung dipakai. */
   const jalankan = useCallback(async (aksi: () => Promise<BrowserActionResult>): Promise<boolean> => {
@@ -179,7 +283,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
   );
 
   const closeBrowser = useCallback(async (): Promise<void> => {
-    const ok = await jalankan(() => browserClose());
+    const ok = await jalankan(browserClose);
     if (!ok) return;
     setState(undefined);
     setFrame(undefined);
@@ -203,6 +307,135 @@ export function BrowserTab({ api }: BrowserTabProps) {
   const onUrlSubmit = (): void => {
     const target = sunting ? ketikan : (state?.url ?? "");
     void navigate(target);
+  };
+
+  /* ---------- Kontrol langsung di kanvas ---------- */
+
+  /** Ukuran tampilan halaman yang dipakai untuk pemetaan koordinat. */
+  const viewportSekarang = useCallback((): BrowserViewportInfo => {
+    // Ukuran yang baru dikirim dipakai duluan supaya tak ada jeda dengan
+    // ukuran lama (server sudah menerapkan ukuran itu).
+    return viewportTerkirim.current ?? viewport ?? VIEWPORT_BAWAAN;
+  }, [viewport]);
+
+  /** Kotak kanvas dalam piksel CSS. */
+  const kotakKanvas = useCallback((): BrowserCanvasRect | undefined => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return undefined;
+    const rect = canvas.getBoundingClientRect();
+    return { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+  }, []);
+
+  /** Kirim satu event mouse ke antrean. */
+  const kirimMouse = useCallback(
+    (
+      type: "move" | "down" | "up" | "wheel",
+      event: MouseEvent,
+      clickCount?: number,
+    ): void => {
+      const batcher = batcherRef.current;
+      const kotak = kotakKanvas();
+      if (batcher === undefined || kotak === undefined) return;
+      batcher.push(mouseEventFrom(type, event, kotak, viewportSekarang(), clickCount));
+    },
+    [kotakKanvas, viewportSekarang],
+  );
+
+  /** Salin teks pilihan halaman ke clipboard pengguna. */
+  const salin = useCallback(async (): Promise<void> => {
+    const ok = await copySelectionToClipboard();
+    if (!ok) tampilGalat(PESAN_SALIN_GAGAL);
+  }, [tampilGalat]);
+
+  const onPointerDown = (event: PointerEvent): void => {
+    // Klik di kanvas memindahkan fokus ke mode kontrol.
+    canvasRef.current?.focus();
+    if (event.button === 2) klikKanan.current = true;
+    kirimMouse("down", event, event.detail);
+    try {
+      canvasRef.current?.setPointerCapture(event.pointerId);
+    } catch {
+      // Tangkapan pointer ditolak; seret tetap jalan tanpa tangkapan.
+    }
+  };
+
+  const onPointerUp = (event: PointerEvent): void => {
+    if (event.button === 2) klikKanan.current = false;
+    kirimMouse("up", event, event.detail);
+    try {
+      canvasRef.current?.releasePointerCapture(event.pointerId);
+    } catch {
+      // Tangkapan pointer sudah lepas.
+    }
+  };
+
+  const onPointerMove = (event: PointerEvent): void => {
+    kirimMouse("move", event);
+  };
+
+  const onWheel = (event: WheelEvent): void => {
+    // Gulir dialihkan ke halaman; panel jangan ikut tergulir.
+    event.preventDefault();
+    kirimMouse("wheel", event);
+  };
+
+  const onContextMenu = (event: MouseEvent): void => {
+    event.preventDefault();
+    // Klik kanan biasanya sudah terkirim lewat pointerdown/pointerup.
+    if (klikKanan.current) return;
+    kirimMouse("down", event);
+    kirimMouse("up", event);
+  };
+
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.isComposing) return;
+    const batcher = batcherRef.current;
+    if (batcher === undefined) return;
+    const lower = event.key.toLowerCase();
+    if ((event.metaKey || event.ctrlKey) && lower === "c") {
+      event.preventDefault();
+      void salin();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && lower === "v") {
+      // Ditangani event paste; tak dikirim sebagai tombol.
+      return;
+    }
+    const kirim = keyEventFrom(event);
+    if (kirim === undefined) return;
+    // Tab diteruskan ke halaman, tapi tak dicegat supaya fokus bisa keluar
+    // dari kanvas ke panel Jejak.
+    if (event.key !== "Tab") event.preventDefault();
+    batcher.push(kirim);
+  };
+
+  const onKeyUp = (event: KeyboardEvent): void => {
+    if (event.isComposing) return;
+    const batcher = batcherRef.current;
+    if (batcher === undefined) return;
+    const kirim = keyEventFrom(event);
+    if (kirim === undefined) return;
+    event.preventDefault();
+    batcher.push(kirim);
+  };
+
+  const onPaste = (event: ClipboardEvent): void => {
+    event.preventDefault();
+    const batcher = batcherRef.current;
+    if (batcher === undefined) return;
+    const teks = event.clipboardData?.getData("text") ?? "";
+    const kirim = textEvent(teks);
+    if (kirim === undefined) return;
+    batcher.push(kirim);
+  };
+
+  const onCompositionEnd = (event: CompositionEvent): void => {
+    const batcher = batcherRef.current;
+    if (batcher === undefined) return;
+    // Hasil IME dikirim sebagai teks utuh, bukan sebagai tombol.
+    const kirim = textEvent(event.data ?? "");
+    if (kirim === undefined) return;
+    batcher.push(kirim);
   };
 
   const view = browserView({ status, message: galat, adaFrame: frame !== undefined, state });
@@ -257,6 +490,11 @@ export function BrowserTab({ api }: BrowserTabProps) {
           {view.pesan}
         </p>
       )}
+      {galatInput !== undefined && (
+        <p class="jk-error-line" role="alert">
+          {galatInput}
+        </p>
+      )}
       {dialog !== "" && <p class="jk-note">{dialog}</p>}
       <div class="jk-browser-view">
         {frame === undefined ? (
@@ -267,11 +505,25 @@ export function BrowserTab({ api }: BrowserTabProps) {
           <canvas
             ref={canvasRef}
             class="jk-browser-canvas"
-            aria-label="Tampilan halaman browser"
-            role="img"
+            aria-label="Layar browser, klik untuk mengendalikan"
+            tabIndex={0}
+            onFocus={() => setFokus(true)}
+            onBlur={() => setFokus(false)}
+            onPointerDown={onPointerDown}
+            onPointerUp={onPointerUp}
+            onPointerMove={onPointerMove}
+            onWheel={onWheel}
+            onContextMenu={onContextMenu}
+            onKeyDown={onKeyDown}
+            onKeyUp={onKeyUp}
+            onPaste={onPaste}
+            onCompositionEnd={onCompositionEnd}
           />
         )}
       </div>
+      {!fokus && frame !== undefined && (
+        <p class="jk-note jk-browser-hint">Klik layar untuk mengendalikan</p>
+      )}
       <p class="jk-note jk-browser-status" role="status">
         {busy ? "Memproses…" : statusLabel(state)}
       </p>
