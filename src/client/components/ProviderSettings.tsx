@@ -215,7 +215,10 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
 
   const onAdd = (): void => {
     if (draft === undefined) return;
-    const profile = newProfileDraft(draft.profiles.map((entry) => entry.id));
+    const profile = newProfileDraft(
+      draft.profiles.map((entry) => entry.id),
+      draft.profiles.map((entry) => entry.name),
+    );
     const next = addProfile(draft, profile);
     setDraft(next);
     setSelectedId(profile.id);
@@ -311,7 +314,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
             )}
 
             <button type="button" class="jk-button jk-button-secondary" onClick={onAdd}>
-              Tambah profil
+              Tambah provider
             </button>
           </div>
 

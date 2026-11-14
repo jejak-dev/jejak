@@ -141,7 +141,20 @@ export function toDraft(view: RegistryView): RegistryDraft {
   return draft;
 }
 
-export function newProfileDraft(existingIds: string[]): ProfileDraft {
+const DEFAULT_PROFILE_NAME = "Provider";
+
+/** Nama tampilan bawaan; pakai nomor terkecil yang belum dipakai bila bentrok. */
+export function defaultProfileName(existingNames: string[]): string {
+  const taken = new Set(existingNames);
+  if (!taken.has(DEFAULT_PROFILE_NAME)) return DEFAULT_PROFILE_NAME;
+  let index = 2;
+  while (taken.has(`${DEFAULT_PROFILE_NAME} ${index}`)) {
+    index += 1;
+  }
+  return `${DEFAULT_PROFILE_NAME} ${index}`;
+}
+
+export function newProfileDraft(existingIds: string[], existingNames: string[] = []): ProfileDraft {
   const taken = new Set(existingIds);
   let index = 1;
   while (taken.has(`profil-${index}`)) {
@@ -149,7 +162,7 @@ export function newProfileDraft(existingIds: string[]): ProfileDraft {
   }
   return {
     id: `profil-${index}`,
-    name: "Profil baru",
+    name: defaultProfileName(existingNames),
     baseUrl: "",
     keyMode: "none",
     apiKeyEnv: "",

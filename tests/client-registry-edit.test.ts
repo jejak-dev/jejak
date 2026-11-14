@@ -110,7 +110,7 @@ describe("newProfileDraft", () => {
   test("nilai awal", () => {
     const profile = newProfileDraft([]);
     expect(profile).toMatchObject({
-      name: "Profil baru",
+      name: "Provider",
       baseUrl: "",
       keyMode: "none",
       apiKeyEnv: "",
@@ -119,6 +119,13 @@ describe("newProfileDraft", () => {
       modelLabels: {},
       isNew: true,
     });
+  });
+
+  test("nama bawaan bernomor bila nama sama sudah ada", () => {
+    expect(newProfileDraft([], ["Provider"]).name).toBe("Provider 2");
+    expect(newProfileDraft([], ["Provider", "Provider 2"]).name).toBe("Provider 3");
+    expect(newProfileDraft([], ["Provider 2"]).name).toBe("Provider");
+    expect(newProfileDraft([], ["provider"]).name).toBe("Provider");
   });
 });
 
