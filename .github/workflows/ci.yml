@@ -1,0 +1,86 @@
+# CI Jejak: pemeriksaan tipe, tes, konsistensi versi, dan tes/lint Rust.
+#
+# Tidak ada rahasia yang dipakai di workflow ini.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tes:
+    name: Tes (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Windows masih beta: kegagalan di runner Windows tidak memblokir PR.
+    # Rencana perbaikan ada di R6.
+    continue-on-error: ${{ matrix.beta }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            beta: false
+          - os: windows-latest
+            beta: true
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@v4
+
+      - name: Pasang Bun 1.4.2
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Pasang dependensi
+        run: bun install --frozen-lockfile
+
+      - name: Periksa tipe
+        run: bun run typecheck
+
+      - name: Jalankan tes
+        run: bun test
+
+      - name: Periksa versi manifest
+        run: bun run check:version
+
+  rust:
+    name: Rust (src-tauri)
+    runs-on: macos-latest
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@v4
+
+      - name: Pasang toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Simpan cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      # `tauri_build` pada build.rs menyalin sidecar yang disebut di
+      # `bundle.externalBin` (binaries/jejak-<triple>) dan build.rs gagal
+      # bila berkas itu tidak ada. Untuk `cargo test` dan `cargo clippy`
+      # isi sidecar tidak dipakai, jadi berkas kosong sudah cukup.
+      - name: Sediakan sidecar kosong untuk build.rs
+        run: |
+          mkdir -p src-tauri/binaries
+          touch src-tauri/binaries/jejak-aarch64-apple-darwin
+          touch src-tauri/binaries/jejak-x86_64-apple-darwin
+
+      - name: Tes Rust
+        run: cargo test
+        working-directory: src-tauri
+
+      - name: Lint Rust
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri

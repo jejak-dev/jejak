@@ -1,0 +1,170 @@
+# Rilis Jejak: membangun aplikasi desktop dan mengunggah ke GitHub Releases.
+#
+# Rahasia yang harus diisi pemilik (nama saja, tanpa nilai):
+#   - TAURI_SIGNING_PRIVATE_KEY        (kunci privat minisign untuk penandatangan)
+#   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD (sandi kunci privat)
+#   GITHUB_TOKEN disediakan otomatis oleh GitHub.
+#
+# Cara memicu rilis:
+#   bun run release 1.0.0        # naikkan versi, commit, dan tag v1.0.0
+#   git push --follow-tags      # dorong commit dan tag; workflow ini berjalan
+#   Rilis dibuat sebagai draf; pemilik memeriksa lalu menerbitkannya.
+#
+# Rilis beta dipicu dengan tag berprarelis, mis. v1.0.0-beta.1. Rilis beta
+# memakai tag bergulir `beta` (rilis bukan draf, ditandai prarilis).
+#
+# Catatan: uji "pasang versi N-1 lalu perbarui ke N" BELUM otomatis ada di
+# workflow ini (ditangguhkan). Uji manual sudah lulus di R4a. Tambahkan
+# uji otomatis bila sudah ada runner untuk pemasangan aplikasi.
+name: Rilis
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rilis-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  gerbang:
+    name: Gerbang rilis
+    runs-on: macos-latest
+    outputs:
+      channel: ${{ steps.kanal.outputs.channel }}
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@v4
+
+      - name: Pasang Bun 1.4.2
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Pasang dependensi
+        run: bun install --frozen-lockfile
+
+      - name: Periksa tipe
+        run: bun run typecheck
+
+      - name: Jalankan tes
+        run: bun test
+
+      # Tag rilis harus cocok dengan versi di manifest. Untuk pemicu manual
+      # (`workflow_dispatch`) pemeriksaan tag dilewati bila ref yang dipilih
+      # bukan tag versi.
+      - name: Periksa versi dan tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: bun run check:version -- --tag "$GITHUB_REF_NAME"
+
+      # Kanal rilis dibaca dari versi manifest: tanpa prarilis = stable,
+      # dengan prarilis = beta.
+      - name: Tentukan kanal rilis
+        id: kanal
+        run: echo "channel=$(bun run check:version -- --print-channel)" >> "$GITHUB_OUTPUT"
+
+  bangun:
+    name: Bangun ${{ matrix.triple }}
+    needs: gerbang
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    # Windows masih beta: kegagalan di runner Windows tidak memblokir rilis.
+    # Rencana perbaikan ada di R6.
+    continue-on-error: ${{ matrix.beta }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            triple: aarch64-apple-darwin
+            bundles: app,dmg
+            binary: dist/jejak-darwin-arm64
+            beta: false
+          - os: macos-15-intel
+            target: bun-darwin-x64
+            triple: x86_64-apple-darwin
+            bundles: app,dmg
+            binary: dist/jejak-darwin-x64
+            beta: false
+          - os: windows-latest
+            target: bun-windows-x64
+            triple: x86_64-pc-windows-msvc
+            bundles: nsis
+            binary: dist/jejak-windows-x64.exe
+            beta: true
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@v4
+
+      - name: Pasang Bun 1.4.2
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Pasang dependensi
+        run: bun install --frozen-lockfile
+
+      - name: Pasang toolchain Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - name: Simpan cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Bangun binary sidecar
+        run: bun run build:binary --target ${{ matrix.target }}
+
+      - name: Tempatkan binary sidecar
+        run: bun run stage:sidecar --target ${{ matrix.target }}
+
+      # Skrip `smoke:binary` menerima path binary hasil build, jadi bisa
+      # langsung diuji di sini. Di Windows kegagalan ditoleransi (beta).
+      - name: Uji asap binary
+        continue-on-error: ${{ matrix.beta }}
+        run: bun run smoke:binary -- ${{ matrix.binary }}
+
+      # Kanal stabil: rilis memakai tag versi dan dibuat sebagai draf supaya
+      # pemilik memeriksa lalu menerbitkannya. `includeUpdaterJson` membuat
+      # latest.json ikut terunggah untuk pembaruan aplikasi.
+      - name: Unggah rilis stabil
+        if: needs.gerbang.outputs.channel == 'stable'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Jejak ${{ github.ref_name }}
+          prerelease: false
+          releaseDraft: true
+          includeUpdaterJson: true
+          args: --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
+
+      # Kanal beta: tag bergulir `beta`, tanpa draf, ditandai prarilis.
+      # latest.json ikut terunggah; aplikasi mengambil berkas itu dari
+      # https://github.com/jejak-dev/jejak/releases/download/beta/latest.json
+      - name: Unggah rilis beta
+        if: needs.gerbang.outputs.channel == 'beta'
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: beta
+          releaseName: Jejak beta
+          prerelease: true
+          releaseDraft: false
+          includeUpdaterJson: true
+          args: --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
