@@ -48,6 +48,10 @@ export const MEMORY_TITLE_MAX = 120;
 export const MEMORY_BODY_MAX = 2000;
 export const MEMORY_PROJECT_KEY_MAX = 1024;
 export const MEMORY_FILE_MAX_BYTES = 64 * 1024;
+/** Panjang maksimum slug pada nama berkas dan folder. */
+export const MEMORY_SLUG_MAX = 48;
+/** Nama berkas index yang tidak boleh dipindai sebagai memory. */
+export const MEMORY_INDEX_FILE = "INDEX.md";
 
 const CONTROL_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/;
 const UUID_V4 =
@@ -61,25 +65,81 @@ export function hasControlCharacters(text: string): boolean {
   return CONTROL_CHARACTERS.test(text);
 }
 
+/**
+ * Folder proyek versi lama (hash 16 hex). Masih dipakai saat migrasi layouts.
+ */
 export function projectFolderKey(projectKey: string): string {
   return createHash("sha256").update(projectKey, "utf8").digest("hex").slice(0, 16);
 }
 
+/**
+ * Mengubah teks menjadi slug: huruf kecil, hanya huruf/angka ASCII, sisanya
+ * menjadi `-`. Berurutan `-` diringkas, tepi tidak boleh `-`, panjang maksimum
+ * `maxLength`. Bila hasil kosong, dikembalikan string kosong.
+ */
+export function slugifyRaw(text: string, maxLength: number = MEMORY_SLUG_MAX): string {
+  let slug = "";
+  for (const char of text.toLowerCase()) {
+    const code = char.codePointAt(0) ?? 0;
+    const asciiLetter = code >= 97 && code <= 122;
+    const digit = code >= 48 && code <= 57;
+    slug += asciiLetter || digit ? char : "-";
+  }
+  slug = slug.replace(/-+/g, "-").replace(/^-+/, "").replace(/-+$/, "");
+  if (slug.length > maxLength) {
+    slug = slug.slice(0, maxLength).replace(/-+$/, "");
+  }
+  return slug;
+}
+
+/** Slug yang selalu terisi; teks kosong memakai `fallback`. */
+export function slugify(
+  text: string,
+  maxLength: number = MEMORY_SLUG_MAX,
+  fallback = "memory",
+): string {
+  const slug = slugifyRaw(text, maxLength);
+  return slug === "" ? fallback : slug;
+}
+
+/** Nama berkas memory: `<slug>-<8 hex pertama id>.md`. */
+export function memoryFileName(memory: Pick<Memory, "id" | "title">): string {
+  return `${slugify(memory.title)}-${memory.id.slice(0, 8)}.md`;
+}
+
+/** Segmen terakhir projectKey yang tak kosong, tanpa akhiran `.git`. */
+export function projectDisplayName(projectKey: string): string {
+  const withoutGit = projectKey.endsWith(".git") ? projectKey.slice(0, -4) : projectKey;
+  const segments = withoutGit.split(/[\\/]+/).filter((segment) => segment !== "");
+  return segments.length === 0 ? "" : segments[segments.length - 1]!;
+}
+
+/** Folder proyek versi baru: `<slug-nama-proyek>-<8 hex pertama sha256 projectKey>`. */
+export function projectFolderName(projectKey: string): string {
+  const slug = slugify(projectDisplayName(projectKey), MEMORY_SLUG_MAX, "proyek");
+  const hash = createHash("sha256").update(projectKey, "utf8").digest("hex").slice(0, 8);
+  return `${slug}-${hash}`;
+}
+
+/**
+ * Path relatif memory. Nama berkas memakai slug judul plus 8 hex pertama id;
+ * nama ini ditetapkan sekali saat berkas dibuat dan tidak berubah saat judul diedit.
+ */
 export function relativeMemoryPath(
-  memory: Pick<Memory, "id" | "layer" | "projectKey">,
+  memory: Pick<Memory, "id" | "layer" | "projectKey" | "title">,
 ): string {
   if (memory.layer === "profile") {
-    return posix.join("profile", `${memory.id}.md`);
+    return posix.join("profile", memoryFileName(memory));
   }
   if (memory.projectKey === null || memory.projectKey === "") {
     throw new Error("Memory proyek membutuhkan projectKey.");
   }
-  return posix.join("projects", projectFolderKey(memory.projectKey), `${memory.id}.md`);
+  return posix.join("projects", projectFolderName(memory.projectKey), memoryFileName(memory));
 }
 
 export function absoluteMemoryPath(
   dir: string,
-  memory: Pick<Memory, "id" | "layer" | "projectKey">,
+  memory: Pick<Memory, "id" | "layer" | "projectKey" | "title">,
 ): string {
   return join(dir, ...relativeMemoryPath(memory).split("/"));
 }
@@ -98,7 +158,12 @@ export function serializeMemory(memory: Memory): string {
     `decided: ${memory.decidedAt === null ? "null" : memory.decidedAt}`,
     "---",
   ];
-  return `${lines.join("\n")}\n${memory.body}\n`;
+  const frontmatter = `${lines.join("\n")}\n`;
+  // Judul berbaris baru tidak bisa ditulis sebagai H1 tanpa merusak isi.
+  if (memory.title.includes("\n") || memory.title.includes("\r")) {
+    return `${frontmatter}${memory.body}\n`;
+  }
+  return `${frontmatter}# ${memory.title}\n\n${memory.body}\n`;
 }
 
 export type ParseMemoryResult =
@@ -197,6 +262,17 @@ export interface ParseMemoryContext {
   projectKey: string | null;
 }
 
+/**
+ * Nama berkas memory sah bila sama dengan `id` (format lama) atau berbentuk
+ * `<sesuatu>-<8 hex pertama id>` (format baru). Perbandingan id8 case-insensitive.
+ */
+export function isValidMemoryFileName(baseName: string, id: string): boolean {
+  if (baseName === id) return true;
+  const match = /^(.+)-([0-9a-f]{8})$/i.exec(baseName);
+  if (match === null) return false;
+  return match[2]!.toLowerCase() === id.slice(0, 8).toLowerCase();
+}
+
 export function parseMemory(text: string, context: ParseMemoryContext): ParseMemoryResult {
   const split = splitFrontmatter(text);
   if (split === null) {
@@ -211,7 +287,9 @@ export function parseMemory(text: string, context: ParseMemoryContext): ParseMem
     ? context.fileName.slice(0, -3)
     : context.fileName;
   if (!isMemoryId(id)) return failure("id bukan UUID v4");
-  if (id !== expectedName) return failure("id tidak cocok dengan nama berkas");
+  if (!isValidMemoryFileName(expectedName, id)) {
+    return failure("nama berkas tidak cocok dengan id memory");
+  }
 
   const layerRaw = fields.get("layer");
   if (layerRaw === undefined) return failure("kunci layer tidak ditemukan");
@@ -274,7 +352,14 @@ export function parseMemory(text: string, context: ParseMemoryContext): ParseMem
     }
   }
 
-  const body = split.body.trim();
+  // Isi berkas baru diawali H1 judul; awalan itu dibuang agar isi kembali
+  // seperti aslinya. Berkas lama tanpa H1 tetap terbaca apa adanya.
+  let body = split.body;
+  const heading = `# ${title}\n\n`;
+  if (body.startsWith(heading)) {
+    body = body.slice(heading.length);
+  }
+  body = body.trim();
   if (title === "" || title.length > MEMORY_TITLE_MAX) {
     return failure(`judul harus 1-${MEMORY_TITLE_MAX} karakter`);
   }
@@ -317,7 +402,7 @@ export interface ScannedMemoryFile {
   projectError?: string;
 }
 
-async function safeReaddir(path: string): Promise<Dirent[]> {
+export async function safeReaddir(path: string): Promise<Dirent[]> {
   try {
     return await readdir(path, { withFileTypes: true });
   } catch {
@@ -325,12 +410,12 @@ async function safeReaddir(path: string): Promise<Dirent[]> {
   }
 }
 
-interface ProjectMapping {
+export interface ProjectMapping {
   projectKey: string | null;
   error?: string;
 }
 
-async function readProjectMapping(folder: string): Promise<ProjectMapping> {
+export async function readProjectMapping(folder: string): Promise<ProjectMapping> {
   let contents: string;
   try {
     contents = await readFile(join(folder, "_project.json"), "utf8");
@@ -362,6 +447,7 @@ export async function scanMemoryFiles(dir: string): Promise<ScannedMemoryFile[]>
   const profileDir = join(dir, "profile");
   for (const entry of await safeReaddir(profileDir)) {
     if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    if (entry.name === MEMORY_INDEX_FILE) continue;
     files.push({
       relPath: posix.join("profile", entry.name),
       absPath: join(profileDir, entry.name),
@@ -377,6 +463,7 @@ export async function scanMemoryFiles(dir: string): Promise<ScannedMemoryFile[]>
     const mapping = await readProjectMapping(folder);
     for (const file of await safeReaddir(folder)) {
       if (!file.isFile() || !file.name.endsWith(".md")) continue;
+      if (file.name === MEMORY_INDEX_FILE) continue;
       const scanned: ScannedMemoryFile = {
         relPath: posix.join("projects", entry.name, file.name),
         absPath: join(folder, file.name),
@@ -442,7 +529,7 @@ export async function readMemoryFile(
   };
 }
 
-async function ensureDirectory(path: string): Promise<void> {
+export async function ensureDirectory(path: string): Promise<void> {
   await mkdir(path, { recursive: true, mode: 0o700 });
   try {
     await chmod(path, 0o700);
@@ -451,7 +538,7 @@ async function ensureDirectory(path: string): Promise<void> {
   }
 }
 
-async function writeFileAtomic(target: string, content: string): Promise<void> {
+export async function writeFileAtomic(target: string, content: string): Promise<void> {
   const temp = `${target}.${process.pid}-${crypto.randomUUID()}.tmp`;
   try {
     await writeFile(temp, content, { mode: 0o600 });
@@ -493,12 +580,24 @@ export interface WrittenMemoryFile {
   mtimeMs: number;
 }
 
-export async function writeMemoryFile(dir: string, memory: Memory): Promise<WrittenMemoryFile> {
+/**
+ * Menulis berkas memory. Bila `existingRelPath` diberikan, path itu dipakai
+ * apa adanya supaya nama berkas tidak berubah ketika judul diedit.
+ */
+export async function writeMemoryFile(
+  dir: string,
+  memory: Memory,
+  existingRelPath?: string,
+): Promise<WrittenMemoryFile> {
   if (!isMemoryId(memory.id)) {
     throw new Error("Id memory harus UUID v4.");
   }
-  const relPath = relativeMemoryPath(memory);
-  const absPath = join(dir, ...relPath.split("/"));
+  const relPath = existingRelPath ?? relativeMemoryPath(memory);
+  const parts = safeRelativeParts(relPath);
+  if (parts === null) {
+    throw new Error("Path memory tidak valid.");
+  }
+  const absPath = join(dir, ...parts);
   const folder = dirname(absPath);
 
   await ensureDirectory(dir);
@@ -520,9 +619,12 @@ export async function writeMemoryFile(dir: string, memory: Memory): Promise<Writ
   };
 }
 
-export async function deleteMemoryFile(dir: string, memory: Memory): Promise<void> {
+/** Menghapus berkas memory pada path relatif yang tercatat. */
+export async function deleteMemoryFile(dir: string, relPath: string): Promise<void> {
+  const parts = safeRelativeParts(relPath);
+  if (parts === null) return;
   try {
-    await unlink(absoluteMemoryPath(dir, memory));
+    await unlink(join(dir, ...parts));
   } catch {
     // Berkas sudah tidak ada; tidak ada yang perlu dihapus.
   }

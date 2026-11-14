@@ -1,15 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   absoluteMemoryPath,
   deleteMemoryFile,
+  memoryFileName,
   parseMemory,
+  projectDisplayName,
   projectFolderKey,
+  projectFolderName,
   readMemoryFile,
   relativeMemoryPath,
   serializeMemory,
+  slugify,
   writeMemoryFile,
   type Memory,
   type MemoryLayer,
@@ -100,16 +105,99 @@ describe("serialisasi frontmatter round-trip", () => {
   });
 });
 
-describe("nama berkas dari id", () => {
-  test("folder profil dan proyek memakai hash projectKey", () => {
-    const item = memory({ layer: "project", projectKey: "/tmp/p" });
+describe("judul H1 dan nama berkas baru", () => {
+  test("isi diawali H1 judul dan round-trip stabil", () => {
+    const item = memory({ title: "Perintah Tes" });
+    const text = serializeMemory(item);
+    expect(text).toContain(`# ${item.title}\n\n${item.body}`);
+
+    const parsed = parseMemory(text, { fileName: memoryFileName(item), ...PROFILE });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.memory.body).toBe(item.body);
+    expect(parsed.memory.title).toBe(item.title);
+    expect(serializeMemory(parsed.memory)).toBe(text);
+  });
+
+  test("berkas lama tanpa H1 tetap terbaca", () => {
+    const item = memory();
+    const tanpaH1 = serializeMemory(item).replace(`# ${item.title}\n\n`, "");
+    const parsed = parseMemory(tanpaH1, { fileName: `${item.id}.md`, ...PROFILE });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.memory.body).toBe(item.body);
+  });
+
+  test("nama berkas baru dan legacy sama-sama diterima", () => {
+    const item = memory({ title: "Perintah Tes" });
+    const baru = parseMemory(serializeMemory(item), {
+      fileName: memoryFileName(item),
+      ...PROFILE,
+    });
+    expect(baru.ok).toBe(true);
+    const legacy = parseMemory(serializeMemory(item), {
+      fileName: `${item.id}.md`,
+      ...PROFILE,
+    });
+    expect(legacy.ok).toBe(true);
+  });
+
+  test("nama berkas yang tidak cocok ditolak dengan pesan jelas", () => {
+    const item = memory();
+    const result = parseMemory(serializeMemory(item), {
+      fileName: "lain-12345678.md",
+      ...PROFILE,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toContain("tidak cocok");
+  });
+
+  test("id8 pada nama berkas harus cocok dengan id memory", () => {
+    const item = memory();
+    const salah = parseMemory(serializeMemory(item), {
+      fileName: `judul-${"0".repeat(8)}.md`,
+      ...PROFILE,
+    });
+    expect(salah.ok).toBe(false);
+  });
+});
+
+describe("nama berkas dan folder", () => {
+  test("slugify membersihkan karakter aneh dan memotong panjang", () => {
+    expect(slugify("Perintah Tes")).toBe("perintah-tes");
+    expect(slugify("  Halo   Dunia  ")).toBe("halo-dunia");
+    expect(slugify('Perintah: "bun" #1 — jalan ✅')).toBe("perintah-bun-1-jalan");
+    expect(slugify("")).toBe("memory");
+    expect(slugify("!!!")).toBe("memory");
+    expect(slugify("a".repeat(60))).toBe("a".repeat(48));
+    expect(slugify("a".repeat(60)).length).toBe(48);
+    expect(slugify("-AWAS-")).toBe("awas");
+  });
+
+  test("memoryFileName memakai slug judul dan 8 hex pertama id", () => {
+    const item = memory({ title: "Perintah Tes" });
+    expect(memoryFileName(item)).toBe(`perintah-tes-${item.id.slice(0, 8)}.md`);
+    const kosong = memory({ title: "!!!" });
+    expect(memoryFileName(kosong)).toBe(`memory-${kosong.id.slice(0, 8)}.md`);
+  });
+
+  test("projectFolderName memakai slug nama proyek dan hash 8", () => {
+    const key = "/tmp/jejak";
+    const hash = createHash("sha256").update(key, "utf8").digest("hex").slice(0, 8);
+    expect(projectFolderName(key)).toBe(`jejak-${hash}`);
+    expect(projectFolderName("https://github.com/org/repo.git")).toMatch(/^repo-[0-9a-f]{8}$/);
+    expect(projectDisplayName("https://github.com/org/repo.git")).toBe("repo");
+    expect(projectFolderName(key)).not.toBe(projectFolderKey(key));
+    expect(projectFolderKey(key)).toHaveLength(16);
+  });
+
+  test("folder profil dan proyek memakai nama baru", () => {
+    const item = memory({ layer: "project", projectKey: "/tmp/p", title: "Judul Proyek" });
     expect(item.projectKey).not.toBeNull();
     expect(relativeMemoryPath(item)).toBe(
-      `projects/${projectFolderKey("/tmp/p")}/${item.id}.md`,
+      `projects/${projectFolderName("/tmp/p")}/${memoryFileName(item)}`,
     );
-    expect(projectFolderKey("/tmp/p")).toHaveLength(16);
-    const profile = memory();
-    expect(relativeMemoryPath(profile)).toBe(`profile/${profile.id}.md`);
+    const profile = memory({ title: "Judul Profil" });
+    expect(relativeMemoryPath(profile)).toBe(`profile/${memoryFileName(profile)}`);
   });
 
   test("writeMemoryFile menolak id bukan UUID v4", async () => {
@@ -120,11 +208,21 @@ describe("nama berkas dari id", () => {
     expect(files).not.toContain("../x.md");
   });
 
-  test("memakai id sebagai nama berkas, bukan judul", async () => {
+  test("nama berkas memakai slug judul tanpa karakter berbahaya", async () => {
     const item = memory({ title: "Judul Berbahaya ../../etc" });
     const written = await writeMemoryFile(dir, item);
-    expect(written.relPath).toBe(`profile/${item.id}.md`);
+    expect(written.relPath).toBe(`profile/${memoryFileName(item)}`);
+    expect(memoryFileName(item)).not.toContain("..");
+    expect(memoryFileName(item)).not.toContain("/");
+    expect(memoryFileName(item)).toMatch(/^[a-z0-9-]+\.md$/);
     expect(await readFile(written.absPath, "utf8")).toContain(item.title);
+  });
+
+  test("existingRelPath dipakai apa adanya", async () => {
+    const item = memory({ title: "Judul Lama" });
+    const written = await writeMemoryFile(dir, item, "profile/lama.md");
+    expect(written.relPath).toBe("profile/lama.md");
+    expect(await readdir(join(dir, "profile"))).toEqual(["lama.md"]);
   });
 });
 
@@ -133,7 +231,7 @@ describe("izin dan tulis atomik", () => {
     const item = memory({ layer: "project", projectKey: "/tmp/proyek" });
     const written = await writeMemoryFile(dir, item);
     const fileInfo = await stat(written.absPath);
-    const folderInfo = await stat(join(dir, "projects", projectFolderKey("/tmp/proyek")));
+    const folderInfo = await stat(join(dir, "projects", projectFolderName("/tmp/proyek")));
     expect(fileInfo.mode & 0o777).toBe(0o600);
     expect(folderInfo.mode & 0o777).toBe(0o700);
     expect((await stat(dir)).mode & 0o777).toBe(0o700);
@@ -144,27 +242,27 @@ describe("izin dan tulis atomik", () => {
     await writeMemoryFile(dir, item);
     const entries = await readdir(join(dir, "profile"));
     expect(entries.filter((name) => name.endsWith(".tmp"))).toEqual([]);
-    expect(entries).toEqual([`${item.id}.md`]);
+    expect(entries).toEqual([memoryFileName(item)]);
   });
 
   test("tulis ulang mengganti isi tanpa menyisakan tmp", async () => {
     const item = memory();
-    await writeMemoryFile(dir, item);
-    await writeMemoryFile(dir, { ...item, title: "Judul baru" });
+    const written = await writeMemoryFile(dir, item);
+    await writeMemoryFile(dir, { ...item, title: "Judul baru" }, written.relPath);
     const entries = await readdir(join(dir, "profile"));
-    expect(entries).toEqual([`${item.id}.md`]);
-    const parsed = await readMemoryFile(dir, `profile/${item.id}.md`, "profile", null);
+    expect(entries).toEqual([memoryFileName(item)]);
+    const parsed = await readMemoryFile(dir, `profile/${memoryFileName(item)}`, "profile", null);
     expect(parsed.ok).toBe(true);
     if (parsed.ok) expect(parsed.memory.title).toBe("Judul baru");
   });
 
   test("deleteMemoryFile menghapus dan aman bila sudah hilang", async () => {
     const item = memory();
-    await writeMemoryFile(dir, item);
-    await deleteMemoryFile(dir, item);
+    const written = await writeMemoryFile(dir, item);
+    await deleteMemoryFile(dir, written.relPath);
     expect(await readdir(join(dir, "profile"))).toEqual([]);
-    await deleteMemoryFile(dir, item);
-    expect(absoluteMemoryPath(dir, item)).toContain(item.id);
+    await deleteMemoryFile(dir, written.relPath);
+    expect(absoluteMemoryPath(dir, item)).toContain(item.id.slice(0, 8));
   });
 });
 
@@ -281,7 +379,7 @@ describe("readMemoryFile memakai batas ukuran", () => {
   test("berkas valid menghasilkan sha256", async () => {
     const item = memory();
     await writeMemoryFile(dir, item);
-    const result = await readMemoryFile(dir, `profile/${item.id}.md`, "profile", null);
+    const result = await readMemoryFile(dir, `profile/${memoryFileName(item)}`, "profile", null);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.sha256).toMatch(/^[0-9a-f]{64}$/);
   });
@@ -290,7 +388,7 @@ describe("readMemoryFile memakai batas ukuran", () => {
     const item = memory();
     const written = await writeMemoryFile(dir, item);
     await chmod(written.absPath, 0o644);
-    const result = await readMemoryFile(dir, `profile/${item.id}.md`, "profile", null);
+    const result = await readMemoryFile(dir, `profile/${memoryFileName(item)}`, "profile", null);
     expect(result.ok).toBe(true);
   });
 });

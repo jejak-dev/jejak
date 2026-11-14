@@ -9,7 +9,8 @@ import {
   toFtsQuery,
 } from "../src/server/memory/memory-index";
 import {
-  projectFolderKey,
+  memoryFileName,
+  projectFolderName,
   serializeMemory,
   writeMemoryFile,
   type Memory,
@@ -48,7 +49,7 @@ describe("sync", () => {
   test("menambah, mengubah, dan membuang berkas", async () => {
     const index = new MemoryIndex();
     const first = memory({ title: "Pertama" });
-    await writeMemoryFile(dir, first);
+    const written = await writeMemoryFile(dir, first);
 
     expect(await index.sync(dir)).toEqual([]);
     expect(index.get(first.id)?.title).toBe("Pertama");
@@ -59,11 +60,11 @@ describe("sync", () => {
     expect(index.list({}).map((item) => item.title).sort()).toEqual(["Kedua", "Pertama"]);
 
     const edited = { ...first, title: "Pertama diubah" };
-    await writeMemoryFile(dir, edited);
+    await writeMemoryFile(dir, edited, written.relPath);
     await index.sync(dir);
     expect(index.get(first.id)?.title).toBe("Pertama diubah");
 
-    await unlink(join(dir, "profile", `${first.id}.md`));
+    await unlink(join(dir, "profile", memoryFileName(first)));
     await index.sync(dir);
     expect(index.get(first.id)).toBeNull();
     expect(index.list({}).map((item) => item.id)).toEqual([second.id]);
@@ -76,7 +77,7 @@ describe("sync", () => {
     await writeMemoryFile(dir, item);
     await index.sync(dir);
 
-    const path = join(dir, "profile", `${item.id}.md`);
+    const path = join(dir, "profile", memoryFileName(item));
     const raw = await readFile(path, "utf8");
     await writeFile(path, raw.replace("title: \"Awal\"", "title: \"Diedit tangan\""));
     await index.sync(dir);
@@ -105,7 +106,7 @@ describe("sync", () => {
     const item = memory({ layer: "project", projectKey, title: "Proyek" });
     await writeMemoryFile(dir, item);
     const mapping = JSON.parse(
-      await readFile(join(dir, "projects", projectFolderKey(projectKey), "_project.json"), "utf8"),
+      await readFile(join(dir, "projects", projectFolderName(projectKey), "_project.json"), "utf8"),
     ) as { projectKey: string };
     expect(mapping.projectKey).toBe(projectKey);
 
@@ -119,7 +120,7 @@ describe("sync", () => {
     const projectKey = "/tmp/proyek-b";
     const item = memory({ layer: "project", projectKey });
     await writeMemoryFile(dir, item);
-    const folder = join(dir, "projects", projectFolderKey(projectKey));
+    const folder = join(dir, "projects", projectFolderName(projectKey));
     await unlink(join(folder, "_project.json"));
 
     const index = new MemoryIndex();

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,7 +8,7 @@ import {
   memoryDir,
   memoryIndexPath,
 } from "../src/server/memory/memory-store";
-import type { Memory } from "../src/server/memory/memory-files";
+import { memoryFileName, projectFolderName, type Memory } from "../src/server/memory/memory-files";
 
 let dir: string;
 
@@ -49,8 +49,53 @@ describe("FileMemoryStore", () => {
     expect(listed.map((entry) => entry.id)).toEqual([item.id]);
     expect(listed[0]?.title).toBe("Tersimpan");
 
-    const text = await readFile(join(dir, "profile", `${item.id}.md`), "utf8");
+    const text = await readFile(join(dir, "profile", memoryFileName(item)), "utf8");
     expect(text).toContain("Tersimpan");
+    store.close();
+  });
+
+  test("nama berkas tetap saat judul diedit", async () => {
+    const store = new FileMemoryStore({ dir });
+    const item = memory({ title: "Judul Lama" });
+    await store.create(item);
+    const before = (await readdir(join(dir, "profile"))).filter(
+      (name) => name !== "INDEX.md",
+    );
+
+    await store.update({ ...item, title: "Judul Baru" });
+    const after = (await readdir(join(dir, "profile"))).filter((name) => name !== "INDEX.md");
+    expect(after).toEqual(before);
+    expect(after).toEqual([memoryFileName(item)]);
+    expect(after[0]).toContain("judul-lama");
+    store.close();
+  });
+
+  test("INDEX.md ditulis di folder profil dan di akar", async () => {
+    const store = new FileMemoryStore({ dir });
+    const item = memory({ title: "Tersimpan" });
+    await store.create(item);
+
+    const folderIndex = await readFile(join(dir, "profile", "INDEX.md"), "utf8");
+    expect(folderIndex).toContain("# Memory profil");
+    expect(folderIndex).toContain(`[Tersimpan](${memoryFileName(item)})`);
+    expect(folderIndex).toContain("| active | confirmed |");
+
+    const rootIndex = await readFile(join(dir, "INDEX.md"), "utf8");
+    expect(rootIndex).toContain("[Profil](profile/INDEX.md)");
+    store.close();
+  });
+
+  test("INDEX.md ditulis di folder proyek", async () => {
+    const store = new FileMemoryStore({ dir });
+    const projectKey = "/tmp/jejak-proyek";
+    const item = memory({ layer: "project", projectKey, title: "Catatan proyek" });
+    await store.create(item);
+
+    const folder = join(dir, "projects", projectFolderName(projectKey));
+    const folderIndex = await readFile(join(folder, "INDEX.md"), "utf8");
+    expect(folderIndex).toContain("# Memory proyek: jejak-proyek");
+    expect(folderIndex).toContain(`Proyek: ${projectKey}`);
+    expect(folderIndex).toContain(`[Catatan proyek](${memoryFileName(item)})`);
     store.close();
   });
 

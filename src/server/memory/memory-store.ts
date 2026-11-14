@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { jejakHome } from "../provider-store";
 import {
   deleteMemoryFile,
+  readProjectMapping,
   writeMemoryFile,
   type Memory,
   type MemoryConfidence,
@@ -13,6 +14,17 @@ import {
   type MemoryListQuery,
   type MemoryProblem,
 } from "./memory-index";
+import {
+  cleanupEmptyProjectFolders,
+  folderProjectHeading,
+  listProjectFolders,
+  migrateMemoryLayout,
+  writeFolderIndex,
+  writeRootIndex,
+  type FolderIndexEntry,
+  type MigrationResult,
+  type RootIndexFolder,
+} from "./memory-layout";
 
 export interface MemoryStore {
   /** Folder akar berkas memory (`<JEJAK_HOME>/memory`). */
@@ -50,11 +62,25 @@ export interface MemoryStoreOptions {
   now?: () => Date;
 }
 
+/** Menggabungkan masalah migrasi dan pemindaian tanpa duplikat. */
+function mergeProblems(
+  migration: MemoryProblem[],
+  scan: MemoryProblem[],
+): MemoryProblem[] {
+  const merged = new Map<string, MemoryProblem>();
+  for (const problem of [...migration, ...scan]) {
+    merged.set(`${problem.file}\u0000${problem.reason}`, problem);
+  }
+  return [...merged.values()].sort((left, right) => left.file.localeCompare(right.file));
+}
+
 export class FileMemoryStore implements MemoryStore {
   readonly dir: string;
   private readonly index: MemoryIndex;
   private lastProblems: MemoryProblem[] = [];
   private readonly now: () => Date;
+  private migrated = false;
+  private synced = false;
 
   constructor(options: MemoryStoreOptions) {
     this.dir = options.dir;
@@ -63,8 +89,38 @@ export class FileMemoryStore implements MemoryStore {
   }
 
   async sync(): Promise<MemoryProblem[]> {
-    this.lastProblems = await this.index.sync(this.dir);
+    const migration = await this.runMigration();
+    const scanProblems = await this.index.sync(this.dir);
+    // Folder proyek yang tidak lagi berisi memory dibersihkan; `INDEX.md`
+    // akar ditulis ulang supaya tidak menautkan folder yang sudah dihapus.
+    const removedFolders = await cleanupEmptyProjectFolders(this.dir);
+    this.lastProblems = mergeProblems(migration.problems, scanProblems);
+    this.synced = true;
+    if (migration.changedFolders.length > 0) {
+      for (const folder of migration.changedFolders) {
+        await this.writeFolderIndexFile(folder);
+      }
+    }
+    if (
+      migration.changedFolders.length > 0 ||
+      migration.removedFolders.length > 0 ||
+      removedFolders.length > 0
+    ) {
+      await this.writeRootIndexFile();
+    }
     return this.lastProblems;
+  }
+
+  /** Migrasi layout dijalankan sekali per instance store. */
+  private async runMigration(): Promise<MigrationResult> {
+    if (this.migrated) return { problems: [], changedFolders: [], removedFolders: [] };
+    this.migrated = true;
+    try {
+      return await migrateMemoryLayout(this.dir);
+    } catch {
+      // Migrasi yang gagal tidak boleh memblokir pemakaian memory.
+      return { problems: [], changedFolders: [], removedFolders: [] };
+    }
   }
 
   problems(): MemoryProblem[] {
@@ -82,8 +138,15 @@ export class FileMemoryStore implements MemoryStore {
   }
 
   async create(memory: Memory): Promise<Memory> {
-    const written = await writeMemoryFile(this.dir, memory);
+    // Pindai sekali di awal supaya path lama untuk id ini ditemukan.
+    if (!this.synced) {
+      await this.sync();
+    }
+    // Path lama tetap dipakai supaya nama berkas tidak berubah saat judul diedit.
+    const existingPath = this.index.pathOf(memory.id);
+    const written = await writeMemoryFile(this.dir, memory, existingPath ?? undefined);
     this.index.upsertFromFile(memory, written.relPath, written.sha256, written.mtimeMs, written.size);
+    await this.refreshIndexFiles(written.relPath);
     return memory;
   }
 
@@ -113,9 +176,75 @@ export class FileMemoryStore implements MemoryStore {
   async delete(id: string): Promise<boolean> {
     const current = await this.get(id);
     if (current === null) return false;
-    await deleteMemoryFile(this.dir, current);
+    const relPath = this.index.pathOf(id);
+    if (relPath !== null) {
+      await deleteMemoryFile(this.dir, relPath);
+    }
     await this.sync();
+    await this.refreshIndexFiles(relPath);
     return true;
+  }
+
+  /** Membuat ulang `INDEX.md` folder yang terpengaruh dan `INDEX.md` akar. */
+  private async refreshIndexFiles(relPath: string | null): Promise<void> {
+    if (relPath !== null) {
+      const parts = relPath.split("/");
+      parts.pop();
+      await this.writeFolderIndexFile(parts.join("/"));
+    }
+    await this.writeRootIndexFile();
+  }
+
+  private async writeFolderIndexFile(folderRel: string): Promise<void> {
+    const rows = this.index.folderRows(`${folderRel}/`);
+    const entries: FolderIndexEntry[] = rows.map((row) => ({
+      title: row.title,
+      fileName: row.path.split("/").pop() ?? row.path,
+      status: row.status as MemoryStatus,
+      confidence: row.confidence as MemoryConfidence,
+      updatedAt: row.updated_at,
+    }));
+
+    const isProject = folderRel.startsWith("projects/");
+    const projectKey = isProject
+      ? (await readProjectMapping(join(this.dir, ...folderRel.split("/")))).projectKey
+      : null;
+    const heading = isProject
+      ? `Memory proyek: ${folderProjectHeading(projectKey ?? folderRel)}`
+      : "Memory profil";
+    await writeFolderIndex(this.dir, folderRel, {
+      heading,
+      projectKey: isProject ? projectKey : null,
+      entries,
+    });
+  }
+
+  private async writeRootIndexFile(): Promise<void> {
+    const folders: RootIndexFolder[] = [];
+    const profileCounts = this.index.folderCounts("profile/");
+    if (this.index.folderRows("profile/").length > 0) {
+      await this.writeFolderIndexFile("profile");
+      folders.push({
+        label: "Profil",
+        relPath: "profile/INDEX.md",
+        active: profileCounts.active,
+        proposed: profileCounts.proposed,
+      });
+    }
+    for (const folder of await listProjectFolders(this.dir)) {
+      const folderRel = `projects/${folder.name}`;
+      // `INDEX.md` folder ditulis dulu supaya tautan di akar selalu hidup.
+      await this.writeFolderIndexFile(folderRel);
+      const counts = this.index.folderCounts(`${folderRel}/`);
+      folders.push({
+        label:
+          folder.projectKey === null ? folder.name : `Proyek: ${folder.projectKey}`,
+        relPath: `${folderRel}/INDEX.md`,
+        active: counts.active,
+        proposed: counts.proposed,
+      });
+    }
+    await writeRootIndex(this.dir, folders);
   }
 
   async counts(): Promise<MemoryCounts> {

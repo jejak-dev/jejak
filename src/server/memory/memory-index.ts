@@ -51,6 +51,15 @@ interface MemoryRow {
   decided_at: string | null;
 }
 
+/** Baris ringkas untuk menyusun `INDEX.md` sebuah folder. */
+export interface MemoryFolderRow {
+  path: string;
+  title: string;
+  status: string;
+  confidence: string;
+  updated_at: string;
+}
+
 function rowToMemory(row: MemoryRow): Memory {
   let origin: MemoryOrigin;
   try {
@@ -444,6 +453,42 @@ export class MemoryIndex {
   get(id: string): Memory | null {
     const row = this.db.query("SELECT * FROM memories WHERE id = ?").get(id) as MemoryRow | null;
     return row === null ? null : rowToMemory(row);
+  }
+
+  /** Path relatif tercatat untuk sebuah memory; `null` bila belum ada. */
+  pathOf(id: string): string | null {
+    const row = this.db.query("SELECT path FROM memories WHERE id = ?").get(id) as
+      | { path: string }
+      | null;
+    return row === null ? null : row.path;
+  }
+
+  /** Baris memory di dalam satu folder (prefix path relatif, mis. `profile/`). */
+  folderRows(prefix: string): MemoryFolderRow[] {
+    return this.db
+      .query(
+        `SELECT path, title, status, confidence, updated_at
+         FROM memories WHERE path LIKE ? ESCAPE '\\' ORDER BY path ASC`,
+      )
+      .all(`${prefix.replace(/([%_\\])/g, "\\$1")}%`) as MemoryFolderRow[];
+  }
+
+  /** Jumlah memory aktif dan usulan di dalam satu folder. */
+  folderCounts(prefix: string): { active: number; proposed: number } {
+    const row = this.db
+      .query(
+        `SELECT
+           SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,
+           SUM(CASE WHEN status = 'proposed' THEN 1 ELSE 0 END) AS proposed
+         FROM memories WHERE path LIKE ? ESCAPE '\\'`,
+      )
+      .get(`${prefix.replace(/([%_\\])/g, "\\$1")}%`) as
+      | { active: number | null; proposed: number | null }
+      | null;
+    return {
+      active: row?.active ?? 0,
+      proposed: row?.proposed ?? 0,
+    };
   }
 
   counts(): MemoryCounts {
