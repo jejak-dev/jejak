@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BrowserError } from "./browser-error";
 import { locateChrome, type ChromeExists } from "./chrome-locator";
@@ -44,6 +44,15 @@ export interface DevToolsEndpoint {
   path: string;
 }
 
+/** Pembaca baris perintah proses; undefined bila proses tak ada. */
+export type ReadCommandLine = (pid: number) => string | undefined;
+
+/** Pembunuh proses; tak ada yang ditunggu. */
+export type KillProcess = (pid: number, signal?: number | NodeJS.Signals) => void;
+
+/** Pemeriksa proses masih hidup. */
+export type IsProcessAlive = (pid: number) => boolean;
+
 export interface BrowserManagerOptions {
   /** Env; dipakai `JEJAK_CHROME_PATH` dan `JEJAK_HOME`. */
   env?: Record<string, string | undefined>;
@@ -67,6 +76,14 @@ export interface BrowserManagerOptions {
   portTimeoutMs?: number;
   /** Batas menunggu proses Chrome keluar (ms); bawaan 3 detik. */
   closeTimeoutMs?: number;
+  /** Pembaca baris perintah proses; diinjeksi agar bisa diuji. */
+  readCommandLine?: ReadCommandLine;
+  /** Pembunuh proses; diinjeksi agar bisa diuji. */
+  killProcess?: KillProcess;
+  /** Pemeriksa proses masih hidup; diinjeksi agar bisa diuji. */
+  isProcessAlive?: IsProcessAlive;
+  /** Nama berkas pid di dalam profil; bawaan `jejak-chrome.pid`. */
+  pidFileName?: string;
 }
 
 const DEFAULT_PORT_TIMEOUT_MS = 10_000;
@@ -74,6 +91,8 @@ const DEFAULT_CLOSE_TIMEOUT_MS = 3_000;
 const PORT_POLL_MS = 100;
 const DEFAULT_IDLE_SCREENSHOT_MS = 2_000;
 const SCREENSHOT_QUALITY = 60;
+const DEFAULT_PID_FILE_NAME = "jejak-chrome.pid";
+const ORPHAN_POLL_MS = 100;
 
 /** Skema yang boleh dipakai untuk navigasi. */
 const ALLOWED_SCHEMES = new Set(["http", "https"]);
@@ -188,6 +207,40 @@ export function chromeArgs(profileDir: string): string[] {
   ];
 }
 
+/** Baca baris perintah proses lewat `ps`; undefined bila proses tak ada. */
+export function readCommandLinePs(pid: number): string | undefined {
+  try {
+    const hasil = Bun.spawnSync(["ps", "-p", String(pid), "-o", "command="], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    if (hasil.exitCode !== 0) return undefined;
+    const isi = hasil.stdout.toString().trim();
+    return isi === "" ? undefined : isi;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Kirim sinyal ke proses; diam-diam bila proses sudah hilang. */
+export function killProcessById(pid: number, signal: number | NodeJS.Signals = "SIGTERM"): void {
+  try {
+    process.kill(pid, signal);
+  } catch {
+    // Proses sudah berhenti atau tak diizinkan; abaikan.
+  }
+}
+
+/** Periksa proses masih hidup lewat sinyal 0. */
+export function isProcessAliveById(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 interface Subscriber {
   listener: BrowserFrameListener;
   busy: boolean;
@@ -210,6 +263,10 @@ export class BrowserManager {
   private readonly idleScreenshotMs: number;
   private readonly portTimeoutMs: number;
   private readonly closeTimeoutMs: number;
+  private readonly readCommandLine: ReadCommandLine;
+  private readonly killProcess: KillProcess;
+  private readonly isProcessAlive: IsProcessAlive;
+  private readonly pidFileName: string;
 
   private client: CdpConnection | undefined;
   private process: BrowserProcess | undefined;
@@ -225,6 +282,8 @@ export class BrowserManager {
   private capturePending = false;
   /** Pembatal detak pengaman; undefined bila detak tidak dijadwalkan. */
   private cancelTick: (() => void) | undefined;
+  /** True bila pemeriksaan Chrome yatim sudah dijalankan sekali. */
+  private orphanChecked = false;
   private readonly subscribers = new Set<Subscriber>();
 
   constructor(options: BrowserManagerOptions = {}) {
@@ -252,6 +311,10 @@ export class BrowserManager {
     this.idleScreenshotMs = options.idleScreenshotMs ?? DEFAULT_IDLE_SCREENSHOT_MS;
     this.portTimeoutMs = options.portTimeoutMs ?? DEFAULT_PORT_TIMEOUT_MS;
     this.closeTimeoutMs = options.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
+    this.readCommandLine = options.readCommandLine ?? readCommandLinePs;
+    this.killProcess = options.killProcess ?? killProcessById;
+    this.isProcessAlive = options.isProcessAlive ?? isProcessAliveById;
+    this.pidFileName = options.pidFileName ?? DEFAULT_PID_FILE_NAME;
   }
 
   /** PID proses Chrome yang sedang berjalan (undefined bila belum ada). */
@@ -272,7 +335,100 @@ export class BrowserManager {
   /** Pastikan Chrome berjalan; luncurkan bila belum. */
   async ensure(): Promise<void> {
     if (this.client !== undefined) return;
+    if (!this.orphanChecked) {
+      this.orphanChecked = true;
+      await this.killOrphan(this.profileDir());
+    }
     await this.start();
+  }
+
+  /** Folder profil browser milik Jejak. */
+  private profileDir(): string {
+    return join(jejakHome(this.env), "browser-profile");
+  }
+
+  /** Berkas pid Chrome di dalam folder profil. */
+  private pidFilePath(profileDir: string): string {
+    return join(profileDir, this.pidFileName);
+  }
+
+  /**
+   * Tulis pid Chrome ke berkas profil supaya proses yatim bisa dikenai.
+   */
+  private writePidFile(profileDir: string, pid: number): void {
+    try {
+      writeFileSync(this.pidFilePath(profileDir), `${pid}\n`, "utf8");
+    } catch {
+      // Berkas pid hanya pelengkap; kegagalan tak boleh menggagalkan browser.
+    }
+  }
+
+  /** Hapus berkas pid (dan port DevTools usang bila diminta). */
+  private removePidFile(profileDir: string, jugaPort = false): void {
+    for (const path of [
+      this.pidFilePath(profileDir),
+      ...(jugaPort ? [join(profileDir, "DevToolsActivePort")] : []),
+    ]) {
+      try {
+        unlinkSync(path);
+      } catch {
+        // Berkas tak ada; abaikan.
+      }
+    }
+  }
+
+  /**
+   * Bunuh Chrome yatim dari proses Jejak sebelumnya.
+   *
+   * Hanya proses yang baris perintahnya memuat path profil Jejak yang boleh
+   * dibunuh; proses lain (misalnya pid yang dipakai ulang) tak boleh disentuh.
+   */
+  private async killOrphan(profileDir: string): Promise<void> {
+    const pidFile = this.pidFilePath(profileDir);
+    let isi: string;
+    try {
+      isi = readFileSync(pidFile, "utf8").trim();
+    } catch {
+      return;
+    }
+    const pid = Number.parseInt(isi, 10);
+    if (!Number.isInteger(pid) || pid <= 0) {
+      this.removePidFile(profileDir, true);
+      return;
+    }
+    if (!this.isProcessAlive(pid)) {
+      // Berkas pid usang: prosesnya sudah mati.
+      this.removePidFile(profileDir, true);
+      return;
+    }
+    if (this.platform === "win32") {
+      // Windows tak punya `ps`; lewati pemeriksaan baris perintah.
+      this.removePidFile(profileDir, true);
+      return;
+    }
+    const baris = this.readCommandLine(pid) ?? "";
+    if (!baris.includes(profileDir)) {
+      // Bukan Chrome milik Jejak; jangan dibunuh.
+      this.removePidFile(profileDir, true);
+      return;
+    }
+    this.killProcess(pid, "SIGTERM");
+    const mati = await this.waitProcessGone(pid, this.closeTimeoutMs);
+    if (!mati) {
+      this.killProcess(pid, "SIGKILL");
+      await this.waitProcessGone(pid, 1_000);
+    }
+    this.removePidFile(profileDir, true);
+  }
+
+  /** Tunggu proses benar-benar hilang (true) atau waktu habis (false). */
+  private async waitProcessGone(pid: number, timeoutMs: number): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (!this.isProcessAlive(pid)) return true;
+      await Bun.sleep(ORPHAN_POLL_MS);
+    }
+    return !this.isProcessAlive(pid);
   }
 
   private async start(): Promise<void> {
@@ -283,7 +439,7 @@ export class BrowserManager {
         "tidak-ditemukan",
       );
     }
-    const profileDir = join(jejakHome(this.env), "browser-profile");
+    const profileDir = this.profileDir();
     try {
       mkdirSync(profileDir, { recursive: true });
     } catch {
@@ -297,9 +453,10 @@ export class BrowserManager {
       throw new BrowserError("Chrome tidak dapat dijalankan.", "gagal");
     }
     this.process = proc;
+    this.writePidFile(profileDir, proc.pid);
     void proc.exited
-      .then(() => this.handleExit())
-      .catch(() => this.handleExit());
+      .then(() => this.handleExit(proc))
+      .catch(() => this.handleExit(proc));
 
     const endpoint = await this.waitForPort(profileDir);
     if (endpoint === undefined) {
@@ -627,8 +784,25 @@ export class BrowserManager {
     })();
   }
 
+  /**
+   * Bunuh proses Chrome seketika (tanpa menunggu apa pun).
+   *
+   * Aman dipanggil berulang dan aman saat tak ada proses. Dipakai pada jalur
+   * keluar proses (sinyal/`exit`) yang tak boleh menunggu.
+   */
+  killSync(): void {
+    const proc = this.process;
+    if (proc === undefined) return;
+    try {
+      proc.kill("SIGTERM");
+    } catch {
+      // Proses sudah berhenti.
+    }
+  }
+
   /** Tutup browser: hentikan screencast, tutup soket, lalu bunuh Chrome. */
   async close(): Promise<void> {
+    this.killSync();
     await this.stopScreencast();
     this.subscribers.clear();
     this.lastFrame = undefined;
@@ -648,6 +822,7 @@ export class BrowserManager {
     const proc = this.process;
     this.process = undefined;
     if (proc !== undefined) await this.terminate(proc);
+    this.removePidFile(this.profileDir());
   }
 
   /** Bunuh proses Chrome; tunggu keluar, lalu paksa. */
@@ -673,7 +848,11 @@ export class BrowserManager {
   }
 
   /** Chrome berhenti sendiri; state kembali "mati" supaya bisa diyalakan ulang. */
-  private handleExit(): void {
+  private handleExit(proc?: BrowserProcess): void {
+    if (proc !== undefined && this.process === proc) {
+      // Proses ini yang terakhir; berkas pid tak lagi berlaku.
+      this.removePidFile(this.profileDir());
+    }
     const client = this.client;
     this.client = undefined;
     this.sessionId = undefined;

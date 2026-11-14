@@ -678,7 +678,11 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
   if (terminal !== undefined) closers.push(() => terminal.closeAll());
-  if (browser !== undefined) closers.push(() => void browser.close());
+  // Jalur keluar proses (sinyal/`exit`) tak boleh menunggu: bunuh Chrome seketika.
+  if (browser !== undefined) closers.push(() => browser.killSync());
+  // Penutup yang boleh menunggu (dipakai `stop()`).
+  const asyncClosers: Array<() => Promise<void>> = [];
+  if (browser !== undefined) asyncClosers.push(() => browser.close());
   let sudahTutup = false;
   const close = (): void => {
     if (sudahTutup) return;
@@ -701,6 +705,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     async stop(): Promise<void> {
       close();
       await server.stop(true);
+      for (const closer of asyncClosers) await closer();
     },
   };
 }
