@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -968,4 +968,115 @@ test("claude cli tidak ditemukan menawarkan CLI bawaan SDK di Pengaturan", async
 
   const cli = find(checks, "Claude CLI");
   expect(cli.detail).toContain("pasang CLI bawaan SDK di Pengaturan");
+});
+
+test("versi data: belum ada data berstatus ok", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+
+  const versi = find(checks, "Versi data");
+  expect(versi.status).toBe("ok");
+  expect(versi.detail).toContain(homeDir);
+});
+
+test("versi data: versi sama dengan aplikasi berstatus ok", async () => {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  await writeFile(
+    join(homeDir, "data-version.json"),
+    `${JSON.stringify({ appVersion: VERSION, updatedAt: "2026-11-01T00:00:00.000Z" })}\n`,
+    { mode: 0o600 },
+  );
+
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+
+  const versi = find(checks, "Versi data");
+  expect(versi.status).toBe("ok");
+  expect(versi.detail).toContain(VERSION);
+});
+
+test("versi data: data lebih lama memberi peringatan dan tak mengubah data", async () => {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  const file = join(homeDir, "data-version.json");
+  await writeFile(
+    file,
+    `${JSON.stringify({ appVersion: "0.0.0", updatedAt: "2026-11-01T00:00:00.000Z" })}\n`,
+    { mode: 0o600 },
+  );
+  const sebelum = await readFile(file, "utf8");
+
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+
+  const versi = find(checks, "Versi data");
+  expect(versi.status).toBe("peringatan");
+  expect(versi.detail).toContain("lebih lama");
+  expect(await readFile(file, "utf8")).toBe(sebelum);
+});
+
+test("versi data: data lebih baru memberi gagal dan exit 1", async () => {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  await writeFile(
+    join(homeDir, "data-version.json"),
+    `${JSON.stringify({ appVersion: "99.0.0", updatedAt: "2026-11-01T00:00:00.000Z" })}\n`,
+    { mode: 0o600 },
+  );
+
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const versi = find(checks, "Versi data");
+  expect(versi.status).toBe("gagal");
+  expect(versi.detail).toContain("lebih baru");
+
+  const logged: string[] = [];
+  const code = await doctor({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    log: (line) => logged.push(line),
+  });
+  expect(code).toBe(1);
+  expect(logged.some((line) => line.includes("GAGAL  Versi data"))).toBe(true);
+});
+
+test("versi data: berkas rusak memberi peringatan", async () => {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  await writeFile(join(homeDir, "data-version.json"), "{ rusak", { mode: 0o600 });
+
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+
+  const versi = find(checks, "Versi data");
+  expect(versi.status).toBe("peringatan");
+  expect(versi.detail).toContain("rusak");
+});
+
+test("versi data: berkas versi belum ada tapi data ada memberi peringatan", async () => {
+  await mkdir(homeDir, { recursive: true, mode: 0o700 });
+  await writeFile(join(homeDir, "sessions.db"), "bukan db", { mode: 0o600 });
+
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+
+  const versi = find(checks, "Versi data");
+  expect(versi.status).toBe("peringatan");
+  expect(versi.detail).toContain("belum ada");
 });

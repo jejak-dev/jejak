@@ -7,6 +7,7 @@ import { memoryDir } from "../server/memory/memory-store";
 import { redactResolved, resolveProvider, type ProviderRegistry } from "../server/provider";
 import { jejakHome, loadRegistry, providersPath } from "../server/provider-store";
 import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
+import { inspectDataVersion } from "../server/data-version";
 import { sandboxAvailable } from "../server/sandbox/build-options";
 import { scanWorkspaceFiles, workspacesDir } from "../server/workspaces/workspace-files";
 import { locateClaude, type LocateOptions } from "../server/sdk/claude-locator";
@@ -290,6 +291,25 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
         detail: issues.join("; "),
       });
     }
+  }
+
+  // Versi data: hanya dibaca, doctor tak pernah mengubah data Jejak.
+  try {
+    const dataVersion = await inspectDataVersion({
+      home: jejakHome(env),
+      appVersion: VERSION,
+    });
+    checks.push({
+      name: "Versi data",
+      status: dataVersion.status,
+      detail: dataVersion.detail,
+    });
+  } catch (error) {
+    checks.push({
+      name: "Versi data",
+      status: "peringatan",
+      detail: `gagal memeriksa versi data: ${errorMessage(error)}`,
+    });
   }
 
   if (env.JEJAK_MEMORY?.trim() === "0") {

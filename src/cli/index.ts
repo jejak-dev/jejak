@@ -11,6 +11,7 @@ import {
   readDesktopToken,
 } from "../server/desktop";
 import { jejakHome } from "../server/provider-store";
+import { DataVersionError, prepareDataDir } from "../server/data-version";
 import { VERSION } from "../shared/version";
 
 const HELP = `jejak ${VERSION}
@@ -44,6 +45,7 @@ Variabel lingkungan:
   JEJAK_PERSIST  "0" untuk mematikan penyimpanan sesi
   JEJAK_PASSWORD kata sandi untuk masuk (sama dengan --password-file)
   JEJAK_DESKTOP_TOKEN  token masuk mode --desktop (minimal 32 karakter)
+  JEJAK_SKIP_BACKUP  "1" untuk melewati cadangan data sebelum naik versi
 
 Prioritas: flag > variabel lingkungan > default.
 `;
@@ -183,6 +185,34 @@ switch (args.command) {
     }
     if (generated && password !== undefined) {
       console.log(`Kata sandi Jejak (hanya ditampilkan sekali): ${password}`);
+    }
+    // Penjaga versi data: dijalankan sekali sebelum penyimpanan dibuka dan
+    // sebelum server mendengarkan, supaya data tak pernah disentuh aplikasi
+    // yang salah versi.
+    let infoCadangan = "";
+    try {
+      const prep = await prepareDataDir({
+        home: jejakHome(process.env),
+        appVersion: VERSION,
+        env: process.env,
+      });
+      if (prep.action === "upgraded" || prep.action === "legacy") {
+        infoCadangan =
+          prep.backupDir === undefined
+            ? `Data naik versi dari ${prep.from} ke ${VERSION} tanpa cadangan (JEJAK_SKIP_BACKUP=1)`
+            : `Data dicadangkan ke ${prep.backupDir} sebelum naik dari ${prep.from} ke ${VERSION}`;
+      }
+    } catch (error) {
+      if (error instanceof DataVersionError) {
+        console.error(error.message);
+        process.exit(1);
+      }
+      throw error;
+    }
+    if (infoCadangan !== "") {
+      // Di mode desktop stdout dipakai baris JEJAK_READY; info ditulis ke stderr.
+      if (desktop) console.error(infoCadangan);
+      else console.log(infoCadangan);
     }
     const handle = startServer({
       host,
