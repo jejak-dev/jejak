@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest an idea or improvement
+title: "[feat] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an idea.
+
+        **Do not use this form for security problems.** Report those privately
+        through GitHub Private Vulnerability Reporting instead: open the
+        **Security** tab of this repository and click **Report a vulnerability**.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation, not only the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What would you like Jejak to do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Workarounds or other tools that handle this today.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, links, or logs. Redact secrets and personal data.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this idea.
+          required: true
+        - label: I removed secrets and personal data from the text above.
+          required: true

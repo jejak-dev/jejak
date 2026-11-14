@@ -1,0 +1,83 @@
+name: Bug report
+description: Report something that does not work as expected
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug.
+
+        **Do not use this form for security problems.** Report those privately
+        through GitHub Private Vulnerability Reporting instead: open the
+        **Security** tab of this repository and click **Report a vulnerability**.
+
+  - type: input
+    id: version
+    attributes:
+      label: Jejak version
+      description: Output of `jejak --version`
+      placeholder: "0.0.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: bun-version
+    attributes:
+      label: Bun version
+      description: Output of `bun --version` (leave empty if you use the desktop app)
+      placeholder: "1.4.2"
+    validations:
+      required: false
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps that lead to the problem.
+      placeholder: |
+        1. Run `jejak serve`
+        2. Open the Files panel
+        3. Click ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Paste relevant output. Redact API keys, tokens, and file paths that are private.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed secrets and personal data from the text above.
+          required: true

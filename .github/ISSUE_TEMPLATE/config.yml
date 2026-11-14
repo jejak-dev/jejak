@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/jejak-dev/jejak/security/advisories/new
+    about: Report a vulnerability privately. Open the Security tab of this repository and click "Report a vulnerability". Please do not open a public issue for security problems.
+  - name: Jejak in Indonesian
+    url: https://github.com/jejak-dev/jejak/blob/main/README.id.md
+    about: Dokumentasi Bahasa Indonesia ada di README.id.md.
