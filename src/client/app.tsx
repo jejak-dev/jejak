@@ -746,7 +746,7 @@ export function App() {
           <>
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
-              <ProviderSettings api={api} onSaved={onSaved} />
+              <ProviderSettings api={api} onSaved={onSaved} sessions={sessions} />
             </div>
           </>
         ) : showingMemory ? (

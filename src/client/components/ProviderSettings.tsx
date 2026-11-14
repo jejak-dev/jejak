@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
+import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient, type ConnectionTestView } from "../lib/api";
 import { parseRegistryView, type RegistryView } from "../lib/registry-view";
 import {
@@ -15,6 +16,7 @@ import {
   type ProfileDraft,
   type RegistryDraft,
 } from "../lib/registry-edit";
+import { AppUpdateSettings } from "./AppUpdateSettings";
 import { BudgetSettings } from "./BudgetSettings";
 import { ProfileForm } from "./ProfileForm";
 import { SandboxSettings } from "./SandboxSettings";
@@ -23,6 +25,7 @@ import { SdkSettings } from "./SdkSettings";
 export interface ProviderSettingsProps {
   api: ApiClient;
   onSaved: () => void | Promise<void>;
+  sessions: SessionInfo[];
 }
 
 function messageOf(error: unknown): string {
@@ -39,7 +42,7 @@ function pickSelection(draft: RegistryDraft, current: string | undefined): strin
   return draft.activeProfileId ?? draft.profiles[0]?.id;
 }
 
-export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
+export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsProps) {
   const [view, setView] = useState<RegistryView | undefined>(undefined);
   const [original, setOriginal] = useState<RegistryDraft | undefined>(undefined);
   const [draft, setDraft] = useState<RegistryDraft | undefined>(undefined);
@@ -373,6 +376,7 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
 
       <BudgetSettings api={api} />
       <SandboxSettings api={api} />
+      <AppUpdateSettings sessions={sessions} />
       <SdkSettings api={api} />
     </section>
   );
