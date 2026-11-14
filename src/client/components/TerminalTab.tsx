@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ApiClient } from "../lib/api";
+import { featureOffHint, openFeatureSettings, type FeatureState } from "../lib/features";
 import { parseSse } from "../lib/sse";
 import {
   applyOutput,
@@ -31,6 +32,7 @@ function errorMessage(caught: unknown): string {
 export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
   const [state, setState] = useState<State>("siap");
   const [error, setError] = useState<string | undefined>();
+  const [fitur, setFitur] = useState<FeatureState | undefined>(undefined);
   const [screen, setScreen] = useState<Screen>(emptyScreen);
   const idRef = useRef<string | undefined>(undefined);
   // Terminal yang ditempel (bukan dibuat tab ini); tidak ditutup saat tab dilepas.
@@ -115,6 +117,11 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 503) {
         setState("mati");
+        // Status fitur diketahui supaya tahu saklar terkunci env atau tidak.
+        void api
+          .getFeatures()
+          .then((features) => setFitur(features.terminal))
+          .catch(() => undefined);
       } else {
         setState("siap");
         setError(errorMessage(caught));
@@ -171,11 +178,26 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
   };
 
   if (state === "mati") {
+    const hint = featureOffHint("terminal", fitur);
     return (
       <div class="jk-terminal">
         <p class="jk-note" role="status">
-          Terminal dimatikan. Jalankan Jejak dengan <code>JEJAK_TERMINAL=1</code> untuk menyalakannya.
+          {hint.text}
         </p>
+        {hint.locked ? (
+          <p class="jk-note">
+            Jalankan Jejak dengan <code>JEJAK_TERMINAL=1</code> untuk menyalakannya.
+          </p>
+        ) : (
+          <button
+            type="button"
+            class="jk-button"
+            aria-label="Aktifkan terminal di Pengaturan"
+            onClick={() => openFeatureSettings()}
+          >
+            Aktifkan di Pengaturan
+          </button>
+        )}
         <p class="jk-note">{NOTE}</p>
       </div>
     );

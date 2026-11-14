@@ -4,8 +4,12 @@ import { recordAudit } from "../audit/record";
 import { TerminalError, type TerminalManager } from "../terminal/terminal-manager";
 
 export interface TerminalRoutesOptions {
-  /** Tanpa manajer semua rute menjawab 503 (terminal dimatikan secara default). */
-  manager?: TerminalManager;
+  /**
+   * Manajer terminal, atau fungsi yang memcadangnya pada setiap permintaan.
+   * Tanpa manajer (atau saat fungsi mengembalikan `undefined`) semua rute
+   * menjawab 503 (terminal dimatikan secara default).
+   */
+  manager?: TerminalManager | (() => TerminalManager | undefined);
   audit?: AuditStore;
 }
 
@@ -47,18 +51,14 @@ function errorResponse(error: unknown): Response {
 }
 
 export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
-  const manager = options.manager;
   const plugin = new Elysia({ name: "jejak-terminal-routes" });
-  if (manager === undefined) {
-    const off = () => json(503, { error: DISABLED });
-    return plugin
-      .get("/api/terminal", off)
-      .post("/api/terminal", off)
-      .get("/api/terminal/:id/output", off)
-      .post("/api/terminal/:id/input", off)
-      .post("/api/terminal/:id/resize", off)
-      .delete("/api/terminal/:id", off) as unknown as Elysia;
-  }
+  // Manajer dibaca pada setiap permintaan: status fitur berlaku seketika.
+  const resolve = (): TerminalManager | undefined => {
+    const source = options.manager;
+    if (source === undefined) return undefined;
+    return typeof source === "function" ? source() : source;
+  };
+  const off = () => json(503, { error: DISABLED });
   // Isi ketikan tidak pernah dicatat; hanya pembukaan dan penutupan.
   const note = (aksi: string, meta: Record<string, string | number | boolean | null>): void =>
     recordAudit(options.audit, {
@@ -68,10 +68,16 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
     });
 
   return (plugin
-    .get("/api/terminal", () => ({ terminals: manager.list() }))
+    .get("/api/terminal", () => {
+      const manager = resolve();
+      if (manager === undefined) return off();
+      return { terminals: manager.list() };
+    })
     .post(
       "/api/terminal",
       ({ body }) => {
+        const manager = resolve();
+        if (manager === undefined) return off();
         try {
           const input = parse(body, ["cwd", "cols", "rows"]);
           const info = manager.create({ ...input, cwd: input.cwd });
@@ -84,6 +90,8 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
       { parse: "text" },
     )
     .get("/api/terminal/:id/output", ({ params, request }) => {
+      const manager = resolve();
+      if (manager === undefined) return off();
       let handle: ReturnType<typeof manager.subscribe>;
       const encoder = new TextEncoder();
       const b64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
@@ -125,6 +133,8 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
     .post(
       "/api/terminal/:id/input",
       ({ params, body }) => {
+        const manager = resolve();
+        if (manager === undefined) return off();
         try {
           const input = parse(body, ["data"]);
           manager.write(params.id, input.data);
@@ -138,6 +148,8 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
     .post(
       "/api/terminal/:id/resize",
       ({ params, body }) => {
+        const manager = resolve();
+        if (manager === undefined) return off();
         try {
           const input = parse(body, ["cols", "rows"]);
           return manager.resize(params.id, input.cols, input.rows);
@@ -148,6 +160,8 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
       { parse: "text" },
     )
     .delete("/api/terminal/:id", ({ params }) => {
+      const manager = resolve();
+      if (manager === undefined) return off();
       try {
         manager.close(params.id);
         note("ditutup", { id: params.id });

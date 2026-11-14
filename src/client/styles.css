@@ -4948,6 +4948,91 @@ h2.jk-md-heading {
   margin-left: 22px;
 }
 
+/* Saklar fitur (terminal, browser) */
+
+.jk-feature-settings {
+  display: grid;
+  gap: 10px;
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
+.jk-feature-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.jk-feature-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-width: 720px;
+}
+
+.jk-feature-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.jk-feature-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.jk-feature-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.jk-switch {
+  flex: none;
+  position: relative;
+  width: 36px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: var(--hover);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.jk-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--t3);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.jk-switch-on {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.jk-switch-on::after {
+  transform: translateX(16px);
+  background: var(--on-ink);
+}
+
+.jk-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 /* SDK yang dipasang pengguna */
 
 .jk-sdk {

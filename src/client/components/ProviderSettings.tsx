@@ -297,7 +297,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
     (view?.profiles.find((profile) => profile.id === selected.id)?.hasKey ?? false);
 
   return (
-    <section class="jk-settings" aria-labelledby="jk-settings-title">
+    <section class="jk-settings-content" aria-labelledby="jk-settings-title">
       <header class="jk-settings-head">
         <h2 id="jk-settings-title" class="jk-settings-title">
           Provider

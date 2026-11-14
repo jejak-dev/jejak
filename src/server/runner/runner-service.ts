@@ -67,7 +67,11 @@ export interface RunnerTerminal {
 
 export interface RunnerServiceOptions {
   store: RunnerStore;
-  terminal?: RunnerTerminal;
+  /**
+   * Terminal yang dipakai, atau fungsi yang mengembalikannya saat perintah
+   * dijalankan (agar status fitur terminal berlaku seketika).
+   */
+  terminal?: RunnerTerminal | (() => RunnerTerminal | undefined);
   /** Daftar folder yang boleh dipakai (cwd sesi dan worktree). */
   allowedCwds: () => string[];
   audit?: AuditStore;
@@ -153,7 +157,7 @@ function confirmationHash(command: string, body?: string): string {
 
 export class RunnerService {
   private readonly store: RunnerStore;
-  private readonly terminal: RunnerTerminal | undefined;
+  private readonly terminal: RunnerTerminal | (() => RunnerTerminal | undefined) | undefined;
   private readonly allowedCwds: () => string[];
   private readonly audit: AuditStore | undefined;
   private readonly platform: NodeJS.Platform;
@@ -164,6 +168,13 @@ export class RunnerService {
     this.allowedCwds = options.allowedCwds;
     this.audit = options.audit;
     this.platform = options.platform ?? process.platform;
+  }
+
+  /** Terminal aktif saat ini; dibaca tiap kali perintah dijalankan. */
+  private currentTerminal(): RunnerTerminal | undefined {
+    const source = this.terminal;
+    if (source === undefined) return undefined;
+    return typeof source === "function" ? source() : source;
   }
 
   /** Folder yang diminta harus ada di daftar folder sesi. */
@@ -332,7 +343,7 @@ export class RunnerService {
       this.store.write(cwd, folder);
     }
 
-    const terminal = this.terminal;
+    const terminal = this.currentTerminal();
     if (terminal === undefined) {
       throw new RunnerError(TERMINAL_DISABLED, "nonaktif");
     }

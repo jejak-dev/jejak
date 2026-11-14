@@ -4,8 +4,12 @@ import { recordAudit } from "../audit/record";
 import { BrowserError, type BrowserManager } from "../browser/browser-manager";
 
 export interface BrowserRoutesOptions {
-  /** Tanpa manajer semua rute menjawab 503 (browser dimatikan secara default). */
-  manager?: BrowserManager;
+  /**
+   * Manajer browser, atau fungsi yang memcadangnya pada setiap permintaan.
+   * Tanpa manajer (atau saat fungsi mengembalikan `undefined`) semua rute
+   * menjawab 503 (browser dimatikan secara default).
+   */
+  manager?: BrowserManager | (() => BrowserManager | undefined);
   audit?: AuditStore;
 }
 
@@ -57,16 +61,14 @@ function errorResponse(error: unknown): Response {
 }
 
 export function browserRoutes(options: BrowserRoutesOptions = {}): Elysia {
-  const manager = options.manager;
   const plugin = new Elysia({ name: "jejak-browser-routes" });
-  if (manager === undefined) {
-    const off = () => json(503, { error: DISABLED });
-    return plugin
-      .get("/api/browser", off)
-      .post("/api/browser/navigate", off)
-      .get("/api/browser/stream", off)
-      .delete("/api/browser", off) as unknown as Elysia;
-  }
+  // Manajer dibaca pada setiap permintaan: status fitur berlaku seketika.
+  const resolve = (): BrowserManager | undefined => {
+    const source = options.manager;
+    if (source === undefined) return undefined;
+    return typeof source === "function" ? source() : source;
+  };
+  const off = () => json(503, { error: DISABLED });
 
   // Hanya URL yang dicatat; isi halaman tak pernah masuk audit.
   const note = (aksi: string, meta: Record<string, string | number | boolean | null>): void =>
@@ -79,10 +81,16 @@ export function browserRoutes(options: BrowserRoutesOptions = {}): Elysia {
   const encoder = new TextEncoder();
 
   return (plugin
-    .get("/api/browser", () => manager.state())
+    .get("/api/browser", () => {
+      const manager = resolve();
+      if (manager === undefined) return off();
+      return manager.state();
+    })
     .post(
       "/api/browser/navigate",
       async ({ body }) => {
+        const manager = resolve();
+        if (manager === undefined) return off();
         try {
           const input = parse(body, ["url"]);
           if (typeof input.url !== "string" || input.url.trim() === "") {
@@ -101,6 +109,8 @@ export function browserRoutes(options: BrowserRoutesOptions = {}): Elysia {
       { parse: "text" },
     )
     .get("/api/browser/stream", async ({ request }) => {
+      const manager = resolve();
+      if (manager === undefined) return off();
       try {
         await manager.ensure();
       } catch (error) {
@@ -157,6 +167,8 @@ export function browserRoutes(options: BrowserRoutesOptions = {}): Elysia {
       });
     })
     .delete("/api/browser", async () => {
+      const manager = resolve();
+      if (manager === undefined) return off();
       try {
         await manager.close();
         note("ditutup", {});

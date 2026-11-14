@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import type { ApiClient } from "../lib/api";
+import { featureOffHint, openFeatureSettings, type FeatureState } from "../lib/features";
 import { parseSse } from "../lib/sse";
 import {
   browserErrorText,
@@ -28,9 +30,15 @@ async function readError(response: Response): Promise<string> {
   return "";
 }
 
-export function BrowserTab() {
+export interface BrowserTabProps {
+  /** Klien API; dipakai membaca status fitur saat browser mati. */
+  api: ApiClient;
+}
+
+export function BrowserTab({ api }: BrowserTabProps) {
   const [status, setStatus] = useState<number | undefined>(undefined);
   const [message, setMessage] = useState<string | undefined>(undefined);
+  const [fitur, setFitur] = useState<FeatureState | undefined>(undefined);
   const [state, setState] = useState<BrowserStateInfo | undefined>(undefined);
   const [frame, setFrame] = useState<BrowserFrameInfo | undefined>(undefined);
   const [url, setUrl] = useState("");
@@ -54,6 +62,13 @@ export function BrowserTab() {
           const err = await readError(response);
           setStatus(response.status);
           setMessage(err);
+          if (response.status === 503) {
+            // Status fitur diketahui supaya tahu saklar terkunci env atau tidak.
+            void api
+              .getFeatures()
+              .then((features) => setFitur(features.browser))
+              .catch(() => undefined);
+          }
           return;
         }
         const parsed = parseBrowserState(await response.json());
@@ -93,7 +108,7 @@ export function BrowserTab() {
       controller.abort();
       stopStream();
     };
-  }, [streamKey, stopStream]);
+  }, [streamKey, stopStream, api]);
 
   // Gambar frame terakhir ke kanvas.
   useEffect(() => {
@@ -166,11 +181,21 @@ export function BrowserTab() {
   const view = browserView({ status, message, adaFrame: frame !== undefined, state });
 
   if (view.kind === "mati") {
+    const hint = featureOffHint("browser", fitur);
     return (
       <div class="jk-browser">
         <p class="jk-note" role="status">
-          Browser dimatikan. Jalankan Jejak dengan <code>JEJAK_BROWSER=1</code> untuk menyalakannya.
+          {hint.text}
         </p>
+        {hint.locked ? (
+          <p class="jk-note">
+            Jalankan Jejak dengan <code>JEJAK_BROWSER=1</code> untuk menyalakannya.
+          </p>
+        ) : (
+          <button type="button" class="jk-button" onClick={() => openFeatureSettings()}>
+            Aktifkan di Pengaturan
+          </button>
+        )}
         <p class="jk-note">{NOTE}</p>
       </div>
     );

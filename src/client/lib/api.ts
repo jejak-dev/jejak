@@ -53,6 +53,7 @@ import type {
 } from "../../server/workspaces/workspace-files";
 import type { WorkspaceView } from "../../server/workspaces/workspace-service";
 import type { WikiPage, WikiPageRef, WikiProject, WikiSync } from "./wiki";
+import { parseFeatureStatus, type FeatureName, type FeatureStatus } from "./features";
 
 export type AuditEntryItem = AuditEntry;
 export type AuditSummaryResult = AuditSummary;
@@ -675,6 +676,10 @@ export interface ApiClient {
   getBudgetStatus(sessionId?: string): Promise<BudgetStatusResult>;
   getSandbox(): Promise<SandboxState>;
   putSandbox(patch: SandboxPatch): Promise<SandboxConfigItem>;
+  /** Status fitur (terminal, browser) beserta kunci env. */
+  getFeatures(): Promise<FeatureStatus>;
+  /** Nyalakan atau matikan fitur; status terbaru dikembalikan. */
+  putFeatures(patch: Partial<Record<FeatureName, boolean>>): Promise<FeatureStatus>;
   /** Status SDK yang dipasang pengguna. */
   getSdk(): Promise<SdkStatus>;
   /** Periksa versi terbaru di registry npm; tidak memasang apa pun. */
@@ -2304,6 +2309,23 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       if (patch.allowLocalBinding !== undefined) body.allowLocalBinding = patch.allowLocalBinding;
       const data = await request("PUT", "/api/sandbox", body);
       return sandboxConfigFrom(field(data, "config"));
+    },
+
+    async getFeatures() {
+      const data = await request("GET", "/api/features");
+      const parsed = parseFeatureStatus(data);
+      if (parsed === undefined) throw new ApiError("respons server tidak valid", 200);
+      return parsed;
+    },
+
+    async putFeatures(patch) {
+      const body: Record<string, boolean> = {};
+      if (patch.terminal !== undefined) body.terminal = patch.terminal;
+      if (patch.browser !== undefined) body.browser = patch.browser;
+      const data = await request("PUT", "/api/features", body);
+      const parsed = parseFeatureStatus(data);
+      if (parsed === undefined) throw new ApiError("respons server tidak valid", 200);
+      return parsed;
     },
 
     async getSdk() {

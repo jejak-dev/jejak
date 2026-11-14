@@ -291,7 +291,7 @@ export function Panel({
         ) : tab === "terminal" ? (
           <TerminalTab api={api} cwd={session?.cwd ?? ""} attachId={terminalToAttach} />
         ) : tab === "browser" ? (
-          <BrowserTab />
+          <BrowserTab api={api} />
         ) : (
           <FilesTab
             api={api}

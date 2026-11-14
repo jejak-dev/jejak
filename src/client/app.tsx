@@ -10,6 +10,7 @@ import { MemoryPage } from "./components/MemoryPage";
 import { McpPage } from "./components/McpPage";
 import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
+import { FeatureSettings } from "./components/FeatureSettings";
 import { ReplyBar } from "./components/ReplyBar";
 import { GoalBar } from "./components/GoalBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
@@ -746,7 +747,10 @@ export function App() {
           <>
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
-              <ProviderSettings api={api} onSaved={onSaved} sessions={sessions} />
+              <div class="jk-settings">
+                <ProviderSettings api={api} onSaved={onSaved} sessions={sessions} />
+                <FeatureSettings api={api} />
+              </div>
             </div>
           </>
         ) : showingMemory ? (

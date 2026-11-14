@@ -55,6 +55,7 @@ import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
+import { featuresRoutes } from "./routes/features";
 import { terminalRoutes } from "./routes/terminal";
 import { TerminalManager } from "./terminal/terminal-manager";
 import { browserRoutes } from "./routes/browser";
@@ -65,6 +66,14 @@ import { FileRunnerStore, runnerPath as runnerStorePath } from "./runner/runner-
 import { indexerRoutes } from "./routes/indexer";
 import { wikiRoutes } from "./routes/wiki";
 import { defaultGitProviderStore, type GitProviderStore } from "./gitprovider/provider-store";
+import { FeatureGate } from "./features/feature-gate";
+import {
+  defaultFeatureStore,
+  resolveFeature,
+  type FeatureName,
+  type FeatureState,
+  type FeatureStore,
+} from "./features/feature-store";
 import type { AdapterDeps } from "./gitprovider/adapters";
 import { RepoIndexer, indexRoot } from "./indexer/repo-indexer";
 import { WikiService, defaultResolveRepo, wikiRoot } from "./wiki/wiki-service";
@@ -177,10 +186,12 @@ export interface CreateAppOptions {
   wikiRoot?: string;
   /** Dependensi adapter git (mis. fetch palsu untuk tes). */
   gitAdapterDeps?: AdapterDeps;
-  /** Terminal PTY (akses shell penuh, tanpa sandbox); tanpa manajer rute 503. */
+  /** Terminal PTY (akses shell penuh, tanpa sandbox); disuntikkan berarti fitur menyala. */
   terminal?: TerminalManager;
-  /** Browser headless (satu Chromium per proses); tanpa manajer rute 503. */
+  /** Browser headless (satu Chromium per proses); disuntikkan berarti fitur menyala. */
   browser?: BrowserManager;
+  /** Penyimpanan status fitur (terminal, browser); default berkas di JEJAK_HOME. */
+  features?: FeatureStore;
   /** Layanan peluncur perintah; tanpa opsi ini dibuat dari store bawaan. */
   runnerService?: RunnerService;
   /** Lokasi berkas `runner.json`; default `<jejakHome(env)>/runner.json`. */
@@ -205,6 +216,12 @@ export interface DesktopOptions {
   sessionTtlMs?: number;
 }
 
+/** Gerbang fitur yang dipakai aplikasi; dipakai untuk menutup saat berhenti. */
+export interface FeatureGates {
+  terminal: FeatureGate<TerminalManager>;
+  browser: FeatureGate<BrowserManager>;
+}
+
 /** Ringkasan otomatis akhir sesi menjadi usulan memory proyek (lapis episodik). */
 function autoSummary(memory: MemoryService): NonNullable<SessionManagerOptions["onTurnEnd"]> {
   return async ({ sessionId, title, cwd, events }) => {
@@ -222,6 +239,62 @@ function autoSummary(memory: MemoryService): NonNullable<SessionManagerOptions["
 export function createApp(options: CreateAppOptions = {}) {
   const env = options.env ?? process.env;
   const path = options.providersPath ?? providersPath(env);
+
+  // Fitur (terminal, browser) mati secara default. Saklar ada di Pengaturan;
+  // env `JEJAK_TERMINAL`/`JEJAK_BROWSER` tetap menang atas berkas.
+  const featureStore = options.features ?? defaultFeatureStore(env);
+  const storedFeatures = featureStore.get();
+  const terminalGate = new FeatureGate<TerminalManager>({
+    create: () => {
+      if (options.terminal !== undefined) return options.terminal;
+      const manager = new TerminalManager();
+      manager.start();
+      return manager;
+    },
+    close: (manager) => manager.closeAll(),
+  });
+  const browserGate = new FeatureGate<BrowserManager>({
+    create: () => {
+      if (options.browser !== undefined) return options.browser;
+      return new BrowserManager();
+    },
+    close: (manager) => manager.close(),
+  });
+  if (options.terminal !== undefined) {
+    terminalGate.enable();
+  } else if (resolveFeature("terminal", env, storedFeatures).enabled) {
+    terminalGate.enable();
+  }
+  if (options.browser !== undefined) {
+    browserGate.enable();
+  } else if (resolveFeature("browser", env, storedFeatures).enabled) {
+    browserGate.enable();
+  }
+  // Env mengunci fitur: nilainya menang, juga saat manajer disuntikkan.
+  const envLocked = (name: FeatureName): "1" | "0" | undefined => {
+    const raw = env[name === "terminal" ? "JEJAK_TERMINAL" : "JEJAK_BROWSER"]?.trim();
+    return raw === "1" || raw === "0" ? raw : undefined;
+  };
+  if (envLocked("terminal") === "0") void terminalGate.disable().catch(() => undefined);
+  if (envLocked("browser") === "0") void browserGate.disable().catch(() => undefined);
+  /** Status efektif fitur: gerbang menentukan menyala, env menentukan terkunci. */
+  const featureState = (name: FeatureName): FeatureState => {
+    const locked =
+      env[name === "terminal" ? "JEJAK_TERMINAL" : "JEJAK_BROWSER"]?.trim() === "1" ||
+      env[name === "terminal" ? "JEJAK_TERMINAL" : "JEJAK_BROWSER"]?.trim() === "0";
+    const enabled = name === "terminal" ? terminalGate.isEnabled : browserGate.isEnabled;
+    return { enabled, locked };
+  };
+  /** Terapkan status fitur: mematikan menutup sesi atau proses berjalan. */
+  const applyFeature = async (name: FeatureName, enabled: boolean): Promise<void> => {
+    if (name === "terminal") {
+      if (enabled) terminalGate.enable();
+      else await terminalGate.disable();
+      return;
+    }
+    if (enabled) browserGate.enable();
+    else await browserGate.disable();
+  };
 
   const questionService =
     options.questions === undefined
@@ -365,7 +438,7 @@ export function createApp(options: CreateAppOptions = {}) {
     options.runnerService ??
     new RunnerService({
       store: new FileRunnerStore(options.runnerPath ?? runnerStorePath(env)),
-      terminal: options.terminal,
+      terminal: () => terminalGate.get(),
       allowedCwds: sessionCwds,
       audit: options.audit,
     });
@@ -490,8 +563,17 @@ export function createApp(options: CreateAppOptions = {}) {
       }),
     )
     .use(memoryRoutes({ service: options.memory, audit: options.audit }))
-    .use(terminalRoutes({ manager: options.terminal, audit: options.audit }))
-    .use(browserRoutes({ manager: options.browser, audit: options.audit }))
+    .use(
+      featuresRoutes({
+        store: featureStore,
+        env,
+        state: featureState,
+        apply: applyFeature,
+        audit: options.audit,
+      }),
+    )
+    .use(terminalRoutes({ manager: () => terminalGate.get(), audit: options.audit }))
+    .use(browserRoutes({ manager: () => browserGate.get(), audit: options.audit }))
     .use(runnerRoutes({ runner: runnerService }))
     .use(questionRoutes({ service: questionService, audit: options.audit }))
     .use(
@@ -566,6 +648,11 @@ export function createApp(options: CreateAppOptions = {}) {
     (result as unknown as { memoryBridge?: MemoryBridge }).memoryBridge =
       memoryBridge.bridge;
   }
+  // Seam untuk penutupan: manajer fitur ditutup saat server berhenti.
+  (result as unknown as { featureGates?: FeatureGates }).featureGates = {
+    terminal: terminalGate,
+    browser: browserGate,
+  };
   return result;
 }
 
@@ -596,13 +683,8 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const claudeConfig = defaultClaudeConfigStore(process.env);
   const sandbox = defaultSandboxStore(process.env);
   const questions = defaultQuestionStore(process.env);
-  const terminalDiminta = process.env.JEJAK_TERMINAL?.trim() === "1";
-  // Terminal memakai shell POSIX di macOS/Linux dan Command Prompt di Windows.
-  const terminal = terminalDiminta ? new TerminalManager() : undefined;
-  terminal?.start();
-  // Browser mati secara default; dinyalakan dengan JEJAK_BROWSER=1.
-  const browserDiminta = process.env.JEJAK_BROWSER?.trim() === "1";
-  const browser = browserDiminta ? new BrowserManager() : undefined;
+  // Terminal dan browser dibuat malas oleh gerbang fitur: statusnya berasal
+  // dari env dan saklar di Pengaturan, bukan dari pembuatan di awal.
   const gitProviders = defaultGitProviderStore(process.env);
   const indexer =
     gitProviders === undefined ? undefined : new RepoIndexer({ root: indexRoot(process.env) });
@@ -662,12 +744,11 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     ...(sandbox === undefined ? {} : { sandbox }),
     ...(questions === undefined ? {} : { questions }),
     ...(gitProviders === undefined || indexer === undefined ? {} : { gitProviders, indexer }),
-    ...(terminal === undefined ? {} : { terminal }),
-    ...(browser === undefined ? {} : { browser }),
   });
   holder.app = app;
   // Supaya konteks permintaan punya `server` (alamat socket untuk throttle).
   app.server = server;
+  const gates = (app as unknown as { featureGates?: FeatureGates }).featureGates;
 
   console.log(
     `Jejak ${VERSION} siap di ${options.tls === undefined ? "http" : "https"}://${host}:${port}`,
@@ -677,12 +758,21 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
-  if (terminal !== undefined) closers.push(() => terminal.closeAll());
   // Jalur keluar proses (sinyal/`exit`) tak boleh menunggu: bunuh Chrome seketika.
-  if (browser !== undefined) closers.push(() => browser.killSync());
+  if (gates !== undefined) {
+    closers.push(() => {
+      void gates.terminal.shutdown().catch(() => undefined);
+      void gates.browser.shutdown().catch(() => undefined);
+    });
+  }
   // Penutup yang boleh menunggu (dipakai `stop()`).
   const asyncClosers: Array<() => Promise<void>> = [];
-  if (browser !== undefined) asyncClosers.push(() => browser.close());
+  if (gates !== undefined) {
+    asyncClosers.push(async () => {
+      await gates.terminal.shutdown();
+      await gates.browser.shutdown();
+    });
+  }
   let sudahTutup = false;
   const close = (): void => {
     if (sudahTutup) return;
