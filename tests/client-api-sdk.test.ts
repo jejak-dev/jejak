@@ -37,6 +37,17 @@ const STATUS: SdkStatus = {
     source: "setting",
     configuredPath: "/usr/local/bin/claude",
   },
+  cli: {
+    platform: "darwin-arm64",
+    supported: true,
+    installed: {
+      version: "0.3.323",
+      platform: "darwin-arm64",
+      installedAt: "2026-11-12T10:06:00.000Z",
+      size: 1234,
+    },
+    progress: null,
+  },
 };
 
 describe("getSdk", () => {
@@ -68,6 +79,12 @@ describe("getSdk", () => {
         version: null,
         source: null,
         configuredPath: null,
+      },
+      cli: {
+        platform: null,
+        supported: false,
+        installed: null,
+        progress: null,
       },
     });
   });
@@ -257,5 +274,107 @@ describe("rollbackSdk", () => {
     const error = await api.rollbackSdk().catch((caught) => caught);
     expect(error).toBeInstanceOf(ApiError);
     expect(error.status).toBe(404);
+  });
+});
+
+describe("checkSdkCli", () => {
+  test("mengirim POST dengan body JSON kosong", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        version: "0.3.323",
+        platform: "darwin-arm64",
+        unpackedSize: 5_200_000,
+        downloadSizeEstimate: null,
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    const result = await api.checkSdkCli();
+    expect(result.version).toBe("0.3.323");
+    expect(result.platform).toBe("darwin-arm64");
+    expect(result.unpackedSize).toBe(5_200_000);
+    expect(result.downloadSizeEstimate).toBeNull();
+    expect(calls[0]?.url).toBe("/api/sdk/check-cli");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe("{}");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+  });
+
+  test("409 menjadi ApiError", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Pasang SDK dulu sebelum memasang CLI bawaan." }, 409),
+    );
+    const api = createApiClient({ fetch });
+
+    const error = await api.checkSdkCli().catch((caught) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(409);
+  });
+});
+
+describe("installSdkCli", () => {
+  test("mengirim POST dengan body JSON kosong dan mengembalikan status CLI", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        ok: true,
+        cli: {
+          platform: "darwin-arm64",
+          supported: true,
+          installed: {
+            version: "0.3.323",
+            platform: "darwin-arm64",
+            installedAt: "2026-11-14T02:00:00.000Z",
+            size: 4321,
+          },
+          progress: null,
+        },
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    const result = await api.installSdkCli();
+    expect(result.ok).toBe(true);
+    expect(result.cli.installed?.version).toBe("0.3.323");
+    expect(result.cli.supported).toBe(true);
+    expect(calls[0]?.url).toBe("/api/sdk/install-cli");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe("{}");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+  });
+
+  test("507 menjadi ApiError", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Ruang disk tidak cukup." }, 507),
+    );
+    const api = createApiClient({ fetch });
+
+    const error = await api.installSdkCli().catch((caught) => caught);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error.status).toBe(507);
+  });
+});
+
+describe("removeSdkCli", () => {
+  test("mengirim POST dengan body JSON kosong dan mengembalikan status CLI", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        ok: true,
+        cli: {
+          platform: "darwin-arm64",
+          supported: true,
+          installed: null,
+          progress: null,
+        },
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    const result = await api.removeSdkCli();
+    expect(result.ok).toBe(true);
+    expect(result.cli.installed).toBeNull();
+    expect(calls[0]?.url).toBe("/api/sdk/remove-cli");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe("{}");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
   });
 });

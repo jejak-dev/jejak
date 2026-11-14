@@ -416,7 +416,7 @@ export interface SdkInstalled {
 }
 
 /** Sumber CLI `claude` yang dipakai Jejak. */
-export type SdkClaudeSource = "env" | "setting" | "path" | "common";
+export type SdkClaudeSource = "env" | "setting" | "managed" | "path" | "common";
 
 /** Status CLI `claude` milik pengguna di server. */
 export interface SdkClaude {
@@ -428,6 +428,40 @@ export interface SdkClaude {
   configuredPath: string | null;
 }
 
+/** CLI bawaan SDK yang sudah terpasang. */
+export interface SdkCliInstalled {
+  version: string;
+  platform: string;
+  installedAt: string;
+  size: number;
+}
+
+/** Kemajuan unduhan CLI bawaan yang sedang berjalan. */
+export interface SdkCliProgress {
+  received: number;
+  total: number | null;
+}
+
+/** Status CLI bawaan SDK di server. */
+export interface SdkCli {
+  /** Platform paket pendamping; null bila platform tak didukung. */
+  platform: string | null;
+  /** True bila platform ini punya paket pendamping. */
+  supported: boolean;
+  installed: SdkCliInstalled | null;
+  progress: SdkCliProgress | null;
+}
+
+/** Hasil pemeriksaan paket pendamping platform. */
+export interface SdkCliCheck {
+  version: string;
+  platform: string;
+  /** Ukuran isi paket setelah diekstrak. */
+  unpackedSize: number;
+  /** Perkiraan ukuran unduhan; null bila belum diketahui. */
+  downloadSizeEstimate: number | null;
+}
+
 /** Status SDK di server; `busy` true saat pemasangan sedang berjalan. */
 export interface SdkStatus {
   installed: SdkInstalled | null;
@@ -436,6 +470,7 @@ export interface SdkStatus {
   lastCheck: { latest: string | null; checkedAt: string; note?: string } | null;
   busy: boolean;
   claude: SdkClaude;
+  cli: SdkCli;
 }
 
 /** Hasil pemeriksaan versi di registry npm. */
@@ -636,6 +671,12 @@ export interface ApiClient {
   rollbackSdk(): Promise<SdkInstallResult>;
   /** Simpan atau hapus jalur CLI `claude` milik pengguna. */
   setClaudePath(path: string | null): Promise<SdkClaude>;
+  /** Periksa paket pendamping platform; tidak mengunduh apa pun. */
+  checkSdkCli(): Promise<SdkCliCheck>;
+  /** Pasang CLI bawaan SDK untuk versi SDK yang terpasang. */
+  installSdkCli(): Promise<{ ok: boolean; cli: SdkCli }>;
+  /** Hapus CLI bawaan SDK yang terpasang. */
+  removeSdkCli(): Promise<{ ok: boolean; cli: SdkCli }>;
   getClaudeConfig(): Promise<ClaudeConfigItem>;
   putClaudeConfig(patch: ClaudeConfigPatch): Promise<ClaudeConfigItem>;
   getInstructions(scope: ClaudeScope, cwd?: string): Promise<ClaudeInstructions>;
@@ -976,7 +1017,7 @@ function sdkClaudeFrom(payload: unknown): SdkClaude {
     return { found: false, path: null, version: null, source: null, configuredPath: null };
   }
   const source = payload.source;
-  const known: SdkClaudeSource[] = ["env", "setting", "path", "common"];
+  const known: SdkClaudeSource[] = ["env", "setting", "managed", "path", "common"];
   return {
     found: payload.found === true,
     path: typeof payload.path === "string" ? payload.path : null,
@@ -987,6 +1028,37 @@ function sdkClaudeFrom(payload: unknown): SdkClaude {
         : null,
     configuredPath:
       typeof payload.configuredPath === "string" ? payload.configuredPath : null,
+  };
+}
+
+/** Bentuk aman untuk status CLI bawaan SDK. */
+function sdkCliFrom(payload: unknown): SdkCli {
+  if (!isRecord(payload)) {
+    return { platform: null, supported: false, installed: null, progress: null };
+  }
+  const installedRaw = isRecord(payload.installed) ? payload.installed : null;
+  const progressRaw = isRecord(payload.progress) ? payload.progress : null;
+  const total = progressRaw === null ? null : finiteOrUndefined(progressRaw.total);
+  return {
+    platform: typeof payload.platform === "string" ? payload.platform : null,
+    supported: payload.supported === true,
+    installed:
+      installedRaw === null || typeof installedRaw.version !== "string"
+        ? null
+        : {
+            version: installedRaw.version,
+            platform: typeof installedRaw.platform === "string" ? installedRaw.platform : "",
+            installedAt:
+              typeof installedRaw.installedAt === "string" ? installedRaw.installedAt : "",
+            size: finiteOrUndefined(installedRaw.size) ?? 0,
+          },
+    progress:
+      progressRaw === null
+        ? null
+        : {
+            received: finiteOrUndefined(progressRaw.received) ?? 0,
+            total: total === undefined ? null : total,
+          },
   };
 }
 
@@ -1007,6 +1079,7 @@ function sdkStatusFrom(payload: unknown): SdkStatus {
           },
     busy: payload.busy === true,
     claude: sdkClaudeFrom(payload.claude),
+    cli: sdkCliFrom(payload.cli),
   };
 }
 
@@ -1030,6 +1103,17 @@ function sdkInstallFrom(payload: unknown): SdkInstallResult {
   const result: SdkInstallResult = { installed: sdkInstalledFrom(payload.installed) };
   if (typeof payload.note === "string") result.note = payload.note;
   return result;
+}
+
+function sdkCliCheckFrom(payload: unknown): SdkCliCheck {
+  if (!isRecord(payload)) throw invalidResponse();
+  const estimate = finiteOrUndefined(payload.downloadSizeEstimate);
+  return {
+    version: typeof payload.version === "string" ? payload.version : "",
+    platform: typeof payload.platform === "string" ? payload.platform : "",
+    unpackedSize: finiteOrUndefined(payload.unpackedSize) ?? 0,
+    downloadSizeEstimate: estimate === undefined ? null : estimate,
+  };
 }
 
 function memoryQuery(params: MemoryQuery | undefined): string {  if (params === undefined) return "";
@@ -2210,6 +2294,22 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     async setClaudePath(path) {
       // Penjaga server mewajibkan content-type JSON; body selalu berisi `path`.
       return sdkClaudeFrom(await request("POST", "/api/sdk/claude-path", { path }));
+    },
+
+    async checkSdkCli() {
+      return sdkCliCheckFrom(await request("POST", "/api/sdk/check-cli", {}));
+    },
+
+    async installSdkCli() {
+      const payload = await request("POST", "/api/sdk/install-cli", {});
+      const record = isRecord(payload) ? payload : {};
+      return { ok: record.ok === true, cli: sdkCliFrom(record.cli) };
+    },
+
+    async removeSdkCli() {
+      const payload = await request("POST", "/api/sdk/remove-cli", {});
+      const record = isRecord(payload) ? payload : {};
+      return { ok: record.ok === true, cli: sdkCliFrom(record.cli) };
     },
 
     async getClaudeConfig() {

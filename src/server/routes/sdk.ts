@@ -15,6 +15,13 @@ import {
   type LocateOptions,
 } from "../sdk/claude-locator";
 import {
+  CliInstallError,
+  fetchCliMetadata,
+  getCliInstallProgress,
+  installCli,
+} from "../sdk/cli-install";
+import { cliPlatform, readCliStatus, removeCli, type CliPlatform } from "../sdk/cli-store";
+import {
   downloadTarball,
   fetchPackument,
   pickVersion,
@@ -68,6 +75,22 @@ export interface SdkClaudeStatus {
   version: string | null;
   source: ClaudeSource | null;
   configuredPath: string | null;
+}
+
+/** Status CLI bawaan SDK yang dilaporkan ke klien. */
+export interface SdkCliStatus {
+  /** Platform paket pendamping; null bila platform tak didukung. */
+  platform: string | null;
+  /** True bila platform ini punya paket pendamping. */
+  supported: boolean;
+  installed: {
+    version: string;
+    platform: CliPlatform;
+    installedAt: string;
+    size: number;
+  } | null;
+  /** Kemajuan pemasangan yang sedang berjalan; null bila tidak ada. */
+  progress: { received: number; total: number | null } | null;
 }
 
 const INSTALL_BODY_FIELDS = new Set(["version"]);
@@ -167,6 +190,7 @@ function errorCode(error: unknown): string {
   if (error instanceof RegistryError) return error.code;
   if (error instanceof TarballError) return error.code;
   if (error instanceof SdkStoreError) return error.code;
+  if (error instanceof CliInstallError) return error.code;
   if (error instanceof BadRequestError) return "invalid";
   return "lainnya";
 }
@@ -236,6 +260,55 @@ function errorResponse(error: unknown): Response {
   return jsonResponse(500, { error: "Terjadi kesalahan tak terduga." });
 }
 
+/**
+ * Body perintah CLI: hanya objek kosong yang diterima.
+ *
+ * Field lain ditolak supaya klien tak bisa smuggle parameter tak terduga.
+ */
+function parseEmptyBody(body: unknown): void {
+  const parsed = parseJsonObject(body);
+  for (const key of Object.keys(parsed)) {
+    throw new BadRequestError(`Field "${key}" tidak dikenal pada permintaan ini.`);
+  }
+}
+
+/** Pemetaan galat pemasangan CLI ke status HTTP; tanpa jalur internal. */
+function cliErrorResponse(error: unknown): Response {
+  if (error instanceof CliInstallError) {
+    switch (error.code) {
+      case "busy":
+        return jsonResponse(409, {
+          error: "Pemasangan lain sedang berjalan. Coba lagi sebentar lagi.",
+        });
+      case "no-sdk":
+        return jsonResponse(409, {
+          error: "Pasang SDK dulu sebelum memasang CLI bawaan.",
+        });
+      case "unsupported":
+        return jsonResponse(422, {
+          error: "Platform ini tidak mendukung CLI bawaan SDK.",
+        });
+      case "metadata":
+      case "mismatch":
+      case "redirect":
+      case "timeout":
+      case "too-large":
+        return jsonResponse(502, { error: error.message });
+      case "integrity":
+      case "bad-archive":
+      case "unsafe-entry":
+      case "verify":
+        return jsonResponse(422, { error: error.message });
+      case "disk":
+        return jsonResponse(507, { error: error.message });
+      default:
+        return jsonResponse(500, { error: "Terjadi kesalahan tak terduga." });
+    }
+  }
+  if (error instanceof RegistryError) return errorResponse(error);
+  return jsonResponse(500, { error: "Terjadi kesalahan tak terduga." });
+}
+
 export function sdkRoutes(options: SdkRoutesOptions = {}): Elysia {
   const env = options.env ?? process.env;
   const root = options.root ?? sdkRoot(env);
@@ -269,6 +342,22 @@ export function sdkRoutes(options: SdkRoutesOptions = {}): Elysia {
     };
   };
 
+  /** Status CLI bawaan SDK beserta kemajuan pemasangan yang sedang berjalan. */
+  const cliStatus = async (): Promise<SdkCliStatus> => {
+    const platform = cliPlatform();
+    const status = await readCliStatus(root);
+    const progress = getCliInstallProgress();
+    return {
+      platform,
+      supported: platform !== null,
+      installed: status.installed,
+      progress:
+        progress === null
+          ? null
+          : { received: progress.received, total: progress.total },
+    };
+  };
+
   // Hasil pemeriksaan terakhir; cukup disimpan di memori proses.
   let lastCheck: LastCheck | null = null;
 
@@ -289,6 +378,7 @@ export function sdkRoutes(options: SdkRoutesOptions = {}): Elysia {
           lastCheck,
           busy: isInstallBusy(),
           claude: await claudeStatus(),
+          cli: await cliStatus(),
         };
       } catch {
         return jsonResponse(500, { error: "Terjadi kesalahan tak terduga." });
@@ -499,6 +589,149 @@ export function sdkRoutes(options: SdkRoutesOptions = {}): Elysia {
             },
           });
           return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/sdk/check-cli",
+      async ({ body }) => {
+        try {
+          parseEmptyBody(body);
+        } catch (error) {
+          return errorResponse(error);
+        }
+        try {
+          const status = await getStatus(root);
+          const version = status.installed?.version;
+          if (version === undefined) {
+            return jsonResponse(409, {
+              error: "Pasang SDK dulu sebelum memasang CLI bawaan.",
+            });
+          }
+          const platform = cliPlatform();
+          if (platform === null) {
+            return jsonResponse(422, {
+              error: "Platform ini tidak mendukung CLI bawaan SDK.",
+            });
+          }
+          const metadata = await fetchCliMetadata({
+            plat: platform,
+            version,
+            ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }),
+          });
+          return {
+            version: metadata.version,
+            platform: metadata.platform,
+            unpackedSize: metadata.unpackedSize,
+            downloadSizeEstimate: null,
+          };
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/sdk/install-cli",
+      async ({ body }) => {
+        try {
+          parseEmptyBody(body);
+        } catch (error) {
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Pemasangan CLI bawaan gagal",
+            meta: {
+              aksi: "cli-pasang",
+              ok: false,
+              hasil: "gagal",
+              galat: errorCode(error),
+            },
+          });
+          return errorResponse(error);
+        }
+
+        try {
+          const status = await getStatus(root);
+          const version = status.installed?.version;
+          if (version === undefined) {
+            throw new CliInstallError(
+              "Pasang SDK dulu sebelum memasang CLI bawaan.",
+              "no-sdk",
+            );
+          }
+          const result = await installCli({
+            root,
+            version,
+            ...(fetchImpl === undefined ? {} : { fetch: fetchImpl }),
+            now,
+          });
+          invalidateClaudeCache();
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "CLI bawaan SDK dipasang",
+            meta: {
+              aksi: "cli-pasang",
+              versi: result.version,
+              ok: true,
+              hasil: "pasang",
+            },
+          });
+          return { ok: true, cli: await cliStatus() };
+        } catch (error) {
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Pemasangan CLI bawaan gagal",
+            meta: {
+              aksi: "cli-pasang",
+              ok: false,
+              hasil: "gagal",
+              galat: errorCode(error),
+            },
+          });
+          return cliErrorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/sdk/remove-cli",
+      async () => {
+        try {
+          const status = await getStatus(root);
+          const version = status.installed?.version;
+          if (version === undefined) {
+            return jsonResponse(404, { error: "SDK belum terpasang." });
+          }
+          const before = await readCliStatus(root);
+          if (before.installed === null) {
+            return jsonResponse(404, { error: "CLI bawaan SDK belum terpasang." });
+          }
+          await removeCli(root, version);
+          invalidateClaudeCache();
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "CLI bawaan SDK dihapus",
+            meta: {
+              aksi: "cli-hapus",
+              versi: version,
+              ok: true,
+              hasil: "hapus",
+            },
+          });
+          return { ok: true, cli: await cliStatus() };
+        } catch (error) {
+          recordAudit(audit, {
+            kind: "pengaturan",
+            summary: "Penghapusan CLI bawaan gagal",
+            meta: {
+              aksi: "cli-hapus",
+              ok: false,
+              hasil: "gagal",
+              galat: errorCode(error),
+            },
+          });
+          return cliErrorResponse(error);
         }
       },
       { parse: "text" },

@@ -1,4 +1,4 @@
-import { ApiError, type SdkCheckResult, type SdkClaude, type SdkClaudeSource, type SdkStatus } from "./api";
+import { ApiError, type SdkCheckResult, type SdkCli, type SdkClaude, type SdkClaudeSource, type SdkStatus } from "./api";
 import { formatSize as formatBytes } from "./files";
 
 /** Nama paket SDK; sama dengan yang dipakai server. */
@@ -107,7 +107,81 @@ export function claudeStatusFacts(claude: SdkClaude): string[] {
 
 /** Petunjuk singkat saat CLI `claude` belum ditemukan. */
 export const CLAUDE_MISSING_HINT =
-  "Pasang Claude Code resmi dari terminal, atau isi jalur CLI di bawah bila sudah terpasang di tempat lain.";
+  "Pasang Claude Code resmi dari terminal, isi jalur CLI di bawah bila sudah terpasang di tempat lain, atau pasang CLI bawaan SDK.";
+
+/* ------------------------------------------------------------ CLI bawaan */
+
+/** Ketentuan Anthropic yang dirujuk sebelum memasang CLI bawaan. */
+export const CLI_TERMS_URL = "https://code.claude.com/docs/en/legal-and-compliance";
+
+/** Pernyataan tegas yang wajib tampil sebelum tombol memasang ditekan. */
+export const CLI_CONSENT_TEXT =
+  "Kode biner Anthropic akan diunduh dan dijalankan di komputer ini dengan hak akses Anda. " +
+  "Hak cipta kode biner itu tetap milik Anthropic.";
+
+/** Perkiraan ukuran unduhan tarball CLI bawaan. */
+export const CLI_DOWNLOAD_ESTIMATE = "sekitar 150 MB";
+
+/** Status CLI bawaan SDK dalam satu baris. */
+export function cliStatusLine(cli: SdkCli): string {
+  if (cli.installed !== null) {
+    return `CLI bawaan terpasang: ${cli.installed.version}`;
+  }
+  if (!cli.supported) return "CLI bawaan tidak tersedia di platform ini";
+  return "CLI bawaan belum terpasang";
+}
+
+/** Baris-baris fakta persetujuan pemasangan CLI bawaan. */
+export function cliConsentFacts(info: {
+  version: string;
+  platform: string;
+  unpackedSize: number;
+}): string[] {
+  return [
+    `Versi: ${info.version}`,
+    `Platform: ${info.platform}`,
+    `Unduhan: ${CLI_DOWNLOAD_ESTIMATE}`,
+    `Ukuran terpasang: ~${formatSize(info.unpackedSize)}`,
+    `Lokasi: <JEJAK_HOME>/sdk/${info.version}/cli`,
+  ];
+}
+
+/** Teks kemajuan unduhan CLI bawaan. */
+export function cliProgressText(progress: { received: number; total: number | null }): string {
+  const received = formatSize(progress.received);
+  if (progress.total === null) return `Mengunduh ${received}`;
+  return `Mengunduh ${received} dari ${formatSize(progress.total)}`;
+}
+
+/** Pesan ramah untuk galat pemasangan CLI bawaan. */
+export function describeCliError(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 409) {
+      return error.message === ""
+        ? "Pemasangan lain sedang berjalan. Tunggu sebentar lalu coba lagi."
+        : error.message;
+    }
+    if (error.status === 507) {
+      return error.message === ""
+        ? "Ruang disk tidak cukup. Siapkan sekitar 1 GB ruang kosong lalu coba lagi."
+        : error.message;
+    }
+    if (error.status === 502) {
+      return error.message === ""
+        ? "Tidak bisa menghubungi registry npm. Periksa koneksi internet lalu coba lagi."
+        : error.message;
+    }
+    if (error.status === 422) {
+      return error.message === ""
+        ? "Unduhan ditolak: isi paket tidak aman atau tidak lengkap."
+        : error.message;
+    }
+    if (error.message !== "") return error.message;
+    return "Terjadi kesalahan saat menangani CLI bawaan SDK.";
+  }
+  if (error instanceof Error && error.message !== "") return error.message;
+  return "Terjadi kesalahan saat menangani CLI bawaan SDK.";
+}
 
 /** Pesan ramah untuk galat pengaturan jalur CLI. */
 export function describeClaudeError(error: unknown): string {

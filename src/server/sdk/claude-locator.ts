@@ -2,6 +2,8 @@ import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/pro
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { jejakHome } from "../provider-store";
+import { resolveManagedCli } from "./cli-store";
+import { sdkRoot } from "./sdk-store";
 
 /**
  * Pencari CLI `claude` milik pengguna.
@@ -10,9 +12,9 @@ import { jejakHome } from "../provider-store";
  * jadi Jejak mencarinya lalu meneruskannya lewat opsi SDK
  * `pathToClaudeCodeExecutable`.
  *
- * Urutan sumber: variabel env, berkas pengaturan Jejak, `PATH` sistem,
- * lalu lokasi umum. Tidak ada shell yang dijalankan: hanya `claude --version`
- * dengan argumen array.
+ * Urutan sumber: variabel env, berkas pengaturan Jejak, CLI bawaan SDK
+ * yang terkelola, `PATH` sistem, lalu lokasi umum. Tidak ada shell yang
+ * dijalankan: hanya `claude --version` dengan argumen array.
  */
 
 /** Variabel env untuk menunjuk CLI `claude` milik pengguna. */
@@ -28,7 +30,7 @@ export const CLAUDE_CACHE_TTL_MS = 30_000;
 const MAX_PATH_LENGTH = 1024;
 
 /** Sumber penemuan CLI; menentukan apakah jalur diteruskan ke SDK. */
-export type ClaudeSource = "env" | "setting" | "path" | "common";
+export type ClaudeSource = "env" | "setting" | "managed" | "path" | "common";
 
 /** Hasil pencarian CLI `claude`. */
 export interface ClaudeLocation {
@@ -47,6 +49,13 @@ export interface LocateOptions {
   exists?: (path: string) => Promise<boolean>;
   /** Pembaca versi; bawaan `defaultRunVersion`. */
   runVersion?: (path: string, timeoutMs: number) => Promise<string | null>;
+  /**
+   * Pencari CLI bawaan SDK yang terkelola.
+   *
+   * Bawaan membaca `<JEJAK_HOME>/sdk/<versi>/cli/`; binary di dalamnya
+   * lalu diperiksa `--version` seperti kandidat lain.
+   */
+  managed?: () => Promise<{ path: string; version: string } | null>;
   /** Home pengguna; bawaan `os.homedir()`. */
   home?: string;
   /** Platform; bawaan `process.platform`. */
@@ -236,6 +245,24 @@ export async function defaultRunVersion(
 }
 
 /**
+ * Pencari CLI bawaan SDK yang terkelola.
+ *
+ * Sumber tunggalnya adalah `<JEJAK_HOME>/sdk/<versi>/cli/`. Binary di
+ * dalamnya tetap diperiksa `--version` oleh loop kandidat.
+ */
+async function defaultManagedLookup(
+  env: Record<string, string | undefined>,
+): Promise<{ path: string; version: string } | null> {
+  try {
+    const found = await resolveManagedCli(sdkRoot(env));
+    if (found === null) return null;
+    return { path: found.path, version: found.version };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Cari CLI `claude` milik pengguna.
  *
  * Setiap kandidat harus lolos pemeriksaan jalur, benar-benar ada, dan
@@ -261,6 +288,19 @@ export async function locateClaude(
 
   const setting = await readClaudeSetting(env);
   if (setting !== null) candidates.push({ path: setting, source: "setting" });
+
+  // CLI bawaan SDK terkelola: hanya dibaca dari penyimpanan SDK.
+  const managedLookup = options.managed ?? ((): Promise<{ path: string; version: string } | null> =>
+    defaultManagedLookup(env));
+  let managed: { path: string; version: string } | null = null;
+  try {
+    managed = await managedLookup();
+  } catch {
+    managed = null;
+  }
+  if (managed !== null && managed.path.trim() !== "") {
+    candidates.push({ path: managed.path, source: "managed" });
+  }
 
   const fromPath = which("claude");
   if (fromPath !== null && fromPath !== "") {

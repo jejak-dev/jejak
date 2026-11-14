@@ -144,3 +144,8 @@ test("hasil lookup di-cache selama 30 detik", async () => {
   }
   expect(calls.count).toBe(2);
 });
+
+test("sumber managed meneruskan pathToClaudeCodeExecutable", async () => {
+  const options = await jalankan({ source: "managed" });
+  expect(options?.pathToClaudeCodeExecutable).toBe("/bin/claude");
+});

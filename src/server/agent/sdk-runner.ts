@@ -428,8 +428,9 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       }
 
       // CLI `claude` milik pengguna diteruskan ke SDK bila sumbernya eksplisit
-      // (env atau pengaturan Jejak) atau Jejak berjalan sebagai binary
-      // terkompilasi. Di mode dev dengan auto-deteksi, perilaku SDK dibiarkan.
+      // (env, pengaturan Jejak, atau CLI bawaan SDK yang terkelola) atau
+      // Jejak berjalan sebagai binary terkompilasi. Di mode dev dengan
+      // auto-deteksi, perilaku SDK dibiarkan.
       let location: ClaudeLocation | null = null;
       try {
         location = await cachedClaude(cacheKey, locate, now);
@@ -440,6 +441,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         location !== null &&
         (location.source === "env" ||
           location.source === "setting" ||
+          location.source === "managed" ||
           isCompiled())
       ) {
         sdkOptions.pathToClaudeCodeExecutable = location.path;

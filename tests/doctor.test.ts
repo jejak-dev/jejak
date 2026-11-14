@@ -939,3 +939,33 @@ test("claude cli tidak ditemukan memberi peringatan dan exit code tetap 0", asyn
   expect(code).toBe(0);
   expect(logged.some((line) => line.includes("PERINGATAN  Claude CLI"))).toBe(true);
 });
+
+test("claude cli dari CLI bawaan SDK menampilkan label sumber terkelola", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    locate: {
+      which: () => null,
+      exists: async () => true,
+      runVersion: async () => "2.1.0",
+      managed: async () => ({ path: "/sdk/cli/claude", version: "2.1.0" }),
+    },
+  });
+
+  const cli = find(checks, "Claude CLI");
+  expect(cli.status).toBe("ok");
+  expect(cli.detail).toContain("/sdk/cli/claude");
+  expect(cli.detail).toContain("CLI bawaan SDK (terkelola)");
+});
+
+test("claude cli tidak ditemukan menawarkan CLI bawaan SDK di Pengaturan", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+
+  const cli = find(checks, "Claude CLI");
+  expect(cli.detail).toContain("pasang CLI bawaan SDK di Pengaturan");
+});

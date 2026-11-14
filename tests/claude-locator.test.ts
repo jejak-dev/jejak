@@ -326,3 +326,69 @@ describe("berkas pengaturan jalur", () => {
     expect(await readClaudeSetting(env)).toBeNull();
   });
 });
+
+describe("locateClaude dengan CLI bawaan SDK", () => {
+  test("CLI terkelola menang atas PATH dan lokasi umum", async () => {
+    const lokasi = await locateClaude(
+      opsi({
+        whichPath: "/which/claude",
+        managed: async () => ({ path: "/sdk/cli/claude", version: "2.1.0" }),
+      }),
+    );
+    expect(lokasi?.source).toBe("managed");
+    expect(lokasi?.path).toBe("/sdk/cli/claude");
+  });
+
+  test("CLI terkelola kalah oleh env dan pengaturan", async () => {
+    await writeClaudeSetting("/setting/claude", env);
+    const lokasi = await locateClaude(
+      opsi({
+        whichPath: "/which/claude",
+        env: { ...env, [CLAUDE_PATH_ENV]: "/env/claude" },
+        managed: async () => ({ path: "/sdk/cli/claude", version: "2.1.0" }),
+      }),
+    );
+    expect(lokasi?.source).toBe("env");
+  });
+
+  test("pengaturan menang atas CLI terkelola", async () => {
+    await writeClaudeSetting("/setting/claude", env);
+    const lokasi = await locateClaude(
+      opsi({
+        whichPath: "/which/claude",
+        managed: async () => ({ path: "/sdk/cli/claude", version: "2.1.0" }),
+      }),
+    );
+    expect(lokasi?.source).toBe("setting");
+  });
+
+  test("CLI terkelola yang null dilewati", async () => {
+    const lokasi = await locateClaude(
+      opsi({ whichPath: "/which/claude", managed: async () => null }),
+    );
+    expect(lokasi?.source).toBe("path");
+  });
+
+  test("CLI terkelola yang gagal tidak menggagalkan pencarian", async () => {
+    const lokasi = await locateClaude(
+      opsi({
+        whichPath: "/which/claude",
+        managed: async () => {
+          throw new Error("boom");
+        },
+      }),
+    );
+    expect(lokasi?.source).toBe("path");
+  });
+
+  test("CLI terkelola yang tidak ada dilewati", async () => {
+    const lokasi = await locateClaude(
+      opsi({
+        whichPath: "/which/claude",
+        managed: async () => ({ path: "/sdk/cli/claude", version: "2.1.0" }),
+        exists: async (path) => path !== "/sdk/cli/claude",
+      }),
+    );
+    expect(lokasi?.source).toBe("path");
+  });
+});

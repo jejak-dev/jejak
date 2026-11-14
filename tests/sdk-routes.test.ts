@@ -6,9 +6,11 @@ import { join } from "node:path";
 import { createApp, type CreateAppOptions } from "../src/server";
 import { SqliteAuditStore, type AuditEntry } from "../src/server/audit/audit-store";
 import { claudeSettingPath, type LocateOptions } from "../src/server/sdk/claude-locator";
+import { buildCliTarballUrl } from "../src/server/sdk/cli-install";
+import { cliExecutableName, cliPlatform } from "../src/server/sdk/cli-store";
 import { PACKUMENT_URL, buildTarballUrl } from "../src/server/sdk/registry";
 import { computeIntegrity } from "../src/server/sdk/tarball";
-import { buildTar, gzipOf, packageEntries } from "./helpers/tar-builder";
+import { buildTar, gzipOf, packageEntries, type TarInput } from "./helpers/tar-builder";
 
 const NAMA = "@anthropic-ai/claude-agent-sdk";
 const HOST = { host: "127.0.0.1:3000" };
@@ -90,6 +92,40 @@ interface Harness {
   calls: FetchCall[];
 }
 
+/** Platform paket pendamping; null bila platform ini tidak didukung. */
+const PLATFORM = cliPlatform();
+
+/** Tarball CLI kecil: binary shell yang menjawab `--version`. */
+function tarballCli(extra: TarInput[] = []): Uint8Array {
+  const exe = PLATFORM === null ? "claude" : cliExecutableName(PLATFORM);
+  return gzipOf(
+    buildTar([
+      { path: "package/", type: "dir" },
+      { path: `package/${exe}`, data: '#!/bin/sh\necho "2.1.0 (Claude Code)"\n', mode: 0o755 },
+      { path: "package/package.json", data: "{}\n" },
+      ...extra,
+    ]),
+  );
+}
+
+/** Metadata paket pendamping platform untuk satu versi. */
+function metadataCli(versi: string): string {
+  const plat = PLATFORM ?? "darwin-arm64";
+  const os = plat.startsWith("win32") ? "win32" : "darwin";
+  const cpu = plat === "darwin-arm64" ? "arm64" : "x64";
+  return JSON.stringify({
+    name: `@anthropic-ai/claude-agent-sdk-${plat}`,
+    version: versi,
+    os: [os],
+    cpu: [cpu],
+    dist: {
+      integrity: computeIntegrity(tarballCli()),
+      tarball: buildCliTarballUrl(plat as "darwin-arm64", versi),
+      unpackedSize: 4321,
+    },
+  });
+}
+
 /** Aplikasi dengan `fetch` palsu; handler bawaan melayani packument dan tarball. */
 function makeApp(
   options: {
@@ -108,8 +144,19 @@ function makeApp(
       });
     }
     const nama = call.url.split("/").pop() ?? "";
-    const versi = nama.replace(/^claude-agent-sdk-/, "").replace(/\.tgz$/, "");
-    return new Response(tarball(versi), { status: 200 });
+    if (nama.endsWith(".tgz")) {
+      const tanpaTgz = nama.replace(/\.tgz$/, "");
+      const versi = tanpaTgz.slice(tanpaTgz.lastIndexOf("-") + 1);
+      if (PLATFORM !== null && nama.includes(`claude-agent-sdk-${PLATFORM}`)) {
+        return new Response(tarballCli(), { status: 200 });
+      }
+      return new Response(tarball(versi), { status: 200 });
+    }
+    // Metadata paket pendamping platform.
+    return new Response(metadataCli(nama), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   };
   const handler = options.handler ?? bawaan;
   const fake = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -564,5 +611,215 @@ describe("penjaga autentikasi", () => {
     expect((await get(app, "/api/sdk")).status).toBe(401);
     expect((await post(app, "/api/sdk/install")).status).toBe(401);
     expect((await post(app, "/api/sdk/check")).status).toBe(401);
+  });
+});
+
+describe("GET /api/sdk dengan status CLI bawaan", () => {
+  test("menyertakan platform, status terpasang, dan kemajuan", async () => {
+    const { app } = makeApp();
+    const body = await isi(await get(app, "/api/sdk"));
+    const cli = body.cli as {
+      platform: string | null;
+      supported: boolean;
+      installed: unknown;
+      progress: unknown;
+    };
+    expect(cli.platform).toBe(PLATFORM);
+    expect(cli.supported).toBe(PLATFORM !== null);
+    expect(cli.installed).toBeNull();
+    expect(cli.progress).toBeNull();
+  });
+});
+
+describe("POST /api/sdk/check-cli", () => {
+  test("ditolak 409 saat SDK belum terpasang", async () => {
+    const { app } = makeApp();
+    const res = await post(app, "/api/sdk/check-cli", {});
+    expect(res.status).toBe(409);
+    expect(String((await isi(res)).error)).toContain("Pasang SDK dulu");
+  });
+
+  test("field asing ditolak 400", async () => {
+    const { app } = makeApp();
+    const res = await post(app, "/api/sdk/check-cli", { version: "0.3.2" });
+    expect(res.status).toBe(400);
+    expect(String((await isi(res)).error)).toContain("tidak dikenal");
+  });
+
+  test("berhasil mengembalikan metadata paket pendamping", async () => {
+    const { app } = makeApp();
+    await post(app, "/api/sdk/install");
+    const res = await post(app, "/api/sdk/check-cli", {});
+    if (PLATFORM === null) {
+      expect(res.status).toBe(422);
+      return;
+    }
+    expect(res.status).toBe(200);
+    const body = await isi(res);
+    expect(body.version).toBe("0.3.2");
+    expect(body.platform).toBe(PLATFORM);
+    expect(body.unpackedSize).toBe(4321);
+    expect(body.downloadSizeEstimate).toBeNull();
+  });
+
+  test("registry mati dijawab 502", async () => {
+    const handler: Handler = (call) => {
+      if (call.url === PACKUMENT_URL) {
+        return new Response(packument(["0.3.2"], "0.3.2"), { status: 200 });
+      }
+      if (call.url.endsWith(".tgz")) {
+        return new Response(tarball("0.3.2"), { status: 200 });
+      }
+      throw new TypeError("jaringan mati");
+    };
+    const { app } = makeApp({ handler });
+    await post(app, "/api/sdk/install");
+    const res = await post(app, "/api/sdk/check-cli", {});
+    expect(res.status).toBe(502);
+  });
+
+  test("paket/platform tak ada dijawab 404", async () => {
+    const handler: Handler = (call) => {
+      if (call.url === PACKUMENT_URL) {
+        return new Response(packument(["0.3.2"], "0.3.2"), { status: 200 });
+      }
+      if (call.url.endsWith(".tgz")) {
+        return new Response(tarball("0.3.2"), { status: 200 });
+      }
+      return new Response("{}", { status: 404 });
+    };
+    const { app } = makeApp({ handler });
+    await post(app, "/api/sdk/install");
+    const res = await post(app, "/api/sdk/check-cli", {});
+    expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/sdk/install-cli", () => {
+  test("ditolak 409 saat SDK belum terpasang", async () => {
+    const { app } = makeApp();
+    const res = await post(app, "/api/sdk/install-cli", {});
+    expect(res.status).toBe(409);
+    expect(String((await isi(res)).error)).toContain("Pasang SDK dulu");
+  });
+
+  test("field asing ditolak 400", async () => {
+    const { app } = makeApp();
+    const res = await post(app, "/api/sdk/install-cli", { version: "0.3.2" });
+    expect(res.status).toBe(400);
+    expect(String((await isi(res)).error)).toContain("tidak dikenal");
+  });
+
+  test("memasang CLI dan melaporkan statusnya", async () => {
+    const { app } = makeApp();
+    await post(app, "/api/sdk/install");
+    const res = await post(app, "/api/sdk/install-cli", {});
+    if (PLATFORM === null) {
+      expect(res.status).toBe(422);
+      return;
+    }
+    expect(res.status).toBe(200);
+    const body = await isi(res);
+    expect(body.ok).toBe(true);
+    const cli = body.cli as { installed: { version: string; size: number } | null };
+    expect(cli.installed?.version).toBe("0.3.2");
+    expect(cli.installed?.size).toBeGreaterThan(0);
+    const exe = PLATFORM === null ? "claude" : cliExecutableName(PLATFORM);
+    expect(existsSync(join(root, "0.3.2", "cli", exe))).toBe(true);
+  });
+
+  test("arsip tidak aman ditolak 422 dan tak ada CLI terpasang", async () => {
+    const handler: Handler = (call) => {
+      if (call.url === PACKUMENT_URL) {
+        return new Response(packument(["0.3.2"], "0.3.2"), { status: 200 });
+      }
+      if (call.url.endsWith(".tgz")) {
+        if (PLATFORM !== null && call.url.includes(`claude-agent-sdk-${PLATFORM}`)) {
+          return new Response(
+            tarballCli([{ path: "package/aneh", type: "symlink", linkname: "/bin/sh" }]),
+            { status: 200 },
+          );
+        }
+        return new Response(tarball("0.3.2"), { status: 200 });
+      }
+      return new Response(metadataCli("0.3.2"), { status: 200 });
+    };
+    const { app } = makeApp({ handler });
+    await post(app, "/api/sdk/install");
+    const res = await post(app, "/api/sdk/install-cli", {});
+    if (PLATFORM === null) {
+      expect(res.status).toBe(422);
+      return;
+    }
+    expect(res.status).toBe(422);
+    expect(existsSync(join(root, "0.3.2", "cli"))).toBe(false);
+  });
+
+  test("pemasangan yang sedang berjalan dijawab 409", async () => {
+    let lepas: (() => void) | undefined;
+    const tertahan = new Promise<void>((resolve) => {
+      lepas = resolve;
+    });
+    const handler: Handler = (call) => {
+      if (call.url === PACKUMENT_URL) {
+        return new Response(packument(["0.3.2"], "0.3.2"), { status: 200 });
+      }
+      if (call.url.endsWith(".tgz")) {
+        if (PLATFORM !== null && call.url.includes(`claude-agent-sdk-${PLATFORM}`)) {
+          return tertahan.then(() => new Response(tarballCli(), { status: 200 }));
+        }
+        return new Response(tarball("0.3.2"), { status: 200 });
+      }
+      return new Response(metadataCli("0.3.2"), { status: 200 });
+    };
+    const { app } = makeApp({ handler });
+    await post(app, "/api/sdk/install");
+
+    const pertama = post(app, "/api/sdk/install-cli", {});
+    await Bun.sleep(50);
+    const kedua = await post(app, "/api/sdk/install-cli", {});
+    expect(kedua.status).toBe(409);
+    lepas?.();
+    await pertama;
+  });
+
+  test("audit mencatat aksi cli-pasang tanpa jalur penuh", async () => {
+    const { app } = makeApp();
+    await post(app, "/api/sdk/install");
+    await post(app, "/api/sdk/install-cli", {});
+    const entries = await entriAudit();
+    const aksi = entries.find((entry) => entry.meta["aksi"] === "cli-pasang");
+    expect(aksi?.meta["ok"]).toBe(true);
+    expect(aksi?.meta["hasil"]).toBe("pasang");
+    expect(aksi?.meta["versi"]).toBe("0.3.2");
+    const mentah = JSON.stringify(entries);
+    expect(mentah).not.toContain(root);
+    expect(mentah).not.toContain("sha512-");
+  });
+});
+
+describe("POST /api/sdk/remove-cli", () => {
+  test("ditolak 404 saat belum ada CLI", async () => {
+    const { app } = makeApp();
+    await post(app, "/api/sdk/install");
+    const res = await post(app, "/api/sdk/remove-cli", {});
+    expect(res.status).toBe(404);
+  });
+
+  test("menghapus CLI yang terpasang dan mencatat audit", async () => {
+    const { app } = makeApp();
+    await post(app, "/api/sdk/install");
+    await post(app, "/api/sdk/install-cli", {});
+    const res = await post(app, "/api/sdk/remove-cli", {});
+    expect(res.status).toBe(200);
+    const body = await isi(res);
+    expect(body.ok).toBe(true);
+    const cli = body.cli as { installed: unknown };
+    expect(cli.installed).toBeNull();
+
+    const entries = await entriAudit();
+    const aksi = entries.find((entry) => entry.meta["aksi"] === "cli-hapus");
+    expect(aksi?.meta["ok"]).toBe(true);
+    expect(JSON.stringify(entries)).not.toContain(root);
   });
 });

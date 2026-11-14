@@ -2,15 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { ApiError, type SdkCheckResult, type SdkClaude, type SdkStatus } from "../src/client/lib/api";
 import {
   CLAUDE_MISSING_HINT,
+  CLI_CONSENT_TEXT,
+  CLI_TERMS_URL,
   SDK_CONSENT_TEXT,
   SDK_PACKAGE_NAME,
   SDK_REGISTRY_HOST,
   SDK_TERMS_URL,
   canRollback,
+  cliConsentFacts,
+  cliProgressText,
+  cliStatusLine,
   claudeSourceLabel,
   claudeStatusFacts,
   claudeStatusLine,
   confirmationFacts,
+  describeCliError,
   describeClaudeError,
   describeSdkError,
   formatSize,
@@ -38,6 +44,12 @@ function status(overrides: Partial<SdkStatus> = {}): SdkStatus {
     lastCheck: null,
     busy: false,
     claude: claude(),
+    cli: {
+      platform: "darwin-arm64",
+      supported: true,
+      installed: null,
+      progress: null,
+    },
     ...overrides,
   };
 }
@@ -235,5 +247,92 @@ describe("pernyataan persetujuan", () => {
   test("tautan ketentuan Anthropic tetap dari sumber tetap", () => {
     expect(SDK_TERMS_URL).toBe("https://www.anthropic.com/legal/commercial-terms");
     expect(SDK_REGISTRY_HOST).toBe("registry.npmjs.org");
+  });
+});
+
+describe("cliStatusLine", () => {
+  test("menyebut versi CLI yang terpasang", () => {
+    expect(
+      cliStatusLine({
+        platform: "darwin-arm64",
+        supported: true,
+        installed: {
+          version: "0.3.323",
+          platform: "darwin-arm64",
+          installedAt: "2026-11-14T02:00:00.000Z",
+          size: 100,
+        },
+        progress: null,
+      }),
+    ).toBe("CLI bawaan terpasang: 0.3.323");
+  });
+
+  test("belum terpasang", () => {
+    expect(
+      cliStatusLine({ platform: "darwin-arm64", supported: true, installed: null, progress: null }),
+    ).toBe("CLI bawaan belum terpasang");
+  });
+
+  test("platform tak didukung", () => {
+    expect(
+      cliStatusLine({ platform: null, supported: false, installed: null, progress: null }),
+    ).toBe("CLI bawaan tidak tersedia di platform ini");
+  });
+});
+
+describe("cliConsentFacts", () => {
+  test("memuat versi, platform, unduhan, ukuran, dan lokasi", () => {
+    const facts = cliConsentFacts({
+      version: "0.3.323",
+      platform: "darwin-arm64",
+      unpackedSize: 350 * 1024 * 1024,
+    });
+    expect(facts).toContain("Versi: 0.3.323");
+    expect(facts).toContain("Platform: darwin-arm64");
+    expect(facts.some((fact) => fact.includes("150 MB"))).toBe(true);
+    expect(facts.some((fact) => fact.includes("Ukuran terpasang"))).toBe(true);
+    expect(facts.some((fact) => fact.includes("<JEJAK_HOME>/sdk/0.3.323/cli"))).toBe(true);
+  });
+});
+
+describe("cliProgressText", () => {
+  test("menyebut ukuran diterima dan total", () => {
+    expect(cliProgressText({ received: 42 * 1024 * 1024, total: 150 * 1024 * 1024 })).toBe(
+      "Mengunduh 42,0 MB dari 150,0 MB",
+    );
+  });
+
+  test("tanpa total hanya menyebut ukuran diterima", () => {
+    expect(cliProgressText({ received: 1024, total: null })).toBe("Mengunduh 1,0 KB");
+  });
+});
+
+describe("describeCliError", () => {
+  test("409 menjelaskan pemasangan yang sedang berjalan", () => {
+    const error = new ApiError("Pemasangan lain sedang berjalan.", 409);
+    expect(describeCliError(error)).toContain("berjalan");
+  });
+
+  test("507 menjelaskan ruang disk", () => {
+    const error = new ApiError("Ruang disk tidak cukup.", 507);
+    expect(describeCliError(error)).toContain("Ruang disk");
+  });
+
+  test("502 menjelaskan registry", () => {
+    const error = new ApiError("", 502);
+    expect(describeCliError(error)).toContain("registry npm");
+  });
+
+  test("galat lain memakai pesan server", () => {
+    const error = new ApiError("Isi paket tidak aman.", 422);
+    expect(describeCliError(error)).toBe("Isi paket tidak aman.");
+  });
+});
+
+describe("CLI_CONSENT_TEXT", () => {
+  test("menyebut hak cipta Anthropic dan tautan ketentuan", () => {
+    expect(CLI_CONSENT_TEXT).toContain("Anthropic");
+    expect(CLI_CONSENT_TEXT).toContain("hak akses Anda");
+    expect(CLI_TERMS_URL).toBe("https://code.claude.com/docs/en/legal-and-compliance");
   });
 });

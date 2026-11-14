@@ -473,12 +473,14 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
 }
 
 /** Label sumber penemuan CLI `claude` untuk ditampilkan ke pengguna. */
-function claudeSourceLabel(source: string): string {
+export function claudeSourceLabel(source: string): string {
   switch (source) {
     case "env":
       return "JEJAK_CLAUDE_PATH";
     case "setting":
       return "pengaturan Jejak";
+    case "managed":
+      return "CLI bawaan SDK (terkelola)";
     case "path":
       return "PATH";
     default:
@@ -579,7 +581,7 @@ async function collectClaudeCliCheck(
         name: "Claude CLI",
         status: "peringatan",
         detail:
-          "tidak ditemukan; pasang Claude Code atau isi jalur di Pengaturan atau set JEJAK_CLAUDE_PATH",
+          "tidak ditemukan; pasang Claude Code atau isi jalur di Pengaturan atau set JEJAK_CLAUDE_PATH, atau pasang CLI bawaan SDK di Pengaturan",
       };
     }
     return {
