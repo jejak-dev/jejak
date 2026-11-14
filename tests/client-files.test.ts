@@ -10,6 +10,7 @@ import {
   parentPath,
   pushUndoLine,
   rejectBlockedReason,
+  rejectConfirmContent,
   rejectTargetKey,
   removeUndoLine,
   shouldRefreshChanges,
@@ -357,5 +358,42 @@ describe("rejectTargetKey", () => {
     expect(rejectTargetKey(undefined)).toBeUndefined();
     expect(rejectTargetKey({ path: "a.txt", scope: "file" })).toBe("a.txt");
     expect(rejectTargetKey({ path: "a.txt", scope: "hunk", hunkId: "h1" })).toBe("a.txt\0h1");
+  });
+});
+
+describe("rejectConfirmContent", () => {
+  test("tanpa target tidak ada isi modal", () => {
+    expect(rejectConfirmContent(undefined, [])).toBeUndefined();
+  });
+
+  test("target berkas yang tidak ada di daftar tidak ada isi modal", () => {
+    expect(
+      rejectConfirmContent({ path: "lain.ts", scope: "file" }, [changedFile({})]),
+    ).toBeUndefined();
+  });
+
+  test("scope berkas memakai pertanyaan seluruh berkas", () => {
+    const content = rejectConfirmContent({ path: "src/a.ts", scope: "file" }, [changedFile({})]);
+    expect(content?.title).toBe("Tolak seluruh berkas?");
+    expect(content?.message).toContain("Kembalikan seluruh berkas ke versi HEAD?");
+    expect(content?.confirmLabel).toBe("Tolak");
+    expect(content?.confirmAriaLabel).toBe("Konfirmasi tolak seluruh berkas src/a.ts");
+    expect(content?.cancelAriaLabel).toBe("Batal menolak seluruh berkas src/a.ts");
+  });
+
+  test("scope hunk memakai nomor hunk di dalam berkas", () => {
+    const files = [
+      changedFile({
+        hunks: [
+          { id: "h1", header: "@@ -1 +1 @@", oldStart: 1, oldLines: 1, newStart: 1, newLines: 1, lines: [] },
+          { id: "h2", header: "@@ -9 +9 @@", oldStart: 9, oldLines: 1, newStart: 9, newLines: 1, lines: [] },
+        ],
+      }),
+    ];
+    const content = rejectConfirmContent({ path: "src/a.ts", scope: "hunk", hunkId: "h2" }, files);
+    expect(content?.title).toBe("Tolak hunk?");
+    expect(content?.message).toBe("Kembalikan hunk ini ke versi sebelumnya?");
+    expect(content?.confirmAriaLabel).toBe("Konfirmasi tolak hunk 2 di src/a.ts");
+    expect(content?.cancelAriaLabel).toBe("Batal menolak hunk 2 di src/a.ts");
   });
 });

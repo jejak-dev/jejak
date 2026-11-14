@@ -5,6 +5,7 @@ import { showsBypassMarker } from "../lib/permission-mode";
 import { canMutate, filterSessions, splitArchived, validateTitle } from "../lib/sessions";
 import { notificationSupport, type NotifyPrefs } from "../lib/notify";
 import { applyTheme, loadTheme, nextTheme, saveTheme, themeLabel, type ThemePref } from "../lib/theme";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./Icon";
 import { GoalMark } from "./GoalBar";
 
@@ -112,7 +113,6 @@ export function Sidebar({
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const renameRef = useRef<HTMLInputElement | null>(null);
-  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
   const rowRefs = useRef(new Map<string, HTMLButtonElement>());
   /** `undefined` = tidak ada, `null` = kolom cari, id = baris sesi. */
   const pendingFocusRef = useRef<string | null | undefined>(undefined);
@@ -145,13 +145,9 @@ export function Sidebar({
     renameRef.current?.select();
   }, [mode, openRowId]);
 
+  // Escape saat modal hapus terbuka ditangani modal itu sendiri.
   useEffect(() => {
-    if (openRowId === undefined || mode !== "delete") return;
-    deleteCancelRef.current?.focus();
-  }, [mode, openRowId]);
-
-  useEffect(() => {
-    if (openRowId === undefined) return;
+    if (openRowId === undefined || mode === "delete") return;
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== "Escape" || event.defaultPrevented || busy) return;
       event.preventDefault();
@@ -159,7 +155,7 @@ export function Sidebar({
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [busy, closeRow, openRowId]);
+  }, [busy, closeRow, openRowId, mode]);
 
   const nextFocusId = (id: string): string | null => {
     const index = orderedIds.indexOf(id);
@@ -264,7 +260,6 @@ export function Sidebar({
   const renderRow = (session: SessionInfo, archived: boolean) => {
     const open = openRowId === session.id;
     const renaming = open && mode === "rename";
-    const confirmingDelete = open && mode === "delete";
     const error = open ? rowError : undefined;
     const label = dotLabel(session);
     const mutable = canMutate(session);
@@ -343,28 +338,26 @@ export function Sidebar({
               </time>
             </button>
             {archived ? (
-              !confirmingDelete && (
-                <span class="jk-session-inline">
-                  <button
-                    type="button"
-                    class="jk-link-btn"
-                    disabled={busy}
-                    aria-label={`Pulihkan sesi ${session.title}`}
-                    onClick={() => void restore(session)}
-                  >
-                    Pulihkan
-                  </button>
-                  <button
-                    type="button"
-                    class="jk-link-btn jk-session-danger"
-                    disabled={busy}
-                    aria-label={`Hapus sesi ${session.title}`}
-                    onClick={() => askDelete(session)}
-                  >
-                    Hapus
-                  </button>
-                </span>
-              )
+              <span class="jk-session-inline">
+                <button
+                  type="button"
+                  class="jk-link-btn"
+                  disabled={busy}
+                  aria-label={`Pulihkan sesi ${session.title}`}
+                  onClick={() => void restore(session)}
+                >
+                  Pulihkan
+                </button>
+                <button
+                  type="button"
+                  class="jk-link-btn jk-session-danger"
+                  disabled={busy}
+                  aria-label={`Hapus sesi ${session.title}`}
+                  onClick={() => askDelete(session)}
+                >
+                  Hapus
+                </button>
+              </span>
             ) : (
               <button
                 type="button"
@@ -379,35 +372,7 @@ export function Sidebar({
           </div>
         )}
 
-        {open && !renaming && confirmingDelete && (
-          <div class="jk-session-actions">
-            <div class="jk-panel-confirm">
-              <p>Hapus sesi ini? Tidak bisa diurungkan.</p>
-              <div class="jk-panel-confirm-actions">
-                <button
-                  type="button"
-                  class="jk-button jk-button-caution"
-                  disabled={busy}
-                  aria-label={`Konfirmasi hapus sesi ${session.title}`}
-                  onClick={() => void confirmDelete(session)}
-                >
-                  {busy ? "Menghapus…" : "Hapus"}
-                </button>
-                <button
-                  ref={deleteCancelRef}
-                  type="button"
-                  class="jk-button"
-                  disabled={busy}
-                  onClick={() => closeRow()}
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {open && mode === "menu" && !archived && (
+        {open && (mode === "menu" || mode === "delete") && !archived && (
           <div class="jk-session-actions">
             <button
               type="button"
@@ -441,7 +406,7 @@ export function Sidebar({
           </div>
         )}
 
-        {error !== undefined && (
+        {error !== undefined && mode !== "delete" && (
           <p class="jk-error-line jk-session-error" role="alert" id={renaming ? errorId : undefined}>
             {error}
           </p>
@@ -489,185 +454,211 @@ export function Sidebar({
     return isMac ? "⌘K" : "Ctrl K";
   };
 
+  /** Sesi yang sedang menunggu konfirmasi hapus. */
+  const deletingSession =
+    openRowId === undefined ? undefined : sessions.find((session) => session.id === openRowId);
+
   return (
-    <aside class="jk-sidebar" aria-label="Navigasi">
-      <header class="jk-brand">
-        <h1 class="jk-brand-title">Jejak</h1>
-        {info?.mock === true && <span class="jk-brand-tag">mock</span>}
-        <button type="button" class="jk-icon-btn jk-drawer-close" onClick={onClose} aria-label="Tutup sidebar">
-          <Icon name="menu" />
-        </button>
-      </header>
-
-      <button type="button" class="jk-button jk-button-primary jk-new" onClick={onNew}>
-        <Icon name="plus" />
-        New session
-      </button>
-
-      <nav class="jk-groups" aria-label="Daftar sesi">
-        {sessions.length >= 1 && (
-          <div class="jk-session-search">
-            <input
-              ref={searchRef}
-              id="jk-session-search"
-              class="jk-input"
-              type="search"
-              placeholder="Cari sesi"
-              aria-label="Cari sesi"
-              value={query}
-              onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  setQuery("");
-                }
-              }}
-            />
-          </div>
-        )}
-
-        {sessions.length === 0 ? (
-          <p class="jk-empty-line">Belum ada sesi.</p>
-        ) : groups.length === 0 ? (
-          archivedVisible.length === 0 && <p class="jk-empty-line">Tidak ada sesi yang cocok.</p>
-        ) : (
-          groups.map((group) => (
-            <section class="jk-group" key={group.cwd}>
-              <h2 class="jk-group-label" title={group.cwd}>
-                <Icon name="folder" />
-                <span>{group.label}</span>
-              </h2>
-              <ul class="jk-session-items">
-                {group.items.map((session) => renderRow(session, false))}
-              </ul>
-            </section>
-          ))
-        )}
-
-        {archivedVisible.length > 0 && (
-          <details class="jk-archived">
-            <summary>Diarsipkan ({archivedVisible.length})</summary>
-            <ul class="jk-session-items">{archivedVisible.map((session) => renderRow(session, true))}</ul>
-          </details>
-        )}
-      </nav>
-
-      <footer class="jk-sidebar-foot">
-        {onOpenPalette !== undefined && (
-          <button type="button" class="jk-foot-link jk-foot-btn" onClick={onOpenPalette}>
-            <span class="jk-foot-text">Perintah</span>
-            <span class="jk-foot-count">{paletteKeys()}</span>
+    <>
+      <aside class="jk-sidebar" aria-label="Navigasi">
+        <header class="jk-brand">
+          <h1 class="jk-brand-title">Jejak</h1>
+          {info?.mock === true && <span class="jk-brand-tag">mock</span>}
+          <button type="button" class="jk-icon-btn jk-drawer-close" onClick={onClose} aria-label="Tutup sidebar">
+            <Icon name="menu" />
           </button>
-        )}
-        <a
-          class={`jk-foot-link${workspacesActive ? " jk-foot-link-active" : ""}`}
-          href="#/workspaces"
-          aria-current={workspacesActive ? "page" : undefined}
-        >
-          <Icon name="workspace" />
-          <span class="jk-foot-text">Workspace</span>
-        </a>
-        <a
-          class={`jk-foot-link${memoryActive ? " jk-foot-link-active" : ""}`}
-          href="#/memory"
-          aria-current={memoryActive ? "page" : undefined}
-        >
-          <Icon name="memory" />
-          <span class="jk-foot-text">Memory</span>
-          {memoryProposed !== undefined && memoryProposed > 0 && (
-            <span class="jk-foot-count">{memoryProposed}</span>
+        </header>
+
+        <button type="button" class="jk-button jk-button-primary jk-new" onClick={onNew}>
+          <Icon name="plus" />
+          New session
+        </button>
+
+        <nav class="jk-groups" aria-label="Daftar sesi">
+          {sessions.length >= 1 && (
+            <div class="jk-session-search">
+              <input
+                ref={searchRef}
+                id="jk-session-search"
+                class="jk-input"
+                type="search"
+                placeholder="Cari sesi"
+                aria-label="Cari sesi"
+                value={query}
+                onInput={(event) => setQuery((event.currentTarget as HTMLInputElement).value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.preventDefault();
+                    setQuery("");
+                  }
+                }}
+              />
+            </div>
           )}
-        </a>
-        <a
-          class={`jk-foot-link${mcpActive ? " jk-foot-link-active" : ""}`}
-          href="#/mcp"
-          aria-current={mcpActive ? "page" : undefined}
-        >
-          <Icon name="cube" />
-          <span class="jk-foot-text">Server MCP</span>
-        </a>
-        <a
-          class={`jk-foot-link${instruksiActive ? " jk-foot-link-active" : ""}`}
-          href="#/instruksi"
-          aria-current={instruksiActive ? "page" : undefined}
-        >
-          <Icon name="doc" />
-          <span class="jk-foot-text">Instructions</span>
-        </a>
-        <a
-          class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
-          href="#/audit"
-          aria-current={auditActive ? "page" : undefined}
-        >
-          <Icon name="audit" />
-          <span class="jk-foot-text">Audit log</span>
-        </a>
-        <a
-          class={`jk-foot-link${usageActive ? " jk-foot-link-active" : ""}`}
-          href="#/usage"
-          aria-current={usageActive ? "page" : undefined}
-        >
-          <Icon name="chart" />
-          <span class="jk-foot-text">Usage</span>
-        </a>
-        <a
-          class={`jk-foot-link${providersActive ? " jk-foot-link-active" : ""}`}
-          href="#/providers"
-          aria-current={providersActive ? "page" : undefined}
-        >
-          <Icon name="cube" />
-          <span class="jk-foot-text">{activeProfileLabel ?? "Set up provider"}</span>
-        </a>
-        <button
-          type="button"
-          class="jk-foot-link jk-foot-btn"
-          aria-label={`Tema: ${themeLabel(theme)}. Klik untuk mengganti.`}
-          onClick={cycleTheme}
-        >
-          <Icon name={theme === "light" ? "sun" : theme === "dark" ? "moon" : "monitor"} />
-          <span class="jk-foot-text">Tema</span>
-          <span class="jk-foot-count">{themeLabel(theme)}</span>
-        </button>
-        <button
-          type="button"
-          class={`jk-foot-link jk-foot-btn${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
-          aria-expanded={notifyOpen}
-          onClick={() => {
-            setNotifyOpen((open) => !open);
-            setNotifyError(undefined);
-          }}
-        >
-          <Icon name="bell" />
-          <span class="jk-foot-text">Notifications</span>
-          <span class="jk-foot-count">{notifyPrefs.enabled ? "Aktif" : "Mati"}</span>
-        </button>
-        {notifyOpen && (
-          <div class="jk-notify-menu">
-            <button type="button" class="jk-link-btn" onClick={() => void toggleNotify()}>
-              Notifikasi desktop: {notifyPrefs.enabled ? "aktif" : "mati"}
+
+          {sessions.length === 0 ? (
+            <p class="jk-empty-line">Belum ada sesi.</p>
+          ) : groups.length === 0 ? (
+            archivedVisible.length === 0 && <p class="jk-empty-line">Tidak ada sesi yang cocok.</p>
+          ) : (
+            groups.map((group) => (
+              <section class="jk-group" key={group.cwd}>
+                <h2 class="jk-group-label" title={group.cwd}>
+                  <Icon name="folder" />
+                  <span>{group.label}</span>
+                </h2>
+                <ul class="jk-session-items">
+                  {group.items.map((session) => renderRow(session, false))}
+                </ul>
+              </section>
+            ))
+          )}
+
+          {archivedVisible.length > 0 && (
+            <details class="jk-archived">
+              <summary>Diarsipkan ({archivedVisible.length})</summary>
+              <ul class="jk-session-items">{archivedVisible.map((session) => renderRow(session, true))}</ul>
+            </details>
+          )}
+        </nav>
+
+        <footer class="jk-sidebar-foot">
+          {onOpenPalette !== undefined && (
+            <button type="button" class="jk-foot-link jk-foot-btn" onClick={onOpenPalette}>
+              <span class="jk-foot-text">Perintah</span>
+              <span class="jk-foot-count">{paletteKeys()}</span>
             </button>
-            <button
-              type="button"
-              class="jk-link-btn"
-              disabled={!notifyPrefs.enabled}
-              onClick={toggleSound}
-            >
-              Bunyi: {notifyPrefs.sound ? "aktif" : "mati"}
-            </button>
-            {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
-          </div>
-        )}
-        {authRequired && onLogout !== undefined && (
+          )}
+          <a
+            class={`jk-foot-link${workspacesActive ? " jk-foot-link-active" : ""}`}
+            href="#/workspaces"
+            aria-current={workspacesActive ? "page" : undefined}
+          >
+            <Icon name="workspace" />
+            <span class="jk-foot-text">Workspace</span>
+          </a>
+          <a
+            class={`jk-foot-link${memoryActive ? " jk-foot-link-active" : ""}`}
+            href="#/memory"
+            aria-current={memoryActive ? "page" : undefined}
+          >
+            <Icon name="memory" />
+            <span class="jk-foot-text">Memory</span>
+            {memoryProposed !== undefined && memoryProposed > 0 && (
+              <span class="jk-foot-count">{memoryProposed}</span>
+            )}
+          </a>
+          <a
+            class={`jk-foot-link${mcpActive ? " jk-foot-link-active" : ""}`}
+            href="#/mcp"
+            aria-current={mcpActive ? "page" : undefined}
+          >
+            <Icon name="cube" />
+            <span class="jk-foot-text">Server MCP</span>
+          </a>
+          <a
+            class={`jk-foot-link${instruksiActive ? " jk-foot-link-active" : ""}`}
+            href="#/instruksi"
+            aria-current={instruksiActive ? "page" : undefined}
+          >
+            <Icon name="doc" />
+            <span class="jk-foot-text">Instructions</span>
+          </a>
+          <a
+            class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
+            href="#/audit"
+            aria-current={auditActive ? "page" : undefined}
+          >
+            <Icon name="audit" />
+            <span class="jk-foot-text">Audit log</span>
+          </a>
+          <a
+            class={`jk-foot-link${usageActive ? " jk-foot-link-active" : ""}`}
+            href="#/usage"
+            aria-current={usageActive ? "page" : undefined}
+          >
+            <Icon name="chart" />
+            <span class="jk-foot-text">Usage</span>
+          </a>
+          <a
+            class={`jk-foot-link${providersActive ? " jk-foot-link-active" : ""}`}
+            href="#/providers"
+            aria-current={providersActive ? "page" : undefined}
+          >
+            <Icon name="cube" />
+            <span class="jk-foot-text">{activeProfileLabel ?? "Set up provider"}</span>
+          </a>
           <button
             type="button"
             class="jk-foot-link jk-foot-btn"
-            onClick={() => onLogout()}
-            aria-label="Keluar dari Jejak"
+            aria-label={`Tema: ${themeLabel(theme)}. Klik untuk mengganti.`}
+            onClick={cycleTheme}
           >
-            <span class="jk-foot-text">Keluar</span>
+            <Icon name={theme === "light" ? "sun" : theme === "dark" ? "moon" : "monitor"} />
+            <span class="jk-foot-text">Tema</span>
+            <span class="jk-foot-count">{themeLabel(theme)}</span>
           </button>
-        )}
-      </footer>
-    </aside>
+          <button
+            type="button"
+            class={`jk-foot-link jk-foot-btn${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
+            aria-expanded={notifyOpen}
+            onClick={() => {
+              setNotifyOpen((open) => !open);
+              setNotifyError(undefined);
+            }}
+          >
+            <Icon name="bell" />
+            <span class="jk-foot-text">Notifications</span>
+            <span class="jk-foot-count">{notifyPrefs.enabled ? "Aktif" : "Mati"}</span>
+          </button>
+          {notifyOpen && (
+            <div class="jk-notify-menu">
+              <button type="button" class="jk-link-btn" onClick={() => void toggleNotify()}>
+                Notifikasi desktop: {notifyPrefs.enabled ? "aktif" : "mati"}
+              </button>
+              <button
+                type="button"
+                class="jk-link-btn"
+                disabled={!notifyPrefs.enabled}
+                onClick={toggleSound}
+              >
+                Bunyi: {notifyPrefs.sound ? "aktif" : "mati"}
+              </button>
+              {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
+            </div>
+          )}
+          {authRequired && onLogout !== undefined && (
+            <button
+              type="button"
+              class="jk-foot-link jk-foot-btn"
+              onClick={() => onLogout()}
+              aria-label="Keluar dari Jejak"
+            >
+              <span class="jk-foot-text">Keluar</span>
+            </button>
+          )}
+        </footer>
+      </aside>
+
+      {/* Modal di luar sidebar: pada layar sempit sidebar memakai transform dan
+          visibility, yang akan merusak penempatan modal fixed. */}
+      <ConfirmDialog
+        open={mode === "delete" && deletingSession !== undefined}
+        title="Hapus sesi ini?"
+        message="Tidak bisa diurungkan."
+        confirmLabel="Hapus"
+        busyLabel="Menghapus…"
+        tone="danger"
+        busy={busy}
+        error={rowError}
+        confirmAriaLabel={
+          deletingSession === undefined ? undefined : `Konfirmasi hapus sesi ${deletingSession.title}`
+        }
+        onConfirm={() => {
+          if (deletingSession !== undefined) void confirmDelete(deletingSession);
+        }}
+        onCancel={() => closeRow()}
+      />
+    </>
   );
 }

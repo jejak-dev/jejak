@@ -203,4 +203,23 @@ describe("ConfirmDialogView", () => {
     const card = byRole(node, "alertdialog");
     expect(propsOf(card)["aria-describedby"]).toBeUndefined();
   });
+
+  test("label aksesibilitas tombol mengikuti prop khusus", () => {
+    const node = render({
+      confirmAriaLabel: "Konfirmasi tolak hunk 1 di a.ts",
+      cancelAriaLabel: "Batal menolak hunk 1 di a.ts",
+    });
+    expect(propsOf(buttonByText(node, "Hapus"))["aria-label"]).toBe(
+      "Konfirmasi tolak hunk 1 di a.ts",
+    );
+    expect(propsOf(buttonByText(node, "Batal"))["aria-label"]).toBe(
+      "Batal menolak hunk 1 di a.ts",
+    );
+  });
+
+  test("tanpa label khusus tombol tidak memakai aria-label", () => {
+    const node = render();
+    expect(propsOf(buttonByText(node, "Hapus"))["aria-label"]).toBeUndefined();
+    expect(propsOf(buttonByText(node, "Batal"))["aria-label"]).toBeUndefined();
+  });
 });

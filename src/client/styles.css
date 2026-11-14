@@ -2880,30 +2880,6 @@ h2.jk-md-heading {
   font-size: 12px;
 }
 
-.jk-panel-confirm {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  font: 12px var(--sans);
-  color: var(--t2);
-}
-
-.jk-panel-confirm p {
-  margin: 0;
-}
-
-.jk-panel-confirm-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.jk-panel-confirm-actions .jk-button {
-  height: 26px;
-  padding: 0 10px;
-  font-size: 12px;
-}
-
 .jk-panel-reject-error {
   display: flex;
   flex-direction: column;

@@ -19,6 +19,7 @@ import {
   validateLabel,
 } from "../lib/checkpoints";
 import { formatCount } from "../lib/format";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export interface CheckpointsTabProps {
   api: ApiClient;
@@ -69,16 +70,11 @@ interface CheckpointRowProps {
   preview: PreviewState | undefined;
   now: Date;
   sessionStatus: string;
-  confirming: boolean;
-  busy: boolean;
   rewindInfo: RewindInfo | undefined;
   onToggle: (id: string) => void;
   onPreview: (id: string) => void;
   onAskRewind: (id: string) => void;
-  onCancelRewind: () => void;
-  onConfirmRewind: (id: string) => void;
   rowRef: (id: string, element: HTMLButtonElement | null) => void;
-  rewindRef: (id: string, element: HTMLButtonElement | null) => void;
   statusRef: (element: HTMLParagraphElement | null) => void;
 }
 
@@ -88,21 +84,15 @@ function CheckpointRow({
   preview,
   now,
   sessionStatus,
-  confirming,
-  busy,
   rewindInfo,
   onToggle,
   onPreview,
   onAskRewind,
-  onCancelRewind,
-  onConfirmRewind,
   rowRef,
-  rewindRef,
   statusRef,
 }: CheckpointRowProps) {
   const title = checkpointTitle(item);
   const blocked = rewindBlockedReason(sessionStatus);
-  const rewindable = canRewind(sessionStatus);
 
   return (
     <div class="jk-panel-cp">
@@ -178,49 +168,17 @@ function CheckpointRow({
             </p>
           )}
 
-          {confirming ? (
-            <div class="jk-panel-confirm">
-              <p>
-                Folder kerja akan dikembalikan ke titik ini. Keadaan sekarang disimpan dulu sebagai
-                titik pengaman.
-              </p>
-              <div class="jk-panel-confirm-actions">
-                <button
-                  type="button"
-                  class="jk-button jk-button-caution"
-                  disabled={busy || !rewindable}
-                  aria-label={`Konfirmasi kembalikan folder ke titik ${title}`}
-                  onClick={() => onConfirmRewind(item.id)}
-                >
-                  {busy ? "Mengembalikan…" : "Kembalikan"}
-                </button>
-                <button
-                  type="button"
-                  class="jk-button"
-                  disabled={busy}
-                  aria-label={`Batal mengembalikan folder ke titik ${title}`}
-                  onClick={onCancelRewind}
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {blocked !== undefined && <p class="jk-panel-note">{blocked}</p>}
-              <button
-                type="button"
-                ref={(element) => rewindRef(item.id, element)}
-                class="jk-link-btn jk-panel-cp-rewind"
-                disabled={blocked !== undefined}
-                title={blocked}
-                aria-label={`Kembalikan folder ke titik ${title}`}
-                onClick={() => onAskRewind(item.id)}
-              >
-                Kembalikan ke titik ini
-              </button>
-            </>
-          )}
+          {blocked !== undefined && <p class="jk-panel-note">{blocked}</p>}
+          <button
+            type="button"
+            class="jk-link-btn jk-panel-cp-rewind"
+            disabled={blocked !== undefined}
+            title={blocked}
+            aria-label={`Kembalikan folder ke titik ${title}`}
+            onClick={() => onAskRewind(item.id)}
+          >
+            Kembalikan ke titik ini
+          </button>
         </div>
       )}
     </div>
@@ -260,10 +218,8 @@ export function CheckpointsTab({
   const tokenRef = useRef(0);
   const saveTriggerRef = useRef<HTMLButtonElement | null>(null);
   const labelInputRef = useRef<HTMLInputElement | null>(null);
-  const rewindTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const statusRef = useRef<HTMLParagraphElement | null>(null);
-  const pendingRewindFocusRef = useRef<string | undefined>(undefined);
   const pendingSaveFocusRef = useRef(false);
 
   const load = async (): Promise<void> => {
@@ -334,14 +290,6 @@ export function CheckpointsTab({
   useEffect(() => {
     if (formOpen) labelInputRef.current?.focus();
   }, [formOpen]);
-
-  // Fokus kembali ke pemicu setelah konfirmasi rewind ditutup.
-  useEffect(() => {
-    const id = pendingRewindFocusRef.current;
-    if (id === undefined) return;
-    pendingRewindFocusRef.current = undefined;
-    rewindTriggerRefs.current[id]?.focus();
-  }, [confirmId]);
 
   // Fokus ke ringkasan setelah rewind selesai.
   useEffect(() => {
@@ -414,12 +362,12 @@ export function CheckpointsTab({
   };
 
   const cancelRewind = (): void => {
-    if (confirmId !== undefined) pendingRewindFocusRef.current = confirmId;
     setConfirmId(undefined);
   };
 
   const submitRewind = async (id: string): Promise<void> => {
     if (busyId !== undefined) return;
+    if (!canRewind(status)) return;
     setBusyId(id);
     try {
       const result = await api.rewindCheckpoint(sessionId, id);
@@ -438,16 +386,15 @@ export function CheckpointsTab({
         ...current,
         [id]: { loading: false, error: errorMessage(caught) },
       }));
-      pendingRewindFocusRef.current = id;
     } finally {
       setBusyId(undefined);
     }
   };
 
-  const rewindTrigger = (id: string, element: HTMLButtonElement | null): void => {
-    if (element === null) delete rewindTriggerRefs.current[id];
-    else rewindTriggerRefs.current[id] = element;
-  };
+  /** Nama titik yang sedang dikembalikan; dipakai label aksesibilitas modal. */
+  const confirmItem =
+    confirmId === undefined ? undefined : list?.items.find((item) => item.id === confirmId);
+  const confirmPoint = confirmItem === undefined ? "" : checkpointTitle(confirmItem);
 
   return (
     <div class="jk-panel-body">
@@ -539,16 +486,11 @@ export function CheckpointsTab({
                   preview={previews[item.id]}
                   now={now}
                   sessionStatus={status}
-                  confirming={confirmId === item.id}
-                  busy={busyId === item.id}
                   rewindInfo={rewindInfo}
                   onToggle={toggleExpanded}
                   onPreview={(id) => void loadPreview(id)}
                   onAskRewind={askRewind}
-                  onCancelRewind={cancelRewind}
-                  onConfirmRewind={(id) => void submitRewind(id)}
                   rowRef={registerRow}
-                  rewindRef={rewindTrigger}
                   statusRef={(element) => {
                     statusRef.current = element;
                   }}
@@ -558,6 +500,22 @@ export function CheckpointsTab({
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={confirmId !== undefined}
+        title="Kembalikan folder ke titik ini?"
+        message="Keadaan sekarang disimpan dulu sebagai titik pengaman."
+        confirmLabel="Kembalikan"
+        busyLabel="Mengembalikan…"
+        tone="danger"
+        busy={busyId !== undefined}
+        confirmAriaLabel={`Konfirmasi kembalikan folder ke titik ${confirmPoint}`}
+        cancelAriaLabel={`Batal mengembalikan folder ke titik ${confirmPoint}`}
+        onConfirm={() => {
+          if (confirmId !== undefined) void submitRewind(confirmId);
+        }}
+        onCancel={cancelRewind}
+      />
     </div>
   );
 }

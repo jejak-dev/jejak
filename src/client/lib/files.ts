@@ -190,3 +190,41 @@ export function rejectTargetKey(target: RejectTarget | undefined): string | unde
   if (target === undefined) return undefined;
   return target.scope === "hunk" ? `${target.path}\0${target.hunkId ?? ""}` : target.path;
 }
+
+export interface RejectConfirmContent {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmAriaLabel: string;
+  cancelAriaLabel: string;
+}
+
+/**
+ * Isi modal konfirmasi penolakan perubahan untuk satu target.
+ * Berisi teks pertanyaan, label tombol, dan label aksesibilitas tombol.
+ */
+export function rejectConfirmContent(
+  target: RejectTarget | undefined,
+  files: readonly ChangedFile[],
+): RejectConfirmContent | undefined {
+  if (target === undefined) return undefined;
+  const file = files.find((item) => item.path === target.path);
+  if (file === undefined) return undefined;
+  if (target.scope === "file") {
+    return {
+      title: "Tolak seluruh berkas?",
+      message: "Kembalikan seluruh berkas ke versi HEAD? Semua perubahan di berkas ini hilang.",
+      confirmLabel: "Tolak",
+      confirmAriaLabel: `Konfirmasi tolak seluruh berkas ${file.path}`,
+      cancelAriaLabel: `Batal menolak seluruh berkas ${file.path}`,
+    };
+  }
+  const index = file.hunks.findIndex((hunk) => hunk.id === target.hunkId) + 1;
+  return {
+    title: "Tolak hunk?",
+    message: "Kembalikan hunk ini ke versi sebelumnya?",
+    confirmLabel: "Tolak",
+    confirmAriaLabel: `Konfirmasi tolak hunk ${index} di ${file.path}`,
+    cancelAriaLabel: `Batal menolak hunk ${index} di ${file.path}`,
+  };
+}

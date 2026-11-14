@@ -4,6 +4,7 @@ import type { WorktreeInspect } from "../../server/git/worktree-service";
 import { ApiError, type ApiClient, type WorktreeView } from "../lib/api";
 import { formatCount } from "../lib/format";
 import { mergeCommands, removeConfirmText } from "../lib/worktree";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyButton } from "./CopyButton";
 import { Icon } from "./Icon";
 
@@ -29,6 +30,8 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
   const [loading, setLoading] = useState(false);
   const [disabled, setDisabled] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
+  /** Galat aksi hapus; ditampilkan di dalam modal selama modal terbuka. */
+  const [removeError, setRemoveError] = useState<string | undefined>(undefined);
   const [confirming, setConfirming] = useState(false);
   const [conflict, setConflict] = useState<{ dirtyFiles: number; commitsAhead: number } | undefined>(
     undefined,
@@ -36,11 +39,6 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
   const [busy, setBusy] = useState(false);
 
   const requestRef = useRef(0);
-  const cancelRef = useRef<HTMLButtonElement | null>(null);
-
-  useEffect(() => {
-    if (confirming) cancelRef.current?.focus();
-  }, [confirming]);
 
   const load = async (): Promise<void> => {
     requestRef.current += 1;
@@ -71,6 +69,7 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
     setView(undefined);
     setConfirming(false);
     setConflict(undefined);
+    setRemoveError(undefined);
     void load();
     // load stabil secara perilaku; deps sengaja dibatasi identitas sesi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,6 +100,7 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
     if (busy) return;
     setBusy(true);
     setError(undefined);
+    setRemoveError(undefined);
     setConflict(undefined);
     try {
       await api.removeWorktree(sessionId, force ? { force: true } : undefined);
@@ -117,7 +117,9 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
           return;
         }
       }
-      setError(caught instanceof ApiError ? caught.message : "worktree gagal dihapus");
+      const message = caught instanceof ApiError ? caught.message : "worktree gagal dihapus";
+      setError(message);
+      setRemoveError(message);
     } finally {
       setBusy(false);
     }
@@ -140,6 +142,16 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
   const branch = (view?.worktree ?? worktree).branch;
   const path = (view?.worktree ?? worktree).path;
   const base = (view?.worktree ?? worktree).baseCommit.slice(0, 7);
+  /** Konfirmasi hapus: mode biasa atau mode paksa karena worktree masih dirty. */
+  const confirmOpen = confirming || conflict !== undefined;
+  const confirmMessage =
+    conflict !== undefined
+      ? `Worktree masih punya ${formatCount(conflict.dirtyFiles)} berkas berubah dan ` +
+        `${formatCount(conflict.commitsAhead)} commit belum digabung. Hapus paksa akan ` +
+        "menghilangkan perubahan yang belum di-commit."
+      : inspect === undefined
+        ? "Hapus folder worktree?"
+        : removeConfirmText(inspect);
   const commands = mergeCommands({
     repoRoot: (view?.worktree ?? worktree).repoRoot,
     branch,
@@ -176,7 +188,7 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
             </p>
           )}
 
-          {error !== undefined && (
+          {error !== undefined && !confirmOpen && (
             <p class="jk-error-line" role="alert">
               {error}
             </p>
@@ -189,86 +201,55 @@ export function WorktreeBox({ api, session, onChanged }: WorktreeBoxProps) {
             </p>
           </div>
 
-          {conflict !== undefined ? (
-            <div class="jk-panel-confirm">
-              <p>
-                Worktree masih punya {formatCount(conflict.dirtyFiles)} berkas berubah dan{" "}
-                {formatCount(conflict.commitsAhead)} commit belum digabung. Hapus paksa akan
-                menghilangkan perubahan yang belum di-commit.
-              </p>
-              <div class="jk-panel-confirm-actions">
-                <button
-                  type="button"
-                  class="jk-button jk-button-caution"
-                  disabled={busy}
-                  onClick={() => void remove(true)}
-                >
-                  {busy ? "Menghapus…" : "Hapus paksa"}
-                </button>
-                <button
-                  type="button"
-                  class="jk-button"
-                  disabled={busy}
-                  onClick={() => setConflict(undefined)}
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          ) : confirming ? (
-            <div class="jk-panel-confirm">
-              <p>{inspect === undefined ? "Hapus folder worktree?" : removeConfirmText(inspect)}</p>
-              <div class="jk-panel-confirm-actions">
-                <button
-                  type="button"
-                  class="jk-button jk-button-caution"
-                  disabled={busy}
-                  onClick={() => void remove(false)}
-                >
-                  {busy ? "Menghapus…" : "Ya, hapus"}
-                </button>
-                <button
-                  ref={cancelRef}
-                  type="button"
-                  class="jk-button"
-                  disabled={busy}
-                  onClick={() => setConfirming(false)}
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div class="jk-worktree-actions">
-              <button
-                type="button"
-                class="jk-link-btn jk-worktree-danger"
-                disabled={!canDelete}
-                title={deleteReason}
-                onClick={() => setConfirming(true)}
-              >
-                Hapus worktree
-              </button>
-              {(missing || removed) && (
-                <button
-                  type="button"
-                  class="jk-link-btn"
-                  disabled={busy}
-                  onClick={() => void restore()}
-                >
-                  {busy ? "Memulihkan…" : "Pulihkan worktree"}
-                </button>
-              )}
+          <div class="jk-worktree-actions">
+            <button
+              type="button"
+              class="jk-link-btn jk-worktree-danger"
+              disabled={!canDelete}
+              title={deleteReason}
+              onClick={() => {
+                setRemoveError(undefined);
+                setConfirming(true);
+              }}
+            >
+              Hapus worktree
+            </button>
+            {(missing || removed) && (
               <button
                 type="button"
                 class="jk-link-btn"
-                disabled={loading}
-                onClick={() => void load()}
+                disabled={busy}
+                onClick={() => void restore()}
               >
-                {loading ? "Memuat…" : "Muat ulang"}
+                {busy ? "Memulihkan…" : "Pulihkan worktree"}
               </button>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              class="jk-link-btn"
+              disabled={loading}
+              onClick={() => void load()}
+            >
+              {loading ? "Memuat…" : "Muat ulang"}
+            </button>
+          </div>
+
+          <ConfirmDialog
+            open={confirmOpen}
+            title={conflict !== undefined ? "Hapus paksa worktree?" : "Hapus worktree?"}
+            message={confirmMessage}
+            confirmLabel={conflict !== undefined ? "Hapus paksa" : "Ya, hapus"}
+            busyLabel="Menghapus…"
+            tone="danger"
+            busy={busy}
+            error={removeError}
+            onConfirm={() => void remove(conflict !== undefined)}
+            onCancel={() => {
+              setConfirming(false);
+              setConflict(undefined);
+              setRemoveError(undefined);
+            }}
+          />
         </>
       )}
     </section>

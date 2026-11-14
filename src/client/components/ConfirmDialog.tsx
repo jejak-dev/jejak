@@ -14,6 +14,10 @@ export interface ConfirmDialogProps {
   message?: ComponentChildren;
   confirmLabel: string;
   cancelLabel?: string;
+  /** Label aksesibilitas tombol konfirmasi; bawaan memakai confirmLabel. */
+  confirmAriaLabel?: string;
+  /** Label aksesibilitas tombol batal; bawaan memakai cancelLabel. */
+  cancelAriaLabel?: string;
   tone?: ConfirmTone;
   busy?: boolean;
   busyLabel?: string;
@@ -53,6 +57,8 @@ export function ConfirmDialogView(props: ConfirmDialogViewProps) {
     message,
     confirmLabel,
     cancelLabel = "Batal",
+    confirmAriaLabel,
+    cancelAriaLabel,
     tone = "default",
     busy = false,
     busyLabel,
@@ -112,6 +118,7 @@ export function ConfirmDialogView(props: ConfirmDialogViewProps) {
             class={confirmButtonClass(tone)}
             disabled={busy}
             aria-busy={busy ? "true" : undefined}
+            aria-label={confirmAriaLabel}
             onClick={onConfirm}
           >
             {confirmText}
@@ -121,6 +128,7 @@ export function ConfirmDialogView(props: ConfirmDialogViewProps) {
             type="button"
             class="jk-button"
             disabled={busy}
+            aria-label={cancelAriaLabel}
             onClick={onCancel}
           >
             {cancelLabel}
