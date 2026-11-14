@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jejak</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --latar: #172033;
+        --latar-tua: #0f1522;
+        --teks: #e6ecf7;
+        --teks-lembut: #9fb0cc;
+        --garis: #2c3a55;
+        --sorot: #6ea8fe;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--latar);
+        color: var(--teks);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px;
+      }
+      #splash {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 18px;
+      }
+      #splash p {
+        margin: 0;
+        font-size: 15px;
+        color: var(--teks-lembut);
+      }
+      .putaran {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 3px solid var(--garis);
+        border-top-color: var(--sorot);
+        animation: putar 0.9s linear infinite;
+      }
+      @keyframes putar {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .putaran {
+          animation-duration: 3s;
+        }
+      }
+      #galat {
+        display: none;
+        width: 100%;
+        max-width: 720px;
+      }
+      #galat.aktif {
+        display: block;
+      }
+      #galat-judul {
+        margin: 0 0 12px;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      #galat-rincian {
+        margin: 0 0 16px;
+        padding: 14px;
+        background: var(--latar-tua);
+        border: 1px solid var(--garis);
+        border-radius: 10px;
+        color: var(--teks);
+        font-size: 13px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 50vh;
+        overflow: auto;
+      }
+      #galat-petunjuk {
+        margin: 0;
+        font-size: 14px;
+        color: var(--teks-lembut);
+      }
+    </style>
+  </head>
+  <body>
+    <main id="splash">
+      <div class="putaran" aria-hidden="true"></div>
+      <p>Memulai Jejak…</p>
+    </main>
+    <section id="galat" role="alert">
+      <h1 id="galat-judul"></h1>
+      <pre id="galat-rincian"></pre>
+      <p id="galat-petunjuk">Tutup jendela ini lalu buka Jejak lagi.</p>
+    </section>
+    <script>
+      window.__jejakGalat = function (judul, rincian) {
+        var splash = document.getElementById("splash");
+        if (splash) splash.style.display = "none";
+        document.getElementById("galat-judul").textContent = String(
+          judul || "Jejak gagal berjalan",
+        );
+        document.getElementById("galat-rincian").textContent = String(rincian || "");
+        document.getElementById("galat").classList.add("aktif");
+      };
+    </script>
+  </body>
+</html>

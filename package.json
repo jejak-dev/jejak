@@ -28,6 +28,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build:binary": "bun run scripts/build-binary.ts",
+    "stage:sidecar": "bun run scripts/stage-sidecar.ts",
     "smoke:binary": "bun run scripts/smoke-binary.ts",
     "release": "bun run scripts/release.ts"
   },
@@ -37,6 +38,7 @@
     "preact": "^10.29.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2",
     "@types/bun": "latest",
     "typescript": "~5.8.2"
   },

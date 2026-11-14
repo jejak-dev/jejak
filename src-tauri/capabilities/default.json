@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Izin API inti Tauri untuk jendela utama Jejak.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
