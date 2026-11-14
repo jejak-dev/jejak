@@ -16,7 +16,8 @@ export interface PanelPrefs {
 
 const STORAGE_KEY = "jejak.panel";
 const DEFAULT_PREFS: PanelPrefs = { open: false, tab: "changes" };
-const TABS: readonly PanelTab[] = [
+/** Semua id tab yang sah; dipakai juga untuk memeriksa kelengkapan rel ikon. */
+export const PANEL_TAB_IDS: readonly PanelTab[] = [
   "changes",
   "todos",
   "files",
@@ -29,7 +30,7 @@ const TABS: readonly PanelTab[] = [
 ];
 
 function isTab(value: unknown): value is PanelTab {
-  return typeof value === "string" && (TABS as readonly string[]).includes(value);
+  return typeof value === "string" && (PANEL_TAB_IDS as readonly string[]).includes(value);
 }
 
 /** Baca preferensi panel dari string JSON; bentuk asing jatuh ke bawaan. */

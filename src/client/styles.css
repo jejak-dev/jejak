@@ -2649,8 +2649,12 @@ h2.jk-md-heading {
 }
 
 .jk-panel {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "head rail"
+    "content rail";
   flex: none;
   width: 460px;
   max-width: 80%;
@@ -2660,6 +2664,7 @@ h2.jk-md-heading {
 }
 
 .jk-panel-head {
+  grid-area: head;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2667,6 +2672,17 @@ h2.jk-md-heading {
   min-height: 46px;
   padding: 0 6px 0 12px;
   border-bottom: 1px solid var(--line);
+}
+
+.jk-panel-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t1);
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 .jk-panel-tabs {
@@ -2718,7 +2734,97 @@ h2.jk-md-heading {
   margin-left: auto;
 }
 
+/* Rel ikon vertikal di tepi kanan panel (menggantikan strip tab teks). */
+
+.jk-panel-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 7px 0 10px;
+  border-left: 1px solid var(--line);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.jk-panel-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.jk-rail-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+}
+
+.jk-rail-group + .jk-rail-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
+.jk-rail-btn {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t2);
+}
+
+.jk-rail-btn:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-rail-btn:focus-visible {
+  outline: 2px solid var(--t2);
+  outline-offset: 1px;
+}
+
+.jk-rail-btn-active {
+  background: var(--line);
+  color: var(--t1);
+}
+
+/* Batang aksen 2px di sisi kiri tombol aktif. */
+.jk-rail-btn-active::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--t1);
+}
+
+.jk-rail-badge {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  min-width: 14px;
+  padding: 0 3px;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--t2);
+  font-size: 10px;
+  line-height: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .jk-panel-content {
+  grid-area: content;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -3547,16 +3653,65 @@ h2.jk-md-heading {
     width: auto;
     border-left: 0;
     overflow-y: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "rail"
+      "content";
   }
 
   .jk-panel-head {
     position: sticky;
     top: 0;
+    z-index: 1;
     background: var(--bg);
   }
 
   .jk-panel-close {
     order: -1;
+  }
+
+  /* Rel jadi baris ikon horizontal di bawah header; semua ikon muat tanpa gulir. */
+  .jk-panel-rail {
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    padding: 4px;
+    border-left: 0;
+    border-bottom: 1px solid var(--line);
+    overflow: hidden;
+  }
+
+  .jk-rail-group {
+    flex-direction: row;
+    gap: 1px;
+    width: auto;
+  }
+
+  .jk-rail-group + .jk-rail-group {
+    margin-top: 0;
+    margin-left: 3px;
+    padding-top: 0;
+    padding-left: 3px;
+    border-top: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .jk-rail-btn {
+    width: 32px;
+    height: 40px;
+  }
+
+  /* Aksen aktif berpindah ke sisi bawah pada rel horizontal. */
+  .jk-rail-btn-active::before {
+    left: 5px;
+    right: 5px;
+    top: auto;
+    bottom: 2px;
+    width: auto;
+    height: 2px;
   }
 }
 
@@ -6506,6 +6661,10 @@ h2.jk-md-heading {
   .jk-session-actions > button,
   .jk-perm-actions .jk-button,
   .jk-panel-tab {
+    min-height: 40px;
+  }
+
+  .jk-rail-btn {
     min-height: 40px;
   }
 

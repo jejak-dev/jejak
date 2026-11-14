@@ -2,6 +2,12 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type { ApiClient } from "../lib/api";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "../lib/panel-prefs";
+import {
+  PANEL_RAIL_GROUPS,
+  PANEL_RAIL_TABS,
+  nextPanelTabIndex,
+  panelTabLabel,
+} from "../lib/panel-rail";
 import { formatCount } from "../lib/format";
 import type { TimelineItem } from "../lib/timeline";
 import { latestTodos, todoProgress } from "../lib/todos";
@@ -44,19 +50,11 @@ export interface PanelProps {
   onQuote?: (text: string) => void;
 }
 
-const PANEL_LABEL = "Changes, todos, files, git, checkpoints, secrets, wiki, and commands";
+const PANEL_LABEL =
+  "Perubahan, langkah, berkas, git, checkpoint, rahasia, wiki, perintah, dan terminal";
 
-const TABS: { id: PanelTab; label: string }[] = [
-  { id: "changes", label: "Changes" },
-  { id: "todos", label: "Todos" },
-  { id: "files", label: "Files" },
-  { id: "git", label: "Git" },
-  { id: "checkpoints", label: "Checkpoints" },
-  { id: "rahasia", label: "Secrets" },
-  { id: "wiki", label: "Wiki" },
-  { id: "commands", label: "Commands" },
-  { id: "terminal", label: "Terminal" },
-];
+/** Kunci navigasi keyboard pada rel ikon. */
+const RAIL_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End"]);
 
 export function Panel({
   width,
@@ -86,7 +84,6 @@ export function Panel({
   const [terminalToAttach, setTerminalToAttach] = useState<string | undefined>(undefined);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const tabRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const tabsRef = useRef<HTMLDivElement | null>(null);
 
   const repos = useSessionRepos(api, sessionId, status).repos;
   const multiRepo = repos !== undefined && repos.length > 1;
@@ -113,20 +110,23 @@ export function Panel({
     setTab(tabRequest.tab);
   }, [tabRequest?.nonce]);
 
-  // Tab aktif tetap terlihat saat strip tab digeser (lebar panel terbatas).
-  useEffect(() => {
-    const strip = tabsRef.current;
-    const active = tabRefs.current[tab];
-    if (strip === null || active === null || active === undefined) return;
-    const left = active.offsetLeft;
-    const right = left + active.offsetWidth;
-    if (left < strip.scrollLeft) strip.scrollLeft = Math.max(0, left - 8);
-    else if (right > strip.scrollLeft + strip.clientWidth) {
-      strip.scrollLeft = right - strip.clientWidth + 8;
-    }
-  }, [tab]);
-
   const select = (next: PanelTab): void => setTab(next);
+
+  /** Lencana jumlah pada rel ikon; 0 atau tidak diketahui disembunyikan. */
+  const countFor = (id: PanelTab): number | undefined => {
+    switch (id) {
+      case "todos":
+        return todoPending;
+      case "changes":
+        return fileCount;
+      case "git":
+        return gitCount;
+      case "checkpoints":
+        return checkpointCount;
+      default:
+        return undefined;
+    }
+  };
 
   /** Terminal baru dari peluncur perintah: pindah ke tab Terminal dan menempel. */
   const onOpenTerminal = (terminalId: string): void => {
@@ -134,11 +134,11 @@ export function Panel({
     select("terminal");
   };
 
-  const onTabKeyDown = (event: KeyboardEvent, index: number): void => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+  const onRailKeyDown = (event: KeyboardEvent, index: number): void => {
+    if (!RAIL_KEYS.has(event.key)) return;
     event.preventDefault();
-    const delta = event.key === "ArrowLeft" ? -1 : 1;
-    const next = TABS[(index + delta + TABS.length) % TABS.length]!;
+    const next = PANEL_RAIL_TABS[nextPanelTabIndex(event.key, index)];
+    if (!next) return;
     select(next.id);
     tabRefs.current[next.id]?.focus();
   };
@@ -149,44 +149,7 @@ export function Panel({
       style={width === undefined ? undefined : { width: `${width}px` }}
       aria-label={PANEL_LABEL}>
       <div class="jk-panel-head">
-        <div
-          class="jk-panel-tabs"
-          ref={tabsRef}
-          role="tablist"
-          aria-label={PANEL_LABEL}
-        >
-          {TABS.map((entry, index) => (
-            <button
-              key={entry.id}
-              ref={(element) => {
-                tabRefs.current[entry.id] = element;
-              }}
-              type="button"
-              role="tab"
-              id={`jk-panel-tab-${entry.id}`}
-              class={`jk-panel-tab${tab === entry.id ? " jk-panel-tab-active" : ""}`}
-              aria-selected={tab === entry.id}
-              aria-controls={`jk-panel-panel-${entry.id}`}
-              tabIndex={tab === entry.id ? 0 : -1}
-              onClick={() => select(entry.id)}
-              onKeyDown={(event) => onTabKeyDown(event, index)}
-            >
-              {entry.label}
-              {entry.id === "todos" && todoPending > 0 && (
-                <span class="jk-panel-count">{formatCount(todoPending)}</span>
-              )}
-              {entry.id === "changes" && fileCount !== undefined && fileCount > 0 && (
-                <span class="jk-panel-count">{formatCount(fileCount)}</span>
-              )}
-              {entry.id === "git" && gitCount !== undefined && gitCount > 0 && (
-                <span class="jk-panel-count">{formatCount(gitCount)}</span>
-              )}
-              {entry.id === "checkpoints" && checkpointCount !== undefined && checkpointCount > 0 && (
-                <span class="jk-panel-count">{formatCount(checkpointCount)}</span>
-              )}
-            </button>
-          ))}
-        </div>
+        <span class="jk-panel-title">{panelTabLabel(tab)}</span>
         {multiRepo && (
           <label class="jk-chip" title="Repo">
             <Icon name="folder" />
@@ -224,6 +187,46 @@ export function Panel({
         >
           <Icon name="close" />
         </button>
+      </div>
+
+      <div
+        class="jk-panel-rail"
+        role="tablist"
+        aria-orientation="vertical"
+        aria-label="Bagian panel"
+      >
+        {PANEL_RAIL_GROUPS.map((group) => (
+          <div class="jk-rail-group" role="group" aria-label={group.label} key={group.id}>
+            {group.tabs.map((entry) => {
+              const index = PANEL_RAIL_TABS.findIndex((item) => item.id === entry.id);
+              const count = countFor(entry.id);
+              return (
+                <button
+                  key={entry.id}
+                  ref={(element) => {
+                    tabRefs.current[entry.id] = element;
+                  }}
+                  type="button"
+                  role="tab"
+                  id={`jk-panel-tab-${entry.id}`}
+                  class={`jk-rail-btn${tab === entry.id ? " jk-rail-btn-active" : ""}`}
+                  aria-selected={tab === entry.id}
+                  aria-controls={`jk-panel-panel-${entry.id}`}
+                  tabIndex={tab === entry.id ? 0 : -1}
+                  title={entry.label}
+                  aria-label={entry.label}
+                  onClick={() => select(entry.id)}
+                  onKeyDown={(event) => onRailKeyDown(event, index)}
+                >
+                  <Icon name={entry.icon} />
+                  {count !== undefined && count > 0 && (
+                    <span class="jk-rail-badge">{formatCount(count)}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       <div
