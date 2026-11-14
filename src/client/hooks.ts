@@ -22,8 +22,9 @@ import {
   type NotifyPrefs,
 } from "./lib/notify";
 import { followSession } from "./lib/sse";
-import { reduceContext, type ContextState } from "./lib/context";
-import { reduceTimeline, startTimeline, type TimelineItem } from "./lib/timeline";
+import type { ContextState } from "./lib/context";
+import { applyEventBatch, type BatchEvent } from "./lib/timeline-batch";
+import { startTimeline, type TimelineItem } from "./lib/timeline";
 import type { RewindEvent } from "./lib/rewind";
 
 function messageOf(error: unknown): string {
@@ -257,6 +258,9 @@ export interface TimelineController extends TimelineState {
 
 const IDLE_TIMELINE: TimelineState = { items: [], connection: "idle" };
 
+/** Jeda maksimum event yang tertahan sebelum diterapkan ke state. */
+const FLUSH_INTERVAL_MS = 50;
+
 /** Sambung ulang hanya bila aliran sudah berakhir, belum ada aliran aktif, dan (sesi berjalan atau ada event baru). */
 export function shouldResume(
   connection: TimelineConnection,
@@ -284,9 +288,24 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
   const controllerRef = useRef<AbortController | null>(null);
   const lastSeqRef = useRef(0);
   const endedForRef = useRef<string | undefined>(undefined);
+  /** Komponen masih terpasang; jangan sentuh state setelah unmount. */
+  const mountedRef = useRef(true);
+  /** Pemutus aliran aktif: flush event tertahan lalu lepaskan timer. */
+  const stopStreamRef = useRef<(() => void) | undefined>(undefined);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const openStream = useCallback(
     (id: string, after: number, initialItems: TimelineItem[] | undefined): void => {
+      // Aliran sebelumnya: event yang tertahan tidak boleh hilang.
+      stopStreamRef.current?.();
+      stopStreamRef.current = undefined;
+
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
@@ -304,21 +323,74 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
         setState({ items: initialItems, connection: "menyambung", events: [] });
       }
 
+      // Event yang datang ditampung dulu; state diperbarui per batch, bukan
+      // per event, supaya membuka sesi lama tidak membekukan thread utama.
+      let buffer: BatchEvent[] = [];
+      let flushTimer: ReturnType<typeof setTimeout> | undefined;
+      let connected = false;
+
+      const flush = (): void => {
+        if (flushTimer !== undefined) {
+          clearTimeout(flushTimer);
+          flushTimer = undefined;
+        }
+        if (buffer.length === 0) return;
+        const batch = buffer;
+        buffer = [];
+        if (!mountedRef.current) return;
+        setState((previous) => {
+          const next = applyEventBatch(previous, batch);
+          return {
+            ...previous,
+            items: next.items,
+            context: next.context,
+            events: next.events,
+          };
+        });
+      };
+
+      const scheduleFlush = (): void => {
+        if (flushTimer !== undefined) return;
+        flushTimer = setTimeout(() => {
+          flushTimer = undefined;
+          flush();
+        }, FLUSH_INTERVAL_MS);
+      };
+
+      stopStreamRef.current = (): void => {
+        flush();
+        if (flushTimer !== undefined) {
+          clearTimeout(flushTimer);
+          flushTimer = undefined;
+        }
+        buffer = [];
+      };
+
       void (async () => {
         try {
           for await (const item of followSession(id, { after, signal: controller.signal })) {
-            if (controller.signal.aborted) return;
+            if (controller.signal.aborted) {
+              flush();
+              return;
+            }
             if (item.kind === "event") {
               lastSeqRef.current = item.seq;
-              setState((previous) => ({
-                ...previous,
-                connection: previous.connection === "menyambung" ? "terhubung" : previous.connection,
-                items: reduceTimeline(previous.items, item.event, { seq: item.seq }),
-                events: [...(previous.events ?? []), { seq: item.seq, event: item.event }],
-                context: reduceContext(previous.context, item.event),
-              }));
+              buffer.push({ seq: item.seq, event: item.event });
+              if (!connected) {
+                connected = true;
+                // Sambungan dianggap terhubung begitu event pertama masuk
+                // buffer; label "Menyambung ulang…" tidak ikut tertahan.
+                setState((previous) =>
+                  previous.connection === "menyambung"
+                    ? { ...previous, connection: "terhubung" }
+                    : previous,
+                );
+              }
+              scheduleFlush();
             } else {
               endedForRef.current = id;
+              // Flush terakhir sebelum status akhir diterapkan.
+              flush();
               setState((previous) => ({
                 ...previous,
                 connection: "selesai",
@@ -328,7 +400,11 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
             }
           }
         } catch (caught) {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted) {
+            flush();
+            return;
+          }
+          flush();
           setState((previous) => ({
             ...previous,
             connection: "galat",
@@ -353,6 +429,8 @@ export function useTimeline(api: ApiClient, session: SessionInfo | undefined): T
     openStream(sessionId, 0, startTimeline(prompt));
 
     return () => {
+      stopStreamRef.current?.();
+      stopStreamRef.current = undefined;
       controllerRef.current?.abort();
       controllerRef.current = null;
     };
