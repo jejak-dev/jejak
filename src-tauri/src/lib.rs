@@ -22,6 +22,9 @@ use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, Wind
 /// Label jendela utama.
 const NAMA_JENDELA: &str = "main";
 
+/// Shim notifikasi native yang disuntik ke jendela utama.
+const SHIM_NOTIFIKASI: &str = include_str!("../shim/notification.js");
+
 /// Batas waktu menunggu pengumuman server siap.
 const JEJAK_READY_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -80,6 +83,8 @@ pub fn run() {
         let _ = window.set_focus();
       }
     }))
+    .plugin(tauri_plugin_notification::init())
+    .plugin(tauri_plugin_opener::init())
     .setup(|app| {
       let _ = app.manage(Status {
         proses: Mutex::new(None),
@@ -118,15 +123,35 @@ pub fn run() {
 /// Buat jendela utama yang memuat splash lokal.
 fn buat_jendela(app: &AppHandle) -> tauri::Result<()> {
   let handle_navigasi = app.clone();
+  let handle_jendela_baru = app.clone();
   WebviewWindowBuilder::new(app, NAMA_JENDELA, WebviewUrl::App("index.html".into()))
     .title("Jejak")
     .inner_size(1280.0, 820.0)
     .min_inner_size(900.0, 600.0)
     .center()
+    // WKWebView tak punya API notifikasi; shim ini menggantinya dengan
+    // kelas yang menembak plugin notifikasi Tauri.
+    .initialization_script(SHIM_NOTIFIKASI)
     // Hanya halaman lokal dan server Jejak di loopback yang boleh dimuat.
     .on_navigation(move |url| {
       let port = handle_navigasi.state::<Status>().port.load(Ordering::SeqCst);
-      sidecar::is_allowed_navigation(url.as_str(), port)
+      if sidecar::is_allowed_navigation(url.as_str(), port) {
+        return true;
+      }
+      // Navigasi ditolak: tautan web dialihkan ke browser sistem.
+      if let Some(target) = sidecar::external_open_target(url.as_str(), port) {
+        buka_di_browser(&handle_navigasi, &target);
+      }
+      false
+    })
+    // Jendela baru (mis. `target=_blank`) tak pernah dibuka; tautan web
+    // dialihkan ke browser sistem.
+    .on_new_window(move |url, _features| {
+      let port = handle_jendela_baru.state::<Status>().port.load(Ordering::SeqCst);
+      if let Some(target) = sidecar::external_open_target(url.as_str(), port) {
+        buka_di_browser(&handle_jendela_baru, &target);
+      }
+      tauri::webview::NewWindowResponse::Deny
     })
     // Setelah halaman lokal selesai dimuat, tampilkan galat yang tertunda.
     .on_page_load(move |window, payload| {
@@ -144,6 +169,14 @@ fn buat_jendela(app: &AppHandle) -> tauri::Result<()> {
     })
     .build()?;
   Ok(())
+}
+
+/// Buka URL di browser sistem; galat tak menggagalkan navigasi.
+fn buka_di_browser(app: &AppHandle, url: &str) {
+  use tauri_plugin_opener::OpenerExt;
+  if let Err(galat) = app.opener().open_url(url, None::<String>) {
+    eprintln!("gagal membuka {url} di browser: {galat}");
+  }
 }
 
 /// Cari binary sidecar: env `JEJAK_SIDECAR`, lalu dekat binary aplikasi.

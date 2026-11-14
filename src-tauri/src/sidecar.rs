@@ -142,6 +142,28 @@ pub fn is_allowed_navigation(url: &str, port: u16) -> bool {
   parsed.host_str() == Some(HOST_LOOPBACK) && parsed.port() == Some(port)
 }
 
+/// URL yang pantas dibuka di browser sistem.
+///
+/// Mengembalikan `Some(url)` bila URL itu tautan web (`http`/`https`) yang
+/// bukan halaman Jejak sendiri di loopback pada port yang sedang dipakai.
+/// Skema lain (file, javascript, data, mailto, tauri, ...) diabaikan karena
+/// tak bisa dibuka di browser.
+pub fn external_open_target(url: &str, port: u16) -> Option<String> {
+  let parsed = Url::parse(url).ok()?;
+  let scheme = parsed.scheme();
+  if scheme != "http" && scheme != "https" {
+    return None;
+  }
+  // Halaman Jejak sendiri: jangan dibuka di browser, tetap di webview.
+  if port != 0
+    && parsed.host_str() == Some(HOST_LOOPBACK)
+    && parsed.port() == Some(port)
+  {
+    return None;
+  }
+  Some(parsed.to_string())
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -214,5 +236,36 @@ mod tests {
     assert!(is_allowed_navigation("http://tauri.localhost/index.html", 51234));
     assert!(!is_allowed_navigation("http://localhost:51234/", 51234));
     assert!(!is_allowed_navigation("bukan url", 51234));
+  }
+
+  #[test]
+  fn tautan_web_eksternal_dibuka_di_browser() {
+    assert_eq!(
+      external_open_target("https://example.com/artikel", 51234),
+      Some("https://example.com/artikel".to_string()),
+    );
+    assert_eq!(
+      external_open_target("http://example.com/", 51234),
+      Some("http://example.com/".to_string()),
+    );
+  }
+
+  #[test]
+  fn halaman_jejak_sendiri_tak_dibuka_di_browser() {
+    assert_eq!(external_open_target("http://127.0.0.1:51234/", 51234), None);
+    assert_eq!(
+      external_open_target("http://127.0.0.1:51234/__desktop/enter?t=abc", 51234),
+      None,
+    );
+    assert_eq!(external_open_target("tauri://localhost/index.html", 51234), None);
+  }
+
+  #[test]
+  fn skema_lain_diabaikan() {
+    assert_eq!(external_open_target("file:///etc/passwd", 51234), None);
+    assert_eq!(external_open_target("javascript:alert(1)", 51234), None);
+    assert_eq!(external_open_target("mailto:halo@example.com", 51234), None);
+    assert_eq!(external_open_target("data:text/html,<p>hai</p>", 51234), None);
+    assert_eq!(external_open_target("bukan url", 51234), None);
   }
 }

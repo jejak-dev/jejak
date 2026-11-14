@@ -29,6 +29,7 @@
     "typecheck": "tsc --noEmit",
     "build:binary": "bun run scripts/build-binary.ts",
     "stage:sidecar": "bun run scripts/stage-sidecar.ts",
+    "build:desktop": "bun run scripts/build-desktop.ts",
     "smoke:binary": "bun run scripts/smoke-binary.ts",
     "release": "bun run scripts/release.ts"
   },
