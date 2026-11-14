@@ -18,6 +18,7 @@ import {
   type MemoryDraft,
 } from "../lib/memory";
 import { Icon } from "./Icon";
+import { Markdown } from "./Markdown";
 import { MemoryForm } from "./MemoryForm";
 import {
   ConfirmDialogView,
@@ -148,7 +149,9 @@ export function MemoryRowView(props: MemoryRowViewProps) {
                   <div class="jk-memory-revision-col">
                     <span class="jk-memory-revision-label">Sebelum</span>
                     <span class="jk-memory-revision-title">{target.title}</span>
-                    <p class="jk-memory-revision-body">{target.body}</p>
+                    <div class="jk-memory-revision-body">
+                      <Markdown text={target.body} />
+                    </div>
                   </div>
                   <div class="jk-memory-revision-col">
                     <span class="jk-memory-revision-label">Sesudah</span>
@@ -158,14 +161,18 @@ export function MemoryRowView(props: MemoryRowViewProps) {
                         <span class="jk-memory-revision-mark">berubah</span>
                       )}
                     </span>
-                    <p class="jk-memory-revision-body">{item.body}</p>
+                    <div class="jk-memory-revision-body">
+                      <Markdown text={item.body} />
+                    </div>
                     {bodyChanged && (
                       <span class="jk-memory-revision-mark">isi berubah</span>
                     )}
                   </div>
                 </div>
               ) : (
-                <p class="jk-memory-body">{item.body}</p>
+                <div class="jk-memory-body">
+                  <Markdown text={item.body} />
+                </div>
               )}
               <p class="jk-memory-meta">
                 {confidenceLabel(item.confidence)} · {originLabel(item.origin)}

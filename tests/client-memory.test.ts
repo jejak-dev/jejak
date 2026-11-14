@@ -529,6 +529,44 @@ describe("tampilan revisi di baris memory", () => {
   });
 });
 
+describe("isi memory dirender sebagai markdown", () => {
+  test("isi dengan tebal dan daftar menghasilkan elemen markdown", () => {
+    const node = renderRow(make({ body: "**tebal**\n\n- satu\n- dua" }));
+    const body = byClass(node, "jk-memory-body")[0];
+    expect(body).toBeDefined();
+
+    const strong = findNodes(body, (vnode) => vnode.type === "strong");
+    expect(strong.length).toBe(1);
+    expect(textOf(propsOf(strong[0]).children as ComponentChild)).toBe("tebal");
+
+    const items = findNodes(body, (vnode) => vnode.type === "li");
+    expect(
+      items.map((vnode) => textOf(propsOf(vnode).children as ComponentChild)),
+    ).toEqual(["satu", "dua"]);
+  });
+
+  test("blok sebelum dan sesudah dirender sebagai markdown", () => {
+    const node = renderRow(
+      make({
+        status: "proposed",
+        title: "Judul baru",
+        body: "**baru**",
+        replaces: "abc",
+        revises: { id: "abc", title: "Judul lama", body: "**lama**" },
+      }),
+    );
+
+    const bodies = byClass(node, "jk-memory-revision-body");
+    expect(bodies.length).toBe(2);
+    for (const body of bodies) {
+      const strong = findNodes(body, (vnode) => vnode.type === "strong");
+      expect(strong.length).toBe(1);
+    }
+    expect(textOf(propsOf(findNodes(bodies[0], (vnode) => vnode.type === "strong")[0]).children as ComponentChild)).toBe("lama");
+    expect(textOf(propsOf(findNodes(bodies[1], (vnode) => vnode.type === "strong")[0]).children as ComponentChild)).toBe("baru");
+  });
+});
+
 describe("konfirmasi memory memakai modal", () => {
   function modalOf(node: ComponentChild): VNode | undefined {
     return findNodes(node, (vnode) => propsOf(vnode)["role"] === "alertdialog")[0];

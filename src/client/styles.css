@@ -3758,8 +3758,40 @@ h2.jk-md-heading {
   color: var(--t2);
   font-size: 12.5px;
   line-height: 1.65;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Isi memory dirender sebagai markdown: jarak antar blok lebih rapat. */
+.jk-memory-body .jk-md > *,
+.jk-memory-revision-body .jk-md > * {
+  margin-bottom: 0.4em;
+}
+
+.jk-memory-body .jk-md > *:last-child,
+.jk-memory-revision-body .jk-md > *:last-child {
+  margin-bottom: 0;
+}
+
+.jk-memory-body .jk-md ul,
+.jk-memory-body .jk-md ol,
+.jk-memory-revision-body .jk-md ul,
+.jk-memory-revision-body .jk-md ol {
+  margin-bottom: 0.4em;
+  padding-left: 1.2em;
+}
+
+/* Blok kode dan tabel tidak boleh melebar melewati kartu. */
+.jk-memory-body .jk-md-codeblock,
+.jk-memory-revision-body .jk-md-codeblock,
+.jk-memory-body .jk-md-table-wrap,
+.jk-memory-revision-body .jk-md-table-wrap {
+  max-width: 100%;
+}
+
+.jk-memory-body .jk-md-pre,
+.jk-memory-revision-body .jk-md-pre {
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .jk-memory-missing {
@@ -3811,7 +3843,6 @@ h2.jk-md-heading {
   color: var(--t2);
   font-size: 12px;
   line-height: 1.6;
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
