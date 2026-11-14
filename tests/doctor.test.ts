@@ -2,10 +2,19 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collectChecks, formatCheck, runDoctor, type Check } from "../src/cli/doctor";
+import {
+  collectChecks,
+  formatCheck,
+  runDoctor,
+  type Check,
+  type DoctorContext,
+} from "../src/cli/doctor";
 import { parseRegistry } from "../src/server/provider";
 import { saveRegistry } from "../src/server/provider-store";
+import { installFromTarball } from "../src/server/sdk/sdk-store";
+import { computeIntegrity } from "../src/server/sdk/tarball";
 import { VERSION } from "../src/shared/version";
+import { buildTar, gzipOf, packageEntries } from "./helpers/tar-builder";
 
 let root: string;
 let providersFile: string;
@@ -20,6 +29,46 @@ beforeEach(async () => {
 afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
+
+/** CLI `claude` selalu dianggap tidak ada; membuat tes lama deterministik. */
+const CLI_TIDAK_ADA = {
+  which: () => null,
+  exists: async () => false,
+  runVersion: async () => null,
+};
+
+/**
+ * Konteks dasar tes: akar SDK terisolasi di tmp dan CLI `claude` absen.
+ *
+ * Tanpa ini, `collectChecks` memakai `~/.jejak/sdk` dan PATH mesin, sehingga
+ * hasil tes bergantung pada apa yang terpasang di komputer.
+ */
+function baseCtx(ctx: DoctorContext = {}): DoctorContext {
+  return {
+    sdkRoot: join(root, "sdk"),
+    locate: CLI_TIDAK_ADA,
+    ...ctx,
+  };
+}
+
+async function collect(ctx: DoctorContext = {}): Promise<Check[]> {
+  return collectChecks(baseCtx(ctx));
+}
+
+async function doctor(ctx: DoctorContext = {}): Promise<number> {
+  return runDoctor(baseCtx(ctx));
+}
+
+/** Pasang SDK terkelola palsu di `dir`. */
+async function pasangSdk(dir: string, versi: string): Promise<void> {
+  const gz = gzipOf(buildTar(packageEntries("@anthropic-ai/claude-agent-sdk", versi)));
+  await installFromTarball(dir, {
+    gz,
+    integrity: computeIntegrity(gz),
+    expected: { name: "@anthropic-ai/claude-agent-sdk", version: versi },
+    now: "2026-11-14T00:00:00.000Z",
+  });
+}
 
 function labels(checks: Check[]): string[] {
   return checks.map((check) => check.name);
@@ -53,7 +102,7 @@ async function writeRegistryFile(): Promise<void> {
 }
 
 test("kunci cek lama dan urutannya dipertahankan", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -69,7 +118,7 @@ test("kunci cek lama dan urutannya dipertahankan", async () => {
 });
 
 test("Binding server memakai env HOST dan PORT", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { HOST: "0.0.0.0", PORT: "4321" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -79,7 +128,7 @@ test("Binding server memakai env HOST dan PORT", async () => {
 });
 
 test("tanpa providers.json registry memakai env dan profil aktif peringatan", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -97,7 +146,7 @@ test("tanpa providers.json registry memakai env dan profil aktif peringatan", as
 });
 
 test("profil aktif dari env lengkap berstatus ok", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {
       ANTHROPIC_API_KEY: "sk-env",
       ANTHROPIC_MODEL: "claude-sonnet-5-5",
@@ -115,7 +164,7 @@ test("profil aktif dari env lengkap berstatus ok", async () => {
 test("berkas valid dua profil menampilkan jumlah dan profil aktif", async () => {
   await writeRegistryFile();
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -129,7 +178,7 @@ test("berkas valid dua profil menampilkan jumlah dan profil aktif", async () => 
 test("izin 600 dan 700 berstatus ok", async () => {
   await writeRegistryFile();
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -144,7 +193,7 @@ test("izin berkas longgar menghasilkan peringatan chmod 600", async () => {
   await writeRegistryFile();
   await chmod(providersFile, 0o644);
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -159,7 +208,7 @@ test("izin direktori longgar menghasilkan peringatan chmod 700", async () => {
   await writeRegistryFile();
   await chmod(homeDir, 0o755);
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -174,7 +223,7 @@ test("JSON rusak membuat registry gagal dan runDoctor mengembalikan 1", async ()
   await mkdir(homeDir, { recursive: true, mode: 0o700 });
   await writeFile(providersFile, "{ bukan json", { mode: 0o600 });
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -182,7 +231,7 @@ test("JSON rusak membuat registry gagal dan runDoctor mengembalikan 1", async ()
   expect(find(checks, "Registry provider").status).toBe("gagal");
 
   const logged: string[] = [];
-  const code = await runDoctor({
+  const code = await doctor({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -194,7 +243,7 @@ test("JSON rusak membuat registry gagal dan runDoctor mengembalikan 1", async ()
 
 test("hanya peringatan membuat runDoctor mengembalikan 0", async () => {
   const logged: string[] = [];
-  const code = await runDoctor({
+  const code = await doctor({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -207,7 +256,7 @@ test("hanya peringatan membuat runDoctor mengembalikan 0", async () => {
 });
 
 test("resolveSdk string berstatus ok dan null berstatus peringatan", async () => {
-  const found = await collectChecks({
+  const found = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => "/opt/sdk/index.js",
@@ -216,7 +265,7 @@ test("resolveSdk string berstatus ok dan null berstatus peringatan", async () =>
   expect(sdk.status).toBe("ok");
   expect(sdk.detail).toBe("/opt/sdk/index.js");
 
-  const missing = await collectChecks({
+  const missing = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -243,7 +292,7 @@ test("nilai rahasia tidak bocor ke check maupun log", async () => {
   });
   await saveRegistry(registry, providersFile);
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -254,7 +303,7 @@ test("nilai rahasia tidak bocor ke check maupun log", async () => {
   expect(find(checks, "Registry provider").detail).not.toContain(secret);
 
   const logged: string[] = [];
-  await runDoctor({
+  await doctor({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -275,7 +324,7 @@ test("formatCheck memakai label untuk tiap status", () => {
 });
 
 test("penyimpanan sesi: berkas belum ada", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -292,7 +341,7 @@ test("penyimpanan sesi: berkas ada dengan izin dan versi skema", async () => {
   const store = new SqliteSessionStore(join(homeDir, "sessions.db"));
   store.close();
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -310,7 +359,7 @@ test("penyimpanan sesi: izin longgar memberi peringatan", async () => {
   store.close();
   await chmod(join(homeDir, "sessions.db"), 0o644);
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -322,7 +371,7 @@ test("penyimpanan sesi: izin longgar memberi peringatan", async () => {
 
 test("penyimpanan sesi: dimatikan lewat JEJAK_PERSIST=0 dan tetap exit 0", async () => {
   const logged: string[] = [];
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir, JEJAK_PERSIST: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -331,7 +380,7 @@ test("penyimpanan sesi: dimatikan lewat JEJAK_PERSIST=0 dan tetap exit 0", async
   expect(storage.status).toBe("peringatan");
   expect(storage.detail).toContain("dimatikan");
 
-  const code = await runDoctor({
+  const code = await doctor({
     env: { JEJAK_HOME: homeDir, JEJAK_PERSIST: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -342,7 +391,7 @@ test("penyimpanan sesi: dimatikan lewat JEJAK_PERSIST=0 dan tetap exit 0", async
 });
 
 test("memory: folder belum ada", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -386,7 +435,7 @@ test("memory: ada berkas, indeks, dan jumlah aktif/usulan", async () => {
   });
   store.close();
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -404,7 +453,7 @@ test("memory: berkas rusak dihitung sebagai problems", async () => {
     mode: 0o600,
   });
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -418,7 +467,7 @@ test("memory: izin folder longgar memberi peringatan", async () => {
   await mkdir(join(homeDir, "memory"), { recursive: true, mode: 0o755 });
   await chmod(join(homeDir, "memory"), 0o755);
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -430,7 +479,7 @@ test("memory: izin folder longgar memberi peringatan", async () => {
 
 test("memory: dimatikan lewat JEJAK_MEMORY=0 dan tetap exit 0", async () => {
   const logged: string[] = [];
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir, JEJAK_MEMORY: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -439,7 +488,7 @@ test("memory: dimatikan lewat JEJAK_MEMORY=0 dan tetap exit 0", async () => {
   expect(memory.status).toBe("peringatan");
   expect(memory.detail).toContain("dimatikan");
 
-  const code = await runDoctor({
+  const code = await doctor({
     env: { JEJAK_HOME: homeDir, JEJAK_MEMORY: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -450,7 +499,7 @@ test("memory: dimatikan lewat JEJAK_MEMORY=0 dan tetap exit 0", async () => {
 });
 
 test("workspace: folder belum ada", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -469,7 +518,7 @@ test("workspace: ada berkas dan berkas rusak dihitung problems", async () => {
     mode: 0o600,
   });
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -485,7 +534,7 @@ test("workspace: izin folder longgar memberi peringatan", async () => {
   await mkdir(join(homeDir, "workspaces"), { recursive: true, mode: 0o755 });
   await chmod(join(homeDir, "workspaces"), 0o755);
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -497,7 +546,7 @@ test("workspace: izin folder longgar memberi peringatan", async () => {
 
 test("workspace: dimatikan lewat JEJAK_WORKSPACES=0 dan tetap exit 0", async () => {
   const logged: string[] = [];
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir, JEJAK_WORKSPACES: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -506,7 +555,7 @@ test("workspace: dimatikan lewat JEJAK_WORKSPACES=0 dan tetap exit 0", async () 
   expect(workspace.status).toBe("peringatan");
   expect(workspace.detail).toContain("dimatikan");
 
-  const code = await runDoctor({
+  const code = await doctor({
     env: { JEJAK_HOME: homeDir, JEJAK_WORKSPACES: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -522,7 +571,7 @@ test("checkpoint: folder ada berisi sesi", async () => {
     mode: 0o600,
   });
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -535,7 +584,7 @@ test("checkpoint: folder ada berisi sesi", async () => {
 });
 
 test("checkpoint: folder belum ada", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -548,7 +597,7 @@ test("checkpoint: folder belum ada", async () => {
 
 test("checkpoint: dimatikan lewat JEJAK_CHECKPOINTS=0 dan tetap exit 0", async () => {
   const logged: string[] = [];
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir, JEJAK_CHECKPOINTS: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -557,7 +606,7 @@ test("checkpoint: dimatikan lewat JEJAK_CHECKPOINTS=0 dan tetap exit 0", async (
   expect(checkpoint.status).toBe("peringatan");
   expect(checkpoint.detail).toContain("dimatikan");
 
-  const code = await runDoctor({
+  const code = await doctor({
     env: { JEJAK_HOME: homeDir, JEJAK_CHECKPOINTS: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -568,7 +617,7 @@ test("checkpoint: dimatikan lewat JEJAK_CHECKPOINTS=0 dan tetap exit 0", async (
 });
 
 test("server MCP: berkas belum ada", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -594,7 +643,7 @@ test("server MCP: jumlah server, aktif, dan izin 600", async () => {
     { enabled: false },
   );
 
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -615,7 +664,7 @@ test("server MCP: izin longgar dan berkas rusak memberi peringatan", async () =>
   await chmod(file, 0o644);
 
   const loose = find(
-    await collectChecks({
+    await collect({
       env: { JEJAK_HOME: homeDir },
       providersPath: providersFile,
       resolveSdk: () => null,
@@ -627,7 +676,7 @@ test("server MCP: izin longgar dan berkas rusak memberi peringatan", async () =>
 
   await writeFile(file, "{ rusak", { mode: 0o600 });
   const broken = find(
-    await collectChecks({
+    await collect({
       env: { JEJAK_HOME: homeDir },
       providersPath: providersFile,
       resolveSdk: () => null,
@@ -640,7 +689,7 @@ test("server MCP: izin longgar dan berkas rusak memberi peringatan", async () =>
 
 test("server MCP: dimatikan lewat JEJAK_MCP_SERVERS=0 dan tetap exit 0", async () => {
   const logged: string[] = [];
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_HOME: homeDir, JEJAK_MCP_SERVERS: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -649,7 +698,7 @@ test("server MCP: dimatikan lewat JEJAK_MCP_SERVERS=0 dan tetap exit 0", async (
   expect(mcp.status).toBe("peringatan");
   expect(mcp.detail).toContain("dimatikan");
 
-  const code = await runDoctor({
+  const code = await doctor({
     env: { JEJAK_HOME: homeDir, JEJAK_MCP_SERVERS: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -660,7 +709,7 @@ test("server MCP: dimatikan lewat JEJAK_MCP_SERVERS=0 dan tetap exit 0", async (
 });
 
 test("pemasangan: root paket dengan bin ditemukan berstatus ok", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => "/opt/sdk/index.js",
@@ -673,7 +722,7 @@ test("pemasangan: root paket dengan bin ditemukan berstatus ok", async () => {
 });
 
 test("pemasangan: package.json tidak terbaca memberi peringatan", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -685,7 +734,7 @@ test("pemasangan: package.json tidak terbaca memberi peringatan", async () => {
 });
 
 test("sandbox: tersedia berstatus ok", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -697,7 +746,7 @@ test("sandbox: tersedia berstatus ok", async () => {
 });
 
 test("sandbox: tidak tersedia berstatus peringatan", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: {},
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -709,7 +758,7 @@ test("sandbox: tidak tersedia berstatus peringatan", async () => {
 });
 
 test("sandbox: JEJAK_SANDBOX=0 berstatus ok dimatikan", async () => {
-  const checks = await collectChecks({
+  const checks = await collect({
     env: { JEJAK_SANDBOX: "0" },
     providersPath: providersFile,
     resolveSdk: () => null,
@@ -719,4 +768,174 @@ test("sandbox: JEJAK_SANDBOX=0 berstatus ok dimatikan", async () => {
   expect(sandbox.status).toBe("ok");
   expect(sandbox.detail).toContain("dimatikan");
   expect(sandbox.detail).not.toContain("tidak dipanggil");
+});
+
+test("mode binary: pemasangan memakai execPath dan runtime Bun tertanam", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    isCompiled: () => true,
+    execPath: "/x/jejak",
+  });
+
+  const install = find(checks, "Pemasangan");
+  expect(install.status).toBe("ok");
+  expect(install.detail).toContain("/x/jejak");
+  expect(install.detail).toContain(`Jejak ${VERSION}`);
+  expect(install.detail).toContain(`tertanam ${Bun.version}`);
+  expect(install.detail).toContain(homeDir);
+  expect(install.detail).not.toContain("package.json tidak terbaca");
+
+  const runtime = find(checks, "Runtime Bun");
+  expect(runtime.status).toBe("ok");
+  expect(runtime.detail).toBe(`tertanam ${Bun.version}`);
+  expect(labels(checks).includes("Bun >= 1.4")).toBe(false);
+});
+
+test("mode binary: package.json rusak tidak mengubah cek pemasangan", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    isCompiled: () => true,
+    execPath: "/x/jejak",
+    packageRoot: join(root, "tidak-ada"),
+  });
+  const install = find(checks, "Pemasangan");
+  expect(install.status).toBe("ok");
+  expect(install.detail).not.toContain("tidak terbaca");
+});
+
+test("sdk terkelola terpasang berstatus ok dengan versi dan sebelumnya", async () => {
+  const sdkDir = join(root, "sdk-terkelola");
+  await pasangSdk(sdkDir, "1.0.0");
+  await pasangSdk(sdkDir, "1.2.3");
+
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    isCompiled: () => true,
+    sdkRoot: sdkDir,
+  });
+
+  const sdk = find(checks, "Claude Agent SDK");
+  expect(sdk.status).toBe("ok");
+  expect(sdk.detail).toContain("terkelola versi 1.2.3");
+  expect(sdk.detail).toContain(sdkDir);
+  expect(sdk.detail).toContain("(sebelumnya 1.0.0)");
+});
+
+test("sdk terkelola rusak memberi peringatan pasang ulang", async () => {
+  const sdkDir = join(root, "sdk-rusak");
+  await pasangSdk(sdkDir, "1.0.0");
+  await rm(join(sdkDir, "1.0.0"), { recursive: true, force: true });
+
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    isCompiled: () => true,
+    sdkRoot: sdkDir,
+  });
+
+  const sdk = find(checks, "Claude Agent SDK");
+  expect(sdk.status).toBe("peringatan");
+  expect(sdk.detail).toContain("rusak");
+  expect(sdk.detail).toContain("Pengaturan");
+});
+
+test("binary tanpa sdk terkelola memberi peringatan arahkan ke Pengaturan", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    isCompiled: () => true,
+    sdkRoot: join(root, "sdk-kosong"),
+  });
+
+  const sdk = find(checks, "Claude Agent SDK");
+  expect(sdk.status).toBe("peringatan");
+  expect(sdk.detail).toContain("belum terpasang");
+  expect(sdk.detail).toContain("Pasang");
+});
+
+test("mode dev tanpa sdk terkelola memakai resolveSdk lama", async () => {
+  const found = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => "/opt/sdk/index.js",
+    sdkRoot: join(root, "sdk-kosong"),
+  });
+  expect(find(found, "Claude Agent SDK").detail).toBe("/opt/sdk/index.js");
+
+  const missing = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    sdkRoot: join(root, "sdk-kosong"),
+  });
+  const sdk = find(missing, "Claude Agent SDK");
+  expect(sdk.status).toBe("peringatan");
+  expect(sdk.detail).toContain("belum terpasang");
+});
+
+test("claude cli ditemukan dari env berstatus ok dengan label sumber", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir, JEJAK_CLAUDE_PATH: "/x/claude" },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    locate: {
+      which: () => null,
+      exists: async () => true,
+      runVersion: async () => "1.2.3",
+    },
+  });
+
+  const cli = find(checks, "Claude CLI");
+  expect(cli.status).toBe("ok");
+  expect(cli.detail).toContain("/x/claude");
+  expect(cli.detail).toContain("1.2.3");
+  expect(cli.detail).toContain("sumber JEJAK_CLAUDE_PATH");
+});
+
+test("claude cli ditemukan dari PATH berstatus ok dengan label sumber", async () => {
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    locate: {
+      which: () => "/usr/local/bin/claude",
+      exists: async () => true,
+      runVersion: async () => "2.0.0",
+    },
+  });
+
+  const cli = find(checks, "Claude CLI");
+  expect(cli.status).toBe("ok");
+  expect(cli.detail).toContain("/usr/local/bin/claude");
+  expect(cli.detail).toContain("sumber PATH");
+});
+
+test("claude cli tidak ditemukan memberi peringatan dan exit code tetap 0", async () => {
+  const logged: string[] = [];
+  const checks = await collect({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+  });
+  const cli = find(checks, "Claude CLI");
+  expect(cli.status).toBe("peringatan");
+  expect(cli.detail).toContain("tidak ditemukan");
+  expect(cli.detail).toContain("JEJAK_CLAUDE_PATH");
+
+  const code = await doctor({
+    env: { JEJAK_HOME: homeDir },
+    providersPath: providersFile,
+    resolveSdk: () => null,
+    log: (line) => logged.push(line),
+  });
+  expect(code).toBe(0);
+  expect(logged.some((line) => line.includes("PERINGATAN  Claude CLI"))).toBe(true);
 });

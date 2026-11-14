@@ -9,6 +9,14 @@ import { jejakHome, loadRegistry, providersPath } from "../server/provider-store
 import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
 import { sandboxAvailable } from "../server/sandbox/build-options";
 import { scanWorkspaceFiles, workspacesDir } from "../server/workspaces/workspace-files";
+import { locateClaude, type LocateOptions } from "../server/sdk/claude-locator";
+import { detectCompiled } from "../server/sdk/sdk-loader";
+import {
+  getStatus,
+  readActive,
+  resolveActiveSdkEntry,
+  sdkRoot as defaultSdkRoot,
+} from "../server/sdk/sdk-store";
 import { VERSION } from "../shared/version";
 
 export type CheckStatus = "ok" | "peringatan" | "gagal";
@@ -28,6 +36,14 @@ export interface DoctorContext {
   packageRoot?: string;
   /** Cek ketersediaan sandbox; default memakai platform dan PATH nyata. */
   sandbox?: () => { ok: boolean; detail: string };
+  /** Deteksi mode binary terkompilasi; default `detectCompiled`. */
+  isCompiled?: () => boolean;
+  /** Akar penyimpanan SDK terkelola; default `sdkRoot(env)`. */
+  sdkRoot?: string;
+  /** Opsi pencarian CLI `claude`; default bawaan `locateClaude`. */
+  locate?: LocateOptions;
+  /** Path binary yang berjalan; default `process.execPath`. */
+  execPath?: string;
 }
 
 function parseMajorMinor(v: string): [number, number] {
@@ -79,12 +95,29 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
   const resolveSdk = ctx.resolveSdk ?? defaultResolveSdk;
   const checks: Check[] = [];
 
+  let compiled = false;
+  try {
+    compiled = (ctx.isCompiled ?? detectCompiled)();
+  } catch {
+    compiled = false;
+  }
+  const execPath = ctx.execPath ?? process.execPath;
+  const sdkDir = ctx.sdkRoot ?? defaultSdkRoot(env);
+
   const [major, minor] = parseMajorMinor(Bun.version);
-  checks.push({
-    name: "Bun >= 1.4",
-    status: major > 1 || (major === 1 && minor >= 4) ? "ok" : "gagal",
-    detail: `terdeteksi ${Bun.version}`,
-  });
+  if (compiled) {
+    checks.push({
+      name: "Runtime Bun",
+      status: "ok",
+      detail: `tertanam ${Bun.version}`,
+    });
+  } else {
+    checks.push({
+      name: "Bun >= 1.4",
+      status: major > 1 || (major === 1 && minor >= 4) ? "ok" : "gagal",
+      detail: `terdeteksi ${Bun.version}`,
+    });
+  }
 
   const git = Bun.which("git");
   checks.push({
@@ -107,34 +140,44 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
   }
 
   const packageRoot = ctx.packageRoot ?? join(import.meta.dir, "..", "..");
-  try {
-    const raw = await readFile(join(packageRoot, "package.json"), "utf8");
-    const manifest = JSON.parse(raw) as {
-      bin?: Record<string, unknown>;
-      engines?: { bun?: unknown };
-    };
-    const binPath = typeof manifest.bin?.jejak === "string" ? manifest.bin.jejak : null;
-    let binExists = false;
-    if (binPath !== null) {
-      try {
-        binExists = (await stat(resolve(packageRoot, binPath))).isFile();
-      } catch {
-        binExists = false;
+  if (compiled) {
+    // Di binary terkompilasi `import.meta.dir` menunjuk ke `/$bunfs/...`,
+    // jadi package.json tidak ada di sana. Cek isi paket dilewati.
+    checks.push({
+      name: "Pemasangan",
+      status: "ok",
+      detail: `binary ${execPath}; Jejak ${VERSION}; runtime Bun tertanam ${Bun.version}; data ${jejakHome(env)}`,
+    });
+  } else {
+    try {
+      const raw = await readFile(join(packageRoot, "package.json"), "utf8");
+      const manifest = JSON.parse(raw) as {
+        bin?: Record<string, unknown>;
+        engines?: { bun?: unknown };
+      };
+      const binPath = typeof manifest.bin?.jejak === "string" ? manifest.bin.jejak : null;
+      let binExists = false;
+      if (binPath !== null) {
+        try {
+          binExists = (await stat(resolve(packageRoot, binPath))).isFile();
+        } catch {
+          binExists = false;
+        }
       }
+      const bunRange =
+        typeof manifest.engines?.bun === "string" ? manifest.engines.bun : "tidak dicantumkan";
+      checks.push({
+        name: "Pemasangan",
+        status: binExists ? "ok" : "peringatan",
+        detail: `${packageRoot}; bin jejak ${binExists ? binPath : "tidak ditemukan"}; Bun ${Bun.version} (butuh ${bunRange}); SDK ${sdkLocation === null ? "belum terpasang" : "terpasang"}`,
+      });
+    } catch (error) {
+      checks.push({
+        name: "Pemasangan",
+        status: "peringatan",
+        detail: `${packageRoot}; package.json tidak terbaca (${errorMessage(error)})`,
+      });
     }
-    const bunRange =
-      typeof manifest.engines?.bun === "string" ? manifest.engines.bun : "tidak dicantumkan";
-    checks.push({
-      name: "Pemasangan",
-      status: binExists ? "ok" : "peringatan",
-      detail: `${packageRoot}; bin jejak ${binExists ? binPath : "tidak ditemukan"}; Bun ${Bun.version} (butuh ${bunRange}); SDK ${sdkLocation === null ? "belum terpasang" : "terpasang"}`,
-    });
-  } catch (error) {
-    checks.push({
-      name: "Pemasangan",
-      status: "peringatan",
-      detail: `${packageRoot}; package.json tidak terbaca (${errorMessage(error)})`,
-    });
   }
 
   let fileMode: number | null = null;
@@ -422,18 +465,135 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
     });
   }
 
-  checks.push(
-    sdkLocation === null
-      ? {
-          name: "Claude Agent SDK",
-          status: "peringatan",
-          detail:
-            "belum terpasang (opsional; dibutuhkan agent runner, pasang sendiri sesuai ketentuan Anthropic)",
-        }
-      : { name: "Claude Agent SDK", status: "ok", detail: sdkLocation },
-  );
+  checks.push(await collectSdkCheck({ compiled, sdkDir, sdkLocation }));
+
+  checks.push(await collectClaudeCliCheck(ctx, env));
 
   return checks;
+}
+
+/** Label sumber penemuan CLI `claude` untuk ditampilkan ke pengguna. */
+function claudeSourceLabel(source: string): string {
+  switch (source) {
+    case "env":
+      return "JEJAK_CLAUDE_PATH";
+    case "setting":
+      return "pengaturan Jejak";
+    case "path":
+      return "PATH";
+    default:
+      return "lokasi umum";
+  }
+}
+
+/**
+ * Cek SDK Agent: SDK terkelola (kalau ada), lalu paket biasa di mode dev.
+ *
+ * Semua galat pembacaan berubah jadi peringatan, tidak pernah melempar.
+ */
+async function collectSdkCheck(info: {
+  compiled: boolean;
+  sdkDir: string;
+  sdkLocation: string | null;
+}): Promise<Check> {
+  const { compiled, sdkDir, sdkLocation } = info;
+  let active: Awaited<ReturnType<typeof readActive>> = null;
+  try {
+    active = await readActive(sdkDir);
+  } catch (error) {
+    return {
+      name: "Claude Agent SDK",
+      status: "peringatan",
+      detail: `gagal membaca SDK terkelola di ${sdkDir} (${errorMessage(error)})`,
+    };
+  }
+
+  if (active !== null) {
+    let entry: string | null = null;
+    try {
+      entry = await resolveActiveSdkEntry(sdkDir);
+    } catch (error) {
+      return {
+        name: "Claude Agent SDK",
+        status: "peringatan",
+        detail: `gagal memeriksa SDK terkelola di ${sdkDir} (${errorMessage(error)})`,
+      };
+    }
+    if (entry === null) {
+      return {
+        name: "Claude Agent SDK",
+        status: "peringatan",
+        detail: `terpasang tetapi rusak; pasang ulang lewat Pengaturan (${sdkDir})`,
+      };
+    }
+    let version = active.version;
+    let previous = active.previous ?? null;
+    try {
+      const status = await getStatus(sdkDir);
+      version = status.installed?.version ?? version;
+      previous = status.previous ?? previous;
+    } catch {
+      // Metadata tidak terbaca; versi dari active.json sudah cukup.
+    }
+    const suffix = previous === null ? "" : ` (sebelumnya ${previous})`;
+    return {
+      name: "Claude Agent SDK",
+      status: "ok",
+      detail: `terkelola versi ${version} di ${sdkDir}${suffix}`,
+    };
+  }
+
+  if (compiled) {
+    return {
+      name: "Claude Agent SDK",
+      status: "peringatan",
+      detail: "belum terpasang; buka Pengaturan > Claude Agent SDK lalu tekan Pasang",
+    };
+  }
+
+  const location = sdkLocation;
+  return location === null
+    ? {
+        name: "Claude Agent SDK",
+        status: "peringatan",
+        detail:
+          "belum terpasang (opsional; dibutuhkan agent runner, pasang sendiri sesuai ketentuan Anthropic)",
+      }
+    : { name: "Claude Agent SDK", status: "ok", detail: location };
+}
+
+/**
+ * Cek CLI `claude` milik pengguna.
+ *
+ * Tidak ditemukan hanya jadi peringatan; exit code doctor tidak berubah.
+ */
+async function collectClaudeCliCheck(
+  ctx: DoctorContext,
+  env: Record<string, string | undefined>,
+): Promise<Check> {
+  const locate = ctx.locate ?? {};
+  try {
+    const found = await locateClaude({ ...locate, env: locate.env ?? env });
+    if (found === null) {
+      return {
+        name: "Claude CLI",
+        status: "peringatan",
+        detail:
+          "tidak ditemukan; pasang Claude Code atau isi jalur di Pengaturan atau set JEJAK_CLAUDE_PATH",
+      };
+    }
+    return {
+      name: "Claude CLI",
+      status: "ok",
+      detail: `${found.path}; ${found.version}; sumber ${claudeSourceLabel(found.source)}`,
+    };
+  } catch (error) {
+    return {
+      name: "Claude CLI",
+      status: "peringatan",
+      detail: `gagal mencari CLI claude (${errorMessage(error)})`,
+    };
+  }
 }
 
 export async function runDoctor(ctx: DoctorContext = {}): Promise<number> {
