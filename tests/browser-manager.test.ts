@@ -288,7 +288,12 @@ describe("BrowserManager", () => {
     await Bun.sleep(1);
     const mulai = koneksi.calls("Page.startScreencast");
     expect(mulai).toHaveLength(1);
-    expect(mulai[0]?.params).toEqual({ format: "jpeg", quality: 60, maxWidth: 1280 });
+    expect(mulai[0]?.params).toEqual({
+      format: "jpeg",
+      quality: 60,
+      maxWidth: 1280,
+      maxHeight: 800,
+    });
     expect(mulai[0]?.sessionId).toBe("S1");
     unsubscribe();
     await Bun.sleep(1);
