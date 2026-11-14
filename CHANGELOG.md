@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Diperbaiki
+
+- Tes proses versi data tidak lagi gagal pada versi pra-rilis, sehingga gerbang rilis lolos.
+
 ## [0.1.0-beta.1] - 2026-11-14
 
 ### Ditambah
