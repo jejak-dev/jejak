@@ -53,7 +53,7 @@ describe("repoNameFromPath", () => {
 
   test("spasi, huruf besar, dan titik dinormalisasi", () => {
     expect(repoNameFromPath("/x/My Project")).toBe("my-project");
-    expect(repoNameFromPath("/x/Artemis.Service")).toBe("artemis.service");
+    expect(repoNameFromPath("/x/Alpha.Service")).toBe("alpha.service");
     expect(repoNameFromPath("/x/a b  c")).toBe("a-b--c");
   });
 

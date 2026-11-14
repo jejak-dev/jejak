@@ -9,7 +9,7 @@ describe("shortenPath", () => {
   });
 
   test("path panjang dipotong dengan … dan nama folder terakhir tetap", () => {
-    const path = "/Users/boy/Developer/kantor/artemis/service-backend";
+    const path = "/Users/boy/Developer/kantor/alpha/service-backend";
     const short = shortenPath(path, 24);
 
     expect(short.length).toBeLessThanOrEqual(24);

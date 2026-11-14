@@ -82,7 +82,7 @@ describe("shortPath", () => {
   });
 
   test("memotong dari depan dan menyisakan segmen terakhir", () => {
-    const path = "/Users/boykurniawan/Developer/proyek-yang-cukup-panjang/src";
+    const path = "/Users/budi/Developer/proyek-yang-cukup-panjang/src";
     const result = shortPath(path, 20);
     expect(result.startsWith("…/")).toBe(true);
     expect(result.endsWith("/src")).toBe(true);
@@ -179,11 +179,11 @@ describe("groupSessions", () => {
   test("mengelompokkan per folder, terbaru di atas", () => {
     const groups = groupSessions([
       make("a", "/x/jejak", "2026-11-08T10:00:00.000Z"),
-      make("b", "/x/artemis", "2026-11-08T12:00:00.000Z"),
+      make("b", "/x/alpha", "2026-11-08T12:00:00.000Z"),
       make("c", "/x/jejak", "2026-11-08T11:00:00.000Z"),
     ]);
 
-    expect(groups.map((group) => group.label)).toEqual(["artemis", "jejak"]);
+    expect(groups.map((group) => group.label)).toEqual(["alpha", "jejak"]);
     expect(groups[1]?.items.map((item) => item.id)).toEqual(["c", "a"]);
   });
 
