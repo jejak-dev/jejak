@@ -18,6 +18,7 @@ import {
 } from "../lib/registry-edit";
 import { AppUpdateSettings } from "./AppUpdateSettings";
 import { BudgetSettings } from "./BudgetSettings";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { ProfileForm } from "./ProfileForm";
 import { SandboxSettings } from "./SandboxSettings";
 import { SdkSettings } from "./SdkSettings";
@@ -42,6 +43,11 @@ function pickSelection(draft: RegistryDraft, current: string | undefined): strin
   return draft.activeProfileId ?? draft.profiles[0]?.id;
 }
 
+/** Nama profil untuk ditampilkan; profil tanpa nama memakai ID-nya. */
+function providerName(profile: ProfileDraft): string {
+  return profile.name.trim() === "" ? profile.id : profile.name;
+}
+
 export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsProps) {
   const [view, setView] = useState<RegistryView | undefined>(undefined);
   const [original, setOriginal] = useState<RegistryDraft | undefined>(undefined);
@@ -58,6 +64,8 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
   const [testing, setTesting] = useState(false);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsNote, setModelsNote] = useState<string | undefined>(undefined);
+  const [pendingRemove, setPendingRemove] = useState<ProfileDraft | undefined>(undefined);
+  const [removeNote, setRemoveNote] = useState(false);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -110,6 +118,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
       const payload = await api.saveProviders(toPayload(draft));
       // Draf dimuat ulang dari respons; key literal tidak pernah ditampilkan lagi.
       applySavedView(payload);
+      setRemoveNote(false);
       await onSaved();
       return true;
     } catch (error) {
@@ -182,6 +191,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
     setActiveError(undefined);
     setTestError(undefined);
     setTestResult(undefined);
+    setRemoveNote(false);
     void (async () => {
       try {
         const payload = await api.setActiveProvider(profile.id);
@@ -206,10 +216,17 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
 
   const onRemove = (profile: ProfileDraft): void => {
     if (draft === undefined) return;
-    if (!window.confirm(`Hapus profil ${profile.name}?`)) return;
-    const next = removeProfile(draft, profile.id);
+    // Penghapusan diminta lewat modal; baru diterapkan setelah konfirmasi.
+    setPendingRemove(profile);
+  };
+
+  const onConfirmRemove = (): void => {
+    if (draft === undefined || pendingRemove === undefined) return;
+    const next = removeProfile(draft, pendingRemove.id);
+    setPendingRemove(undefined);
     setDraft(next);
     setSelectedId(pickSelection(next, undefined));
+    setRemoveNote(true);
     closeTransient();
   };
 
@@ -223,6 +240,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
     setDraft(next);
     setSelectedId(profile.id);
     setModelsNote(undefined);
+    setRemoveNote(false);
     closeTransient();
   };
 
@@ -319,6 +337,12 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
           </div>
 
           <div class="jk-profile-form-pane">
+            {removeNote && (
+              <p class="jk-note" role="status">
+                Provider dihapus dari draf. Tekan Simpan perubahan untuk menerapkannya.
+              </p>
+            )}
+
             {saveError !== undefined && (
               <p class="jk-error-line" role="alert">
                 {saveError}
@@ -345,6 +369,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
                 testResult={testResult}
                 testError={testError}
                 onChange={(patch) => {
+                  setRemoveNote(false);
                   if (patch.id === undefined) {
                     setDraft((current) => updateProfile(current!, selected.id, patch));
                     return;
@@ -381,6 +406,20 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
       <SandboxSettings api={api} />
       <AppUpdateSettings sessions={sessions} />
       <SdkSettings api={api} />
+
+      <ConfirmDialog
+        open={pendingRemove !== undefined}
+        title="Hapus provider?"
+        message={
+          pendingRemove === undefined
+            ? undefined
+            : `Provider ${providerName(pendingRemove)} akan dihapus dari daftar. Perubahan baru berlaku setelah kamu menekan Simpan perubahan.`
+        }
+        confirmLabel="Hapus"
+        tone="danger"
+        onConfirm={onConfirmRemove}
+        onCancel={() => setPendingRemove(undefined)}
+      />
     </section>
   );
 }

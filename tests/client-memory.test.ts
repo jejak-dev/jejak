@@ -27,6 +27,8 @@ import {
   validateDraft,
 } from "../src/client/lib/memory";
 import { MemoryRowView } from "../src/client/components/MemoryRow";
+import type { ConfirmDialogBindings } from "../src/client/components/ConfirmDialog";
+import type { MemoryRowProps } from "../src/client/components/MemoryRow";
 
 /* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
 
@@ -84,8 +86,18 @@ function fakeJsonFetch(body: unknown): typeof fetch {
     })) as unknown as typeof fetch;
 }
 
+/** Binding modal konfirmasi tanpa DOM; dipakai uji render. */
+const DIALOG: ConfirmDialogBindings = {
+  cardRef: { current: null },
+  confirmRef: { current: null },
+  cancelRef: { current: null },
+  onKeyDown: NOOP,
+  onOverlayPointerDown: NOOP,
+  onOverlayWheel: NOOP,
+};
+
 /** Baris memory dengan props default; dipakai uji render. */
-function renderRow(item: MemoryItem): ComponentChild {
+function renderRow(item: MemoryItem, overrides: Partial<MemoryRowProps> = {}): ComponentChild {
   return MemoryRowView({
     item,
     projects: [],
@@ -94,7 +106,7 @@ function renderRow(item: MemoryItem): ComponentChild {
     confirmingReject: false,
     confirmingDelete: false,
     busy: false,
-    cancelRef: { current: null },
+    dialog: DIALOG,
     onToggleOpen: NOOP,
     onSubmitEdit: NOOP,
     onCancelEdit: NOOP,
@@ -106,6 +118,7 @@ function renderRow(item: MemoryItem): ComponentChild {
     onArchive: NOOP,
     onAccept: NOOP,
     onStartEdit: NOOP,
+    ...overrides,
   }) as unknown as ComponentChild;
 }
 
@@ -513,6 +526,47 @@ describe("tampilan revisi di baris memory", () => {
     const button = buttonByLabel(node, "Terapkan revisi");
     expect(button).toBeDefined();
     expect(propsOf(button).disabled).toBe(true);
+  });
+});
+
+describe("konfirmasi memory memakai modal", () => {
+  function modalOf(node: ComponentChild): VNode | undefined {
+    return findNodes(node, (vnode) => propsOf(vnode)["role"] === "alertdialog")[0];
+  }
+
+  function buttonIn(modal: VNode | undefined, label: string): VNode | undefined {
+    if (modal === undefined) return undefined;
+    return findNodes(modal, (vnode) => vnode.type === "button").find(
+      (vnode) => textOf(propsOf(vnode).children as ComponentChild) === label,
+    );
+  }
+
+  test("tolak usulan membuka modal dengan tombol Tolak", () => {
+    const node = renderRow(make({ status: "proposed" }), { confirmingReject: true });
+    expect(byClass(node, "jk-panel-confirm").length).toBe(0);
+
+    const modal = modalOf(node);
+    expect(modal).toBeDefined();
+    expect(textOf(modal as ComponentChild)).toContain("Tolak usulan?");
+    expect(textOf(modal as ComponentChild)).toContain("Usulan hilang dari daftar usulan.");
+    expect(buttonIn(modal, "Tolak")).toBeDefined();
+    expect(buttonIn(modal, "Batal")).toBeDefined();
+  });
+
+  test("hapus memory membuka modal dengan tombol Hapus", () => {
+    const node = renderRow(make({ status: "active" }), { confirmingDelete: true });
+    expect(byClass(node, "jk-panel-confirm").length).toBe(0);
+
+    const modal = modalOf(node);
+    expect(modal).toBeDefined();
+    expect(textOf(modal as ComponentChild)).toContain("Hapus memory?");
+    expect(textOf(modal as ComponentChild)).toContain("Hapus permanen? Tidak bisa diurungkan.");
+    expect(buttonIn(modal, "Hapus")).toBeDefined();
+  });
+
+  test("tanpa permintaan konfirmasi tidak ada modal", () => {
+    const node = renderRow(make({ status: "active" }));
+    expect(modalOf(node)).toBeUndefined();
   });
 });
 

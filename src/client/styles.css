@@ -6957,3 +6957,51 @@ h2.jk-md-heading {
     min-height: 44px;
   }
 }
+
+/* Modal konfirmasi */
+
+.jk-confirm-overlay {
+  align-items: center;
+  padding: 16px;
+}
+
+.jk-confirm-card {
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  outline: 0;
+}
+
+.jk-confirm-title {
+  margin: 0 0 8px;
+  color: var(--t1);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.jk-confirm-message {
+  color: var(--t2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.jk-confirm-message p {
+  margin: 0;
+}
+
+.jk-confirm-error {
+  margin: 10px 0 0;
+  color: var(--bad);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.jk-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
