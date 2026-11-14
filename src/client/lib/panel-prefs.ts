@@ -7,7 +7,8 @@ export type PanelTab =
   | "rahasia"
   | "wiki"
   | "commands"
-  | "terminal";
+  | "terminal"
+  | "browser";
 
 export interface PanelPrefs {
   open: boolean;
@@ -27,6 +28,7 @@ export const PANEL_TAB_IDS: readonly PanelTab[] = [
   "wiki",
   "commands",
   "terminal",
+  "browser",
 ];
 
 function isTab(value: unknown): value is PanelTab {

@@ -57,6 +57,8 @@ import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
 import { terminalRoutes } from "./routes/terminal";
 import { TerminalManager } from "./terminal/terminal-manager";
+import { browserRoutes } from "./routes/browser";
+import { BrowserManager } from "./browser/browser-manager";
 import { runnerRoutes } from "./routes/runner";
 import { RunnerService } from "./runner/runner-service";
 import { FileRunnerStore, runnerPath as runnerStorePath } from "./runner/runner-store";
@@ -177,6 +179,8 @@ export interface CreateAppOptions {
   gitAdapterDeps?: AdapterDeps;
   /** Terminal PTY (akses shell penuh, tanpa sandbox); tanpa manajer rute 503. */
   terminal?: TerminalManager;
+  /** Browser headless (satu Chromium per proses); tanpa manajer rute 503. */
+  browser?: BrowserManager;
   /** Layanan peluncur perintah; tanpa opsi ini dibuat dari store bawaan. */
   runnerService?: RunnerService;
   /** Lokasi berkas `runner.json`; default `<jejakHome(env)>/runner.json`. */
@@ -487,6 +491,7 @@ export function createApp(options: CreateAppOptions = {}) {
     )
     .use(memoryRoutes({ service: options.memory, audit: options.audit }))
     .use(terminalRoutes({ manager: options.terminal, audit: options.audit }))
+    .use(browserRoutes({ manager: options.browser, audit: options.audit }))
     .use(runnerRoutes({ runner: runnerService }))
     .use(questionRoutes({ service: questionService, audit: options.audit }))
     .use(
@@ -595,6 +600,9 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   // Terminal memakai shell POSIX di macOS/Linux dan Command Prompt di Windows.
   const terminal = terminalDiminta ? new TerminalManager() : undefined;
   terminal?.start();
+  // Browser mati secara default; dinyalakan dengan JEJAK_BROWSER=1.
+  const browserDiminta = process.env.JEJAK_BROWSER?.trim() === "1";
+  const browser = browserDiminta ? new BrowserManager() : undefined;
   const gitProviders = defaultGitProviderStore(process.env);
   const indexer =
     gitProviders === undefined ? undefined : new RepoIndexer({ root: indexRoot(process.env) });
@@ -655,6 +663,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     ...(questions === undefined ? {} : { questions }),
     ...(gitProviders === undefined || indexer === undefined ? {} : { gitProviders, indexer }),
     ...(terminal === undefined ? {} : { terminal }),
+    ...(browser === undefined ? {} : { browser }),
   });
   holder.app = app;
   // Supaya konteks permintaan punya `server` (alamat socket untuk throttle).
@@ -669,6 +678,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
   if (terminal !== undefined) closers.push(() => terminal.closeAll());
+  if (browser !== undefined) closers.push(() => void browser.close());
   let sudahTutup = false;
   const close = (): void => {
     if (sudahTutup) return;

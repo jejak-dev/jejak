@@ -40,6 +40,7 @@ export const PANEL_RAIL_GROUPS: readonly PanelRailGroup[] = [
       { id: "todos", label: "Langkah", icon: "checklist" },
       { id: "commands", label: "Perintah", icon: "play" },
       { id: "terminal", label: "Terminal", icon: "terminal" },
+      { id: "browser", label: "Browser", icon: "globe" },
     ],
   },
   {

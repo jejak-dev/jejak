@@ -17,7 +17,7 @@ describe("rel ikon panel", () => {
     ]);
     expect(PANEL_RAIL_GROUPS.map((group) => group.tabs.map((tab) => tab.id))).toEqual([
       ["changes", "git", "files", "checkpoints"],
-      ["todos", "commands", "terminal"],
+      ["todos", "commands", "terminal", "browser"],
       ["wiki", "rahasia"],
     ]);
   });
@@ -37,6 +37,7 @@ describe("rel ikon panel", () => {
       "todos",
       "commands",
       "terminal",
+      "browser",
       "wiki",
       "rahasia",
     ]);
@@ -52,6 +53,7 @@ describe("rel ikon panel", () => {
     expect(panelTabLabel("wiki")).toBe("Wiki");
     expect(panelTabLabel("commands")).toBe("Perintah");
     expect(panelTabLabel("terminal")).toBe("Terminal");
+    expect(panelTabLabel("browser")).toBe("Browser");
   });
 
   test("setiap tab punya ikon dan label tidak kosong", () => {

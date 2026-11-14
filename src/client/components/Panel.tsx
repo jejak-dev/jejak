@@ -19,6 +19,7 @@ import {
 } from "../lib/workspace";
 import { useSessionRepos } from "../hooks";
 import { ChangesTab } from "./ChangesTab";
+import { BrowserTab } from "./BrowserTab";
 import { CheckpointsTab } from "./CheckpointsTab";
 import { FilesTab } from "./FilesTab";
 import { GitTab } from "./GitTab";
@@ -51,7 +52,7 @@ export interface PanelProps {
 }
 
 const PANEL_LABEL =
-  "Perubahan, langkah, berkas, git, checkpoint, rahasia, wiki, perintah, dan terminal";
+  "Perubahan, langkah, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, dan browser";
 
 /** Kunci navigasi keyboard pada rel ikon. */
 const RAIL_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End"]);
@@ -289,6 +290,8 @@ export function Panel({
           />
         ) : tab === "terminal" ? (
           <TerminalTab api={api} cwd={session?.cwd ?? ""} attachId={terminalToAttach} />
+        ) : tab === "browser" ? (
+          <BrowserTab />
         ) : (
           <FilesTab
             api={api}
