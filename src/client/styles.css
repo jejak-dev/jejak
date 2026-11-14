@@ -1253,12 +1253,6 @@ code {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin-bottom: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
   font-size: 12.5px;
 }
 
@@ -4792,14 +4786,6 @@ h2.jk-md-heading {
   overflow-wrap: anywhere;
 }
 
-.jk-sdk-consent {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
-
 .jk-sdk-claude {
   display: grid;
   gap: 8px;
@@ -6366,27 +6352,6 @@ h2.jk-md-heading {
   color: var(--t1);
 }
 
-.jk-rewind-confirm {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-.jk-rewind-confirm p {
-  margin: 0 0 8px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--t2);
-}
-
-.jk-rewind-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 /* Autentikasi opsional: layar login dan banner tanpa TLS. */
 
 .jk-app-login {
@@ -6733,32 +6698,6 @@ h2.jk-md-heading {
   color: var(--t1);
 }
 
-.jk-runner-confirm {
-  flex: 1 1 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-  margin: 6px 0;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-}
-
-.jk-runner-confirm-text {
-  margin: 0;
-  max-height: 180px;
-  overflow: auto;
-  color: var(--t1);
-  font-family: var(--mono);
-  font-size: 12px;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.jk-runner-confirm-actions,
 .jk-runner-form-actions {
   display: flex;
   flex-wrap: wrap;
@@ -6797,7 +6736,6 @@ h2.jk-md-heading {
     min-height: 40px;
   }
 
-  .jk-runner-confirm-actions .jk-button,
   .jk-runner-form-actions .jk-button {
     min-height: 40px;
   }
@@ -6966,6 +6904,18 @@ h2.jk-md-heading {
 
 .jk-confirm-message p {
   margin: 0;
+}
+
+.jk-confirm-pre {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  color: var(--t1);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .jk-confirm-error {

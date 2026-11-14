@@ -425,7 +425,7 @@ describe("RunnerView", () => {
     expect(textOf(node)).toContain("Deploy");
   });
 
-  test("perintah belum terkonfirmasi menampilkan konfirmasi berisi isi script", () => {
+  test("perintah belum terkonfirmasi menampilkan modal berisi isi script", () => {
     const node = RunnerView({
       state: stateOf({
         commands: [pkg({ id: "p_1", label: "test", command: "bun run test", detail: "bun test" })],
@@ -434,12 +434,14 @@ describe("RunnerView", () => {
       actions: NOOP_ACTIONS,
     }) as unknown as ComponentChild;
 
-    const confirm = byClass(node, "jk-runner-confirm");
+    const confirm = byClass(node, "jk-confirm-card");
     expect(confirm).toHaveLength(1);
     const text = textOf(confirm[0]);
+    expect(text).toContain("Jalankan perintah \"test\"?");
     expect(text).toContain("bun run test");
     expect(text).toContain("bun test");
     expect(text).toContain("Isi script:");
+    expect(byClass(node, "jk-confirm-pre")).toHaveLength(1);
     expect(buttonTexts(confirm[0])).toEqual(["Jalankan", "Batal"]);
   });
 
@@ -451,7 +453,7 @@ describe("RunnerView", () => {
       actions: NOOP_ACTIONS,
     }) as unknown as ComponentChild;
 
-    expect(byClass(node, "jk-runner-confirm")).toHaveLength(0);
+    expect(byClass(node, "jk-confirm-card")).toHaveLength(0);
     expect(buttonTexts(node)).not.toContain("Jalankan");
   });
 
@@ -479,7 +481,7 @@ describe("RunnerView", () => {
     expect(labels).not.toContain("Ubah test");
   });
 
-  test("hapus menampilkan konfirmasi inline", () => {
+  test("hapus menampilkan modal konfirmasi hapus", () => {
     const node = RunnerView({
       state: stateOf({
         commands: [custom({ id: "c_1", label: "Build" })],
@@ -488,9 +490,13 @@ describe("RunnerView", () => {
       actions: NOOP_ACTIONS,
     }) as unknown as ComponentChild;
 
-    const text = textOf(byClass(node, "jk-runner-confirm")[0]);
+    const confirm = byClass(node, "jk-confirm-card");
+    expect(confirm).toHaveLength(1);
+    const text = textOf(confirm[0]);
     expect(text).toContain("Hapus perintah");
     expect(text).toContain("Build");
+    expect(buttonTexts(confirm[0])).toEqual(["Hapus", "Batal"]);
+    expect(byClass(node, "jk-confirm-card-danger")).toHaveLength(1);
   });
 
   test("batas 40 perintah kustom menyembunyikan tombol tambah", () => {

@@ -21,6 +21,7 @@ import {
   sdkStatusFacts,
   sdkStatusLine,
 } from "../lib/sdk";
+import { ConfirmDialog } from "./ConfirmDialog";
 
 export interface SdkSettingsProps {
   api: ApiClient;
@@ -523,117 +524,6 @@ export function SdkSettings({ api }: SdkSettingsProps) {
             </div>
           </div>
 
-          {cliApproving && (
-            <div class="jk-sdk-consent">
-              <p class="jk-label">Persetujuan pemasangan CLI bawaan</p>
-              {cliCandidate === undefined ? (
-                <p class="jk-note">Memeriksa paket pendamping platform…</p>
-              ) : (
-                <>
-                  <ul class="jk-sdk-facts">
-                    {cliFacts.map((fact) => (
-                      <li key={fact}>{fact}</li>
-                    ))}
-                  </ul>
-                  <p class="jk-help">{CLI_CONSENT_TEXT}</p>
-                  <p class="jk-help">
-                    Ketentuan Anthropic:{" "}
-                    <a href={CLI_TERMS_URL} target="_blank" rel="noopener noreferrer">
-                      code.claude.com/docs/en/legal-and-compliance
-                    </a>
-                  </p>
-                  <div class="jk-form-actions">
-                    <button
-                      type="button"
-                      class="jk-button jk-button-primary"
-                      disabled={cliInstalling}
-                      onClick={onApproveCli}
-                    >
-                      Pasang CLI bawaan
-                    </button>
-                    <button
-                      type="button"
-                      class="jk-button jk-button-secondary"
-                      disabled={cliInstalling}
-                      onClick={onCancelCli}
-                    >
-                      Batal
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {approving && (
-            <div class="jk-sdk-consent">
-              <p class="jk-label">Persetujuan pemasangan</p>
-              {candidate === undefined ? (
-                <p class="jk-note">Memeriksa versi yang tersedia di registry…</p>
-              ) : (
-                <>
-                  <ul class="jk-sdk-facts">
-                    {facts.map((fact) => (
-                      <li key={fact}>{fact}</li>
-                    ))}
-                  </ul>
-                  <p class="jk-help">{SDK_CONSENT_TEXT}</p>
-                  <p class="jk-help">
-                    Ketentuan Anthropic:{" "}
-                    <a href={SDK_TERMS_URL} target="_blank" rel="noopener noreferrer">
-                      anthropic.com/legal/commercial-terms
-                    </a>
-                  </p>
-                  <div class="jk-form-actions">
-                    <button
-                      type="button"
-                      class="jk-button jk-button-primary"
-                      disabled={installing}
-                      onClick={onApprove}
-                    >
-                      Pasang versi {candidate.candidate}
-                    </button>
-                    <button
-                      type="button"
-                      class="jk-button jk-button-secondary"
-                      disabled={installing}
-                      onClick={onCancelInstall}
-                    >
-                      Batal
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {confirmRollback && status.previous !== null && (
-            <div class="jk-sdk-consent">
-              <p class="jk-help">
-                Kembalikan SDK ke versi {status.previous}? Sesi baru memakai versi itu; sesi yang
-                sedang berjalan tetap memakai versi sekarang.
-              </p>
-              <div class="jk-form-actions">
-                <button
-                  type="button"
-                  class="jk-button jk-button-primary"
-                  disabled={rollingBack}
-                  onClick={onRollback}
-                >
-                  {rollingBack ? "Mengembalikan…" : "Ya, kembalikan"}
-                </button>
-                <button
-                  type="button"
-                  class="jk-button jk-button-secondary"
-                  disabled={rollingBack}
-                  onClick={onCancelRollback}
-                >
-                  Batal
-                </button>
-              </div>
-            </div>
-          )}
-
           {message !== undefined && (
             <p class="jk-note" role="status" aria-live="polite">
               {message}
@@ -647,6 +537,87 @@ export function SdkSettings({ api }: SdkSettingsProps) {
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={approving}
+        title="Pasang SDK Anthropic?"
+        message={
+          candidate === undefined ? (
+            "Memeriksa versi yang tersedia di registry…"
+          ) : (
+            <>
+              <ul class="jk-sdk-facts">
+                {facts.map((fact) => (
+                  <li key={fact}>{fact}</li>
+                ))}
+              </ul>
+              <p class="jk-help">{SDK_CONSENT_TEXT}</p>
+              <p class="jk-help">
+                Ketentuan Anthropic:{" "}
+                <a href={SDK_TERMS_URL} target="_blank" rel="noopener noreferrer">
+                  anthropic.com/legal/commercial-terms
+                </a>
+              </p>
+            </>
+          )
+        }
+        confirmLabel={candidate === undefined ? "Pasang" : `Pasang versi ${candidate.candidate}`}
+        cancelLabel="Batal"
+        busyLabel="Mengunduh…"
+        busy={installing}
+        confirmDisabled={candidate === undefined}
+        onConfirm={onApprove}
+        onCancel={onCancelInstall}
+      />
+
+      <ConfirmDialog
+        open={cliApproving}
+        title="Pasang CLI bawaan SDK?"
+        message={
+          cliCandidate === undefined ? (
+            "Memeriksa paket pendamping platform…"
+          ) : (
+            <>
+              <ul class="jk-sdk-facts">
+                {cliFacts.map((fact) => (
+                  <li key={fact}>{fact}</li>
+                ))}
+              </ul>
+              <p class="jk-help">{CLI_CONSENT_TEXT}</p>
+              <p class="jk-help">
+                Ketentuan Anthropic:{" "}
+                <a href={CLI_TERMS_URL} target="_blank" rel="noopener noreferrer">
+                  code.claude.com/docs/en/legal-and-compliance
+                </a>
+              </p>
+            </>
+          )
+        }
+        confirmLabel="Pasang CLI bawaan"
+        cancelLabel="Batal"
+        busyLabel="Mengunduh…"
+        busy={cliInstalling}
+        confirmDisabled={cliCandidate === undefined}
+        onConfirm={onApproveCli}
+        onCancel={onCancelCli}
+      />
+
+      <ConfirmDialog
+        open={confirmRollback && status !== undefined && status.previous !== null}
+        title="Kembalikan versi sebelumnya?"
+        message={
+          status === undefined
+            ? undefined
+            : `Kembalikan SDK ke versi ${status.previous}? Sesi baru memakai versi itu; sesi yang sedang berjalan tetap memakai versi sekarang.`
+        }
+        confirmLabel="Ya, kembalikan"
+        cancelLabel="Batal"
+        busyLabel="Mengembalikan…"
+        tone="danger"
+        busy={rollingBack}
+        onConfirm={onRollback}
+        onCancel={onCancelRollback}
+      />
     </section>
   );
 }

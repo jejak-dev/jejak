@@ -4,6 +4,7 @@ import { ConfirmDialogView } from "../src/client/components/ConfirmDialog";
 import {
   canDismiss,
   confirmButtonClass,
+  focusableSelector,
   initialFocusTarget,
   nextFocusIndex,
   type ConfirmTone,
@@ -132,6 +133,16 @@ describe("confirmButtonClass", () => {
   });
 });
 
+describe("focusableSelector", () => {
+  test("menyertakan tombol dan kolom formulir", () => {
+    const selector = focusableSelector();
+    expect(selector).toContain("button:not([disabled])");
+    expect(selector).toContain("input:not([disabled])");
+    expect(selector).toContain("textarea:not([disabled])");
+    expect(selector).toContain("a[href]");
+  });
+});
+
 /* ---------- Render modal ---------- */
 
 describe("ConfirmDialogView", () => {
@@ -221,5 +232,11 @@ describe("ConfirmDialogView", () => {
     const node = render();
     expect(propsOf(buttonByText(node, "Hapus"))["aria-label"]).toBeUndefined();
     expect(propsOf(buttonByText(node, "Batal"))["aria-label"]).toBeUndefined();
+  });
+
+  test("tombol konfirmasi bisa dinonaktifkan tanpa membekukan tombol batal", () => {
+    const node = render({ confirmDisabled: true });
+    expect(propsOf(buttonByText(node, "Hapus"))["disabled"]).toBe(true);
+    expect(propsOf(buttonByText(node, "Batal"))["disabled"]).toBe(false);
   });
 });

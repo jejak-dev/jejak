@@ -7,6 +7,11 @@ import {
   runErrorMessage,
   validateCommandForm,
 } from "../lib/runner";
+import {
+  ConfirmDialogView,
+  useConfirmDialogBindings,
+  type ConfirmDialogBindings,
+} from "./ConfirmDialog";
 import { Icon } from "./Icon";
 
 export interface RunnerTabProps {
@@ -67,6 +72,8 @@ export interface RunnerActions {
 export interface RunnerViewProps {
   state: RunnerState;
   actions: RunnerActions;
+  /** Jebakan fokus dan Escape milik modal konfirmasi. */
+  dialog?: ConfirmDialogBindings;
 }
 
 const EMPTY_MESSAGE =
@@ -95,13 +102,16 @@ function tooltipOf(item: RunnerCommand): string {
 
 /**
  * Tampilan tab Commands tanpa state internal; dipakai juga oleh tes (VNode
- * tanpa DOM). Perintah yang belum dikonfirmasi menampilkan konfirmasi inline
- * berisi isi persis perintah yang akan berjalan.
+ * tanpa DOM). Konfirmasi jalankan dan hapus memakai modal; isinya persis
+ * perintah yang akan berjalan.
  */
-export function RunnerView({ state, actions }: RunnerViewProps) {
+export function RunnerView({ state, actions, dialog }: RunnerViewProps) {
   const groups = groupCommands(state.commands);
   const customCount = state.commands.filter((item) => item.source === "custom").length;
   const canAdd = customCount < RUNNER_MAX_CUSTOM;
+  const bindings: Partial<ConfirmDialogBindings> = dialog ?? {};
+  const runItem = state.commands.find((item) => item.id === state.confirmId);
+  const deleteItem = state.commands.find((item) => item.id === state.deletingId);
 
   return (
     <div class="jk-panel-body jk-runner">
@@ -173,58 +183,56 @@ export function RunnerView({ state, actions }: RunnerViewProps) {
                   </>
                 )}
 
-                {state.confirmId === item.id && (
-                  <div class="jk-runner-confirm" role="group" aria-label={`Konfirmasi ${item.label}`}>
-                    <pre class="jk-runner-confirm-text">{confirmText(item)}</pre>
-                    <div class="jk-runner-confirm-actions">
-                      <button
-                        type="button"
-                        class="jk-button jk-button-primary"
-                        onClick={() => actions.onConfirmRun(item)}
-                      >
-                        Jalankan
-                      </button>
-                      <button
-                        type="button"
-                        class="jk-button jk-button-secondary"
-                        onClick={actions.onCancelConfirm}
-                      >
-                        Batal
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {state.deletingId === item.id && (
-                  <div
-                    class="jk-runner-confirm"
-                    role="group"
-                    aria-label={`Konfirmasi hapus ${item.label}`}
-                  >
-                    <p class="jk-note">Hapus perintah "{item.label}"?</p>
-                    <div class="jk-runner-confirm-actions">
-                      <button
-                        type="button"
-                        class="jk-button jk-button-danger"
-                        onClick={() => actions.onConfirmDelete(item)}
-                      >
-                        Hapus
-                      </button>
-                      <button
-                        type="button"
-                        class="jk-button jk-button-secondary"
-                        onClick={actions.onCancelDelete}
-                      >
-                        Batal
-                      </button>
-                    </div>
-                  </div>
-                )}
               </li>
             ))}
           </ul>
         </section>
       ))}
+
+      <ConfirmDialogView
+        open={runItem !== undefined}
+        title={runItem === undefined ? "Jalankan perintah?" : `Jalankan perintah "${runItem.label}"?`}
+        message={
+          runItem === undefined ? undefined : (
+            <pre class="jk-confirm-pre">{confirmText(runItem)}</pre>
+          )
+        }
+        confirmLabel="Jalankan"
+        cancelLabel="Batal"
+        confirmAriaLabel={runItem === undefined ? undefined : `Konfirmasi ${runItem.label}`}
+        cancelAriaLabel={
+          runItem === undefined ? undefined : `Batal konfirmasi ${runItem.label}`
+        }
+        tone="default"
+        error={state.note}
+        onConfirm={() => {
+          if (runItem !== undefined) actions.onConfirmRun(runItem);
+        }}
+        onCancel={actions.onCancelConfirm}
+        idPrefix="jk-confirm-jalankan"
+        {...bindings}
+      />
+
+      <ConfirmDialogView
+        open={deleteItem !== undefined}
+        title={deleteItem === undefined ? "Hapus perintah?" : `Hapus perintah "${deleteItem.label}"?`}
+        confirmLabel="Hapus"
+        cancelLabel="Batal"
+        confirmAriaLabel={
+          deleteItem === undefined ? undefined : `Konfirmasi hapus ${deleteItem.label}`
+        }
+        cancelAriaLabel={
+          deleteItem === undefined ? undefined : `Batal hapus ${deleteItem.label}`
+        }
+        tone="danger"
+        error={state.note}
+        onConfirm={() => {
+          if (deleteItem !== undefined) actions.onConfirmDelete(deleteItem);
+        }}
+        onCancel={actions.onCancelDelete}
+        idPrefix="jk-confirm-hapus"
+        {...bindings}
+      />
 
       {state.form.open && (
         <form
@@ -312,7 +320,7 @@ export function RunnerView({ state, actions }: RunnerViewProps) {
   );
 }
 
-/** Tab Commands: daftar perintah proyek, konfirmasi inline, dan form kecil. */
+/** Tab Commands: daftar perintah proyek, konfirmasi modal, dan form kecil. */
 export function RunnerTab({ api, cwd, onOpenTerminal }: RunnerTabProps) {
   const [state, setState] = useState<RunnerState>({
     commands: [],
@@ -429,7 +437,7 @@ export function RunnerTab({ api, cwd, onOpenTerminal }: RunnerTabProps) {
     onRun: (item) => {
       // Perintah yang belum pernah dikonfirmasi meminta persetujuan dulu.
       if (item.confirmed) void runCommand(item, undefined);
-      else setState((current) => ({ ...current, confirmId: item.id }));
+      else setState((current) => ({ ...current, note: undefined, confirmId: item.id }));
     },
     onConfirmRun: (item) => void runCommand(item, true),
     onCancelConfirm: () => setState((current) => ({ ...current, confirmId: undefined })),
@@ -451,6 +459,7 @@ export function RunnerTab({ api, cwd, onOpenTerminal }: RunnerTabProps) {
     onDelete: (item) =>
       setState((current) => ({
         ...current,
+        note: undefined,
         confirmId: undefined,
         deletingId: item.id,
       })),
@@ -476,5 +485,16 @@ export function RunnerTab({ api, cwd, onOpenTerminal }: RunnerTabProps) {
     onCancelForm: () => setState((current) => ({ ...current, form: { ...EMPTY_FORM } })),
   };
 
-  return <RunnerView state={state} actions={actions} />;
+  // Fokus awal, jebakan fokus, dan Escape milik modal konfirmasi.
+  const dialog = useConfirmDialogBindings({
+    open: state.confirmId !== undefined || state.deletingId !== undefined,
+    busy: false,
+    tone: state.deletingId !== undefined ? "danger" : "default",
+    onCancel: () => {
+      actions.onCancelConfirm();
+      actions.onCancelDelete();
+    },
+  });
+
+  return <RunnerView state={state} actions={actions} dialog={dialog} />;
 }

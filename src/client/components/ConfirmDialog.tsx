@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "preact/hooks";
 import {
   canDismiss,
   confirmButtonClass,
+  focusableSelector,
   initialFocusTarget,
   nextFocusIndex,
   type ConfirmTone,
@@ -22,9 +23,16 @@ export interface ConfirmDialogProps {
   busy?: boolean;
   busyLabel?: string;
   error?: string;
+  /** Tombol konfirmasi dinonaktifkan tanpa membekukan seluruh modal. */
+  confirmDisabled?: boolean;
+  /** Pemilih CSS elemen yang menerima fokus awal, mis. kolom formulir pertama. */
+  initialFocusSelector?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
+
+/** Elemen yang boleh menerima fokus di dalam kartu modal. */
+const FOCUSABLE = focusableSelector();
 
 /** Referensi DOM + penagan keyboard milik satu modal. */
 export interface ConfirmDialogBindings {
@@ -63,6 +71,7 @@ export function ConfirmDialogView(props: ConfirmDialogViewProps) {
     busy = false,
     busyLabel,
     error,
+    confirmDisabled = false,
     onConfirm,
     onCancel,
     cardRef,
@@ -116,7 +125,7 @@ export function ConfirmDialogView(props: ConfirmDialogViewProps) {
             ref={confirmRef}
             type="button"
             class={confirmButtonClass(tone)}
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             aria-busy={busy ? "true" : undefined}
             aria-label={confirmAriaLabel}
             onClick={onConfirm}
@@ -147,6 +156,8 @@ export function useConfirmDialogBindings(props: {
   open: boolean;
   busy: boolean;
   tone: ConfirmTone;
+  /** Pemilih elemen yang menerima fokus awal; bawaan mengikuti nada. */
+  initialFocusSelector?: string;
   onCancel: () => void;
 }): ConfirmDialogBindings {
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -161,10 +172,14 @@ export function useConfirmDialogBindings(props: {
       const previous = document.activeElement;
       previousRef.current = previous instanceof HTMLElement ? previous : null;
     }
-    const target =
-      initialFocusTarget(props.tone) === "cancel" ? cancelRef.current : confirmRef.current;
-    target?.focus();
-  }, [props.open, props.tone]);
+    let target: HTMLElement | null;
+    if (props.initialFocusSelector !== undefined) {
+      target = cardRef.current?.querySelector<HTMLElement>(props.initialFocusSelector) ?? null;
+    } else {
+      target = initialFocusTarget(props.tone) === "cancel" ? cancelRef.current : confirmRef.current;
+    }
+    (target ?? confirmRef.current)?.focus();
+  }, [props.open, props.tone, props.initialFocusSelector]);
 
   // Fokus dikembalikan ke elemen sebelum modal dibuka.
   useEffect(() => {
@@ -210,7 +225,7 @@ export function useConfirmDialogBindings(props: {
       if (event.key !== "Tab") return;
       const card = cardRef.current;
       if (card === null) return;
-      const items = Array.from(card.querySelectorAll<HTMLElement>("button:not([disabled])"));
+      const items = Array.from(card.querySelectorAll<HTMLElement>(FOCUSABLE));
       if (items.length === 0) return;
       event.preventDefault();
       event.stopPropagation();
@@ -251,6 +266,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     open: props.open,
     busy: props.busy ?? false,
     tone: props.tone ?? "default",
+    initialFocusSelector: props.initialFocusSelector,
     onCancel: props.onCancel,
   });
 

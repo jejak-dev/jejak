@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import {
+  ConfirmDialogView,
+  useConfirmDialogBindings,
+  type ConfirmDialogBindings,
+} from "./ConfirmDialog";
+import {
   createUpdaterClient,
   desktopBridge,
   desktopErrorMessage,
@@ -49,6 +54,8 @@ export interface AppUpdateViewProps {
   onCancelRestart: () => void;
   onToggleAutoCheck: (checked: boolean) => void;
   onChannel: (channel: "stable" | "beta") => void;
+  /** Jebakan fokus dan Escape milik modal konfirmasi. */
+  dialog?: ConfirmDialogBindings;
 }
 
 export function AppUpdateView(props: AppUpdateViewProps) {
@@ -134,34 +141,14 @@ export function AppUpdateView(props: AppUpdateViewProps) {
             </p>
           )}
           <div class="jk-form-actions">
-            {confirmRestart ? (
-              <>
-                <button
-                  type="button"
-                  class="jk-button jk-button-primary"
-                  disabled={busy}
-                  onClick={props.onConfirmRestart}
-                >
-                  Tetap mulai ulang
-                </button>
-                <button
-                  type="button"
-                  class="jk-button jk-button-secondary"
-                  onClick={props.onCancelRestart}
-                >
-                  Batal
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                class="jk-button jk-button-primary"
-                disabled={busy}
-                onClick={props.onRestart}
-              >
-                Mulai ulang sekarang
-              </button>
-            )}
+            <button
+              type="button"
+              class="jk-button jk-button-primary"
+              disabled={busy}
+              onClick={props.onRestart}
+            >
+              Mulai ulang sekarang
+            </button>
           </div>
         </div>
       )}
@@ -224,6 +211,19 @@ export function AppUpdateView(props: AppUpdateViewProps) {
         </select>
         <p class="jk-help">{CHANNEL_HELP}</p>
       </div>
+
+      <ConfirmDialogView
+        open={confirmRestart}
+        title="Mulai ulang sekarang?"
+        message={warning}
+        confirmLabel="Tetap mulai ulang"
+        cancelLabel="Batal"
+        busy={busy}
+        idPrefix="jk-confirm-restart"
+        onConfirm={props.onConfirmRestart}
+        onCancel={props.onCancelRestart}
+        {...(props.dialog ?? {})}
+      />
     </section>
   );
 }
@@ -393,6 +393,14 @@ function AppUpdateCard({ bridge, sessions }: { bridge: DesktopBridge; sessions: 
     void saveSettings({ autoCheck: settings.autoCheck, channel });
   };
 
+  // Fokus awal, jebakan fokus, dan Escape milik modal konfirmasi restart.
+  const dialog = useConfirmDialogBindings({
+    open: confirmRestart,
+    busy,
+    tone: "default",
+    onCancel: onCancelRestart,
+  });
+
   return (
     <AppUpdateView
       info={info}
@@ -411,6 +419,7 @@ function AppUpdateCard({ bridge, sessions }: { bridge: DesktopBridge; sessions: 
       onCancelRestart={onCancelRestart}
       onToggleAutoCheck={onToggleAutoCheck}
       onChannel={onChannel}
+      dialog={dialog}
     />
   );
 }

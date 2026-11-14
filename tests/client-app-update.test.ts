@@ -153,6 +153,20 @@ describe("AppUpdateView", () => {
     expect(teks).toContain("Batal");
   });
 
+  test("konfirmasi restart memakai modal, bukan tombol sebaris", () => {
+    const status: UpdaterStatus = { state: "ready" };
+    const node = AppUpdateView(
+      props({ status, warning: "1 sesi sedang berjalan.", confirmRestart: true }),
+    ) as ComponentChild;
+    const kartu = findNodes(node, (vnode) => propsOf(vnode)["role"] === "alertdialog");
+    expect(kartu).toHaveLength(1);
+    expect(propsOf(kartu[0])["aria-modal"]).toBe("true");
+    const sebelum = AppUpdateView(props({ status })) as ComponentChild;
+    expect(
+      findNodes(sebelum, (vnode) => propsOf(vnode)["role"] === "alertdialog"),
+    ).toHaveLength(0);
+  });
+
   test("galat menampilkan pesan dan tombol coba lagi", () => {
     const status: UpdaterStatus = { state: "error", error: "jaringan putus" };
     const teks = textOf(AppUpdateView(props({ status })) as ComponentChild);

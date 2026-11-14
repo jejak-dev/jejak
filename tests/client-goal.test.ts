@@ -396,8 +396,6 @@ describe("timeline mode Goal", () => {
       canRewind: true,
       rewinding: false,
       onRequestRewind: NOOP,
-      onConfirmRewind: NOOP,
-      onCancelRewind: NOOP,
     }) as unknown as ComponentChild;
 
     expect(byClass(node, "jk-goal-auto").length).toBe(1);
@@ -415,11 +413,22 @@ describe("timeline mode Goal", () => {
       canRewind: true,
       rewinding: false,
       onRequestRewind: NOOP,
-      onConfirmRewind: NOOP,
-      onCancelRewind: NOOP,
     }) as unknown as ComponentChild;
 
     expect(byClass(node, "jk-user").length).toBe(1);
     expect(buttonTexts(node)).toEqual(["Mundur ke sini"]);
+  });
+
+  test("tombol mundur tetap terpasang saat konfirmasi dibuka", () => {
+    const node = UserItem({
+      item: { kind: "user", text: "halo", seq: 7 },
+      canRewind: true,
+      rewinding: true,
+      onRequestRewind: NOOP,
+    }) as unknown as ComponentChild;
+
+    const tombol = byTag(node, "button")[0];
+    expect(textOf(propsOf(tombol).children as ComponentChild)).toBe("Mundur ke sini");
+    expect(propsOf(tombol).disabled).toBe(true);
   });
 });

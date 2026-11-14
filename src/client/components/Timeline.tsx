@@ -7,6 +7,7 @@ import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-
 import { formatCost, formatCount } from "../lib/format";
 import { attachmentUrl, splitAttachments } from "../lib/attachments";
 import { CopyButton } from "./CopyButton";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { PermissionCard } from "./PermissionCard";
@@ -167,29 +168,23 @@ export interface UserItemProps {
   turn?: number;
   /** Pesan boleh dimundurkan. */
   canRewind: boolean;
-  /** Nomor urut yang sedang dikonfirmasi untuk dibuang. */
-  confirmSeq?: number;
   /** Mundur percakapan sedang berjalan. */
   rewinding: boolean;
   onRequestRewind: (seq: number) => void;
-  onConfirmRewind: (seq: number) => void;
-  onCancelRewind: () => void;
 }
 
 /**
  * Baris pesan pengguna. Pesan lanjutan otomatis mode Goal (`auto`) tampil
  * sebagai baris kecil "Melanjutkan tujuan", bukan gelembung, dan tak punya
- * tombol mundur.
+ * tombol mundur. Tombol mundur tetap terpasang saat konfirmasi terbuka
+ * supaya fokus bisa kembali ke sana.
  */
 export function UserItem({
   item,
   turn,
   canRewind,
-  confirmSeq,
   rewinding,
   onRequestRewind,
-  onConfirmRewind,
-  onCancelRewind,
 }: UserItemProps) {
   if (item.auto === "goal") {
     return (
@@ -231,41 +226,14 @@ export function UserItem({
         </div>
       )}
       {canRewind && seq !== undefined && (
-        confirmSeq === seq ? (
-          <div
-            class="jk-rewind-confirm"
-            role="alertdialog"
-            aria-label="Konfirmasi mundur percakapan"
-          >
-            <p>Buang pesan ini dan sesudahnya? Berkas tidak ikut dikembalikan.</p>
-            <div class="jk-rewind-actions">
-              <button
-                type="button"
-                class="jk-button"
-                disabled={rewinding}
-                onClick={() => onConfirmRewind(seq)}
-              >
-                Ya, buang
-              </button>
-              <button
-                type="button"
-                class="jk-link-btn"
-                disabled={rewinding}
-                onClick={onCancelRewind}
-              >
-                Batal
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            class="jk-rewind-btn"
-            onClick={() => onRequestRewind(seq)}
-          >
-            Mundur ke sini
-          </button>
-        )
+        <button
+          type="button"
+          class="jk-rewind-btn"
+          disabled={rewinding}
+          onClick={() => onRequestRewind(seq)}
+        >
+          Mundur ke sini
+        </button>
       )}
     </div>
   );
@@ -506,11 +474,8 @@ export function Timeline({
                     item={item}
                     turn={autoTurns.get(index)}
                     canRewind={canRewind}
-                    confirmSeq={confirmSeq}
                     rewinding={rewinding}
                     onRequestRewind={(value) => setConfirmSeq(value)}
-                    onConfirmRewind={(value) => void runRewind(value)}
-                    onCancelRewind={() => setConfirmSeq(undefined)}
                   />
                 );
               }
@@ -610,6 +575,25 @@ export function Timeline({
           </button>
         )}
       </div>
+
+      {/* Modal di luar wadah gulir: penempatan fixed tak terpotong isi timeline. */}
+      <ConfirmDialog
+        open={confirmSeq !== undefined}
+        title="Buang pesan ini dan sesudahnya?"
+        message="Berkas tidak ikut dikembalikan."
+        confirmLabel="Ya, buang"
+        cancelLabel="Batal"
+        busyLabel="Membuang…"
+        tone="danger"
+        busy={rewinding}
+        error={rewindError}
+        confirmAriaLabel="Buang pesan ini dan sesudahnya"
+        cancelAriaLabel="Batal membuang pesan"
+        onConfirm={() => {
+          if (confirmSeq !== undefined) void runRewind(confirmSeq);
+        }}
+        onCancel={() => setConfirmSeq(undefined)}
+      />
     </div>
   );
 }

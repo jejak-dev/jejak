@@ -11,6 +11,7 @@ import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
 import { useDictation } from "../lib/use-dictation";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
+import { ConfirmDialog } from "./ConfirmDialog";
 import { DictationButton } from "./DictationButton";
 import { Dropdown, type DropdownSection } from "./Dropdown";
 import { Icon } from "./Icon";
@@ -435,91 +436,6 @@ export function ReplyBar({
             )}
           </div>
         )}
-        {goalForm !== undefined && (
-          <div class="jk-goal-confirm" role="dialog" aria-label="Konfirmasi mulai tujuan">
-            <p class="jk-goal-confirm-objective">{goalForm.objective}</p>
-            {session.permissionMode === "bypassPermissions" && (
-              <p class="jk-note jk-goal-warn">
-                Mode bypass: agent bekerja tanpa meminta izin.
-              </p>
-            )}
-            <div class="jk-goal-fields">
-              <label class="jk-goal-field">
-                <span>Maks. giliran otomatis</span>
-                <input
-                  class="jk-input"
-                  type="text"
-                  inputMode="numeric"
-                  placeholder="10"
-                  value={goalForm.maxTurns}
-                  disabled={busy}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter") return;
-                    event.preventDefault();
-                    void startGoal();
-                  }}
-                  onInput={(event) =>
-                    setGoalForm({
-                      ...goalForm,
-                      maxTurns: (event.currentTarget as HTMLInputElement).value,
-                    })
-                  }
-                />
-              </label>
-              <label class="jk-goal-field">
-                <span>Plafon biaya (USD)</span>
-                <input
-                  class="jk-input"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="opsional"
-                  value={goalForm.costCapUsd}
-                  disabled={busy}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter") return;
-                    event.preventDefault();
-                    void startGoal();
-                  }}
-                  onInput={(event) =>
-                    setGoalForm({
-                      ...goalForm,
-                      costCapUsd: (event.currentTarget as HTMLInputElement).value,
-                    })
-                  }
-                />
-              </label>
-            </div>
-            <p class="jk-note">
-              Batas giliran 1-50; bawaan 10. Tanpa plafon biaya, biaya tidak dibatasi.
-            </p>
-            {goalError !== undefined && (
-              <p class="jk-note jk-goal-error" role="alert">
-                {goalError}
-              </p>
-            )}
-            <div class="jk-goal-actions">
-              <button
-                type="button"
-                class="jk-button jk-button-primary"
-                disabled={busy}
-                onClick={() => void startGoal()}
-              >
-                Mulai tujuan
-              </button>
-              <button
-                type="button"
-                class="jk-link-btn"
-                disabled={busy}
-                onClick={() => {
-                  setGoalForm(undefined);
-                  setGoalError(undefined);
-                }}
-              >
-                Batal
-              </button>
-            </div>
-          </div>
-        )}
         <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
           {att.dragging && <DropHint />}
           <AttachmentTray items={att.items} pending={att.pending} error={att.error} onRemove={att.remove} />
@@ -685,6 +601,84 @@ export function ReplyBar({
           </p>
         )}
       </div>
+
+      {/* Modal mulai tujuan: formulir lengkap, bukan tanya-jawab. */}
+      <ConfirmDialog
+        open={goalForm !== undefined}
+        title="Mulai tujuan?"
+        message={
+          goalForm === undefined ? undefined : (
+            <div class="jk-goal-confirm">
+              <p class="jk-goal-confirm-objective">{goalForm.objective}</p>
+              {session.permissionMode === "bypassPermissions" && (
+                <p class="jk-note jk-goal-warn">
+                  Mode bypass: agent bekerja tanpa meminta izin.
+                </p>
+              )}
+              <div class="jk-goal-fields">
+                <label class="jk-goal-field">
+                  <span>Maks. giliran otomatis</span>
+                  <input
+                    class="jk-input"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="10"
+                    value={goalForm.maxTurns}
+                    disabled={busy}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      void startGoal();
+                    }}
+                    onInput={(event) =>
+                      setGoalForm({
+                        ...goalForm,
+                        maxTurns: (event.currentTarget as HTMLInputElement).value,
+                      })
+                    }
+                  />
+                </label>
+                <label class="jk-goal-field">
+                  <span>Plafon biaya (USD)</span>
+                  <input
+                    class="jk-input"
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="opsional"
+                    value={goalForm.costCapUsd}
+                    disabled={busy}
+                    onKeyDown={(event) => {
+                      if (event.key !== "Enter") return;
+                      event.preventDefault();
+                      void startGoal();
+                    }}
+                    onInput={(event) =>
+                      setGoalForm({
+                        ...goalForm,
+                        costCapUsd: (event.currentTarget as HTMLInputElement).value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
+              <p class="jk-note">
+                Batas giliran 1-50; bawaan 10. Tanpa plafon biaya, biaya tidak dibatasi.
+              </p>
+            </div>
+          )
+        }
+        confirmLabel="Mulai tujuan"
+        cancelLabel="Batal"
+        busyLabel="Memulai…"
+        busy={busy}
+        error={goalError}
+        initialFocusSelector=".jk-goal-field input"
+        onConfirm={() => void startGoal()}
+        onCancel={() => {
+          setGoalForm(undefined);
+          setGoalError(undefined);
+        }}
+      />
     </form>
   );
 }

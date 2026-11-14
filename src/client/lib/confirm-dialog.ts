@@ -33,3 +33,14 @@ export function canDismiss(busy: boolean): boolean {
 export function confirmButtonClass(tone: ConfirmTone): string {
   return tone === "danger" ? "jk-button jk-button-caution" : "jk-button jk-button-primary";
 }
+
+/**
+ * Pemilih elemen yang boleh menerima fokus di dalam kartu modal: tombol,
+ * kolom formulir, dan tautan. Dipakai jebakan fokus dan fokus awal.
+ */
+export function focusableSelector(): string {
+  return (
+    'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), ' +
+    'select:not([disabled]), a[href]'
+  );
+}
