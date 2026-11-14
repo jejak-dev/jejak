@@ -15,6 +15,11 @@ import {
   defaultClaudeConfigStore,
   type ClaudeConfigStore,
 } from "./claude-config/config-store";
+import {
+  desktopEnterRoutes,
+  DESKTOP_ENTER_PATH,
+  DESKTOP_SESSION_TTL_MS,
+} from "./desktop";
 import { removeSessionUndo } from "./files/revert";
 import { localGuard, DEFAULT_ALLOWED_HOSTS } from "./guard";
 import { GoalReporterHolder } from "./goals/goal-reporter";
@@ -90,6 +95,22 @@ export interface ServeOptions {
   secureCookie?: boolean;
   /** Sertifikat dan kunci TLS (isi PEM) untuk `Bun.serve`. */
   tls?: { cert: string; key: string };
+  /** Mode desktop: token masuk sekali pakai untuk rute `/__desktop/enter`. */
+  desktopToken?: string;
+  /** Masa berlaku cookie sesi (ms); mode desktop memakai 30 hari. */
+  sessionTtlMs?: number;
+}
+
+/** Hasil `startServer`: aplikasi, alamat nyata, dan cara menghentikannya. */
+export interface ServeHandle {
+  /** Aplikasi Elysia yang melayani permintaan. */
+  app: ReturnType<typeof createApp>;
+  /** Host binding yang dipakai. */
+  host: string;
+  /** Port nyata (berbeda dari yang diminta bila diminta port 0). */
+  port: number;
+  /** Hentikan server. */
+  stop(): Promise<void>;
 }
 
 /** Opsi autentikasi untuk `createApp`. */
@@ -168,6 +189,16 @@ export interface CreateAppOptions {
   sdk?: { root?: string; locate?: LocateOptions };
   /** Autentikasi opsional; bila diisi, guard dan rute auth dipasang. */
   auth?: AuthOptions;
+  /** Mode desktop: rute masuk sekali pakai dan cookie sesi 30 hari. */
+  desktop?: DesktopOptions;
+}
+
+/** Opsi mode desktop untuk `createApp`. */
+export interface DesktopOptions {
+  /** Token masuk sekali pakai. */
+  token: string;
+  /** Masa berlaku cookie sesi; default 30 hari. */
+  sessionTtlMs?: number;
 }
 
 /** Ringkasan otomatis akhir sesi menjadi usulan memory proyek (lapis episodik). */
@@ -349,6 +380,7 @@ export function createApp(options: CreateAppOptions = {}) {
   // Autentikasi opsional: penjaga dipasang sesudah penjaga lokal (Host/Origin),
   // rute auth dipasang lebih dulu agar status dan login terjangkau.
   const authOptions = options.auth;
+  const desktop = options.desktop;
   const verifier: PasswordVerifier | undefined =
     authOptions === undefined
       ? undefined
@@ -356,12 +388,24 @@ export function createApp(options: CreateAppOptions = {}) {
         ? createVerifier(authOptions.password)
         : authOptions.password;
   const codec =
-    authOptions === undefined ? undefined : createSessionCodec({ port: authOptions.port });
+    authOptions === undefined
+      ? undefined
+      : createSessionCodec({
+          port: authOptions.port,
+          ...(desktop === undefined
+            ? {}
+            : { ttlMs: desktop.sessionTtlMs ?? DESKTOP_SESSION_TTL_MS }),
+        });
   const throttle = createThrottle();
   const authPlugins: Elysia[] = [];
 
   if (codec !== undefined) {
-    authPlugins.push(authGuard({ codec }));
+    authPlugins.push(
+      authGuard({
+        codec,
+        ...(desktop === undefined ? {} : { openPaths: [DESKTOP_ENTER_PATH] }),
+      }),
+    );
   }
   authPlugins.push(
     authRoutes({
@@ -374,15 +418,30 @@ export function createApp(options: CreateAppOptions = {}) {
         : { secureCookie: authOptions.secureCookie }),
     }),
   );
+  // Rute masuk sekali pakai hanya ada pada mode desktop.
+  if (desktop !== undefined && codec !== undefined) {
+    authPlugins.push(
+      desktopEnterRoutes({
+        token: desktop.token,
+        codec,
+        throttle,
+        ...(authOptions?.secureCookie === undefined
+          ? {}
+          : { secureCookie: authOptions.secureCookie }),
+      }),
+    );
+  }
 
   let app = new Elysia()
     .use(
-      localGuard(
-        options.allowedHosts === undefined
-          ? undefined
+      localGuard({
+        ...(options.allowedHosts === undefined
+          ? {}
           : // Daftar host diizinkan diperluas, bukan mengganti daftar bawaan.
-            { allowedHosts: [...DEFAULT_ALLOWED_HOSTS, ...options.allowedHosts] },
-      ),
+            { allowedHosts: [...DEFAULT_ALLOWED_HOSTS, ...options.allowedHosts] }),
+        // Rute masuk desktop juga wajib lolos penjaga Host/Origin.
+        ...(desktop === undefined ? {} : { guardedPrefixes: ["/api/", "/__desktop/"] }),
+      }),
     )
     .use(authPlugins)
     .use(providerRoutes({ path: options.providersPath, env: options.env, fetch: options.fetch, audit: options.audit }))
@@ -510,9 +569,9 @@ function mcpUrlFor(host: string, port: number, secure: boolean): string {
   return `${secure ? "https" : "http"}://${safeHost}:${port}/mcp`;
 }
 
-export function startServer(options: ServeOptions = {}) {
+export function startServer(options: ServeOptions = {}): ServeHandle {
   const host = options.host ?? process.env.HOST ?? "127.0.0.1";
-  const port = options.port ?? Number(process.env.PORT ?? 3000);
+  const requestedPort = options.port ?? Number(process.env.PORT ?? 3000);
   const store = defaultSessionStore(process.env);
   const memoryStore = defaultMemoryStore(process.env);
   const memory =
@@ -523,7 +582,6 @@ export function startServer(options: ServeOptions = {}) {
   const checkpoints = checkpointsDisabled
     ? undefined
     : new CheckpointService({ root: join(jejakHome(), "checkpoints") });
-  const mcpUrl = mcpUrlFor(host, port, options.tls !== undefined);
   const workspaces = defaultWorkspaceService(process.env);
   const mcpServers = defaultMcpServerService(process.env);
   const audit = defaultAuditStore(process.env);
@@ -539,13 +597,36 @@ export function startServer(options: ServeOptions = {}) {
   const gitProviders = defaultGitProviderStore(process.env);
   const indexer =
     gitProviders === undefined ? undefined : new RepoIndexer({ root: indexRoot(process.env) });
+
+  // Server diikat lebih dulu supaya port NYATA diketahui (mode desktop memakai
+  // port acak dari OS). Aplikasi dirakit sesudah port diketahui, sehingga nama
+  // cookie sesi, URL MCP, dan pesan log memakai port yang benar.
+  const holder: { app?: ReturnType<typeof createApp> } = {};
+  const server = Bun.serve({
+    hostname: host,
+    port: requestedPort,
+    // Sama dengan bawaan `.listen` Elysia (30 dtk); bawaan Bun (10 dtk) lebih pendek
+    // dari jeda ping SSE (15 dtk) sehingga aliran sesi bisa terputus.
+    idleTimeout: 30,
+    fetch: (request) => {
+      const pending = holder.app;
+      if (pending === undefined) {
+        return new Response("Jejak belum siap", { status: 503 });
+      }
+      return pending.handle(request);
+    },
+    ...(options.tls === undefined ? {} : { tls: options.tls }),
+  });
+  const port = server.port ?? requestedPort;
+  const mcpUrl = mcpUrlFor(host, port, options.tls !== undefined);
+
   const app = createApp({
     sessionStore: store,
     memory,
     mcpUrl,
     checkpoints,
     workspaces,
-    ...(options.allowHosts === undefined ? {} : { allowedHosts: options.allowHosts }),
+    ...(options.allowHosts === undefined ? {} : { allowHosts: options.allowHosts }),
     ...(options.password === undefined
       ? {}
       : {
@@ -553,6 +634,14 @@ export function startServer(options: ServeOptions = {}) {
             password: options.password,
             port,
             ...(options.secureCookie === undefined ? {} : { secureCookie: options.secureCookie }),
+          },
+        }),
+    ...(options.desktopToken === undefined
+      ? {}
+      : {
+          desktop: {
+            token: options.desktopToken,
+            ...(options.sessionTtlMs === undefined ? {} : { sessionTtlMs: options.sessionTtlMs }),
           },
         }),
     ...(mcpServers === undefined ? {} : { mcpServers }),
@@ -565,11 +654,11 @@ export function startServer(options: ServeOptions = {}) {
     ...(questions === undefined ? {} : { questions }),
     ...(gitProviders === undefined || indexer === undefined ? {} : { gitProviders, indexer }),
     ...(terminal === undefined ? {} : { terminal }),
-  }).listen({
-    hostname: host,
-    port,
-    ...(options.tls === undefined ? {} : { tls: options.tls }),
   });
+  holder.app = app;
+  // Supaya konteks permintaan punya `server` (alamat socket untuk throttle).
+  app.server = server;
+
   console.log(
     `Jejak ${VERSION} siap di ${options.tls === undefined ? "http" : "https"}://${host}:${port}`,
   );
@@ -579,10 +668,13 @@ export function startServer(options: ServeOptions = {}) {
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
   if (terminal !== undefined) closers.push(() => terminal.closeAll());
+  let sudahTutup = false;
+  const close = (): void => {
+    if (sudahTutup) return;
+    sudahTutup = true;
+    for (const closer of closers) closer();
+  };
   if (closers.length > 0) {
-    const close = (): void => {
-      for (const closer of closers) closer();
-    };
     process.once("exit", close);
     for (const signal of ["SIGINT", "SIGTERM"] as const) {
       process.once(signal, () => {
@@ -591,5 +683,13 @@ export function startServer(options: ServeOptions = {}) {
       });
     }
   }
-  return app;
+  return {
+    app,
+    host,
+    port,
+    async stop(): Promise<void> {
+      close();
+      await server.stop(true);
+    },
+  };
 }

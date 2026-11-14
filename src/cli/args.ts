@@ -13,6 +13,8 @@ export interface ParsedArgs {
   allowHosts?: string[];
   /** `--insecure-no-auth`: izinkan bind non-loopback tanpa kata sandi. */
   insecureNoAuth?: boolean;
+  /** `--desktop`: mode sidecar untuk cangkang aplikasi (bukan pakai manual). */
+  desktop?: boolean;
   /** `--tls-cert <path>`: sertifikat TLS (harus berpasangan dengan kunci). */
   tlsCert?: string;
   /** `--tls-key <path>`: kunci TLS (harus berpasangan dengan sertifikat). */
@@ -28,7 +30,8 @@ function parsePort(raw: string): number | null {
     return null;
   }
   const value = Number(raw);
-  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+  // 0 berarti "pilih port acak dari OS"; sah HANYA bersama `--desktop`.
+  if (!Number.isInteger(value) || value < 0 || value > 65535) {
     return null;
   }
   return value;
@@ -64,6 +67,7 @@ function parseServe(rest: string[]): ParsedArgs {
   let passwordFile: string | undefined;
   let allowHosts: string[] = [];
   let insecureNoAuth = false;
+  let desktop = false;
   let tlsCert: string | undefined;
   let tlsKey: string | undefined;
 
@@ -137,6 +141,10 @@ function parseServe(rest: string[]): ParsedArgs {
       insecureNoAuth = true;
       continue;
     }
+    if (token === "--desktop") {
+      desktop = true;
+      continue;
+    }
     if (token === "--tls-cert" || token.startsWith("--tls-cert=")) {
       const read = readFlagValue(rest, index, "--tls-cert");
       if (read.error !== undefined) {
@@ -162,6 +170,18 @@ function parseServe(rest: string[]): ParsedArgs {
     return fail("--tls-cert dan --tls-key harus dipakai berpasangan.");
   }
 
+  // Port 0 (pilihan acak dari OS) hanya bermakna pada mode desktop.
+  if (port === 0 && !desktop) {
+    return fail(`${PORT_ERROR} Diterima: 0.`);
+  }
+
+  // Mode desktop dikunci ke host loopback.
+  if (desktop && host !== undefined && !isLoopbackHost(host)) {
+    return fail(
+      `Mode --desktop hanya boleh memakai host loopback (mis. 127.0.0.1). Diterima: ${host}.`,
+    );
+  }
+
   return {
     command: "serve",
     ...(host === undefined ? {} : { host }),
@@ -171,6 +191,7 @@ function parseServe(rest: string[]): ParsedArgs {
     ...(passwordFile === undefined ? {} : { passwordFile }),
     ...(allowHosts.length === 0 ? {} : { allowHosts }),
     ...(insecureNoAuth ? { insecureNoAuth } : {}),
+    ...(desktop ? { desktop } : {}),
     ...(tlsCert === undefined ? {} : { tlsCert }),
     ...(tlsKey === undefined ? {} : { tlsKey }),
   };

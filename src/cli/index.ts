@@ -1,9 +1,15 @@
 #!/usr/bin/env bun
 import { readFileSync } from "node:fs";
 import { isLiteralIpHost, isLoopbackHost, parseArgs } from "./args";
+import { installDesktopLifecycle } from "./desktop";
 import { runDoctor } from "./doctor";
 import { startServer } from "../server";
 import { resolvePassword } from "../server/auth/password";
+import {
+  DESKTOP_READY_PREFIX,
+  generateDesktopPassword,
+  readDesktopToken,
+} from "../server/desktop";
 import { jejakHome } from "../server/provider-store";
 import { VERSION } from "../shared/version";
 
@@ -25,13 +31,19 @@ Autentikasi (opsional):
   --insecure-no-auth               izinkan bind non-loopback tanpa kata sandi
   --tls-cert <path> --tls-key <p>  HTTPS dengan sertifikat sendiri (harus berpasangan)
 
+Mode cangkang aplikasi (bukan pemakaian manual):
+  --desktop                         mode sidecar untuk cangkang aplikasi desktop:
+                                    port acak, masuk lewat /__desktop/enter,
+                                    dan proses berhenti saat induknya berhenti
+
 Variabel lingkungan:
   HOST           alamat binding server (default 127.0.0.1)
-  PORT           port server (default 3000)
+  PORT           port server (default 3000; 0 = acak, hanya dengan --desktop)
   MOCK           "true" untuk agent tiruan; sama dengan --mock
   JEJAK_HOME     folder data Jejak (default ~/.jejak)
   JEJAK_PERSIST  "0" untuk mematikan penyimpanan sesi
   JEJAK_PASSWORD kata sandi untuk masuk (sama dengan --password-file)
+  JEJAK_DESKTOP_TOKEN  token masuk mode --desktop (minimal 32 karakter)
 
 Prioritas: flag > variabel lingkungan > default.
 `;
@@ -46,37 +58,73 @@ switch (args.command) {
       process.exit(1);
     }
     const host = args.host ?? envValue("HOST") ?? "127.0.0.1";
-    const port = args.port ?? envPort("PORT") ?? 3000;
+    const desktop = args.desktop === true;
+    // Mode desktop memakai port acak dari OS sebagai bawaan.
+    const port = desktop
+      ? (args.port ?? envPort("PORT", true) ?? 0)
+      : (args.port ?? envPort("PORT") ?? 3000);
     const loopback = isLoopbackHost(host);
     const literalHost = isLiteralIpHost(host);
     const allowHosts = [...(args.allowHosts ?? [])];
     // Host binding berupa IP literal boleh dipakai langsung.
     if (!loopback && literalHost) allowHosts.push(host);
 
-    let password: string | undefined;
-    try {
-      password = resolvePassword({
-        ...(args.passwordFile === undefined ? {} : { passwordFile: args.passwordFile }),
-        env: process.env,
-        ...(args.password === "auto" ? { auto: true } : {}),
-      });
-    } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+    if (desktop && !loopback) {
+      console.error(
+        `Mode --desktop hanya boleh mendengarkan host loopback (127.0.0.1). Diterima: ${host}.`,
+      );
       process.exit(1);
     }
-    // Sandi tidak boleh diwarisi proses anak (agent, Bash, terminal).
+    if (desktop && allowHosts.length > 0) {
+      // Mode desktop tak punya jalur keluar lewat --allow-host.
+      allowHosts.length = 0;
+      console.error("Catatan: mode --desktop mengabaikan --allow-host.");
+    }
+
     const envPasswordSet = envValue("JEJAK_PASSWORD") !== undefined;
-    delete process.env.JEJAK_PASSWORD;
-    const generated =
-      args.password === "auto" &&
-      args.passwordFile === undefined &&
-      !envPasswordSet;
-    if (
-      args.password === "auto" &&
-      args.passwordFile === undefined &&
-      envPasswordSet
-    ) {
-      console.error("Catatan: JEJAK_PASSWORD aktif, --password auto diabaikan.");
+    let password: string | undefined;
+    let desktopToken: string | undefined;
+    let generated = false;
+    if (desktop) {
+      // Autentikasi internal: kata sandi acak yang tak pernah dicetak dan
+      // tak bisa ditebak. Sandi dari lingkungan juga tak diwarisi ke anak.
+      delete process.env.JEJAK_PASSWORD;
+      if (args.password !== undefined || args.passwordFile !== undefined) {
+        console.error(
+          "Catatan: mode --desktop memakai kata sandi internal acak; --password diabaikan.",
+        );
+      }
+      password = generateDesktopPassword();
+      try {
+        desktopToken = readDesktopToken(process.env);
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+    } else {
+      try {
+        password = resolvePassword({
+          ...(args.passwordFile === undefined ? {} : { passwordFile: args.passwordFile }),
+          env: process.env,
+          ...(args.password === "auto" ? { auto: true } : {}),
+        });
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+      // Sandi tidak boleh diwarisi proses anak (agent, Bash, terminal).
+      delete process.env.JEJAK_PASSWORD;
+      generated =
+        args.password === "auto" &&
+        args.passwordFile === undefined &&
+        !envPasswordSet;
+      if (
+        args.password === "auto" &&
+        args.passwordFile === undefined &&
+        envPasswordSet
+      ) {
+        console.error("Catatan: JEJAK_PASSWORD aktif, --password auto diabaikan.");
+      }
     }
 
     if (!loopback) {
@@ -136,14 +184,30 @@ switch (args.command) {
     if (generated && password !== undefined) {
       console.log(`Kata sandi Jejak (hanya ditampilkan sekali): ${password}`);
     }
-    startServer({
+    const handle = startServer({
       host,
       port,
       ...(password === undefined ? {} : { password }),
       ...(allowHosts.length === 0 ? {} : { allowHosts }),
       ...(tls === undefined ? {} : { tls }),
+      ...(desktopToken === undefined ? {} : { desktopToken }),
     });
     console.log(`Data: ${jejakHome()}`);
+    if (desktop) {
+      // Pengumuman siap: satu baris, dibaca mesin oleh cangkang aplikasi.
+      console.log(
+        `${DESKTOP_READY_PREFIX} ${JSON.stringify({
+          port: handle.port,
+          host: handle.host,
+          version: VERSION,
+        })}`,
+      );
+      installDesktopLifecycle({
+        stop: () => {
+          void handle.stop();
+        },
+      });
+    }
     break;
   }
   case "doctor": {
@@ -173,9 +237,10 @@ function envValue(name: string): string | undefined {
   return value === undefined || value === "" ? undefined : value;
 }
 
-function envPort(name: string): number | undefined {
+function envPort(name: string, allowZero = false): number | undefined {
   const raw = envValue(name);
   if (raw === undefined) return undefined;
   const value = Number(raw);
-  return Number.isInteger(value) && value >= 1 && value <= 65535 ? value : undefined;
+  const min = allowZero ? 0 : 1;
+  return Number.isInteger(value) && value >= min && value <= 65535 ? value : undefined;
 }

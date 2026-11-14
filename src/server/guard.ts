@@ -3,6 +3,8 @@ import { Elysia } from "elysia";
 export interface GuardOptions {
   /** Nama host tanpa port yang diizinkan. Default: 127.0.0.1, localhost, [::1]. */
   allowedHosts?: string[];
+  /** Awalan path yang dijaga Host/Origin. Default: hanya `/api/`. */
+  guardedPrefixes?: string[];
 }
 
 export const DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
@@ -28,12 +30,13 @@ export function localGuard(options: GuardOptions = {}): Elysia {
   const allowedHosts = new Set(
     (options.allowedHosts ?? DEFAULT_ALLOWED_HOSTS).map((host) => host.trim().toLowerCase()),
   );
+  const guardedPrefixes = options.guardedPrefixes ?? ["/api/"];
 
   const plugin = new Elysia({ name: "jejak-local-guard" }).onBeforeHandle(
     { as: "global" },
     ({ request }) => {
       const url = new URL(request.url);
-      if (!url.pathname.startsWith("/api/")) {
+      if (!guardedPrefixes.some((prefix) => url.pathname.startsWith(prefix))) {
         return;
       }
 

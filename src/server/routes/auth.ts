@@ -46,7 +46,7 @@ function parseBody(body: unknown): Record<string, unknown> {
 }
 
 /** Alamat socket klien; header `x-forwarded-for` tidak dipercaya. */
-function socketAddress(server: { requestIP(request: Request): { address: string } | null } | null, request: Request): string {
+export function socketAddress(server: { requestIP(request: Request): { address: string } | null } | null, request: Request): string {
   try {
     const info = server?.requestIP(request);
     return info?.address ?? "tidak-diketahui";
@@ -55,7 +55,7 @@ function socketAddress(server: { requestIP(request: Request): { address: string 
   }
 }
 
-function isSecureRequest(request: Request): boolean {
+export function isSecureRequest(request: Request): boolean {
   return new URL(request.url).protocol === "https:";
 }
 

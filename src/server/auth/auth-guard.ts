@@ -15,6 +15,8 @@ export const AUTH_OPEN_PATHS: readonly string[] = [
 export interface AuthGuardOptions {
   /** Codec cookie sesi. */
   codec: SessionCodec;
+  /** Path tambahan yang tetap terbuka (hanya mode desktop). */
+  openPaths?: readonly string[];
 }
 
 function unauthorized(): Response {
@@ -30,6 +32,7 @@ function unauthorized(): Response {
  */
 export function authGuard(options: AuthGuardOptions): Elysia {
   const codec = options.codec;
+  const openPaths = options.openPaths ?? [];
 
   const plugin = new Elysia({ name: "jejak-auth-guard" }).onBeforeHandle(
     { as: "global" },
@@ -38,6 +41,7 @@ export function authGuard(options: AuthGuardOptions): Elysia {
       const pathname = url.pathname;
       if (!pathname.startsWith("/api/")) return;
       if (AUTH_OPEN_PATHS.includes(pathname)) return;
+      if (openPaths.includes(pathname)) return;
 
       const cookies = parseCookies(request.headers.get("cookie"));
       const value = cookies[codec.cookieName];
