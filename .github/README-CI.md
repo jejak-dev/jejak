@@ -15,6 +15,13 @@ Berjalan pada push tag `v*.*.*` (termasuk `v1.0.0-beta.1`) dan manual.
 - Job `bangun`: matriks macOS arm64, macOS x64, dan Windows x64; membangun
   binary sidecar, menguji hasilnya, lalu mengunggah lewat `tauri-action`.
 
+## `.github/workflows/pages.yml`
+Halaman unduh statis di `site/`. Hanya dipicu manual (`workflow_dispatch`), tidak
+otomatis pada push. Folder `site/` diunggah apa adanya sebagai artefak Pages
+(bersama salinan `install.sh`) memakai `actions/configure-pages`,
+`actions/upload-pages-artifact`, lalu `actions/deploy-pages`. Izin yang dipakai:
+`pages: write` dan `id-token: write`.
+
 ## Rahasia yang dibutuhkan (nama saja)
 - `TAURI_SIGNING_PRIVATE_KEY`
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`

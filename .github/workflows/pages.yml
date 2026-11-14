@@ -1,0 +1,47 @@
+# Halaman unduh Jejak (GitHub Pages).
+#
+# Hanya berjalan secara manual (`workflow_dispatch`), tidak otomatis pada push.
+# Folder `site/` diunggah apa adanya sebagai artefak Pages, bersama salinan
+# `install.sh` supaya skrip pemasang bisa diambil dari situs yang sama.
+name: Halaman Unduh
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: halaman-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  terbitkan:
+    name: Terbitkan halaman unduh
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.terbit.outputs.page_url }}
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@v4
+
+      - name: Siapkan Pages
+        uses: actions/configure-pages@v5
+
+      - name: Siapkan folder situs
+        run: |
+          mkdir -p _site
+          cp -R site/. _site/
+          cp install.sh _site/install.sh
+
+      - name: Unggah artefak Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Terbitkan
+        id: terbit
+        uses: actions/deploy-pages@v4
