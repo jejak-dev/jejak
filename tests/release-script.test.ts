@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
 import {
+  bumpCargoToml,
   bumpChangelog,
   bumpPackageJson,
+  bumpTauriConf,
   compareSemver,
   hasUnreleasedContent,
   isValidSemver,
+  parseCargoPackage,
   unreleasedBody,
 } from "../scripts/release";
 
@@ -124,4 +127,78 @@ test("bumpPackageJson menjaga urutan kunci dan isi lain", () => {
 
 test("bumpPackageJson menolak JSON rusak", () => {
   expect(() => bumpPackageJson("{ tidak valid", "1.0.0")).toThrow();
+});
+
+const CARGO_TOML = [
+  "[package]",
+  'name = "jejak-desktop"',
+  'version = "0.0.1"',
+  'description = "Workbench agent coding"',
+  "",
+  "[dependencies]",
+  'tauri = { version = "2.12.5", features = [] }',
+  "",
+].join("\n");
+
+test("parseCargoPackage membaca nama dan versi paket", () => {
+  const info = parseCargoPackage(CARGO_TOML);
+  expect(info.name).toBe("jejak-desktop");
+  expect(info.version).toBe("0.0.1");
+  expect(info.versionLine).toBe(2);
+});
+
+test("parseCargoPackage mengabaikan versi dependency lain", () => {
+  const teks = ['[package]', 'name = "jejak-desktop"', "", "[dependencies]", 'serde = { version = "1" }', ""].join(
+    "\n",
+  );
+  const info = parseCargoPackage(teks);
+  expect(info.name).toBe("jejak-desktop");
+  expect(info.version).toBeNull();
+});
+
+test("bumpCargoToml mengganti baris version paket saja", () => {
+  const hasil = bumpCargoToml(CARGO_TOML, "1.0.0");
+  expect(hasil).toContain('version = "1.0.0"');
+  expect(hasil).not.toContain('version = "0.0.1"');
+  expect(hasil).toContain('name = "jejak-desktop"');
+  expect(hasil).toContain('description = "Workbench agent coding"');
+  expect(hasil).toContain('tauri = { version = "2.12.5", features = [] }');
+  expect(hasil.endsWith("\n")).toBe(true);
+});
+
+test("bumpCargoToml menolak paket yang bukan jejak-desktop", () => {
+  const teks = CARGO_TOML.replace('name = "jejak-desktop"', 'name = "lain"');
+  expect(() => bumpCargoToml(teks, "1.0.0")).toThrow();
+});
+
+test("bumpCargoToml menolak Cargo.toml tanpa baris version", () => {
+  const teks = ['[package]', 'name = "jejak-desktop"', ""].join("\n");
+  expect(() => bumpCargoToml(teks, "1.0.0")).toThrow();
+});
+
+test("bumpTauriConf mengganti versi dan menjaga isi lain", () => {
+  const teks = `${JSON.stringify(
+    { productName: "Jejak", version: "0.0.1", identifier: "io.github.jejak-dev.jejak" },
+    null,
+    2,
+  )}\n`;
+  const hasil = bumpTauriConf(teks, "1.0.0");
+  const data = JSON.parse(hasil) as Record<string, unknown>;
+  expect(data.version).toBe("1.0.0");
+  expect(data.productName).toBe("Jejak");
+  expect(data.identifier).toBe("io.github.jejak-dev.jejak");
+  expect(hasil).toContain('  "productName": "Jejak"');
+  expect(hasil.endsWith("}\n")).toBe(true);
+});
+
+test("bumpTauriConf menolak JSON rusak", () => {
+  expect(() => bumpTauriConf("{ tidak valid", "1.0.0")).toThrow();
+});
+
+test("bumpTauriConf menjaga format berkas selain field version", () => {
+  const teks = '{\n  "productName": "Jejak",\n  "version": "0.0.1",\n  "bundle": {\n    "targets": ["app", "dmg"]\n  }\n}\n';
+  const hasil = bumpTauriConf(teks, "1.0.0");
+  expect(hasil).toContain('"targets": ["app", "dmg"]');
+  expect(hasil).toContain('  "version": "1.0.0",');
+  expect(hasil.split("\n").length).toBe(teks.split("\n").length);
 });

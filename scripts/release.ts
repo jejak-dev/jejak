@@ -1,6 +1,7 @@
 /**
  * Skrip rilis Jejak: memvalidasi versi, menjalankan gerbang mutu, lalu menaikkan
- * versi di package.json dan CHANGELOG, membuat commit, dan menandai tag.
+ * versi di package.json, src-tauri/tauri.conf.json, src-tauri/Cargo.toml, dan
+ * CHANGELOG, membuat commit, dan menandai tag.
  *
  * Skrip ini tidak pernah mendorong ke remote (tidak ada `git push`).
  * Fungsi murni diekspor supaya bisa diuji tanpa menyentuh git.
@@ -148,6 +149,100 @@ export function bumpPackageJson(text: string, version: string): string {
   return `${JSON.stringify(data, null, indentasi)}\n`;
 }
 
+/**
+ * Menaikkan versi di tauri.conf.json tanpa mengubah format lain.
+ *
+ * Hanya nilai field `version` yang diganti; baris lain dibiarkan apa adanya
+ * supaya diff rilis kecil.
+ */
+export function bumpTauriConf(text: string, version: string): string {
+  const pola = /^(\s*"version"\s*:\s*")([^"]*)(")/m;
+  if (pola.test(text) === false) {
+    throw new Error("tauri.conf.json tidak punya field version");
+  }
+  const hasil = text.replace(pola, `$1${version}$3`);
+  const data = JSON.parse(hasil) as { version?: unknown };
+  if (data.version !== version) {
+    throw new Error("tauri.conf.json tidak punya field version di tingkat atas");
+  }
+  return hasil;
+}
+
+/** Nama paket Rust cangkang desktop. */
+export const CARGO_PACKAGE_NAME = "jejak-desktop";
+
+/** Isi bagian `[package]` sebuah Cargo.toml. */
+export interface CargoPackageInfo {
+  /** Nama paket; null bila bagian `[package]` tidak ada. */
+  name: string | null;
+  /** Versi paket; null bila bagian `[package]` tidak punya version. */
+  version: string | null;
+  /** Indeks baris (basis nol) baris version; -1 bila tidak ada. */
+  versionLine: number;
+}
+
+/**
+ * Membaca bagian `[package]` sebuah Cargo.toml.
+ *
+ * Hanya baris di dalam bagian `[package]` yang dibaca, jadi versi dependency
+ * lain tidak ikut terambil.
+ */
+export function parseCargoPackage(text: string): CargoPackageInfo {
+  const lines = text.split("\n");
+  let diPackage = false;
+  let name: string | null = null;
+  let version: string | null = null;
+  let versionLine = -1;
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const baris = lines[index] ?? "";
+    const bagian = /^\s*\[([^\]]+)\]\s*$/.exec(baris);
+    if (bagian !== null) {
+      diPackage = bagian[1]?.trim() === "package";
+      continue;
+    }
+    if (!diPackage) continue;
+    const nilai = /^\s*(name|version)\s*=\s*"([^"]*)"/.exec(baris);
+    if (nilai === null) continue;
+    const kunci = nilai[1];
+    if (kunci === "name" && name === null) {
+      name = nilai[2] ?? null;
+      continue;
+    }
+    if (kunci === "version" && versionLine === -1) {
+      versionLine = index;
+      version = nilai[2] ?? null;
+    }
+  }
+
+  return { name, version, versionLine };
+}
+
+/**
+ * Menaikkan versi pada baris `version` milik paket `jejak-desktop`.
+ *
+ * Hanya baris itu yang berubah; isi berkas lain dibiarkan apa adanya.
+ */
+export function bumpCargoToml(text: string, version: string): string {
+  const info = parseCargoPackage(text);
+  if (info.name !== CARGO_PACKAGE_NAME) {
+    throw new Error(
+      `Cargo.toml tidak punya paket ${CARGO_PACKAGE_NAME} (dapat: ${info.name ?? "tidak ada"})`,
+    );
+  }
+  if (info.versionLine === -1) {
+    throw new Error("Cargo.toml bagian [package] tidak punya baris version");
+  }
+  const lines = text.split("\n");
+  const baris = lines[info.versionLine] ?? "";
+  const cocok = /^(\s*version\s*=\s*")([^"]*)(".*)$/.exec(baris);
+  if (cocok === null) {
+    throw new Error(`Baris version di Cargo.toml tidak bisa ditulis: "${baris}"`);
+  }
+  lines[info.versionLine] = `${cocok[1]}${version}${cocok[3]}`;
+  return lines.join("\n");
+}
+
 interface HasilPerintah {
   code: number;
   stdout: string;
@@ -181,7 +276,11 @@ export async function main(argv: string[]): Promise<number> {
 
   const pathPackage = join(ROOT, "package.json");
   const pathChangelog = join(ROOT, "CHANGELOG.md");
+  const pathTauri = join(ROOT, "src-tauri", "tauri.conf.json");
+  const pathCargo = join(ROOT, "src-tauri", "Cargo.toml");
   const teksPackage = readFileSync(pathPackage, "utf8");
+  const teksTauri = readFileSync(pathTauri, "utf8");
+  const teksCargo = readFileSync(pathCargo, "utf8");
   const versiSekarang = (JSON.parse(teksPackage) as { version?: string }).version;
   if (typeof versiSekarang !== "string") {
     console.error("package.json tidak punya field version");
@@ -231,6 +330,9 @@ export async function main(argv: string[]): Promise<number> {
     console.log(`Akan rilis ${version} (dari ${versiSekarang}) pada ${tanggal}.`);
     console.log(`Akan menulis versi ${version} ke package.json.`);
     console.log(
+      `Akan menulis versi ${version} ke src-tauri/tauri.conf.json dan src-tauri/Cargo.toml.`,
+    );
+    console.log(
       `Akan mengganti bagian ${UNRELEASED_HEADING} dengan bagian ${version} di CHANGELOG.md.`,
     );
     console.log(`Akan membuat commit "chore: rilis ${version}".`);
@@ -239,8 +341,15 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  writeFileSync(pathPackage, bumpPackageJson(teksPackage, version));
-  writeFileSync(pathChangelog, bumpChangelog(teksChangelog, version, tanggal));
+  const isiPackage = bumpPackageJson(teksPackage, version);
+  const isiTauri = bumpTauriConf(teksTauri, version);
+  const isiCargo = bumpCargoToml(teksCargo, version);
+  const isiChangelog = bumpChangelog(teksChangelog, version, tanggal);
+
+  writeFileSync(pathPackage, isiPackage);
+  writeFileSync(pathTauri, isiTauri);
+  writeFileSync(pathCargo, isiCargo);
+  writeFileSync(pathChangelog, isiChangelog);
 
   const commit = jalankan("git", ["commit", "-am", `chore: rilis ${version}`]);
   if (commit.code !== 0) {
