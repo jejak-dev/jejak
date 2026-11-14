@@ -217,6 +217,12 @@ export function sandboxAvailable(
         }
       : { ok: true, detail: `bwrap tersedia (${bwrap}); socat tersedia (${socat})` };
   }
+  if (platform === "win32") {
+    return {
+      ok: false,
+      detail: "Sandbox tidak tersedia di Windows.",
+    };
+  }
   return {
     ok: false,
     detail: `Sandbox tidak didukung di platform ${platform}.`,

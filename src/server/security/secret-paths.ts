@@ -1,6 +1,6 @@
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { isWindows, pathApi, toSlash } from "../platform";
 
 export interface SecretAccessCheck {
   toolName: string;
@@ -57,16 +57,25 @@ function stringField(input: unknown, field: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function expandHome(raw: string, home: string): string {
+function expandHome(raw: string, home: string, platform: NodeJS.Platform): string {
+  const p = pathApi(platform);
   if (raw === "~") return home;
-  if (raw.startsWith("~/")) return resolve(home, raw.slice(2));
+  if (raw.startsWith("~/")) return p.resolve(home, raw.slice(2));
+  // Di Windows "~\\AppData\\..." juga berarti folder home.
+  if (isWindows(platform) && raw.startsWith("~\\")) return p.resolve(home, raw.slice(2));
   return raw;
 }
 
 /** Jalur absolut ternormalisasi; realpath bila ada agar symlink ikut tertangkap. */
-function normalizePath(raw: string, cwd: string, home: string): string {
-  const expanded = expandHome(raw, home);
-  const absolute = isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded);
+function normalizePath(
+  raw: string,
+  cwd: string,
+  home: string,
+  platform: NodeJS.Platform,
+): string {
+  const p = pathApi(platform);
+  const expanded = expandHome(raw, home, platform);
+  const absolute = p.isAbsolute(expanded) ? p.resolve(expanded) : p.resolve(cwd, expanded);
   try {
     if (existsSync(absolute)) return realpathSync(absolute);
   } catch {
@@ -75,39 +84,60 @@ function normalizePath(raw: string, cwd: string, home: string): string {
   return absolute;
 }
 
+/** Perbandingan nama berkas; Windows tak membedakan huruf besar-kecil. */
+function sameName(a: string, b: string, platform: NodeJS.Platform): boolean {
+  return isWindows(platform) ? a.toLowerCase() === b.toLowerCase() : a === b;
+}
+
+function startsWithName(a: string, b: string, platform: NodeJS.Platform): boolean {
+  return isWindows(platform) ? a.toLowerCase().startsWith(b.toLowerCase()) : a.startsWith(b);
+}
+
+function endsWithName(a: string, b: string, platform: NodeJS.Platform): boolean {
+  return isWindows(platform) ? a.toLowerCase().endsWith(b.toLowerCase()) : a.endsWith(b);
+}
+
 /** Apakah jalur (relatif atau absolut) tampak berkas rahasia; dipakai indexer untuk menyaring. */
-export function isSecretFilePath(path: string): boolean {
-  return ruleForPath(path) !== undefined;
+export function isSecretFilePath(
+  path: string,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return ruleForPath(path, platform) !== undefined;
 }
 
 /** Nama aturan yang cocok untuk jalur absolut, atau undefined. */
-function ruleForPath(absPath: string): string | undefined {
-  const name = basename(absPath);
+function ruleForPath(absPath: string, platform: NodeJS.Platform): string | undefined {
+  const p = pathApi(platform);
+  const name = p.basename(absPath);
 
-  if (name === ".env") return ".env";
-  if (name.startsWith(".env.")) {
+  if (sameName(name, ".env", platform)) return ".env";
+  if (startsWithName(name, ".env.", platform)) {
     const suffix = name.slice(".env".length);
     if (!ENV_PUBLIC_SUFFIXES.includes(suffix)) return ".env.*";
   }
 
   for (const entry of SECRET_EXTENSIONS) {
-    if (name.endsWith(entry.suffix)) return entry.rule;
+    if (endsWithName(name, entry.suffix, platform)) return entry.rule;
   }
 
   for (const entry of PLAIN_NAMES) {
-    if (name === entry.name) return entry.rule;
+    if (sameName(name, entry.name, platform)) return entry.rule;
   }
 
   for (const entry of ID_KEY_PREFIXES) {
-    if (name.startsWith(entry.prefix) && !name.endsWith(".pub")) return entry.rule;
+    if (startsWithName(name, entry.prefix, platform) && !endsWithName(name, ".pub", platform)) {
+      return entry.rule;
+    }
   }
 
-  const parent = basename(dirname(absPath));
-  if (name === "credentials" && parent === ".aws") return ".aws/credentials";
+  const parent = p.basename(p.dirname(absPath));
+  if (sameName(name, "credentials", platform) && sameName(parent, ".aws", platform)) {
+    return ".aws/credentials";
+  }
 
   const segments = absPath.split(/[\\/]+/);
-  if (segments.includes(".ssh")) {
-    if (name.endsWith(".pub") || SSH_EXEMPT.has(name)) return undefined;
+  if (segments.some((segment) => sameName(segment, ".ssh", platform))) {
+    if (endsWithName(name, ".pub", platform) || SSH_EXEMPT.has(name)) return undefined;
     return ".ssh/**";
   }
 
@@ -115,40 +145,45 @@ function ruleForPath(absPath: string): string | undefined {
 }
 
 /** Heuristik pola glob yang menyebut nama rahasia. */
-function ruleForPattern(pattern: string): string | undefined {
-  const name = basename(pattern);
-  if (name.startsWith(".env")) return ".env";
+function ruleForPattern(pattern: string, platform: NodeJS.Platform): string | undefined {
+  const p = pathApi(platform);
+  // Di Windows pola glob bisa memakai pemisah "\".
+  const text = isWindows(platform) ? toSlash(pattern) : pattern;
+  const name = p.basename(text);
+  if (startsWithName(name, ".env", platform)) return ".env";
   for (const entry of SECRET_EXTENSIONS) {
-    if (name.endsWith(entry.suffix)) return entry.rule;
+    if (endsWithName(name, entry.suffix, platform)) return entry.rule;
   }
-  if (name.includes("id_rsa")) return "id_rsa*";
-  if (name.includes("id_ed25519")) return "id_ed25519*";
-  if (name.includes(".npmrc")) return ".npmrc";
-  if (name.includes(".netrc")) return ".netrc";
-  if (pattern.includes(".aws/credentials")) return ".aws/credentials";
-  if (pattern.includes(".ssh/")) return ".ssh/**";
+  const lower = name.toLowerCase();
+  if (lower.includes("id_rsa")) return "id_rsa*";
+  if (lower.includes("id_ed25519")) return "id_ed25519*";
+  if (lower.includes(".npmrc")) return ".npmrc";
+  if (lower.includes(".netrc")) return ".netrc";
+  if (text.toLowerCase().includes(".aws/credentials")) return ".aws/credentials";
+  if (text.toLowerCase().includes(".ssh/")) return ".ssh/**";
   return undefined;
 }
 
 /** Cepat melewati token yang tidak mungkin menyebut berkas rahasia. */
-function tokenMayBeSecret(token: string): boolean {
+function tokenMayBeSecret(token: string, platform: NodeJS.Platform): boolean {
+  const text = isWindows(platform) ? token.toLowerCase() : token;
   return (
-    token.includes(".env") ||
-    token.includes(".pem") ||
-    token.includes(".key") ||
-    token.includes(".p12") ||
-    token.includes(".pfx") ||
-    token.includes("id_rsa") ||
-    token.includes("id_ed25519") ||
-    token.includes("id_ecdsa") ||
-    token.includes("id_dsa") ||
-    token.includes(".npmrc") ||
-    token.includes(".netrc") ||
-    token.includes(".pgpass") ||
-    token.includes(".aws") ||
-    token.includes(".ssh") ||
-    token.includes(".git-credentials") ||
-    token.includes("credentials")
+    text.includes(".env") ||
+    text.includes(".pem") ||
+    text.includes(".key") ||
+    text.includes(".p12") ||
+    text.includes(".pfx") ||
+    text.includes("id_rsa") ||
+    text.includes("id_ed25519") ||
+    text.includes("id_ecdsa") ||
+    text.includes("id_dsa") ||
+    text.includes(".npmrc") ||
+    text.includes(".netrc") ||
+    text.includes(".pgpass") ||
+    text.includes(".aws") ||
+    text.includes(".ssh") ||
+    text.includes(".git-credentials") ||
+    text.includes("credentials")
   );
 }
 
@@ -207,7 +242,7 @@ function tokenizeCommand(command: string): string[] {
 
 export function checkSecretAccess(
   check: SecretAccessCheck,
-  options: { isAllowed?: (absPath: string) => boolean } = {},
+  options: { isAllowed?: (absPath: string) => boolean; platform?: NodeJS.Platform } = {},
 ): SecretAccessVerdict {
   try {
     if (!isRecord(check)) return { blocked: false };
@@ -218,11 +253,12 @@ export function checkSecretAccess(
     const home =
       typeof check.home === "string" && check.home !== "" ? check.home : homedir();
     const isAllowed = options.isAllowed;
+    const platform = options.platform ?? process.platform;
 
     const blockedByPath = (raw: string | undefined): SecretAccessVerdict => {
       if (raw === undefined || raw === "") return { blocked: false };
-      const absPath = normalizePath(raw, cwd, home);
-      const rule = ruleForPath(absPath);
+      const absPath = normalizePath(raw, cwd, home, platform);
+      const rule = ruleForPath(absPath, platform);
       if (rule === undefined) return { blocked: false };
       if (isAllowed !== undefined) {
         try {
@@ -236,7 +272,7 @@ export function checkSecretAccess(
 
     const blockedByPattern = (pattern: string | undefined): SecretAccessVerdict => {
       if (pattern === undefined || pattern === "") return { blocked: false };
-      const rule = ruleForPattern(pattern);
+      const rule = ruleForPattern(pattern, platform);
       return rule === undefined
         ? { blocked: false }
         : { blocked: true, rule, reason: SECRET_BLOCK_REASON };
@@ -285,7 +321,7 @@ export function checkSecretAccess(
           if (token.includes("/api/sandbox")) {
             return { blocked: true, rule: "sandbox-api", reason: SECRET_BLOCK_REASON };
           }
-          if (!tokenMayBeSecret(token)) continue;
+          if (!tokenMayBeSecret(token, platform)) continue;
           const verdict = blockedByPath(token);
           if (verdict.blocked) return verdict;
         }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, chmodSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { runGit } from "../files/changes";
 import { resolveInside, FileError } from "../files/path";
@@ -7,6 +7,10 @@ import { isSecretFilePath } from "../security/secret-paths";
 import type { RemoteRepo } from "../gitprovider/adapters";
 import type { GitProviderProfile } from "../gitprovider/provider-store";
 import { jejakHome } from "../provider-store";
+import { POSIX_ASKPASS, writeAskpass } from "../git/askpass";
+
+/** Isi askpass POSIX; dipakai layanan lain yang butuh skrip yang sama. */
+export const ASKPASS = POSIX_ASKPASS;
 
 export interface IndexedRepo {
   key: string;
@@ -40,7 +44,6 @@ export const MAX_SEARCH_RESULTS = 50;
 const CLONE_TIMEOUT_MS = 180_000;
 const GIT_TIMEOUT_MS = 30_000;
 const KEY_RE = /^[0-9a-f]{16}$/;
-export const ASKPASS = '#!/bin/sh\ncase "$1" in\n  Username*) echo oauth2 ;;\n  *) echo "$JEJAK_GIT_TOKEN" ;;\nesac\n';
 
 export function indexRoot(env: Record<string, string | undefined> = process.env): string {
   return join(jejakHome(env), "cache", "repos");
@@ -90,16 +93,20 @@ export function cloneUrlProblem(
 export interface RepoIndexerOptions {
   root: string;
   now?: () => Date;
+  /** Platform untuk perilaku lintas OS; default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 export class RepoIndexer {
   private readonly root: string;
   private readonly now: () => Date;
+  private readonly platform: NodeJS.Platform;
   private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(options: RepoIndexerOptions) {
     this.root = options.root;
     this.now = options.now ?? (() => new Date());
+    this.platform = options.platform ?? process.platform;
   }
 
   private dir(key: string): string {
@@ -119,13 +126,7 @@ export class RepoIndexer {
   }
 
   private ensureAskpass(): string {
-    mkdirSync(this.root, { recursive: true, mode: 0o700 });
-    const path = join(this.root, "askpass.sh");
-    if (!existsSync(path) || readFileSync(path, "utf8") !== ASKPASS) {
-      writeFileSync(path, ASKPASS, { mode: 0o700 });
-      chmodSync(path, 0o700);
-    }
-    return path;
+    return writeAskpass(this.root, this.platform);
   }
 
   /** `cloneUrl` harus berasal dari adapter penyedia: asal-usul dicek di sini juga. */

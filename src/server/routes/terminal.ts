@@ -2,14 +2,22 @@ import { Elysia } from "elysia";
 import type { AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
 import { TerminalError, type TerminalManager } from "../terminal/terminal-manager";
+import { isWindows, TERMINAL_UNAVAILABLE_WINDOWS } from "../platform";
 
 export interface TerminalRoutesOptions {
   /** Tanpa manajer semua rute menjawab 503 (terminal dimatikan secara default). */
   manager?: TerminalManager;
   audit?: AuditStore;
+  /** Platform untuk pesan 503; default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 const DISABLED = "Terminal dimatikan. Jalankan Jejak dengan JEJAK_TERMINAL=1 untuk menyalakannya.";
+
+/** Pesan 503 sesuai platform: di Windows terminal memang tak ada. */
+function disabledMessage(platform: NodeJS.Platform): string {
+  return isWindows(platform) ? TERMINAL_UNAVAILABLE_WINDOWS : DISABLED;
+}
 
 function json(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -50,7 +58,7 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
   const manager = options.manager;
   const plugin = new Elysia({ name: "jejak-terminal-routes" });
   if (manager === undefined) {
-    const off = () => json(503, { error: DISABLED });
+    const off = () => json(503, { error: disabledMessage(options.platform ?? process.platform) });
     return plugin
       .get("/api/terminal", off)
       .post("/api/terminal", off)

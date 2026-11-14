@@ -124,6 +124,10 @@ export function confirmText(item: RunnerCommand): string {
 export function runErrorMessage(status: number, message?: string): string {
   if (status === 409) return "Perintah belum dikonfirmasi. Konfirmasi ulang di panel ini.";
   if (status === 503) {
+    // Di Windows server menjawab bahwa terminal tak tersedia; pesan itu lebih
+    // jujur daripada petunjuk JEJAK_TERMINAL=1 yang tak berguna di sana.
+    const text = message?.trim();
+    if (text !== undefined && text !== "" && /windows/i.test(text)) return text;
     return "Terminal dimatikan. Jalankan Jejak dengan JEJAK_TERMINAL=1 untuk menyalakannya.";
   }
   if (status === 429) {

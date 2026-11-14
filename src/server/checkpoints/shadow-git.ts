@@ -1,3 +1,5 @@
+import { nullDevice } from "../platform";
+
 export interface ShadowSession {
   /** GIT_DIR repo bayangan (di dalam JEJAK_HOME, bukan milik pengguna). */
   gitDir: string;
@@ -27,24 +29,26 @@ export const SHADOW_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
  * Konfigurasi yang menetralkan apa pun yang bisa dieksekusi git: hook, filter
  * eksternal, pager, fsmonitor, dan konfigurasi global/sistem pengguna.
  */
-const SAFETY_ARGS = [
-  "-c",
-  "core.hooksPath=/dev/null",
-  "-c",
-  "core.fsmonitor=false",
-  "-c",
-  "core.pager=cat",
-  "-c",
-  "diff.external=",
-  "-c",
-  "core.quotepath=false",
-  "-c",
-  "gc.auto=0",
-  "-c",
-  "core.autocrlf=false",
-  "-c",
-  "core.symlinks=true",
-];
+function safetyArgs(): string[] {
+  return [
+    "-c",
+    `core.hooksPath=${nullDevice()}`,
+    "-c",
+    "core.fsmonitor=false",
+    "-c",
+    "core.pager=cat",
+    "-c",
+    "diff.external=",
+    "-c",
+    "core.quotepath=false",
+    "-c",
+    "gc.auto=0",
+    "-c",
+    "core.autocrlf=false",
+    "-c",
+    "core.symlinks=true",
+  ];
+}
 
 function shadowEnv(session: ShadowSession): Record<string, string> {
   const env: Record<string, string> = {};
@@ -56,7 +60,7 @@ function shadowEnv(session: ShadowSession): Record<string, string> {
   env.GIT_OPTIONAL_LOCKS = "0";
   env.GIT_TERMINAL_PROMPT = "0";
   env.GIT_CONFIG_NOSYSTEM = "1";
-  env.GIT_CONFIG_GLOBAL = "/dev/null";
+  env.GIT_CONFIG_GLOBAL = nullDevice();
   env.GIT_PAGER = "cat";
   env.LC_ALL = "C";
   return env;
@@ -76,7 +80,7 @@ export async function runShadowGit(
   let proc;
   try {
     proc = Bun.spawn({
-      cmd: ["git", ...SAFETY_ARGS, ...args],
+      cmd: ["git", ...safetyArgs(), ...args],
       cwd: session.workTree,
       env: shadowEnv(session),
       stdin: options.stdinText === undefined ? "ignore" : "pipe",

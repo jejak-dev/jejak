@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { pathApi } from "../platform";
 
 export interface NativePickResult {
   /** `undefined` bila pengguna membatalkan dialog. */
@@ -30,7 +31,8 @@ export async function pickFolderNative(
     throw new Error("Dialog folder native hanya tersedia di macOS.");
   }
   const run = deps.run ?? defaultRun;
-  const dir = start !== undefined && start.startsWith("/") ? start : homedir();
+  // Path absolut dicek menurut platform, bukan awalan "/".
+  const dir = start !== undefined && pathApi(platform).isAbsolute(start) ? start : homedir();
   // Argumen dikirim lewat argv, bukan disisipkan ke skrip, agar path tidak bisa menyuntikkan AppleScript.
   const script = [
     "on run argv",

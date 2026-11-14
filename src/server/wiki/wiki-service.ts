@@ -1,6 +1,5 @@
 import {
   type Dirent,
-  chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
@@ -18,7 +17,9 @@ import type {
   GitProviderStore,
 } from "../gitprovider/provider-store";
 import { jejakHome } from "../provider-store";
-import { ASKPASS, cloneUrlProblem, gitMessage, repoKey } from "../indexer/repo-indexer";
+import { cloneUrlProblem, gitMessage, repoKey } from "../indexer/repo-indexer";
+import { writeAskpass } from "../git/askpass";
+import { nullDevice } from "../platform";
 import { isSecretFilePath } from "../security/secret-paths";
 
 export type WikiErrorCode = "tidak-valid" | "tidak-ditemukan" | "belum-sinkron" | "gagal";
@@ -44,7 +45,9 @@ const CLONE_TIMEOUT_MS = 180_000;
 const GIT_TIMEOUT_MS = 30_000;
 
 /** Pengaman yang selalu ikut pada setiap perintah git milik layanan ini. */
-export const WIKI_SAFETY_ARGS = ["-c", "core.hooksPath=/dev/null"] as const;
+export function wikiSafetyArgs(platform: NodeJS.Platform = process.platform): string[] {
+  return ["-c", `core.hooksPath=${nullDevice(platform)}`];
+}
 
 /** Ekstensi wiki yang dibaca; di luar daftar ini berkas diabaikan. */
 const FORMATS: Record<string, "markdown" | "text"> = {
@@ -76,7 +79,10 @@ export function wikiCloneUrl(cloneUrl: string): string {
 }
 
 /** Argumen pengaman git: hook dimatikan dan protokol dibatasi. */
-export function wikiGitArgs(kind: GitProviderKind): string[] {
+export function wikiGitArgs(
+  kind: GitProviderKind,
+  platform: NodeJS.Platform = process.platform,
+): string[] {
   const protocols =
     kind === "local"
       ? ["-c", "protocol.allow=never", "-c", "protocol.file.allow=always"]
@@ -88,7 +94,7 @@ export function wikiGitArgs(kind: GitProviderKind): string[] {
           "-c",
           "protocol.http.allow=always",
         ];
-  return [...WIKI_SAFETY_ARGS, ...protocols];
+  return [...wikiSafetyArgs(platform), ...protocols];
 }
 
 /** Argumen klon dangkal: tanpa submodul, tanpa hook, satu cabang saja. */
@@ -162,6 +168,8 @@ export interface WikiServiceOptions {
     fullPath: string,
   ) => Promise<{ provider: GitProviderProfile; repo: RemoteRepo }>;
   now?: () => Date;
+  /** Platform untuk perilaku lintas OS; default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 /**
@@ -173,6 +181,7 @@ export class WikiService {
   private readonly providers: GitProviderStore;
   private readonly resolveRepo: WikiServiceOptions["resolveRepo"];
   private readonly now: () => Date;
+  private readonly platform: NodeJS.Platform;
   private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(options: WikiServiceOptions) {
@@ -180,6 +189,7 @@ export class WikiService {
     this.providers = options.providers;
     this.resolveRepo = options.resolveRepo;
     this.now = options.now ?? (() => new Date());
+    this.platform = options.platform ?? process.platform;
   }
 
   private dir(key: string): string {
@@ -199,13 +209,7 @@ export class WikiService {
   }
 
   private ensureAskpass(): string {
-    mkdirSync(this.root, { recursive: true, mode: 0o700 });
-    const path = join(this.root, "askpass.sh");
-    if (!existsSync(path) || readFileSync(path, "utf8") !== ASKPASS) {
-      writeFileSync(path, ASKPASS, { mode: 0o700 });
-      chmodSync(path, 0o700);
-    }
-    return path;
+    return writeAskpass(this.root, this.platform);
   }
 
   /** Jumlah wiki yang sudah tersinkron di cache. */
@@ -272,7 +276,7 @@ export class WikiService {
           ? {}
           : { JEJAK_GIT_TOKEN: profile.token }),
       };
-      const protocols = wikiGitArgs(profile.kind);
+      const protocols = wikiGitArgs(profile.kind, this.platform);
       const repoDir = this.repoDir(key);
       mkdirSync(dir, { recursive: true, mode: 0o700 });
 

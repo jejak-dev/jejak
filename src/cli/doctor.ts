@@ -1,4 +1,5 @@
 import { readFile, readdir, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { listSessionDirs } from "../server/checkpoints/checkpoint-service";
 import { readMcpConfig, mcpServersPath } from "../server/mcp/mcp-config";
@@ -9,6 +10,7 @@ import { jejakHome, loadRegistry, providersPath } from "../server/provider-store
 import { readSchemaVersion, sessionsPath } from "../server/sessions/session-store";
 import { inspectDataVersion } from "../server/data-version";
 import { sandboxAvailable } from "../server/sandbox/build-options";
+import { isWindows } from "../server/platform";
 import { scanWorkspaceFiles, workspacesDir } from "../server/workspaces/workspace-files";
 import { locateClaude, type LocateOptions } from "../server/sdk/claude-locator";
 import { detectCompiled } from "../server/sdk/sdk-loader";
@@ -45,6 +47,12 @@ export interface DoctorContext {
   locate?: LocateOptions;
   /** Path binary yang berjalan; default `process.execPath`. */
   execPath?: string;
+  /** Platform target; default `process.platform`. */
+  platform?: NodeJS.Platform;
+  /** Pencari program di PATH; default `Bun.which`. */
+  which?: (name: string) => string | null;
+  /** Pemeriksa keberadaan berkas; default `existsSync`. */
+  fileExists?: (path: string) => boolean;
 }
 
 function parseMajorMinor(v: string): [number, number] {
@@ -94,6 +102,7 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
   const env = ctx.env ?? process.env;
   const path = ctx.providersPath ?? providersPath(env);
   const resolveSdk = ctx.resolveSdk ?? defaultResolveSdk;
+  const platform = ctx.platform ?? process.platform;
   const checks: Check[] = [];
 
   let compiled = false;
@@ -471,7 +480,7 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
       detail: "dimatikan (JEJAK_SANDBOX=0)",
     });
   } else {
-    const check = ctx.sandbox ?? (() => sandboxAvailable());
+    const check = ctx.sandbox ?? (() => sandboxAvailable(platform));
     let availability: { ok: boolean; detail: string };
     try {
       availability = check();
@@ -489,7 +498,59 @@ export async function collectChecks(ctx: DoctorContext = {}): Promise<Check[]> {
 
   checks.push(await collectClaudeCliCheck(ctx, env));
 
+  if (isWindows(platform)) {
+    checks.push(...collectWindowsChecks(ctx, env));
+  }
+
   return checks;
+}
+
+/** Lokasi umum Git Bash di Windows. */
+const GIT_BASH_LOCATIONS = [
+  "C:\\Program Files\\Git\\bin\\bash.exe",
+  "C:\\Program Files (x86)\\Git\\bin\\bash.exe",
+  "C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+];
+
+/**
+ * Cek khusus Windows: git di PATH dan Git Bash untuk tool Bash Agent SDK.
+ * Hanya muncul di Windows; hasil doctor di platform lain tak berubah.
+ */
+function collectWindowsChecks(
+  ctx: DoctorContext,
+  env: Record<string, string | undefined>,
+): Check[] {
+  const which = ctx.which ?? Bun.which;
+  const fileExists = ctx.fileExists ?? existsSync;
+
+  const git = which("git");
+  const gitCheck: Check = git === null
+    ? {
+        name: "Git untuk Windows",
+        status: "peringatan",
+        detail:
+          "git tidak ditemukan di PATH; pasang Git for Windows dari https://git-scm.com/download/win",
+      }
+    : { name: "Git untuk Windows", status: "ok", detail: git };
+
+  const dariEnv = env.CLAUDE_CODE_GIT_BASH_PATH?.trim();
+  let bash: string | undefined;
+  if (dariEnv !== undefined && dariEnv !== "") {
+    bash = fileExists(dariEnv) ? dariEnv : undefined;
+  } else {
+    bash = GIT_BASH_LOCATIONS.find((location) => fileExists(location));
+  }
+  const bashCheck: Check = bash === undefined
+    ? {
+        name: "Git Bash",
+        status: "peringatan",
+        detail: dariEnv !== undefined && dariEnv !== ""
+          ? `CLAUDE_CODE_GIT_BASH_PATH menunjuk ke ${dariEnv} yang tidak ada; tool Bash Agent SDK butuh bash Git.`
+          : "bash Git tidak ditemukan; tool Bash Agent SDK butuh Git for Windows (C:\\Program Files\\Git\\bin\\bash.exe) atau set CLAUDE_CODE_GIT_BASH_PATH",
+      }
+    : { name: "Git Bash", status: "ok", detail: bash };
+
+  return [gitCheck, bashCheck];
 }
 
 /** Label sumber penemuan CLI `claude` untuk ditampilkan ke pengguna. */

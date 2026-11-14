@@ -1,5 +1,6 @@
 import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
+import { isWindows } from "../platform";
 
 export type TerminalErrorCode = "tidak-valid" | "tidak-ditemukan" | "batas";
 
@@ -78,24 +79,30 @@ export interface TerminalManagerOptions {
   now?: () => number;
   maxTerminals?: number;
   idleMs?: number;
+  /** Platform untuk perilaku lintas OS; default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 export class TerminalManager {
   private readonly entries = new Map<string, Entry>();
   private readonly shell: string;
+  private readonly shellGiven: boolean;
   private readonly env: Record<string, string>;
   private readonly now: () => number;
   private readonly max: number;
   private readonly idleMs: number;
+  private readonly platform: NodeJS.Platform;
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: TerminalManagerOptions = {}) {
     const envShell = (options.env ?? process.env).SHELL;
     this.shell = options.shell ?? (envShell !== undefined && isAbsolute(envShell) ? envShell : "/bin/sh");
+    this.shellGiven = options.shell !== undefined;
     this.env = scrubEnv(options.env ?? process.env);
     this.now = options.now ?? (() => Date.now());
     this.max = options.maxTerminals ?? MAX_TERMINALS;
     this.idleMs = options.idleMs ?? IDLE_MS;
+    this.platform = options.platform ?? process.platform;
   }
 
   /** Mulai penyapu berkala (tutup terminal menganggur dan bersihkan yang sudah keluar). */
@@ -110,6 +117,13 @@ export class TerminalManager {
   }
 
   create(input: { cwd: unknown; cols?: unknown; rows?: unknown }): TerminalInfo {
+    // Terminal butuh shell POSIX; di Windows tidak ada `/bin/sh`.
+    if (isWindows(this.platform) && !this.shellGiven) {
+      throw new TerminalError(
+        "Terminal tidak tersedia di Windows: shell POSIX (/bin/sh) tidak ada. Jalankan perintah lewat bash Git for Windows.",
+        "tidak-valid",
+      );
+    }
     const cwd = input.cwd;
     if (typeof cwd !== "string" || !isAbsolute(cwd)) throw invalid("cwd harus berupa path absolut.");
     let isDirectory = false;
@@ -157,7 +171,10 @@ export class TerminalManager {
         },
       });
     } catch {
-      throw new TerminalError("Shell tidak dapat dijalankan.", "tidak-valid");
+      throw new TerminalError(
+        `Shell tidak dapat dijalankan: ${this.shell}.`,
+        "tidak-valid",
+      );
     }
     entry.proc = proc;
     this.entries.set(id, entry);

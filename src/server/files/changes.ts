@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { nullDevice } from "../platform";
 import { resolveInside } from "./path";
 import { readTextFile } from "./read";
 
@@ -67,10 +68,12 @@ const SAFETY_ARGS = [
 ];
 
 /** `commit` boleh menjalankan hook pengguna; perintah lain tidak pernah. */
-const HOOKS_DISABLED_ARGS = ["-c", "core.hooksPath=/dev/null"];
+function hooksDisabledArgs(): string[] {
+  return ["-c", `core.hooksPath=${nullDevice()}`];
+}
 
 function safetyArgs(allowHooks: boolean): string[] {
-  return allowHooks ? SAFETY_ARGS : [...SAFETY_ARGS, ...HOOKS_DISABLED_ARGS];
+  return allowHooks ? SAFETY_ARGS : [...SAFETY_ARGS, ...hooksDisabledArgs()];
 }
 
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;

@@ -1,5 +1,6 @@
 import { realpath } from "node:fs/promises";
-import { isAbsolute, posix, resolve, sep, win32 } from "node:path";
+import { isAbsolute, posix, win32 } from "node:path";
+import { isWindows, pathApi } from "../platform";
 
 export type FileErrorCode = "tidak-valid" | "tidak-ditemukan";
 
@@ -54,8 +55,13 @@ function validate(rel: unknown): string {
  * Menyelesaikan path relatif terhadap cwd dan memastikan hasil realpath-nya
  * tetap berada di dalam folder kerja. Symlink yang menunjuk keluar ditolak.
  */
-export async function resolveInside(cwd: string, rel: unknown): Promise<ResolvedPath> {
+export async function resolveInside(
+  cwd: string,
+  rel: unknown,
+  platform: NodeJS.Platform = process.platform,
+): Promise<ResolvedPath> {
   const normalized = validate(rel);
+  const p = pathApi(platform);
 
   let root: string;
   try {
@@ -64,7 +70,7 @@ export async function resolveInside(cwd: string, rel: unknown): Promise<Resolved
     throw new FileError("Folder kerja tidak ditemukan.", "tidak-ditemukan");
   }
 
-  const candidate = resolve(root, normalized);
+  const candidate = p.resolve(root, normalized);
 
   let target: string;
   try {
@@ -73,7 +79,14 @@ export async function resolveInside(cwd: string, rel: unknown): Promise<Resolved
     throw new FileError("Path tidak ditemukan.", "tidak-ditemukan");
   }
 
-  if (target !== root && !target.startsWith(root + sep)) {
+  // Di Windows nama path tak membedakan huruf besar-kecil.
+  const same = isWindows(platform)
+    ? target.toLowerCase() === root.toLowerCase()
+    : target === root;
+  const inside = isWindows(platform)
+    ? target.toLowerCase().startsWith(root.toLowerCase() + p.sep)
+    : target.startsWith(root + p.sep);
+  if (!same && !inside) {
     throw new FileError(OUTSIDE, "tidak-valid");
   }
 

@@ -9,7 +9,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, join } from "node:path";
+import { isWindows, pathApi, type PathApi } from "../platform";
 import { jejakHome } from "../provider-store";
 import { checkSecretAccess } from "./secret-paths";
 
@@ -64,12 +65,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function toPosix(value: string): string {
-  return value.split(sep).join("/");
+function toPosix(value: string, p: PathApi): string {
+  return value.split(p.sep).join("/");
 }
 
-function normalizeRoot(root: string): string {
-  const resolved = resolve(root);
+function normalizeRoot(root: string, p: PathApi): string {
+  const resolved = p.resolve(root);
   try {
     return realpathSync(resolved);
   } catch {
@@ -77,8 +78,8 @@ function normalizeRoot(root: string): string {
   }
 }
 
-function normalizePath(path: string): string {
-  const resolved = resolve(path);
+function normalizePath(path: string, p: PathApi): string {
+  const resolved = p.resolve(path);
   try {
     if (existsSync(resolved)) return realpathSync(resolved);
   } catch {
@@ -87,40 +88,52 @@ function normalizePath(path: string): string {
   return resolved;
 }
 
-function expandHome(raw: string): string {
+function expandHome(raw: string, p: PathApi, platform: NodeJS.Platform): string {
   if (raw === "~") return homedir();
-  if (raw.startsWith("~/")) return resolve(homedir(), raw.slice(2));
+  if (raw.startsWith("~/")) return p.resolve(homedir(), raw.slice(2));
+  // Di Windows "~\\AppData\\..." juga berarti folder home.
+  if (isWindows(platform) && raw.startsWith("~\\")) return p.resolve(homedir(), raw.slice(2));
   return raw;
 }
 
 /** Jalur relatif POSIX bila berada di dalam `rootNorm`, selain itu undefined. */
-function relativeInside(rootNorm: string, absPath: string): string | undefined {
-  const rel = relative(rootNorm, absPath);
-  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) return undefined;
-  return toPosix(rel);
+function relativeInside(rootNorm: string, absPath: string, p: PathApi): string | undefined {
+  const rel = p.relative(rootNorm, absPath);
+  if (rel === "" || rel.startsWith("..") || p.isAbsolute(rel)) return undefined;
+  return toPosix(rel, p);
 }
 
-function sanitizeLoaded(value: unknown): string[] | undefined {
+function sanitizeLoaded(value: unknown, p: PathApi): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const paths: string[] = [];
   for (const item of value) {
     if (typeof item !== "string" || item === "") continue;
-    if (isAbsolute(item) || item === ".." || item.startsWith("../")) continue;
+    if (p.isAbsolute(item) || item === ".." || item.startsWith("../")) continue;
     if (!paths.includes(item)) paths.push(item);
   }
   return paths.length === 0 ? undefined : paths.sort();
+}
+
+/** Opsi penyimpanan izin rahasia. */
+export interface SecretAllowStoreOptions {
+  /** Platform untuk resolusi path; default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 /** Penyimpanan berkas JSON atomik; `:memory:` untuk tes tanpa berkas. */
 export class FileSecretAllowStore implements SecretAllowStore {
   private readonly path: string;
   private readonly inMemory: boolean;
+  private readonly platform: NodeJS.Platform;
+  private readonly p: PathApi;
   private readonly projects = new Map<string, string[]>();
   private loaded = false;
 
-  constructor(path: string) {
+  constructor(path: string, options: SecretAllowStoreOptions = {}) {
     this.path = path;
     this.inMemory = path === ":memory:" || path === "";
+    this.platform = options.platform ?? process.platform;
+    this.p = pathApi(this.platform);
   }
 
   private load(): void {
@@ -142,7 +155,7 @@ export class FileSecretAllowStore implements SecretAllowStore {
       if (!isRecord(parsed) || parsed.version !== SECRET_ALLOW_VERSION) return;
       if (!isRecord(parsed.projects)) return;
       for (const [root, value] of Object.entries(parsed.projects)) {
-        const paths = sanitizeLoaded(value);
+        const paths = sanitizeLoaded(value, this.p);
         if (paths !== undefined) this.projects.set(root, paths);
       }
     } catch {
@@ -187,19 +200,22 @@ export class FileSecretAllowStore implements SecretAllowStore {
 
   list(projectRoot: string): string[] {
     this.load();
-    const paths = this.projects.get(normalizeRoot(projectRoot));
+    const paths = this.projects.get(normalizeRoot(projectRoot, this.p));
     return paths === undefined ? [] : [...paths];
   }
 
   isAllowed(projectRoot: string, absPath: string): boolean {
     try {
       this.load();
-      const rootNorm = normalizeRoot(projectRoot);
+      const rootNorm = normalizeRoot(projectRoot, this.p);
       const paths = this.projects.get(rootNorm);
       if (paths === undefined || paths.length === 0) return false;
       if (typeof absPath !== "string" || absPath === "") return false;
-      const abs = normalizePath(isAbsolute(absPath) ? absPath : join(rootNorm, absPath));
-      const rel = relativeInside(rootNorm, abs);
+      const abs = normalizePath(
+        this.p.isAbsolute(absPath) ? absPath : this.p.join(rootNorm, absPath),
+        this.p,
+      );
+      const rel = relativeInside(rootNorm, abs, this.p);
       return rel !== undefined && paths.includes(rel);
     } catch {
       return false;
@@ -211,20 +227,25 @@ export class FileSecretAllowStore implements SecretAllowStore {
     if (typeof path !== "string" || path.trim() === "") {
       throw new SecretAllowError("Jalur harus berupa teks yang tidak kosong.");
     }
-    const rootNorm = normalizeRoot(projectRoot);
-    const raw = expandHome(path.trim());
-    const logical = isAbsolute(raw) ? resolve(raw) : resolve(rootNorm, raw);
-    const abs = normalizePath(logical);
-    const rel = relativeInside(rootNorm, abs);
+    const rootNorm = normalizeRoot(projectRoot, this.p);
+    const raw = expandHome(path.trim(), this.p, this.platform);
+    const logical = this.p.isAbsolute(raw)
+      ? this.p.resolve(raw)
+      : this.p.resolve(rootNorm, raw);
+    const abs = normalizePath(logical, this.p);
+    const rel = relativeInside(rootNorm, abs, this.p);
     if (rel === undefined) {
       throw new SecretAllowError(OUTSIDE_MESSAGE);
     }
 
-    const verdict = checkSecretAccess({
-      toolName: "Read",
-      toolInput: { file_path: abs },
-      cwd: rootNorm,
-    });
+    const verdict = checkSecretAccess(
+      {
+        toolName: "Read",
+        toolInput: { file_path: abs },
+        cwd: rootNorm,
+      },
+      { platform: this.platform },
+    );
     if (!verdict.blocked || verdict.rule === undefined) {
       throw new SecretAllowError(NOT_SECRET_MESSAGE);
     }
@@ -254,13 +275,15 @@ export class FileSecretAllowStore implements SecretAllowStore {
   remove(projectRoot: string, path: string): boolean {
     this.load();
     if (typeof path !== "string" || path.trim() === "") return false;
-    const rootNorm = normalizeRoot(projectRoot);
+    const rootNorm = normalizeRoot(projectRoot, this.p);
     const existing = this.projects.get(rootNorm);
     if (existing === undefined) return false;
 
-    const raw = expandHome(path.trim());
-    const logical = isAbsolute(raw) ? resolve(raw) : resolve(rootNorm, raw);
-    const rel = relativeInside(rootNorm, normalizePath(logical));
+    const raw = expandHome(path.trim(), this.p, this.platform);
+    const logical = this.p.isAbsolute(raw)
+      ? this.p.resolve(raw)
+      : this.p.resolve(rootNorm, raw);
+    const rel = relativeInside(rootNorm, normalizePath(logical, this.p), this.p);
     if (rel === undefined) return false;
 
     const index = existing.indexOf(rel);

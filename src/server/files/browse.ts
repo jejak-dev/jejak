@@ -1,6 +1,6 @@
 import { lstat, readdir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { pathApi, type PathApi } from "../platform";
 
 export interface BrowseEntry {
   /** Nama entri apa adanya (bisa nama symlink). */
@@ -37,6 +37,8 @@ export interface BrowseOptions {
   home?: string;
   /** Jumlah entri maksimum; default 300. */
   limit?: number;
+  /** Platform untuk pemeriksaan path absolut; default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 const DEFAULT_LIMIT = 300;
@@ -45,20 +47,20 @@ const NOT_FOUND = "Folder tidak ditemukan.";
 const NOT_DIRECTORY = "Bukan folder.";
 const UNREADABLE = "Folder tidak bisa dibaca.";
 
-function validatePath(input: unknown, home: string): string {
+function validatePath(input: unknown, home: string, platform: NodeJS.Platform): string {
   if (input === undefined || input === "") return home;
   if (typeof input !== "string") {
     throw new BrowseError(INVALID, 400);
   }
-  if (input.includes("\0") || !isAbsolute(input)) {
+  if (input.includes("\0") || !pathApi(platform).isAbsolute(input)) {
     throw new BrowseError(INVALID, 400);
   }
   return input;
 }
 
-async function hasGit(dir: string): Promise<boolean> {
+async function hasGit(dir: string, p: PathApi): Promise<boolean> {
   try {
-    await lstat(join(dir, ".git"));
+    await lstat(p.join(dir, ".git"));
     return true;
   } catch {
     return false;
@@ -76,7 +78,9 @@ export async function browseDirs(
 ): Promise<BrowseResult> {
   const home = options.home ?? homedir();
   const limit = options.limit ?? DEFAULT_LIMIT;
-  const requested = validatePath(input, home);
+  const platform = options.platform ?? process.platform;
+  const p = pathApi(platform);
+  const requested = validatePath(input, home, platform);
 
   let target: string;
   try {
@@ -108,10 +112,10 @@ export async function browseDirs(
 
     let entryPath: string;
     if (dirent.isDirectory()) {
-      entryPath = join(target, dirent.name);
+      entryPath = p.join(target, dirent.name);
     } else if (dirent.isSymbolicLink()) {
       try {
-        entryPath = await realpath(join(target, dirent.name));
+        entryPath = await realpath(p.join(target, dirent.name));
       } catch {
         continue; // symlink rusak
       }
@@ -126,12 +130,12 @@ export async function browseDirs(
       continue;
     }
 
-    entries.push({ name: dirent.name, path: entryPath, git: await hasGit(entryPath) });
+    entries.push({ name: dirent.name, path: entryPath, git: await hasGit(entryPath, p) });
   }
 
   entries.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
   const truncated = entries.length > limit;
-  const parentPath = dirname(target);
+  const parentPath = p.dirname(target);
 
   return {
     path: target,

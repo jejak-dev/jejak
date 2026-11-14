@@ -265,9 +265,13 @@ describe("sandboxAvailable", () => {
   });
 
   test("platform lain tidak didukung", () => {
-    const result = sandboxAvailable("win32", () => null);
+    const win = sandboxAvailable("win32", () => null);
+    expect(win.ok).toBe(false);
+    expect(win.detail).toContain("tidak tersedia di Windows");
+
+    const result = sandboxAvailable("freebsd", () => null);
     expect(result.ok).toBe(false);
-    expect(result.detail).toContain("win32");
+    expect(result.detail).toContain("freebsd");
   });
 });
 

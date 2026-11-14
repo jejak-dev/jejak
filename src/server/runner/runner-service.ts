@@ -3,6 +3,7 @@ import type { AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
 import { redactSecrets } from "../security/redact";
 import { TerminalError } from "../terminal/terminal-manager";
+import { isWindows, TERMINAL_UNAVAILABLE_WINDOWS } from "../platform";
 import { readPackageScripts } from "./package-scripts";
 import {
   hasControlChar,
@@ -37,6 +38,11 @@ export class RunnerError extends Error {
 export const TERMINAL_DISABLED =
   "Terminal dimatikan. Jalankan Jejak dengan JEJAK_TERMINAL=1 untuk menyalakannya.";
 
+/** Pesan terminal mati sesuai platform; di Windows terminal memang tak ada. */
+export function terminalDisabledMessage(platform: NodeJS.Platform = process.platform): string {
+  return isWindows(platform) ? TERMINAL_UNAVAILABLE_WINDOWS : TERMINAL_DISABLED;
+}
+
 export type RunnerSource = "package" | "custom";
 
 export interface RunnerCommand {
@@ -62,6 +68,8 @@ export interface RunnerServiceOptions {
   /** Daftar folder yang boleh dipakai (cwd sesi dan worktree). */
   allowedCwds: () => string[];
   audit?: AuditStore;
+  /** Platform untuk pesan terminal mati; default `process.platform`. */
+  platform?: NodeJS.Platform;
 }
 
 function invalid(message: string): RunnerError {
@@ -145,12 +153,14 @@ export class RunnerService {
   private readonly terminal: RunnerTerminal | undefined;
   private readonly allowedCwds: () => string[];
   private readonly audit: AuditStore | undefined;
+  private readonly platform: NodeJS.Platform;
 
   constructor(options: RunnerServiceOptions) {
     this.store = options.store;
     this.terminal = options.terminal;
     this.allowedCwds = options.allowedCwds;
     this.audit = options.audit;
+    this.platform = options.platform ?? process.platform;
   }
 
   /** Folder yang diminta harus ada di daftar folder sesi. */
@@ -320,7 +330,9 @@ export class RunnerService {
     }
 
     const terminal = this.terminal;
-    if (terminal === undefined) throw new RunnerError(TERMINAL_DISABLED, "nonaktif");
+    if (terminal === undefined) {
+      throw new RunnerError(terminalDisabledMessage(this.platform), "nonaktif");
+    }
 
     let terminalId: string;
     try {
