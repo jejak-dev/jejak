@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.1] - 2026-11-14
+
 ### Ditambah
 
 - CLI dan server Jejak: perintah `serve`, `doctor`, `--version`, serta autentikasi opsional dengan sandi tunggal.
