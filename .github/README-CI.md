@@ -36,6 +36,6 @@ memakai tag bergulir `beta`, ditandai prarilis, dan tidak berupa draf.
 
 ## Catatan
 - Windows masih beta: kegagalan di runner Windows tidak memblokir PR/rilis.
-- Action memakai tag mayor (`actions/checkout@v4`, `tauri-apps/tauri-action@v0`).
-  Sebelum repo dipublikasikan, disarankan pin ke SHA commit.
+- Semua action dipin ke SHA commit (komentar di ujung baris menyebut tag asal).
+  Untuk memperbarui, resolusikan tag baru ke SHA lalu ganti manual.
 - Uji "pasang N-1 lalu perbarui ke N" belum otomatis; uji manual lulus di R4a.
