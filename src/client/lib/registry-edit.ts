@@ -256,6 +256,43 @@ export function removeProfile(draft: RegistryDraft, id: string): RegistryDraft {
   return remaining;
 }
 
+/**
+ * Draf setelah satu profil dihapus; profil aktif diganti bila profil yang
+ * aktif ikut terhapus, dan activeProfileId selalu menunjuk profil yang ada.
+ */
+export function draftAfterRemoval(draft: RegistryDraft, id: string): RegistryDraft {
+  const next = removeProfile(draft, id);
+  if (next.profiles.length === 0) return { profiles: [] };
+  const active = next.activeProfileId;
+  if (active !== undefined && next.profiles.some((profile) => profile.id === active)) return next;
+  return { ...next, activeProfileId: next.profiles[0]?.id };
+}
+
+/** Benar bila profil belum pernah tersimpan; profil baru dibatalkan tanpa modal. */
+export function isUnsavedProfile(
+  original: RegistryDraft | undefined,
+  profile: ProfileDraft,
+): boolean {
+  if (profile.isNew) return true;
+  if (original === undefined) return false;
+  return !original.profiles.some((entry) => entry.id === profile.id);
+}
+
+/**
+ * Galat validasi yang menghalangi penyimpanan draf.
+ * Galat "Minimal satu profil" sengaja tidak dihitung: profil terakhir
+ * dihapus tetap dikirim ke server supaya penolakannya tampil jelas.
+ */
+export function blockingDraftErrors(draft: RegistryDraft): string[] {
+  const errors = validateDraft(draft);
+  const messages: string[] = [];
+  for (const [key, list] of Object.entries(errors)) {
+    if (key === "_") continue;
+    messages.push(...list);
+  }
+  return messages;
+}
+
 export function validateDraft(draft: RegistryDraft): Record<string, string[]> {
   const errors: Record<string, string[]> = {};
   const push = (key: string, message: string): void => {

@@ -2,10 +2,13 @@ import { describe, expect, test } from "bun:test";
 import type { RegistryView } from "../src/client/lib/registry-view";
 import {
   addProfile,
+  blockingDraftErrors,
+  draftAfterRemoval,
   fallbackName,
   fallbackOptions,
   fieldForMessage,
   isDirty,
+  isUnsavedProfile,
   newProfileDraft,
   removeProfile,
   setFallbackProfile,
@@ -634,5 +637,64 @@ describe("jendela konteks model", () => {
 
     const bad = validProfile({ modelsText: "m1", modelWindows: { m1: "abc" } });
     expect(JSON.stringify(validateDraft(draftWith(bad)))).toContain("Jendela konteks");
+  });
+});
+
+describe("draftAfterRemoval", () => {
+  test("profil aktif yang dihapus diganti profil pertama yang tersisa", () => {
+    const draft = toDraft(fullView());
+    const next = draftAfterRemoval(draft, "lokal");
+    expect(next.profiles.map((profile) => profile.id)).toEqual(["cadangan"]);
+    expect(next.activeProfileId).toBe("cadangan");
+  });
+
+  test("profil bukan aktif dihapus tanpa mengubah profil aktif", () => {
+    const draft = toDraft(fullView());
+    const next = draftAfterRemoval(draft, "cadangan");
+    expect(next.profiles.map((profile) => profile.id)).toEqual(["lokal"]);
+    expect(next.activeProfileId).toBe("lokal");
+  });
+
+  test("profil terakhir dihapus membuat daftar kosong tanpa profil aktif", () => {
+    const draft: RegistryDraft = { activeProfileId: "satu", profiles: [validProfile({ id: "satu" })] };
+    const next = draftAfterRemoval(draft, "satu");
+    expect(next.profiles).toEqual([]);
+    expect(next.activeProfileId).toBeUndefined();
+  });
+
+  test("profil aktif yang tidak ada diperbaiki ke profil yang tersedia", () => {
+    const draft: RegistryDraft = {
+      activeProfileId: "hilang",
+      profiles: [validProfile({ id: "satu" })],
+    };
+    expect(draftAfterRemoval(draft, "satu").activeProfileId).toBeUndefined();
+    expect(draftAfterRemoval(draft, "lain").activeProfileId).toBe("satu");
+  });
+});
+
+describe("isUnsavedProfile", () => {
+  test("profil baru dan profil di luar original dianggap belum tersimpan", () => {
+    const original = toDraft(fullView());
+    expect(isUnsavedProfile(original, validProfile({ id: "profil-1", isNew: true }))).toBe(true);
+    expect(isUnsavedProfile(original, validProfile({ id: "lain" }))).toBe(true);
+    expect(isUnsavedProfile(original, validProfile({ id: "lokal" }))).toBe(false);
+  });
+
+  test("tanpa original, profil tersimpan tidak dianggap baru", () => {
+    expect(isUnsavedProfile(undefined, validProfile({ id: "lokal" }))).toBe(false);
+    expect(isUnsavedProfile(undefined, validProfile({ id: "profil-1", isNew: true }))).toBe(true);
+  });
+});
+
+describe("blockingDraftErrors", () => {
+  test("galat minimal satu profil tidak diblokir agar server menolak dengan jelas", () => {
+    expect(blockingDraftErrors({ profiles: [] })).toEqual([]);
+  });
+
+  test("galat isian profil lain diblokir", () => {
+    const messages = blockingDraftErrors({
+      profiles: [validProfile({ id: "satu", name: "  " })],
+    });
+    expect(messages).toContain("Nama tidak boleh kosong.");
   });
 });

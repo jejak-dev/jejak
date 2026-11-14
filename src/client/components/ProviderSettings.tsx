@@ -4,11 +4,13 @@ import { ApiError, type ApiClient, type ConnectionTestView } from "../lib/api";
 import { parseRegistryView, type RegistryView } from "../lib/registry-view";
 import {
   addProfile,
+  blockingDraftErrors,
+  draftAfterRemoval,
   fallbackName,
   fallbackOptions,
   isDirty,
+  isUnsavedProfile,
   newProfileDraft,
-  removeProfile,
   toDraft,
   toPayload,
   updateProfile,
@@ -65,7 +67,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsNote, setModelsNote] = useState<string | undefined>(undefined);
   const [pendingRemove, setPendingRemove] = useState<ProfileDraft | undefined>(undefined);
-  const [removeNote, setRemoveNote] = useState(false);
+  const [removeNote, setRemoveNote] = useState<string | undefined>(undefined);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -109,16 +111,16 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
     setTestResult(undefined);
   };
 
-  const save = useCallback(async (): Promise<boolean> => {
-    if (draft === undefined) return false;
+  const save = useCallback(async (target: RegistryDraft | undefined = draft): Promise<boolean> => {
+    if (target === undefined) return false;
     setSaving(true);
     setSaveError(undefined);
     setTestError(undefined);
     try {
-      const payload = await api.saveProviders(toPayload(draft));
+      const payload = await api.saveProviders(toPayload(target));
       // Draf dimuat ulang dari respons; key literal tidak pernah ditampilkan lagi.
       applySavedView(payload);
-      setRemoveNote(false);
+      setRemoveNote(undefined);
       await onSaved();
       return true;
     } catch (error) {
@@ -191,7 +193,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
     setActiveError(undefined);
     setTestError(undefined);
     setTestResult(undefined);
-    setRemoveNote(false);
+    setRemoveNote(undefined);
     void (async () => {
       try {
         const payload = await api.setActiveProvider(profile.id);
@@ -216,18 +218,37 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
 
   const onRemove = (profile: ProfileDraft): void => {
     if (draft === undefined) return;
+    // Profil baru yang belum pernah tersimpan: buang dari draf tanpa modal dan tanpa simpan.
+    if (isUnsavedProfile(original, profile)) {
+      const next = draftAfterRemoval(draft, profile.id);
+      setDraft(next);
+      setSelectedId(pickSelection(next, undefined));
+      setRemoveNote(undefined);
+      closeTransient();
+      return;
+    }
     // Penghapusan diminta lewat modal; baru diterapkan setelah konfirmasi.
     setPendingRemove(profile);
   };
 
   const onConfirmRemove = (): void => {
     if (draft === undefined || pendingRemove === undefined) return;
-    const next = removeProfile(draft, pendingRemove.id);
+    const next = draftAfterRemoval(draft, pendingRemove.id);
     setPendingRemove(undefined);
     setDraft(next);
     setSelectedId(pickSelection(next, undefined));
-    setRemoveNote(true);
     closeTransient();
+    const blocking = blockingDraftErrors(next);
+    if (blocking.length > 0) {
+      // Draf tetap berisi penghapusan; user bisa memperbaiki lalu menyimpan.
+      setSaveError(`Perbaiki isian berikut sebelum menyimpan: ${blocking.join(" ")}`);
+      return;
+    }
+    void (async () => {
+      // Penghapusan langsung tersimpan; tidak perlu tombol Simpan perubahan.
+      const saved = await save(next);
+      if (saved) setRemoveNote("Provider dihapus.");
+    })();
   };
 
   const onAdd = (): void => {
@@ -240,7 +261,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
     setDraft(next);
     setSelectedId(profile.id);
     setModelsNote(undefined);
-    setRemoveNote(false);
+    setRemoveNote(undefined);
     closeTransient();
   };
 
@@ -337,9 +358,9 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
           </div>
 
           <div class="jk-profile-form-pane">
-            {removeNote && (
+            {removeNote !== undefined && (
               <p class="jk-note" role="status">
-                Provider dihapus dari draf. Tekan Simpan perubahan untuk menerapkannya.
+                {removeNote}
               </p>
             )}
 
@@ -369,7 +390,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
                 testResult={testResult}
                 testError={testError}
                 onChange={(patch) => {
-                  setRemoveNote(false);
+                  setRemoveNote(undefined);
                   if (patch.id === undefined) {
                     setDraft((current) => updateProfile(current!, selected.id, patch));
                     return;
@@ -413,7 +434,7 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
         message={
           pendingRemove === undefined
             ? undefined
-            : `Provider ${providerName(pendingRemove)} akan dihapus dari daftar. Perubahan baru berlaku setelah kamu menekan Simpan perubahan.`
+            : `Provider ${providerName(pendingRemove)} akan dihapus dan perubahan langsung disimpan.`
         }
         confirmLabel="Hapus"
         tone="danger"
