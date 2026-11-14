@@ -42,6 +42,8 @@ export interface Memory {
   createdAt: string;
   updatedAt: string;
   decidedAt: string | null;
+  /** Id memory yang direvisi oleh memory ini; `null` untuk memory biasa. */
+  replaces: string | null;
 }
 
 export const MEMORY_TITLE_MAX = 120;
@@ -156,8 +158,10 @@ export function serializeMemory(memory: Memory): string {
     `created: ${memory.createdAt}`,
     `updated: ${memory.updatedAt}`,
     `decided: ${memory.decidedAt === null ? "null" : memory.decidedAt}`,
-    "---",
   ];
+  // Baris `replaces` hanya ditulis bila memory ini merevisi memory lain.
+  if (memory.replaces !== null) lines.push(`replaces: ${memory.replaces}`);
+  lines.push("---");
   const frontmatter = `${lines.join("\n")}\n`;
   // Judul berbaris baru tidak bisa ditulis sebagai H1 tanpa merusak isi.
   if (memory.title.includes("\n") || memory.title.includes("\r")) {
@@ -352,6 +356,17 @@ export function parseMemory(text: string, context: ParseMemoryContext): ParseMem
     }
   }
 
+  // `replaces` opsional: berkas lama tidak punya baris ini.
+  const replacesRaw = fields.get("replaces");
+  let replaces: string | null = null;
+  if (replacesRaw !== undefined) {
+    const value = unquote(replacesRaw);
+    if (value !== "" && value !== "null") {
+      if (!isMemoryId(value)) return failure("replaces tidak valid");
+      replaces = value;
+    }
+  }
+
   // Isi berkas baru diawali H1 judul; awalan itu dibuang agar isi kembali
   // seperti aslinya. Berkas lama tanpa H1 tetap terbaca apa adanya.
   let body = split.body;
@@ -390,6 +405,7 @@ export function parseMemory(text: string, context: ParseMemoryContext): ParseMem
       createdAt,
       updatedAt,
       decidedAt,
+      replaces,
     },
   };
 }

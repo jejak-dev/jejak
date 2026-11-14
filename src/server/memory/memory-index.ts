@@ -11,7 +11,7 @@ import {
   type MemoryStatus,
 } from "./memory-files";
 
-export const MEMORY_SCHEMA_VERSION = 1;
+export const MEMORY_SCHEMA_VERSION = 2;
 
 export interface MemoryProblem {
   file: string;
@@ -22,6 +22,8 @@ export type MemoryMatch = "all" | "any";
 
 export interface MemoryListQuery {
   status?: MemoryStatus;
+  /** Beberapa status sekaligus; mengabaikan `status` bila diisi. */
+  statuses?: MemoryStatus[];
   layer?: MemoryLayer;
   project?: string;
   q?: string;
@@ -49,6 +51,7 @@ interface MemoryRow {
   created_at: string;
   updated_at: string;
   decided_at: string | null;
+  replaces: string | null;
 }
 
 /** Baris ringkas untuk menyusun `INDEX.md` sebuah folder. */
@@ -80,6 +83,7 @@ function rowToMemory(row: MemoryRow): Memory {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     decidedAt: row.decided_at,
+    replaces: row.replaces ?? null,
   };
 }
 
@@ -156,8 +160,8 @@ export class MemoryIndex {
     this.db = MemoryIndex.open(inMemory ? ":memory:" : path, inMemory);
 
     this.stmtUpsert = this.db.prepare(
-      `INSERT INTO memories (id, path, layer, project_key, title, body, status, confidence, origin, created_at, updated_at, decided_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO memories (id, path, layer, project_key, title, body, status, confidence, origin, created_at, updated_at, decided_at, replaces)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          path = excluded.path,
          layer = excluded.layer,
@@ -169,7 +173,8 @@ export class MemoryIndex {
          origin = excluded.origin,
          created_at = excluded.created_at,
          updated_at = excluded.updated_at,
-         decided_at = excluded.decided_at`,
+         decided_at = excluded.decided_at,
+         replaces = excluded.replaces`,
     );
     this.stmtDeleteById = this.db.prepare("DELETE FROM memories WHERE id = ?");
     this.stmtDeleteByPath = this.db.prepare("DELETE FROM memories WHERE path = ?");
@@ -257,7 +262,8 @@ export class MemoryIndex {
          origin TEXT NOT NULL,
          created_at TEXT NOT NULL,
          updated_at TEXT NOT NULL,
-         decided_at TEXT
+         decided_at TEXT,
+         replaces TEXT
        )`,
     );
     db.run("CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(title, body)");
@@ -280,6 +286,14 @@ export class MemoryIndex {
       return;
     }
     const version = Number(row.value);
+    // Migrasi aman dari versi lama: kolom `replaces` ditambahkan, isi lama tetap.
+    if (version === 1) {
+      db.run("ALTER TABLE memories ADD COLUMN replaces TEXT");
+      db.run("UPDATE meta SET value = ? WHERE key = 'schema_version'", [
+        String(MEMORY_SCHEMA_VERSION),
+      ]);
+      return;
+    }
     if (!Number.isSafeInteger(version) || version !== MEMORY_SCHEMA_VERSION) {
       throw new Error(`Versi skema indeks memory tidak cocok: "${row.value}".`);
     }
@@ -312,6 +326,7 @@ export class MemoryIndex {
       memory.createdAt,
       memory.updatedAt,
       memory.decidedAt,
+      memory.replaces,
     );
 
     const row = this.stmtRowId.get(relPath) as { rowid: number } | null;
@@ -417,6 +432,11 @@ export class MemoryIndex {
     if (query.status !== undefined) {
       clauses.push(`${prefix}status = ?`);
       params.push(query.status);
+    }
+    if (query.statuses !== undefined && query.statuses.length > 0) {
+      const placeholders = query.statuses.map(() => "?").join(", ");
+      clauses.push(`${prefix}status IN (${placeholders})`);
+      params.push(...query.statuses);
     }
     if (query.layer !== undefined) {
       clauses.push(`${prefix}layer = ?`);

@@ -46,6 +46,7 @@ function memory(overrides: Partial<Memory> = {}): Memory {
     createdAt: at,
     updatedAt: at,
     decidedAt: null,
+    replaces: null,
     ...overrides,
   };
 }

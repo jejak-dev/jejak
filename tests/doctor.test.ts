@@ -418,6 +418,7 @@ test("memory: ada berkas, indeks, dan jumlah aktif/usulan", async () => {
     createdAt: "2026-11-08T10:00:00.000Z",
     updatedAt: "2026-11-08T10:00:00.000Z",
     decidedAt: null,
+    replaces: null,
   });
   await store.create({
     id: crypto.randomUUID(),
@@ -432,6 +433,7 @@ test("memory: ada berkas, indeks, dan jumlah aktif/usulan", async () => {
     createdAt: "2026-11-08T10:00:00.000Z",
     updatedAt: "2026-11-08T10:00:00.000Z",
     decidedAt: null,
+    replaces: null,
   });
   store.close();
 

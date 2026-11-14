@@ -91,6 +91,8 @@ interface ItemBody {
     projectKey: string | null;
     staleReason: string | null;
     decidedAt: string | null;
+    replaces: string | null;
+    revises: { id: string; title: string; body: string } | null;
     origin: { kind: string; file?: string; fileSha256?: string };
   };
 }
@@ -423,6 +425,120 @@ describe("impor dokumen proyek lewat API", () => {
       origin: "http://evil.test",
     });
     expect(badOrigin.status).toBe(403);
+  });
+});
+
+describe("replaces dan revises lewat rute", () => {
+  async function appWithService(): Promise<{
+    app: App;
+    service: MemoryService;
+    close: () => void;
+  }> {
+    const store2 = new FileMemoryStore({ dir: join(home, "memory-revisi") });
+    const service = new MemoryService({ store: store2, cwd: dir });
+    return { app: makeApp({ memory: service }), service, close: () => store2.close() };
+  }
+
+  test("memory biasa menyertakan replaces null dan revises null", async () => {
+    const { app, close } = await appWithService();
+    try {
+      const res = await req(app, "POST", "/api/memory", {
+        layer: "profile",
+        title: "Gaya",
+        body: "Jawaban singkat",
+      });
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as ItemBody;
+      expect(body.item.replaces).toBeNull();
+      expect(body.item.revises).toBeNull();
+
+      const listed = (await (await req(app, "GET", "/api/memory")).json()) as ListBody;
+      expect(listed.items[0]?.replaces).toBeNull();
+      expect(listed.items[0]?.revises).toBeNull();
+    } finally {
+      close();
+    }
+  });
+
+  test("usulan revisi menyertakan target yang masih ada", async () => {
+    const { app, service, close } = await appWithService();
+    try {
+      const target = await service.create({
+        layer: "profile",
+        title: "Perintah lama",
+        body: "Isi lama",
+      });
+      const proposal = await service.propose({
+        layer: "profile",
+        title: "Perintah baru",
+        body: "Isi baru",
+        replaces: target.id,
+      });
+
+      const body = (await (await req(app, "GET", "/api/memory?status=proposed")).json()) as ListBody;
+      const found = body.items.find((item) => item.id === proposal.id);
+      expect(found?.replaces).toBe(target.id);
+      expect(found?.revises).toEqual({
+        id: target.id,
+        title: "Perintah lama",
+        body: "Isi lama",
+      });
+    } finally {
+      close();
+    }
+  });
+
+  test("target hilang menghasilkan revises null", async () => {
+    const { app, service, close } = await appWithService();
+    try {
+      const target = await service.create({
+        layer: "profile",
+        title: "Perintah lama",
+        body: "Isi lama",
+      });
+      const proposal = await service.propose({
+        layer: "profile",
+        title: "Perintah baru",
+        body: "Isi baru",
+        replaces: target.id,
+      });
+      await service.delete(target.id);
+
+      const body = (await (await req(app, "GET", "/api/memory?status=proposed")).json()) as ListBody;
+      const found = body.items.find((item) => item.id === proposal.id);
+      expect(found?.replaces).toBe(target.id);
+      expect(found?.revises).toBeNull();
+    } finally {
+      close();
+    }
+  });
+
+  test("menerima usulan revisi mengembalikan target yang diperbarui", async () => {
+    const { app, service, close } = await appWithService();
+    try {
+      const target = await service.create({
+        layer: "profile",
+        title: "Perintah lama",
+        body: "Isi lama",
+      });
+      const proposal = await service.propose({
+        layer: "profile",
+        title: "Perintah baru",
+        body: "Isi baru",
+        replaces: target.id,
+      });
+
+      const res = await req(app, "POST", `/api/memory/${proposal.id}/accept`);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as ItemBody;
+      expect(body.item.id).toBe(target.id);
+      expect(body.item.title).toBe("Perintah baru");
+      expect(body.item.body).toBe("Isi baru");
+      expect(body.item.replaces).toBeNull();
+      expect(body.item.revises).toBeNull();
+    } finally {
+      close();
+    }
   });
 });
 

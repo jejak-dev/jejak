@@ -17,13 +17,24 @@ import {
 } from "./memory-files";
 import type { MemoryCounts, MemoryListQuery, MemoryProblem } from "./memory-index";
 import type { MemoryStore } from "./memory-store";
+import {
+  MEMORY_SIMILARITY_MIN,
+  keywords,
+  memorySimilarity,
+} from "./memory-similarity";
 import { SESSION_SUMMARY_PREFIX } from "./session-summary";
+
+export { MEMORY_SIMILARITY_MIN, similarity } from "./memory-similarity";
 
 export const MEMORY_FROM_CODE_CONFIDENCE: MemoryConfidence = "from_code";
 export const MEMORY_ACTIVE_LIMIT = 500;
 export const MEMORY_PROPOSED_LIMIT = 200;
 export const MEMORY_DEFAULT_LIMIT = 100;
 export const MEMORY_MAX_LIMIT = 200;
+/** Jumlah kandidat yang diambil dari pencarian FTS sebelum disaring. */
+const SIMILARITY_CANDIDATE_LIMIT = 20;
+/** Jumlah memory mirip yang dikembalikan ke pemanggil. */
+const SIMILARITY_RESULT_LIMIT = 3;
 const STALE_FILE_MAX_BYTES = 1024 * 1024;
 
 const SECRET_MESSAGE = (kind: string): string =>
@@ -64,6 +75,8 @@ export interface ProposeInput extends CreateMemoryInput {
   originFile?: unknown;
   sessionId?: unknown;
   commit?: unknown;
+  /** Id memory aktif yang direvisi oleh usulan ini. */
+  replaces?: unknown;
 }
 
 export type ImportSkipReason =
@@ -339,6 +352,7 @@ export class MemoryService {
       createdAt: at,
       updatedAt: at,
       decidedAt: null,
+      replaces: null,
     };
     return this.store.create(memory);
   }
@@ -365,6 +379,7 @@ export class MemoryService {
       createdAt: at,
       updatedAt: at,
       decidedAt: null,
+      replaces: null,
     };
     return this.store.create(memory);
   }
@@ -372,6 +387,9 @@ export class MemoryService {
   /**
    * Membuat usulan dari agent: selalu `proposed`, confidence `inferred`, atau
    * `from_code` bila berkas asal berhasil diverifikasi. Tidak pernah `active`.
+   *
+   * Bila `replaces` diisi, usulan ini merevisi memory aktif yang ada: target
+   * harus berstatus `active` dan satu lingkup (layer dan projectKey) yang sama.
    */
   async propose(input: ProposeInput, cwd?: string): Promise<Memory> {
     const baseCwd = cwd ?? this.cwd;
@@ -379,6 +397,8 @@ export class MemoryService {
     const projectKey = this.normalizeProjectKey(layer, input.projectKey);
     const title = this.normalizeText(input.title, "title", MEMORY_TITLE_MAX);
     const body = this.normalizeText(input.body, "body", MEMORY_BODY_MAX);
+
+    const replaces = await this.resolveReplaceTarget(input.replaces, layer, projectKey);
 
     await this.enforceProposedLimit();
 
@@ -448,8 +468,85 @@ export class MemoryService {
       createdAt: at,
       updatedAt: at,
       decidedAt: null,
+      replaces,
     };
     return this.store.create(memory);
+  }
+
+  /**
+   * Memastikan target revisi ada, berstatus `active`, dan satu lingkup yang
+   * sama dengan usulan. Mengembalikan id target, atau `null` bila `replaces`
+   * tidak diisi.
+   */
+  private async resolveReplaceTarget(
+    raw: unknown,
+    layer: MemoryLayer,
+    projectKey: string | null,
+  ): Promise<string | null> {
+    if (raw === undefined || raw === null || raw === "") return null;
+    if (typeof raw !== "string") {
+      throw invalid("Field replaces harus berupa id memory.");
+    }
+    const id = raw.trim();
+    if (id === "") return null;
+    const target = await this.store.get(id);
+    if (target === null) {
+      throw notFound(id);
+    }
+    if (target.status !== "active") {
+      throw conflict(
+        `Memory "${id}" yang akan direvisi bukan berstatus active, jadi tidak bisa direvisi.`,
+      );
+    }
+    if (target.layer !== layer || target.projectKey !== projectKey) {
+      throw conflict(
+        `Memory "${id}" yang akan direvisi berada di lingkup lain, jadi tidak bisa direvisi dari sini.`,
+      );
+    }
+    return target.id;
+  }
+
+  /**
+   * Memory yang mirip dengan isi yang sedang/usul baru: kandidat diambil dari
+   * memory `active` dan `proposed` pada layer+projectKey yang sama, lalu
+   * disaring dengan kemiripan Jaccard atas himpunan kata judul+isi.
+   */
+  async findSimilar(input: {
+    layer: MemoryLayer;
+    projectKey: string | null;
+    title: string;
+    body: string;
+  }): Promise<Memory[]> {
+    const layer = input.layer;
+    const projectKey = layer === "profile" ? null : input.projectKey;
+    const query = keywords(`${input.title}\n${input.body}`).join(" ");
+    if (query === "") return [];
+
+    const candidates = await this.store.list({
+      q: query,
+      match: "any",
+      statuses: ["active", "proposed"],
+      layer,
+      project: projectKey ?? undefined,
+      limit: SIMILARITY_CANDIDATE_LIMIT,
+    });
+
+    const scoped = candidates.filter(
+      (memory) => memory.layer === layer && memory.projectKey === projectKey,
+    );
+    const similar = scoped.filter(
+      (memory) =>
+        memorySimilarity(memory, { title: input.title, body: input.body }) >=
+        MEMORY_SIMILARITY_MIN,
+    );
+    similar.sort((left, right) => {
+      const byScore =
+        memorySimilarity(right, { title: input.title, body: input.body }) -
+        memorySimilarity(left, { title: input.title, body: input.body });
+      if (byScore !== 0) return byScore;
+      return right.updatedAt.localeCompare(left.updatedAt);
+    });
+    return similar.slice(0, SIMILARITY_RESULT_LIMIT);
   }
 
   /**
@@ -730,12 +827,86 @@ export class MemoryService {
     return updated;
   }
 
-  accept(id: string): Promise<Memory> {
-    return this.transition(id, ["proposed"], "active", "confirmed", true);
+  /**
+   * Menerima usulan. Usulan biasa aktif seperti biasa; usulan revisi
+   * (`replaces`) diterapkan ke memory target: isi, judul, dan asal diambil
+   * dari usulan, id serta nama berkas target tetap, dan berkas usulan dihapus.
+   */
+  async accept(id: string): Promise<Memory> {
+    const current = await this.store.get(id);
+    if (current === null) {
+      throw notFound(id);
+    }
+    if (current.status !== "proposed") {
+      throw conflict(
+        `Memory berstatus "${current.status}" tidak bisa berpindah ke "active".`,
+      );
+    }
+    if (current.replaces === null) {
+      await this.enforceLimits(current.layer, current.projectKey);
+      const updated = await this.store.setStatus(
+        id,
+        "active",
+        "confirmed",
+        this.clock(),
+      );
+      if (updated === null) {
+        throw notFound(id);
+      }
+      return updated;
+    }
+    return this.acceptRevision(current);
+  }
+
+  /**
+   * Menerima usulan revisi: target harus masih ada dan aktif. Isi dari
+   * usulan ditulis ke target lebih dulu, baru berkas usulan dihapus.
+   */
+  private async acceptRevision(proposal: Memory): Promise<Memory> {
+    const targetId = proposal.replaces;
+    if (targetId === null) {
+      throw notFound(proposal.id);
+    }
+    const target = await this.store.get(targetId);
+    if (target === null || target.status !== "active") {
+      throw conflict(
+        "Memory yang direvisi sudah tidak aktif; tolak usulan ini atau buat usulan baru.",
+      );
+    }
+
+    const at = this.clock();
+    const updated: Memory = {
+      ...target,
+      title: proposal.title,
+      body: proposal.body,
+      origin: proposal.origin,
+      confidence: "confirmed",
+      decidedAt: at,
+      updatedAt: at,
+      status: "active",
+      replaces: null,
+    };
+    // Target ditulis lebih dulu; baru berkas usulan dihapus.
+    const written = await this.store.update(updated);
+    await this.store.delete(proposal.id);
+    return written;
   }
 
   reject(id: string): Promise<Memory> {
     return this.transition(id, ["proposed"], "rejected", "inferred", false);
+  }
+
+  /**
+   * Target revisi yang masih ada: id, judul, dan isi saat ini. `null` bila
+   * memory ini bukan revisi atau targetnya sudah hilang.
+   */
+  async revisionTarget(
+    memory: Memory,
+  ): Promise<{ id: string; title: string; body: string } | null> {
+    if (memory.replaces === null) return null;
+    const target = await this.store.get(memory.replaces);
+    if (target === null) return null;
+    return { id: target.id, title: target.title, body: target.body };
   }
 
   archive(id: string): Promise<Memory> {

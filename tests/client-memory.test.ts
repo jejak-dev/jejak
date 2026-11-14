@@ -35,6 +35,7 @@ function make(overrides: Partial<MemoryItem> = {}): MemoryItem {
     createdAt: "2026-11-08T10:00:00.000Z",
     updatedAt: "2026-11-08T10:00:00.000Z",
     decidedAt: null,
+    replaces: null,
     ...overrides,
   };
 }

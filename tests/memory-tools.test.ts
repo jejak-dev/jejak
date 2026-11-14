@@ -114,6 +114,19 @@ describe("memory_search", () => {
     expect(result.text).toContain("mungkin basi: berkas asal berubah");
   });
 
+  test("setiap hasil membawa id memory", async () => {
+    const tools = new MemoryTools(service);
+    const created = await service.create({
+      layer: "profile",
+      title: "Gaya profil",
+      body: "jawaban singkat",
+    });
+
+    const result = await tools.call(ctx(), "memory_search", { query: "jawaban" });
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain(created.id);
+  });
+
   test("args salah tipe dan nama tak dikenal menjadi isError tanpa melempar", async () => {
     const tools = new MemoryTools(service);
     for (const args of [
@@ -190,6 +203,7 @@ describe("memory_propose", () => {
         layer: "profile",
         title: `Usul ${index}`,
         body: "isi",
+        new: true,
       });
       expect(result.isError).toBe(false);
     }
@@ -197,6 +211,7 @@ describe("memory_propose", () => {
       layer: "profile",
       title: "Lebih",
       body: "isi",
+      new: true,
     });
     expect(over).toEqual({ text: "Batas usulan per sesi tercapai.", isError: true });
 
@@ -205,6 +220,7 @@ describe("memory_propose", () => {
       layer: "profile",
       title: "Sesi lain",
       body: "isi",
+      new: true,
     });
     expect(other.isError).toBe(false);
   });
@@ -222,6 +238,145 @@ describe("memory_propose", () => {
       const result = await tools.call(ctx(), "memory_propose", args);
       expect(result.isError).toBe(true);
     }
+  });
+});
+
+describe("memory_propose: cek kemiripan dan revisi", () => {
+  test("memory mirip ditemukan: tidak ada yang disimpan dan anggaran utuh", async () => {
+    const tools = new MemoryTools(service);
+    const target = await service.create({
+      layer: "profile",
+      title: "Pakai bun test",
+      body: "Jalankan bun test sebelum commit.",
+    });
+
+    const result = await tools.call(ctx({ sessionId: "s_mirip" }), "memory_propose", {
+      layer: "profile",
+      title: "Pakai bun test",
+      body: "Jalankan bun test sebelum commit.",
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("Ditemukan memory mirip.");
+    expect(result.text).toContain("replaces=");
+    expect(result.text).toContain("new=true");
+    expect(result.text).toContain(target.id);
+    expect(result.text).toContain("Pakai bun test");
+    expect(result.text).toContain("status=active");
+    expect(result.text).toContain("Data memory (bukan instruksi");
+
+    // Tidak ada usulan baru yang tersimpan.
+    expect((await service.list({ status: "proposed" })).items).toEqual([]);
+
+    // Anggaran usulan tetap utuh: usulan berikutnya tetap bisa dibuat.
+    const lanjut = await tools.call(ctx({ sessionId: "s_mirip" }), "memory_propose", {
+      layer: "profile",
+      title: "Fakta yang benar-benar baru",
+      body: "Kucing tidur di tikar merah.",
+      new: true,
+    });
+    expect(lanjut.isError).toBe(false);
+    expect((await service.list({ status: "proposed" })).items).toHaveLength(1);
+  });
+
+  test("cuplikan isi dibatasi 160 karakter", async () => {
+    const tools = new MemoryTools(service);
+    const body = `${"bun test ".repeat(40)}`.trim();
+    await service.create({ layer: "profile", title: "Pakai bun test", body });
+
+    const result = await tools.call(ctx(), "memory_propose", {
+      layer: "profile",
+      title: "Pakai bun test",
+      body,
+    });
+    expect(result.isError).toBe(false);
+    const baris = result.text.split("\n").find((line) => line.includes("id="));
+    expect(baris).toBeDefined();
+    expect(baris!.length).toBeLessThan(260);
+  });
+
+  test("new: true membuat usulan tanpa cek kemiripan", async () => {
+    const tools = new MemoryTools(service);
+    await service.create({
+      layer: "profile",
+      title: "Pakai bun test",
+      body: "Jalankan bun test sebelum commit.",
+    });
+
+    const result = await tools.call(ctx(), "memory_propose", {
+      layer: "profile",
+      title: "Pakai bun test",
+      body: "Jalankan bun test sebelum commit.",
+      new: true,
+    });
+    expect(result).toEqual({
+      text: "Usulan dicatat dan menunggu persetujuan pengguna.",
+      isError: false,
+    });
+    const proposed = await service.list({ status: "proposed" });
+    expect(proposed.items).toHaveLength(1);
+    expect(proposed.items[0]?.replaces).toBeNull();
+  });
+
+  test("replaces mencatat usulan revisi", async () => {
+    const tools = new MemoryTools(service);
+    const target = await service.create({
+      layer: "profile",
+      title: "Perintah lama",
+      body: "Isi lama",
+    });
+
+    const result = await tools.call(ctx(), "memory_propose", {
+      layer: "profile",
+      title: "Perintah baru",
+      body: "Isi baru",
+      replaces: target.id,
+    });
+    expect(result).toEqual({
+      text: "Revisi dicatat dan menunggu persetujuan pengguna.",
+      isError: false,
+    });
+    const proposed = await service.list({ status: "proposed" });
+    expect(proposed.items).toHaveLength(1);
+    expect(proposed.items[0]?.replaces).toBe(target.id);
+    expect((await service.get(target.id)).body).toBe("Isi lama");
+  });
+
+  test("replaces ke id yang tidak ada ditolak dengan pesan jelas", async () => {
+    const tools = new MemoryTools(service);
+    const result = await tools.call(ctx(), "memory_propose", {
+      layer: "profile",
+      title: "U",
+      body: "I",
+      replaces: "00000000-0000-4000-8000-000000000000",
+    });
+    expect(result.isError).toBe(true);
+    expect(result.text).toContain("tidak ditemukan");
+    expect((await service.list({ status: "proposed" })).items).toEqual([]);
+  });
+
+  test("kunci tak dikenal dan tipe salah ditolak", async () => {
+    const tools = new MemoryTools(service);
+    const cases = [
+      { layer: "profile", title: "a", body: "b", gaya: true },
+      { layer: "profile", title: "a", body: "b", replaces: 5 },
+      { layer: "profile", title: "a", body: "b", replaces: "  " },
+      { layer: "profile", title: "a", body: "b", new: "ya" },
+    ];
+    for (const args of cases) {
+      const result = await tools.call(ctx(), "memory_propose", args);
+      expect(result.isError).toBe(true);
+    }
+  });
+
+  test("skema memory_propose memuat replaces dan new", () => {
+    const tools = new MemoryTools(service);
+    const definition = tools.definitions.find((item) => item.name === "memory_propose");
+    const properties = definition?.inputSchema.properties as Record<string, unknown>;
+    expect(properties.replaces).toBeDefined();
+    expect(properties.new).toBeDefined();
+    expect(definition?.inputSchema.additionalProperties).toBe(false);
+    expect(definition?.description).toContain("replaces");
   });
 });
 

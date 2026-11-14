@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MemoryError, MemoryService } from "../src/server/memory/memory-service";
@@ -541,5 +541,286 @@ describe("delete", () => {
     expect((await service().list({})).items).toEqual([]);
     const error = await service().get(created.id).catch((caught: unknown) => caught);
     expect((error as MemoryError).code).toBe("tidak-ditemukan");
+  });
+});
+
+describe("findSimilar", () => {
+  test("hanya memilih memory active dan proposed di lingkup yang sama", async () => {
+    const svc = service();
+    await svc.create({ layer: "profile", title: "Profil mirip", body: "Jalankan bun test" });
+    await svc.create({
+      layer: "project",
+      projectKey: "/tmp/a",
+      title: "Proyek A mirip",
+      body: "Jalankan bun test",
+    });
+    await svc.create({
+      layer: "project",
+      projectKey: "/tmp/b",
+      title: "Proyek B mirip",
+      body: "Jalankan bun test",
+    });
+    await svc.propose({ layer: "profile", title: "Usulan mirip", body: "Jalankan bun test" });
+    await svc.create({ layer: "profile", title: "Sama sekali lain", body: "Kucing tikar" });
+
+    const profil = await svc.findSimilar({
+      layer: "profile",
+      projectKey: null,
+      title: "Profil mirip",
+      body: "Jalankan bun test",
+    });
+    expect(profil.map((item) => item.title).sort()).toEqual(["Profil mirip", "Usulan mirip"]);
+
+    const proyek = await svc.findSimilar({
+      layer: "project",
+      projectKey: "/tmp/a",
+      title: "Proyek A mirip",
+      body: "Jalankan bun test",
+    });
+    expect(proyek.map((item) => item.title)).toEqual(["Proyek A mirip"]);
+  });
+
+  test("memory yang tidak mirip dilewati", async () => {
+    const svc = service();
+    await svc.create({ layer: "profile", title: "Gaya kode", body: "Gunakan bun test" });
+    const hasil = await svc.findSimilar({
+      layer: "profile",
+      projectKey: null,
+      title: "Kucing",
+      body: "Tidur di tikar",
+    });
+    expect(hasil).toEqual([]);
+  });
+
+  test("maksimal tiga kandidat teratas", async () => {
+    const svc = service();
+    for (let index = 0; index < 6; index += 1) {
+      await svc.create({
+        layer: "profile",
+        title: `Butir ${index} sama persis`,
+        body: "Jalankan bun test sebelum commit",
+      });
+    }
+    const hasil = await svc.findSimilar({
+      layer: "profile",
+      projectKey: null,
+      title: "Butir sama persis",
+      body: "Jalankan bun test sebelum commit",
+    });
+    expect(hasil).toHaveLength(3);
+  });
+
+  test("kandidat diurutkan dari yang paling mirip", async () => {
+    const svc = service();
+    await svc.create({
+      layer: "profile",
+      title: "Jalankan bun test sebelum commit",
+      body: "Tepat sama",
+    });
+    await svc.create({
+      layer: "profile",
+      title: "Jalankan bun test",
+      body: "Agak mirip saja karena ada tambahan kata",
+    });
+    const hasil = await svc.findSimilar({
+      layer: "profile",
+      projectKey: null,
+      title: "Jalankan bun test sebelum commit",
+      body: "Tepat sama",
+    });
+    expect(hasil[0]?.body).toBe("Tepat sama");
+  });
+});
+
+describe("propose dengan replaces", () => {
+  test("usulan revisi menunjuk target aktif", async () => {
+    const svc = service();
+    const target = await svc.create({
+      layer: "profile",
+      title: "Perintah lama",
+      body: "Isi lama",
+    });
+    const proposal = await svc.propose({
+      layer: "profile",
+      title: "Perintah baru",
+      body: "Isi baru",
+      replaces: target.id,
+    });
+    expect(proposal.status).toBe("proposed");
+    expect(proposal.replaces).toBe(target.id);
+    expect(proposal.title).toBe("Perintah baru");
+    expect((await svc.get(target.id)).body).toBe("Isi lama");
+  });
+
+  test("target tidak ada ditolak", async () => {
+    const svc = service();
+    const missing = "00000000-0000-4000-8000-000000000000";
+    const error = await svc
+      .propose({ layer: "profile", title: "U", body: "I", replaces: missing })
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(MemoryError);
+    expect((error as MemoryError).code).toBe("tidak-ditemukan");
+  });
+
+  test("target bukan active ditolak", async () => {
+    const svc = service();
+    const usulan = await svc.propose({ layer: "profile", title: "U", body: "I" });
+    const error = await svc
+      .propose({ layer: "profile", title: "U2", body: "I2", replaces: usulan.id })
+      .catch((caught: unknown) => caught);
+    expect((error as MemoryError).code).toBe("konflik");
+    expect((error as MemoryError).message).toContain("active");
+  });
+
+  test("lintas proyek dan lintas layer ditolak", async () => {
+    const svc = service();
+    const proyek = await svc.create({
+      layer: "project",
+      projectKey: "/tmp/a",
+      title: "Proyek A",
+      body: "Isi",
+    });
+    const lain = await svc.create({
+      layer: "project",
+      projectKey: "/tmp/b",
+      title: "Proyek B",
+      body: "Isi",
+    });
+
+    for (const [layer, projectKey, replaces] of [
+      ["project", "/tmp/b", proyek.id],
+      ["project", "/tmp/a", lain.id],
+      ["profile", null, proyek.id],
+    ] as const) {
+      const error = await svc
+        .propose({ layer, projectKey, title: "U", body: "I", replaces })
+        .catch((caught: unknown) => caught);
+      expect((error as MemoryError).code).toBe("konflik");
+    }
+  });
+
+  test("tanpa replaces usulan biasa punya replaces null", async () => {
+    const svc = service();
+    const proposal = await svc.propose({ layer: "profile", title: "U", body: "I" });
+    expect(proposal.replaces).toBeNull();
+  });
+});
+
+describe("accept usulan revisi", () => {
+  test("isi dan judul dipakai dari usulan sementara id target tetap", async () => {
+    const svc = service();
+    const target = await svc.create({
+      layer: "profile",
+      title: "Perintah lama",
+      body: "Isi lama",
+    });
+    const proposal = await svc.propose({
+      layer: "profile",
+      title: "Perintah baru",
+      body: "Isi baru",
+      replaces: target.id,
+    });
+
+    const updated = await svc.accept(proposal.id);
+    expect(updated.id).toBe(target.id);
+    expect(updated.title).toBe("Perintah baru");
+    expect(updated.body).toBe("Isi baru");
+    expect(updated.status).toBe("active");
+    expect(updated.confidence).toBe("confirmed");
+    expect(updated.decidedAt).not.toBeNull();
+    expect(updated.replaces).toBeNull();
+    expect(updated.origin).toEqual(proposal.origin);
+  });
+
+  test("berkas usulan dihapus dan nama berkas target tetap", async () => {
+    const svc = service();
+    const target = await svc.create({
+      layer: "profile",
+      title: "Perintah lama",
+      body: "Isi lama",
+    });
+    const before = await readdir(join(dir, "profile"));
+    const targetFile = before.find((name) => name.includes(target.id.slice(0, 8)));
+    expect(targetFile).toBeDefined();
+
+    const proposal = await svc.propose({
+      layer: "profile",
+      title: "Perintah baru",
+      body: "Isi baru",
+      replaces: target.id,
+    });
+    const proposalFile = (await readdir(join(dir, "profile"))).find((name) =>
+      name.includes(proposal.id.slice(0, 8)),
+    );
+    expect(proposalFile).toBeDefined();
+
+    await svc.accept(proposal.id);
+
+    const after = await readdir(join(dir, "profile"));
+    expect(after).toContain(targetFile!);
+    expect(after).not.toContain(proposalFile!);
+    expect((await svc.list({})).items.map((item) => item.id)).toEqual([target.id]);
+  });
+
+  test("target hilang menghasilkan konflik dan usulan tetap ada", async () => {
+    const svc = service();
+    const target = await svc.create({ layer: "profile", title: "Asal", body: "Isi lama" });
+    const proposal = await svc.propose({
+      layer: "profile",
+      title: "Baru",
+      body: "Isi baru",
+      replaces: target.id,
+    });
+
+    await svc.delete(target.id);
+    const error = await svc.accept(proposal.id).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(MemoryError);
+    expect((error as MemoryError).code).toBe("konflik");
+    expect((error as MemoryError).message).toContain(
+      "Memory yang direvisi sudah tidak aktif; tolak usulan ini atau buat usulan baru.",
+    );
+    expect((await svc.list({ status: "proposed" })).items.map((item) => item.id)).toEqual([
+      proposal.id,
+    ]);
+  });
+
+  test("target diarsipkan menghasilkan konflik yang sama", async () => {
+    const svc = service();
+    const target = await svc.create({ layer: "profile", title: "Asal", body: "Isi lama" });
+    const proposal = await svc.propose({
+      layer: "profile",
+      title: "Baru",
+      body: "Isi baru",
+      replaces: target.id,
+    });
+    await svc.archive(target.id);
+
+    const error = await svc.accept(proposal.id).catch((caught: unknown) => caught);
+    expect((error as MemoryError).code).toBe("konflik");
+    expect((error as MemoryError).message).toContain("sudah tidak aktif");
+  });
+
+  test("reject dan delete usulan revisi tetap bekerja biasa", async () => {
+    const svc = service();
+    const target = await svc.create({ layer: "profile", title: "Asal", body: "Isi lama" });
+    const proposal = await svc.propose({
+      layer: "profile",
+      title: "Baru",
+      body: "Isi baru",
+      replaces: target.id,
+    });
+
+    const rejected = await svc.reject(proposal.id);
+    expect(rejected.status).toBe("rejected");
+    expect((await svc.get(target.id)).body).toBe("Isi lama");
+
+    const lain = await svc.propose({
+      layer: "profile",
+      title: "Baru lagi",
+      body: "Isi baru lagi",
+      replaces: target.id,
+    });
+    await svc.delete(lain.id);
+    expect((await svc.list({ status: "proposed" })).items).toEqual([]);
   });
 });

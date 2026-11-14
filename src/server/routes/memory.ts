@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { MemoryError, type MemoryService } from "../memory/memory-service";
+import type { Memory } from "../memory/memory-files";
 import type { AuditEntryInput, AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
 
@@ -7,6 +8,27 @@ export interface MemoryRoutesOptions {
   service?: MemoryService;
   /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
   audit?: AuditStore;
+}
+
+/** Target revisi yang masih ada; `null` bila bukan revisi atau target hilang. */
+interface MemoryRevises {
+  id: string;
+  title: string;
+  body: string;
+}
+
+/** Item memory yang dikirim ke klien: memuat `replaces` dan `revises`. */
+interface MemoryItemOutput extends Memory {
+  revises: MemoryRevises | null;
+}
+
+/** Menambahkan `revises` pada item memory tanpa mengubah isi memory itu. */
+async function decorateItem(
+  service: MemoryService,
+  item: Memory,
+): Promise<MemoryItemOutput> {
+  const target = await service.revisionTarget(item);
+  return { ...item, revises: target };
 }
 
 const DISABLED = "Memory dimatikan.";
@@ -90,13 +112,19 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
             throw new MemoryError(`Parameter "${key}" tidak dikenal.`, "tidak-valid");
           }
         }
-        return await service.list({
+        const result = await service.list({
           status: query.status,
           layer: query.layer,
           project: query.project,
           q: query.q,
           limit: query.limit,
         });
+        return {
+          ...result,
+          items: await Promise.all(
+            result.items.map((item) => decorateItem(service, item)),
+          ),
+        };
       } catch (error) {
         return errorResponse(error);
       }
@@ -113,7 +141,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
             body: input.body,
           });
           auditAction("ditambah", item.id);
-          return jsonResponse(201, { item });
+          return jsonResponse(201, { item: await decorateItem(service, item) });
         } catch (error) {
           return errorResponse(error);
         }
@@ -131,7 +159,12 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
           }
           const result = await service.importProjectDocs(projectKey);
           auditAction("impor", undefined);
-          return jsonResponse(200, result);
+          return jsonResponse(200, {
+            ...result,
+            created: await Promise.all(
+              result.created.map((item) => decorateItem(service, item)),
+            ),
+          });
         } catch (error) {
           return errorResponse(error);
         }
@@ -148,7 +181,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
             body: input.body,
           });
           auditAction("diubah", item.id);
-          return { item };
+          return { item: await decorateItem(service, item) };
         } catch (error) {
           return errorResponse(error);
         }
@@ -161,7 +194,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
         try {
           const item = await service.accept(params.id);
           auditAction("diterima", item.id);
-          return { item };
+          return { item: await decorateItem(service, item) };
         } catch (error) {
           return errorResponse(error);
         }
@@ -174,7 +207,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
         try {
           const item = await service.reject(params.id);
           auditAction("ditolak", item.id);
-          return { item };
+          return { item: await decorateItem(service, item) };
         } catch (error) {
           return errorResponse(error);
         }
@@ -187,7 +220,7 @@ export function memoryRoutes(options: MemoryRoutesOptions = {}): Elysia {
         try {
           const item = await service.archive(params.id);
           auditAction("diarsipkan", item.id);
-          return { item };
+          return { item: await decorateItem(service, item) };
         } catch (error) {
           return errorResponse(error);
         }

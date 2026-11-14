@@ -41,6 +41,7 @@ function memory(overrides: Partial<Memory> = {}): Memory {
     createdAt: at,
     updatedAt: at,
     decidedAt: null,
+    replaces: null,
     ...overrides,
   };
 }
@@ -68,6 +69,21 @@ describe("sync", () => {
     await index.sync(dir);
     expect(index.get(first.id)).toBeNull();
     expect(index.list({}).map((item) => item.id)).toEqual([second.id]);
+    index.close();
+  });
+
+  test("kolom replaces disimpan dan dikembalikan", async () => {
+    const index = new MemoryIndex();
+    const target = crypto.randomUUID();
+    const item = memory({ status: "proposed", replaces: target });
+    await writeMemoryFile(dir, item);
+    await index.sync(dir);
+    expect(index.get(item.id)?.replaces).toBe(target);
+
+    const biasa = memory({ title: "Biasa" });
+    await writeMemoryFile(dir, biasa);
+    await index.sync(dir);
+    expect(index.get(biasa.id)?.replaces).toBeNull();
     index.close();
   });
 
@@ -360,6 +376,27 @@ describe("pemulihan indeks", () => {
     await rebuilt.sync(dir);
     expect(rebuilt.get(item.id)?.title).toBe("Versi baru");
     expect(rebuilt.list({}).map((entry) => entry.id)).toEqual([item.id]);
+    rebuilt.close();
+  });
+
+  test("indeks versi lama dimigrasi tanpa kehilangan isi", async () => {
+    const item = memory({ title: "Lama" });
+    await writeMemoryFile(dir, item);
+    const indexPath = join(dir, "index.db");
+    const created = new MemoryIndex(indexPath);
+    await created.sync(dir);
+    created.close();
+
+    // Turunkan ke skema versi 1: kolom `replaces` belum ada.
+    const raw = new Database(indexPath);
+    raw.run("ALTER TABLE memories DROP COLUMN replaces");
+    raw.run("UPDATE meta SET value = '1' WHERE key = 'schema_version'");
+    raw.close();
+
+    const rebuilt = new MemoryIndex(indexPath);
+    await rebuilt.sync(dir);
+    expect(rebuilt.get(item.id)?.title).toBe("Lama");
+    expect(rebuilt.get(item.id)?.replaces).toBeNull();
     rebuilt.close();
   });
 

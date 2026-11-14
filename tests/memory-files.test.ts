@@ -45,6 +45,7 @@ function memory(overrides: Partial<Memory> = {}): Memory {
     createdAt: at,
     updatedAt: at,
     decidedAt: null,
+    replaces: null,
     ...overrides,
   };
 }
@@ -102,6 +103,51 @@ describe("serialisasi frontmatter round-trip", () => {
     expect(parsed.memory.decidedAt).toBe(at);
     expect(parsed.memory.status).toBe("proposed");
     expect(parsed.memory.confidence).toBe("from_code");
+  });
+});
+
+describe("frontmatter replaces", () => {
+  test("replaces ikut bertahan pada round-trip", () => {
+    const target = crypto.randomUUID();
+    const item = memory({ replaces: target });
+    const text = serializeMemory(item);
+    expect(text).toContain(`replaces: ${target}`);
+
+    const parsed = parseMemory(text, { fileName: memoryFileName(item), ...PROFILE });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.memory.replaces).toBe(target);
+  });
+
+  test("memory biasa tidak menulis baris replaces dan dibaca sebagai null", () => {
+    const item = memory();
+    const text = serializeMemory(item);
+    expect(text).not.toContain("replaces:");
+
+    const parsed = parseMemory(text, { fileName: memoryFileName(item), ...PROFILE });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.memory.replaces).toBeNull();
+  });
+
+  test("berkas lama tanpa baris replaces tetap terbaca", () => {
+    const item = memory();
+    // Berkas lama: tidak ada baris replaces sama sekali.
+    const tanpaBaris = serializeMemory(item);
+    expect(tanpaBaris).not.toContain("replaces:");
+    const parsed = parseMemory(tanpaBaris, { fileName: `${item.id}.md`, ...PROFILE });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.memory.replaces).toBeNull();
+  });
+
+  test("nilai replaces yang bukan id ditolak", () => {
+    const item = memory();
+    const teks = serializeMemory(item).replace(
+      "decided: null",
+      "decided: null\nreplaces: bukan-uuid",
+    );
+    const parsed = parseMemory(teks, { fileName: `${item.id}.md`, ...PROFILE });
+    expect(parsed.ok).toBe(false);
+    if (!parsed.ok) expect(parsed.reason).toContain("replaces");
   });
 });
 
