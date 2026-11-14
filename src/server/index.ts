@@ -57,7 +57,6 @@ import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
 import { terminalRoutes } from "./routes/terminal";
 import { TerminalManager } from "./terminal/terminal-manager";
-import { isWindows } from "./platform";
 import { runnerRoutes } from "./routes/runner";
 import { RunnerService } from "./runner/runner-service";
 import { FileRunnerStore, runnerPath as runnerStorePath } from "./runner/runner-store";
@@ -593,15 +592,8 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const sandbox = defaultSandboxStore(process.env);
   const questions = defaultQuestionStore(process.env);
   const terminalDiminta = process.env.JEJAK_TERMINAL?.trim() === "1";
-  // Terminal butuh shell POSIX; di Windows tidak ada, jadi panel Terminal dan
-  // peluncur perintah (Commands) dinonaktifkan.
-  const terminal =
-    terminalDiminta && !isWindows() ? new TerminalManager() : undefined;
-  if (terminalDiminta && isWindows()) {
-    console.error(
-      "Peringatan: terminal belum tersedia di Windows. Panel Terminal dan perintah (Commands) dinonaktifkan.",
-    );
-  }
+  // Terminal memakai shell POSIX di macOS/Linux dan Command Prompt di Windows.
+  const terminal = terminalDiminta ? new TerminalManager() : undefined;
   terminal?.start();
   const gitProviders = defaultGitProviderStore(process.env);
   const indexer =

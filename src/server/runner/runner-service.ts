@@ -3,7 +3,7 @@ import type { AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
 import { redactSecrets } from "../security/redact";
 import { TerminalError } from "../terminal/terminal-manager";
-import { isWindows, TERMINAL_UNAVAILABLE_WINDOWS } from "../platform";
+import { isWindows } from "../platform";
 import { readPackageScripts } from "./package-scripts";
 import {
   hasControlChar,
@@ -38,9 +38,12 @@ export class RunnerError extends Error {
 export const TERMINAL_DISABLED =
   "Terminal dimatikan. Jalankan Jejak dengan JEJAK_TERMINAL=1 untuk menyalakannya.";
 
-/** Pesan terminal mati sesuai platform; di Windows terminal memang tak ada. */
-export function terminalDisabledMessage(platform: NodeJS.Platform = process.platform): string {
-  return isWindows(platform) ? TERMINAL_UNAVAILABLE_WINDOWS : TERMINAL_DISABLED;
+/**
+ * Penanda akhir baris perintah di shell (fungsi murni): cmd.exe menjalankan
+ * baris saat menerima CR, sedangkan shell POSIX memakai LF.
+ */
+export function commandTerminator(platform: NodeJS.Platform = process.platform): string {
+  return isWindows(platform) ? "\r" : "\n";
 }
 
 export type RunnerSource = "package" | "custom";
@@ -197,7 +200,7 @@ export class RunnerService {
     const path = this.requireCwd(cwd);
     const folder = this.store.read(path);
     const result: Array<RunnerCommand & { body?: string }> = [];
-    for (const script of readPackageScripts(path)) {
+    for (const script of readPackageScripts(path, this.platform)) {
       result.push({
         id: script.id,
         label: script.label,
@@ -331,14 +334,14 @@ export class RunnerService {
 
     const terminal = this.terminal;
     if (terminal === undefined) {
-      throw new RunnerError(terminalDisabledMessage(this.platform), "nonaktif");
+      throw new RunnerError(TERMINAL_DISABLED, "nonaktif");
     }
 
     let terminalId: string;
     try {
       const info = terminal.create({ cwd });
       terminalId = info.id;
-      terminal.write(info.id, `${target.command}\n`);
+      terminal.write(info.id, `${target.command}${commandTerminator(this.platform)}`);
     } catch (error) {
       throw fromTerminalError(error);
     }

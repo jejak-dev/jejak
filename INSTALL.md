@@ -203,9 +203,11 @@ session state and provider settings live next to it.
 The Windows build is beta. Jejak starts and works, but these parts are
 missing or limited on Windows:
 
-- **The Terminal panel and the command launcher (Commands) are off.** The
-  terminal needs a POSIX shell (`/bin/sh`), which Windows does not have. Run
-  your commands from **Command Prompt** or **Git Bash** instead.
+- **The Terminal panel and the command launcher (Commands) need an opt-in.**
+  Start Jejak with `JEJAK_TERMINAL=1` to enable them; on Windows the terminal
+  runs **Command Prompt** (`cmd.exe`, the path in `COMSPEC`). There is no busy
+  indicator while a command runs, and this has not been verified on real
+  Windows hardware yet.
 - **There is no sandbox for the Bash tool.** Windows has neither
   `sandbox-exec` (macOS) nor `bwrap` (Linux), so the sandbox reports itself
   as unavailable. While the sandbox mode is not **Mati** (off), new sessions

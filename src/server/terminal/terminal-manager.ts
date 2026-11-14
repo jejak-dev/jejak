@@ -1,6 +1,5 @@
 import { statSync } from "node:fs";
-import { isAbsolute } from "node:path";
-import { isWindows } from "../platform";
+import { isAbsolutePath, isWindows } from "../platform";
 
 export type TerminalErrorCode = "tidak-valid" | "tidak-ditemukan" | "batas";
 
@@ -54,6 +53,69 @@ function invalid(message: string): TerminalError {
   return new TerminalError(message, "tidak-valid");
 }
 
+/** Shell dan argumen yang dipakai untuk menjalankan terminal. */
+export interface TerminalShell {
+  shell: string;
+  args: string[];
+}
+
+/**
+ * Argumen shell (fungsi murni): POSIX memakai shell login (`-l`), Windows
+ * memakai Command Prompt tanpa argumen apa pun.
+ */
+export function terminalShellArgs(platform: NodeJS.Platform = process.platform): string[] {
+  return isWindows(platform) ? [] : ["-l"];
+}
+
+/**
+ * Pilih shell terminal (fungsi murni, tanpa spawn).
+ *
+ * - pilihan eksplisit (`shell`) selalu menang;
+ * - Windows: `COMSPEC` bila ada, selain itu `cmd.exe`;
+ * - POSIX: `$SHELL` bila absolut, selain itu `/bin/sh`.
+ */
+export function resolveTerminalShell(input: {
+  shell?: string;
+  env?: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
+}): TerminalShell {
+  const platform = input.platform ?? process.platform;
+  const env = input.env ?? process.env;
+  if (input.shell !== undefined) {
+    return { shell: input.shell, args: terminalShellArgs(platform) };
+  }
+  if (isWindows(platform)) {
+    const comspec = env.COMSPEC?.trim();
+    return {
+      shell: comspec !== undefined && comspec !== "" ? comspec : "cmd.exe",
+      args: [],
+    };
+  }
+  const envShell = env.SHELL;
+  return {
+    shell:
+      envShell !== undefined && isAbsolutePath(envShell, platform) ? envShell : "/bin/sh",
+    args: terminalShellArgs(platform),
+  };
+}
+
+/** Rencana mematikan proses terminal sesuai platform (fungsi murni). */
+export interface TerminalKillPlan {
+  /** Sinyal untuk proses itu sendiri; di Windows tak ada (SIGTERM bawaan Bun). */
+  signal?: "SIGHUP";
+  /** Cara cadangan bila proses belum mati: bunuh proses atau pohon proses. */
+  fallback: "SIGKILL" | "taskkill";
+}
+
+/**
+ * Rencana kill: POSIX pakai SIGHUP lalu SIGKILL; Windows pakai `kill()`
+ * tanpa nama sinyal lalu `taskkill /T /F` untuk pohon proses.
+ */
+export function terminalKillPlan(platform: NodeJS.Platform = process.platform): TerminalKillPlan {
+  if (isWindows(platform)) return { fallback: "taskkill" };
+  return { signal: "SIGHUP", fallback: "SIGKILL" };
+}
+
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   if (value === undefined) return fallback;
   if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
@@ -73,7 +135,10 @@ interface Entry {
 }
 
 export interface TerminalManagerOptions {
-  /** Shell login; default `$SHELL` bila absolut, selain itu /bin/sh. */
+  /**
+   * Shell untuk terminal. Bawaan: POSIX memakai `$SHELL` bila absolut
+   * (selain itu /bin/sh), Windows memakai `COMSPEC` (selain itu cmd.exe).
+   */
   shell?: string;
   env?: Record<string, string | undefined>;
   now?: () => number;
@@ -86,7 +151,7 @@ export interface TerminalManagerOptions {
 export class TerminalManager {
   private readonly entries = new Map<string, Entry>();
   private readonly shell: string;
-  private readonly shellGiven: boolean;
+  private readonly shellArgs: string[];
   private readonly env: Record<string, string>;
   private readonly now: () => number;
   private readonly max: number;
@@ -95,14 +160,19 @@ export class TerminalManager {
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(options: TerminalManagerOptions = {}) {
-    const envShell = (options.env ?? process.env).SHELL;
-    this.shell = options.shell ?? (envShell !== undefined && isAbsolute(envShell) ? envShell : "/bin/sh");
-    this.shellGiven = options.shell !== undefined;
+    const platform = options.platform ?? process.platform;
+    const resolved = resolveTerminalShell({
+      shell: options.shell,
+      env: options.env ?? process.env,
+      platform,
+    });
+    this.shell = resolved.shell;
+    this.shellArgs = resolved.args;
     this.env = scrubEnv(options.env ?? process.env);
     this.now = options.now ?? (() => Date.now());
     this.max = options.maxTerminals ?? MAX_TERMINALS;
     this.idleMs = options.idleMs ?? IDLE_MS;
-    this.platform = options.platform ?? process.platform;
+    this.platform = platform;
   }
 
   /** Mulai penyapu berkala (tutup terminal menganggur dan bersihkan yang sudah keluar). */
@@ -117,15 +187,10 @@ export class TerminalManager {
   }
 
   create(input: { cwd: unknown; cols?: unknown; rows?: unknown }): TerminalInfo {
-    // Terminal butuh shell POSIX; di Windows tidak ada `/bin/sh`.
-    if (isWindows(this.platform) && !this.shellGiven) {
-      throw new TerminalError(
-        "Terminal tidak tersedia di Windows: shell POSIX (/bin/sh) tidak ada. Jalankan perintah lewat bash Git for Windows.",
-        "tidak-valid",
-      );
-    }
     const cwd = input.cwd;
-    if (typeof cwd !== "string" || !isAbsolute(cwd)) throw invalid("cwd harus berupa path absolut.");
+    if (typeof cwd !== "string" || !isAbsolutePath(cwd, this.platform)) {
+      throw invalid("cwd harus berupa path absolut.");
+    }
     let isDirectory = false;
     try {
       isDirectory = statSync(cwd).isDirectory();
@@ -151,7 +216,10 @@ export class TerminalManager {
     };
     let proc: Entry["proc"];
     try {
-      proc = Bun.spawn([this.shell, "-l"], {
+      // `detached` sengaja tak dipakai: di Windows proses tak boleh lepas
+      // dari konsol (cmd.exe butuh konsol), dan di POSIX perilaku lama
+      // (tanpa detach) harus tetap sama.
+      proc = Bun.spawn([this.shell, ...this.shellArgs], {
         cwd,
         env: this.env,
         terminal: {
@@ -253,13 +321,28 @@ export class TerminalManager {
       // Sudah tertutup.
     }
     if (!entry.info.exited) {
+      const plan = terminalKillPlan(this.platform);
       try {
-        entry.proc.kill("SIGHUP");
+        if (plan.signal !== undefined) entry.proc.kill(plan.signal);
+        else entry.proc.kill();
       } catch {
         // Proses sudah berhenti.
       }
       const proc = entry.proc;
       const killer = setTimeout(() => {
+        if (plan.fallback === "taskkill") {
+          // Windows tak punya sinyal grup; bunuh pohon proses sebagai cadangan.
+          try {
+            Bun.spawn(["taskkill", "/pid", String(proc.pid), "/T", "/F"], {
+              stdin: "ignore",
+              stdout: "ignore",
+              stderr: "ignore",
+            });
+          } catch {
+            // Proses sudah berhenti atau taskkill tak tersedia.
+          }
+          return;
+        }
         try {
           proc.kill("SIGKILL");
         } catch {

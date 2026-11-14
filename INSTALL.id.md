@@ -208,9 +208,10 @@ status sesi dan pengaturan penyedia ada di sebelahnya.
 Build Windows masih beta. Jejak bisa dijalankan dan dipakai, tetapi bagian
 berikut ini tak ada atau terbatas di Windows:
 
-- **Panel Terminal dan peluncur perintah (Commands) dimatikan.** Terminal
-  butuh shell POSIX (`/bin/sh`), sedangkan Windows tak memilikinya. Jalankan
-  perintah Anda dari **Command Prompt** atau **Git Bash**.
+- **Panel Terminal dan peluncur perintah (Commands) butuh opt-in.** Jalankan
+  Jejak dengan `JEJAK_TERMINAL=1` untuk menyalakannya; di Windows terminal
+  memakai **Command Prompt** (`cmd.exe`, sesuai `COMSPEC`). Tak ada indikator
+  sibuk saat perintah berjalan, dan belum diuji di Windows sungguhan.
 - **Tak ada sandbox untuk tool Bash.** Windows tak punya `sandbox-exec`
   (macOS) maupun `bwrap` (Linux), jadi sandbox melaporkan dirinya tak
   tersedia. Selama mode sandbox bukan **Mati**, sesi baru akan gagal; setel

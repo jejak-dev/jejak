@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { isWindows } from "../platform";
 import { hasControlChar, hashCommand } from "./runner-store";
 
 /** Batas ukuran `package.json` yang boleh dibaca (256 KB). */
@@ -42,9 +43,13 @@ export function detectPackageRunner(cwd: string): string {
   return DEFAULT_PACKAGE_RUNNER;
 }
 
-/** Nama script di-quote bila memuat karakter di luar `[A-Za-z0-9:_.-]`. */
-export function quoteScriptName(name: string): string {
+/**
+ * Nama script di-quote bila memuat karakter di luar `[A-Za-z0-9:_.-]`.
+ * POSIX memakai kutip tunggal; Windows memakai kutip ganda gaya cmd.exe.
+ */
+export function quoteScriptName(name: string, platform: NodeJS.Platform = process.platform): string {
   if (SAFE_NAME.test(name)) return name;
+  if (isWindows(platform)) return `"${name.replace(/"/g, '""')}"`;
   return `'${name.replace(/'/g, `'\\''`)}'`;
 }
 
@@ -57,7 +62,10 @@ export function scriptId(name: string): string {
  * Script `package.json` di folder tertentu (bukan folder induk).
  * Berkas tak ada, rusak, atau bukan objek -> daftar kosong.
  */
-export function readPackageScripts(cwd: string): PackageScript[] {
+export function readPackageScripts(
+  cwd: string,
+  platform: NodeJS.Platform = process.platform,
+): PackageScript[] {
   const path = join(cwd, "package.json");
   let size: number;
   try {
@@ -96,7 +104,7 @@ export function readPackageScripts(cwd: string): PackageScript[] {
     result.push({
       id: scriptId(name),
       label: name,
-      command: `${runner} ${quoteScriptName(name)}`,
+      command: `${runner} ${quoteScriptName(name, platform)}`,
       body: value,
     });
   }

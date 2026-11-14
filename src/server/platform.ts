@@ -44,10 +44,3 @@ export function toSlash(path: string): string {
 export function isAbsolutePath(path: string, platform: NodeJS.Platform = process.platform): boolean {
   return pathApi(platform).isAbsolute(path);
 }
-
-/**
- * Pesan untuk panel Terminal dan peluncur perintah (Commands) saat platform
- * tak punya terminal POSIX.
- */
-export const TERMINAL_UNAVAILABLE_WINDOWS =
-  "Terminal tidak tersedia di Windows. Jalankan perintah lewat bash Git for Windows atau Command Prompt.";

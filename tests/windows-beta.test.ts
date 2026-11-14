@@ -5,12 +5,23 @@ import { join } from "node:path";
 import { collectChecks, type Check, type DoctorContext } from "../src/cli/doctor";
 import { runShadowGit } from "../src/server/checkpoints/shadow-git";
 import { nativePickerAvailable } from "../src/server/files/native-picker";
-import { nullDevice, TERMINAL_UNAVAILABLE_WINDOWS } from "../src/server/platform";
+import { nullDevice } from "../src/server/platform";
 import { terminalRoutes } from "../src/server/routes/terminal";
-import { RunnerError, RunnerService } from "../src/server/runner/runner-service";
+import {
+  commandTerminator,
+  RunnerError,
+  RunnerService,
+  type RunnerTerminal,
+} from "../src/server/runner/runner-service";
 import { FileRunnerStore } from "../src/server/runner/runner-store";
+import { quoteScriptName } from "../src/server/runner/package-scripts";
 import { sandboxAvailable } from "../src/server/sandbox/build-options";
-import { TerminalError, TerminalManager } from "../src/server/terminal/terminal-manager";
+import {
+  resolveTerminalShell,
+  TerminalManager,
+  terminalKillPlan,
+  terminalShellArgs,
+} from "../src/server/terminal/terminal-manager";
 
 /** CLI `claude` selalu dianggap tidak ada; membuat tes deterministik. */
 const CLI_TIDAK_ADA = {
@@ -93,20 +104,52 @@ describe("doctor di Windows", () => {
 });
 
 describe("terminal di Windows", () => {
-  test("TerminalManager.create melempar TerminalError yang jelas", () => {
-    const manager = new TerminalManager({ platform: "win32", env: {} });
-    expect(() => manager.create({ cwd: dir })).toThrow(TerminalError);
-    try {
-      manager.create({ cwd: dir });
-      throw new Error("harusnya melempar TerminalError");
-    } catch (error) {
-      expect(error).toBeInstanceOf(TerminalError);
-      expect((error as TerminalError).message).toContain("Windows");
-      expect((error as TerminalError).code).toBe("tidak-valid");
-    }
+  test("shell Windows diambil dari COMSPEC tanpa argumen", () => {
+    const resolved = resolveTerminalShell({
+      env: { COMSPEC: "C:\\Windows\\system32\\cmd.exe" },
+      platform: "win32",
+    });
+    expect(resolved).toEqual({
+      shell: "C:\\Windows\\system32\\cmd.exe",
+      args: [],
+    });
   });
 
-  test("di POSIX galat Windows tidak muncul", () => {
+  test("shell Windows jatuh ke cmd.exe bila COMSPEC tak ada", () => {
+    expect(resolveTerminalShell({ env: {}, platform: "win32" })).toEqual({
+      shell: "cmd.exe",
+      args: [],
+    });
+  });
+
+  test("shell POSIX tetap $SHELL absolut atau /bin/sh dengan argumen -l", () => {
+    expect(resolveTerminalShell({ env: { SHELL: "/bin/zsh" }, platform: "darwin" })).toEqual({
+      shell: "/bin/zsh",
+      args: ["-l"],
+    });
+    expect(resolveTerminalShell({ env: {}, platform: "linux" })).toEqual({
+      shell: "/bin/sh",
+      args: ["-l"],
+    });
+    // $SHELL tak absolut tak dipercaya (bisa Resolution PATH).
+    expect(resolveTerminalShell({ env: { SHELL: "zsh" }, platform: "darwin" }).shell).toBe("/bin/sh");
+  });
+
+  test("pilihan shell eksplisit menang di semua platform", () => {
+    expect(resolveTerminalShell({ shell: "/custom/sh", env: { COMSPEC: "cmd.exe" }, platform: "win32" })).toEqual({
+      shell: "/custom/sh",
+      args: [],
+    });
+    expect(terminalShellArgs("win32")).toEqual([]);
+    expect(terminalShellArgs("darwin")).toEqual(["-l"]);
+  });
+
+  test("kill Windows tanpa nama sinyal lalu taskkill, POSIX SIGHUP lalu SIGKILL", () => {
+    expect(terminalKillPlan("win32")).toEqual({ fallback: "taskkill" });
+    expect(terminalKillPlan("darwin")).toEqual({ signal: "SIGHUP", fallback: "SIGKILL" });
+  });
+
+  test("di POSIX galat cwd tetap muncul", () => {
     const manager = new TerminalManager({ platform: "darwin", env: {} });
     // Folder tak ada: galat soal cwd, bukan soal Windows.
     expect(() => manager.create({ cwd: join(dir, "tidak-ada") })).toThrow(
@@ -114,54 +157,62 @@ describe("terminal di Windows", () => {
     );
   });
 
-  test("rute terminal tanpa manajer menjawab 503 dengan pesan platform", async () => {
-    const windows = terminalRoutes({ platform: "win32" });
-    const jawabanWindows = await windows.handle(
-      new Request("http://127.0.0.1:3000/api/terminal"),
-    );
-    expect(jawabanWindows.status).toBe(503);
-    expect(await jawabanWindows.json()).toEqual({ error: TERMINAL_UNAVAILABLE_WINDOWS });
-
-    const posix = terminalRoutes({ platform: "darwin" });
-    const jawabanPosix = await posix.handle(
-      new Request("http://127.0.0.1:3000/api/terminal"),
-    );
-    expect(jawabanPosix.status).toBe(503);
-    expect(await jawabanPosix.json()).toEqual({ error: TERMINAL_DISABLED });
+  test("rute terminal tanpa manajer menjawab 503 dengan pesan terminal dimatikan", async () => {
+    const rute = terminalRoutes();
+    const jawaban = await rute.handle(new Request("http://127.0.0.1:3000/api/terminal"));
+    expect(jawaban.status).toBe(503);
+    expect(await jawaban.json()).toEqual({ error: TERMINAL_DISABLED });
   });
 
-  test("runner tanpa terminal di Windows memakai pesan Windows", () => {
+  test("runner tanpa terminal memakai pesan terminal dimatikan di semua platform", () => {
+    for (const platform of ["win32", "darwin"] as const) {
+      const layanan = new RunnerService({
+        store: new FileRunnerStore(":memory:"),
+        allowedCwds: () => [dir],
+        platform,
+      });
+      const custom = layanan.addCustom({ cwd: dir, label: "Uji", command: "bun test" });
+      try {
+        layanan.run({ cwd: dir, id: custom.id, confirm: true });
+        throw new Error("harusnya ditolak");
+      } catch (error) {
+        expect(error).toBeInstanceOf(RunnerError);
+        expect((error as RunnerError).code).toBe("nonaktif");
+        expect((error as RunnerError).message).toBe(TERMINAL_DISABLED);
+      }
+    }
+  });
+});
+
+describe("perintah di shell Windows", () => {
+  test("penanda akhir baris memakai CR di cmd.exe dan LF di POSIX", () => {
+    expect(commandTerminator("win32")).toBe("\r");
+    expect(commandTerminator("darwin")).toBe("\n");
+  });
+
+  test("perintah dikirim ke terminal dengan CR di Windows", () => {
+    const ditulis: unknown[] = [];
+    const palsu: RunnerTerminal = {
+      create: () => ({ id: "t1", cwd: dir }),
+      write: (_id: string, data: unknown) => {
+        ditulis.push(data);
+      },
+    };
     const layanan = new RunnerService({
       store: new FileRunnerStore(":memory:"),
+      terminal: palsu,
       allowedCwds: () => [dir],
       platform: "win32",
     });
     const custom = layanan.addCustom({ cwd: dir, label: "Uji", command: "bun test" });
-    try {
-      layanan.run({ cwd: dir, id: custom.id, confirm: true });
-      throw new Error("harusnya ditolak");
-    } catch (error) {
-      expect(error).toBeInstanceOf(RunnerError);
-      expect((error as RunnerError).code).toBe("nonaktif");
-      expect((error as RunnerError).message).toBe(TERMINAL_UNAVAILABLE_WINDOWS);
-    }
+    layanan.run({ cwd: dir, id: custom.id, confirm: true });
+    expect(ditulis).toEqual(["bun test\r"]);
   });
 
-  test("runner tanpa terminal di POSIX memakai pesan terminal dimatikan", () => {
-    const layanan = new RunnerService({
-      store: new FileRunnerStore(":memory:"),
-      allowedCwds: () => [dir],
-      platform: "darwin",
-    });
-    const custom = layanan.addCustom({ cwd: dir, label: "Uji", command: "bun test" });
-    try {
-      layanan.run({ cwd: dir, id: custom.id, confirm: true });
-      throw new Error("harusnya ditolak");
-    } catch (error) {
-      expect(error).toBeInstanceOf(RunnerError);
-      expect((error as RunnerError).code).toBe("nonaktif");
-      expect((error as RunnerError).message).toBe(TERMINAL_DISABLED);
-    }
+  test("nama script di-quote gaya cmd.exe di Windows", () => {
+    expect(quoteScriptName("biasa", "win32")).toBe("biasa");
+    expect(quoteScriptName("dua kata", "win32")).toBe('"dua kata"');
+    expect(quoteScriptName("dua kata", "darwin")).toBe("'dua kata'");
   });
 });
 
