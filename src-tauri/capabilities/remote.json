@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "remote",
-  "description": "Izin notifikasi native untuk halaman Jejak yang dilayani di loopback.",
+  "description": "Izin notifikasi native dan perintah IPC pembaru untuk halaman Jejak yang dilayani di loopback.",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*"]
@@ -9,6 +9,13 @@
   "permissions": [
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
-    "notification:allow-notify"
+    "notification:allow-notify",
+    "allow-desktop-info",
+    "allow-updater-get-settings",
+    "allow-updater-set-settings",
+    "allow-updater-check",
+    "allow-updater-status",
+    "allow-updater-install",
+    "allow-updater-restart"
   ]
 }

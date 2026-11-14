@@ -6,6 +6,7 @@
 
 mod sidecar;
 mod token;
+mod updater;
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader};
@@ -85,6 +86,16 @@ pub fn run() {
     }))
     .plugin(tauri_plugin_notification::init())
     .plugin(tauri_plugin_opener::init())
+    .plugin(tauri_plugin_updater::Builder::new().build())
+    .invoke_handler(tauri::generate_handler![
+      updater::desktop_info,
+      updater::updater_get_settings,
+      updater::updater_set_settings,
+      updater::updater_check,
+      updater::updater_status,
+      updater::updater_install,
+      updater::updater_restart,
+    ])
     .setup(|app| {
       let _ = app.manage(Status {
         proses: Mutex::new(None),
@@ -93,10 +104,18 @@ pub fn run() {
         galat_tunggu: Mutex::new(None),
         stderr_buf: Arc::new(Mutex::new(VecDeque::new())),
       });
+      // Pengaturan pembaruan disimpan di folder konfigurasi aplikasi.
+      let folder = app
+        .path()
+        .app_config_dir()
+        .map_err(|galat| format!("folder konfigurasi tak bisa ditentukan: {galat}"))?;
+      let _ = app.manage(updater::UpdaterState::baru(folder.join(updater::NAMA_BERKAS)));
       buat_jendela(app.handle())?;
       // Sidecar dijalankan di utas terpisah supaya setup tak terblokir.
       let handle = app.handle().clone();
       std::thread::spawn(move || jalankan_sidecar(handle));
+      // Pemeriksaan pembaruan otomatis berjalan di latar belakang.
+      updater::jalankan_pemeriksaan_otomatis(app.handle().clone());
       Ok(())
     })
     .build(tauri::generate_context!())
@@ -506,7 +525,7 @@ fn ringkasan_stderr(buffer: &Arc<Mutex<VecDeque<String>>>) -> String {
 }
 
 /// Tutup sidecar: tutup stdin (sinyal berhenti), tunggu, lalu paksa bunuh.
-fn hentikan_sidecar(app: &AppHandle) {
+pub(crate) fn hentikan_sidecar(app: &AppHandle) {
   let state = app.state::<Status>();
   state.ditutup.store(true, Ordering::SeqCst);
   let mut guard = state.proses.lock().unwrap();

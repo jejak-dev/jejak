@@ -18,6 +18,7 @@
     "externalBin": ["binaries/jejak"],
     "category": "DeveloperTool",
     "shortDescription": "Workbench agent coding",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -29,6 +30,14 @@
       "signingIdentity": "-",
       "minimumSystemVersion": "12.0",
       "entitlements": "Entitlements.plist"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDM3MjcyOUI5QzhFRDExMzAKUldRd0VlM0l1U2tuTjZ3R1BBZjNwVzl2OXROakVZMUwwbmtpNWw4T0ZNbVZNNS9lajd1VnlZNVoK",
+      "endpoints": [
+        "https://github.com/jejak-dev/jejak/releases/latest/download/latest.json"
+      ]
     }
   }
 }
