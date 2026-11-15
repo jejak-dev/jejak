@@ -241,14 +241,21 @@ export interface FeatureGates {
 /** Ringkasan otomatis akhir sesi menjadi usulan memory proyek (lapis episodik). */
 function autoSummary(memory: MemoryService): NonNullable<SessionManagerOptions["onTurnEnd"]> {
   return async ({ sessionId, title, cwd, events }) => {
-    const summary = buildSessionSummary(title, events);
+    const summary = buildSessionSummary(title, events, cwd);
     if (summary === undefined) return;
-    await memory.upsertSessionSummary({
-      sessionId,
-      projectKey: await projectKeyFor(cwd),
-      title: summary.title,
-      body: summary.body,
-    });
+    try {
+      await memory.upsertSessionSummary({
+        sessionId,
+        projectKey: await projectKeyFor(cwd),
+        title: summary.title,
+        body: summary.body,
+      });
+    } catch (error) {
+      // Kegagalan tak boleh menggagalkan giliran; tapi tak boleh hilang tanpa
+      // jejak juga. Isi ringkasan tak pernah ikut dicetak.
+      const alasan = error instanceof Error ? error.message : "alasan tak diketahui";
+      console.warn("Ringkasan sesi tidak disimpan:", alasan);
+    }
   };
 }
 

@@ -6,6 +6,7 @@ import type { AgentEvent } from "../src/server/agent/events";
 import { MemoryService } from "../src/server/memory/memory-service";
 import { FileMemoryStore } from "../src/server/memory/memory-store";
 import { SESSION_SUMMARY_PREFIX, buildSessionSummary } from "../src/server/memory/session-summary";
+import { findSecret } from "../src/server/memory/secret-guard";
 
 const call = (name: string, input: unknown, id = name): AgentEvent => ({ type: "tool_call", id, name, input });
 const result: AgentEvent = { type: "result", ok: true, summary: "Selesai memperbaiki login." };
@@ -39,6 +40,48 @@ describe("buildSessionSummary", () => {
     const summary = buildSessionSummary(long, [call("Bash", {}), { type: "result", ok: true, summary: long }]);
     expect(summary!.title.length).toBeLessThanOrEqual(120);
     expect(summary!.body.length).toBeLessThanOrEqual(2000);
+  });
+
+  test("jalur berkas ditulis relatif bila cwd diberikan", () => {
+    const summary = buildSessionSummary(
+      "Sunting modul",
+      [call("Edit", { file_path: "/proj/src/server/memory/rahasia.ts" }), result],
+      "/proj",
+    );
+    expect(summary?.body).toContain("Berkas diubah: src/server/memory/rahasia.ts");
+  });
+
+  test("jalur di luar cwd tetap absolut", () => {
+    const summary = buildSessionSummary(
+      "Sunting modul",
+      [call("Edit", { file_path: "/lain/src/server/memory/rahasia.ts" }), result],
+      "/proj",
+    );
+    expect(summary?.body).toContain("Berkas diubah: /lain/src/server/memory/rahasia.ts");
+  });
+
+  test("tanpa cwd jalur tetap absolut", () => {
+    const summary = buildSessionSummary(
+      "Sunting modul",
+      [call("Edit", { file_path: "/proj/src/server/memory/rahasia.ts" }), result],
+    );
+    expect(summary?.body).toContain("Berkas diubah: /proj/src/server/memory/rahasia.ts");
+  });
+
+  test("ringkasan berisi jalur panjang lolos penjaga rahasia", () => {
+    const summary = buildSessionSummary(
+      "Sunting modul",
+      [
+        call("Edit", {
+          file_path: "/Users/x/Developer/sandbox/ujicoba/project2/src/lib/storage",
+        }),
+        result,
+      ],
+      "/Users/x/Developer/sandbox/ujicoba/project2",
+    );
+    expect(summary?.body).toContain("Berkas diubah: src/lib/storage");
+    expect(findSecret(summary!.title)).toBeNull();
+    expect(findSecret(summary!.body)).toBeNull();
   });
 });
 
@@ -83,5 +126,29 @@ describe("upsertSessionSummary", () => {
   test("rahasia ditolak penjaga", async () => {
     const svc = new MemoryService({ store });
     await expect(svc.upsertSessionSummary(input("password=hunter2hunter2"))).rejects.toThrow();
+  });
+
+  test("ringkasan berisi sunting berkas di jalur panjang tersimpan", async () => {
+    const svc = new MemoryService({ store });
+    const summary = buildSessionSummary(
+      "Perbaiki penyimpanan",
+      [
+        call("Edit", {
+          file_path: "/Users/x/Developer/sandbox/ujicoba/project2/src/lib/storage",
+        }),
+        result,
+      ],
+      "/Users/x/Developer/sandbox/ujicoba/project2",
+    );
+    const tersimpan = await svc.upsertSessionSummary({
+      sessionId: "s_2",
+      projectKey: "/Users/x/Developer/sandbox/ujicoba/project2",
+      title: summary!.title,
+      body: summary!.body,
+    });
+    expect(tersimpan?.status).toBe("proposed");
+    const semua = await store.list({ layer: "project", project: "/Users/x/Developer/sandbox/ujicoba/project2" });
+    expect(semua).toHaveLength(1);
+    expect(semua[0]?.body).toContain("Berkas diubah: src/lib/storage");
   });
 });

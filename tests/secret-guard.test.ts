@@ -72,3 +72,42 @@ describe("findSecret: teks biasa lolos", () => {
     expect(findSecret("a1b2 c3d4 e5f6 a7b8 c9d0 e1f2 a3b4 c5d6")).toBeNull();
   });
 });
+
+describe("findSecret: jalur berkas bukan rahasia", () => {
+  test("jalur absolut panjang lolos", () => {
+    const jalur = "/Users/x/Developer/sandbox/ujicoba/project2/src/lib/storage";
+    expect(findSecret(`Berkas diubah: ${jalur}`)).toBeNull();
+  });
+
+  test("jalur relatif panjang lolos", () => {
+    const jalur = "src/server/memory/session-summary/session-summary-helper";
+    expect(findSecret(`Berkas diubah: ${jalur}`)).toBeNull();
+  });
+
+  test("jalur dalam kalimat panjang tetap lolos", () => {
+    const teks =
+      "Sunting berkas src/server/browser/browser-manager.ts dan " +
+      "src/server/memory/session-summary.ts pada 2026-11-15 sore.";
+    expect(findSecret(teks)).toBeNull();
+  });
+});
+
+describe("findSecret: string acak panjang tetap terdeteksi", () => {
+  test("base64 40+ karakter dengan garis miring", () => {
+    const base64 = "aB3dEfG4hIjK5lMnO6pQrS7tUvW8xYz0A1b2/C3d4E5fG6h";
+    expect(base64.length).toBeGreaterThanOrEqual(40);
+    expect(findSecret(`nilai ${base64} di sini`)).toBe("string acak panjang");
+  });
+
+  test("kunci AWS secret 40 karakter yang berisi garis miring", () => {
+    const aws = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+    expect(aws.length).toBe(40);
+    expect(findSecret(`rahasia ${aws}`)).toBe("string acak panjang");
+  });
+
+  test("token tanpa garis miring tetap terdeteksi", () => {
+    expect(findSecret("abcdefghij0123456789klmnopqrstuvwxyz0123456789")).toBe(
+      "string acak panjang",
+    );
+  });
+});
