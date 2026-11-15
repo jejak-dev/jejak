@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { ComponentChild, VNode } from "preact";
 import {
   BROWSER_DISABLED_MESSAGE,
@@ -396,6 +398,55 @@ describe("BrowserToolbar", () => {
     for (const label of ["Kembali", "Maju", "Muat ulang", "Alamat", "Tutup browser"]) {
       expect(byLabel(node, label).length).toBeGreaterThan(0);
     }
+  });
+
+  test("kolom URL memilih seluruh teks saat fokus; klik berikutnya menaruh kursor", () => {
+    let fokus = 0;
+    const node = BrowserToolbar({
+      state: state({ url: "https://a.test" }),
+      onUrlFocus: () => {
+        fokus += 1;
+      },
+    });
+    const input = findNodes(node, (vnode) => vnode.type === "input")[0];
+    let dipilih = 0;
+    const el = {
+      dataset: {} as Record<string, string>,
+      select: () => {
+        dipilih += 1;
+      },
+    };
+    const event = { currentTarget: el };
+    (propsOf(input).onFocus as (event: unknown) => void)(event);
+    expect(dipilih).toBe(1);
+    expect(fokus).toBe(1);
+    // Klik yang memberi fokus: pilih semua.
+    el.dataset.baruFokus = "1";
+    (propsOf(input).onClick as (event: unknown) => void)(event);
+    expect(dipilih).toBe(2);
+    // Klik berikutnya saat sudah fokus: jangan memilih lagi.
+    (propsOf(input).onClick as (event: unknown) => void)(event);
+    expect(dipilih).toBe(2);
+  });
+});
+
+describe("gaya area browser", () => {
+  const css = readFileSync(join(import.meta.dir, "..", "src", "client", "styles.css"), "utf8");
+
+  test("latar area layar memakai token netral, bukan hitam pekat", () => {
+    const baris = css.split("\n");
+    const area = baris.find((satu) => satu.startsWith(".jk-browser-view {"));
+    expect(area).toBeDefined();
+    expect(area).toContain("background: var(--surface)");
+    expect(area).not.toContain("var(--code)");
+    const kanvas = baris.find((satu) => satu.startsWith(".jk-browser-canvas {"));
+    expect(kanvas).toContain("background: var(--surface)");
+  });
+
+  test("token surface ada di terang dan gelap", () => {
+    expect(css).toContain("--surface: #ffffff;");
+    const gelap = css.slice(css.indexOf(':root[data-theme="dark"]'));
+    expect(gelap).toContain("--surface: #262523;");
   });
 });
 

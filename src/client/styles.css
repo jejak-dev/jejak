@@ -6092,7 +6092,7 @@ h2.jk-md-heading {
 .jk-browser { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 24px; min-width: 0; }
 .jk-browser-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .jk-browser-url { flex: 1 1 160px; min-width: 0; }
-.jk-browser-view { display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--code); border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow: hidden; }
+.jk-browser-view { display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow: hidden; }
 .jk-browser-waiting { margin: 0; text-align: center; }
 .jk-browser-canvas { display: block; max-width: 100%; height: auto; border-radius: 4px; background: var(--surface); cursor: crosshair; }
 .jk-browser-canvas:focus { outline: 2px solid var(--line-2); outline-offset: 2px; }

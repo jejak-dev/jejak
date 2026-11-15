@@ -23,6 +23,7 @@ export interface BrowserToolbarProps {
 /**
  * Toolbar browser (murni, tanpa hook).
  * Kolom URL mengikuti state server kecuali pengguna sedang menyunting.
+ * Saat difokus atau diklik, seluruh teks kolom URL terpilih seperti bilah alamat.
  */
 export function BrowserToolbar(props: BrowserToolbarProps) {
   const state = props.state;
@@ -75,7 +76,20 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         placeholder="https://example.com"
         aria-label="Alamat"
         onInput={(event) => props.onUrlInput?.((event.currentTarget as HTMLInputElement).value)}
-        onFocus={() => props.onUrlFocus?.()}
+        onFocus={(event) => {
+          // Bilah alamat: seluruh teks dipilih begitu difokus.
+          props.onUrlFocus?.();
+          event.currentTarget.select();
+        }}
+        onMouseDown={(event) => {
+          // Ingat apakah klik ini yang memberi fokus; klik berikutnya boleh menaruh kursor.
+          event.currentTarget.dataset.baruFokus = document.activeElement === event.currentTarget ? "0" : "1";
+        }}
+        onClick={(event) => {
+          const el = event.currentTarget;
+          if (el.dataset.baruFokus === "1") el.select();
+          el.dataset.baruFokus = "0";
+        }}
         onBlur={() => props.onUrlBlur?.()}
         onKeyDown={(event) => {
           if (event.key !== "Enter") return;
