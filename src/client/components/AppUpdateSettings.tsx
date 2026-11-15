@@ -20,6 +20,7 @@ import {
   type UpdaterState,
   type UpdaterStatus,
 } from "../lib/desktop";
+import { Select } from "./Select";
 
 export interface AppUpdateSettingsProps {
   sessions: SessionInfo[];
@@ -197,18 +198,16 @@ export function AppUpdateView(props: AppUpdateViewProps) {
         <label class="jk-label" for="jk-update-channel">
           Kanal pembaruan
         </label>
-        <select
+        <Select
           id="jk-update-channel"
-          class="jk-select"
           value={settings?.channel ?? "stable"}
           disabled={settings === undefined}
-          onChange={(event) =>
-            props.onChannel(event.currentTarget.value === "beta" ? "beta" : "stable")
-          }
-        >
-          <option value="stable">Stabil</option>
-          <option value="beta">Beta</option>
-        </select>
+          options={[
+            { value: "stable", label: "Stabil" },
+            { value: "beta", label: "Beta" },
+          ]}
+          onChange={(value) => props.onChannel(value === "beta" ? "beta" : "stable")}
+        />
         <p class="jk-help">{CHANNEL_HELP}</p>
       </div>
 

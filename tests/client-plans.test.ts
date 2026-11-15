@@ -15,6 +15,7 @@ import {
   type PlanDecisionState,
 } from "../src/client/components/PlanCard";
 import { PlanTabView } from "../src/client/components/PlanTab";
+import { isSelectVNode, selectOptions } from "./helpers/select-vnode";
 
 /* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
 
@@ -24,6 +25,8 @@ function textOf(node: ComponentChild): string {
   if (Array.isArray(node)) return node.map(textOf).join("");
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return "";
     return textOf((vnode.type as (props: unknown) => ComponentChild)(vnode.props));
   }
   return textOf(vnode.props.children as ComponentChild);
@@ -35,6 +38,8 @@ function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): 
   if (Array.isArray(node)) return node.flatMap((child) => findNodes(child, predicate));
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return predicate(vnode) ? [vnode] : [];
     const rendered = (vnode.type as (props: unknown) => ComponentChild)(vnode.props);
     return findNodes(rendered, predicate);
   }
@@ -61,8 +66,8 @@ function buttonTexts(node: ComponentChild): string[] {
   return buttons(node).map((vnode) => textOf(vnode.props.children as ComponentChild));
 }
 
-function oneByType(node: ComponentChild, type: string): VNode | undefined {
-  return findNodes(node, (vnode) => vnode.type === type)[0];
+function bySelect(node: ComponentChild): VNode[] {
+  return findNodes(node, (vnode) => isSelectVNode(vnode));
 }
 
 /* ---------- Data uji ---------- */
@@ -333,16 +338,14 @@ describe("tab Rencana", () => {
       },
       ...DECISION,
     });
-    const pemilih = oneByType(tab, "select");
+    const pemilih = bySelect(tab)[0];
     expect(pemilih).toBeDefined();
-    const opsi = findNodes(tab, (vnode) => vnode.type === "option");
-    expect(opsi.map((vnode) => textOf(vnode.props.children as ComponentChild))).toEqual([
-      "Rencana Lama",
-      "Rencana Baru",
+    const opsi = selectOptions(pemilih);
+    expect(opsi.map((option) => option.label)).toEqual([
+      "#1 Rencana Lama",
+      "#2 Rencana Baru",
     ]);
-    (propsOf(pemilih)["onChange"] as (event: unknown) => void)({
-      currentTarget: { value: "p1" },
-    });
+    (propsOf(pemilih)["onChange"] as (value: string) => void)("p1");
     expect(dipilih).toEqual(["p1"]);
   });
 
@@ -353,6 +356,6 @@ describe("tab Rencana", () => {
       remaining: null,
       ...DECISION,
     });
-    expect(oneByType(tab, "select")).toBeUndefined();
+    expect(bySelect(tab)).toHaveLength(0);
   });
 });

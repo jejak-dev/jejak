@@ -8,6 +8,7 @@ import {
   scopeLabel,
   validSkillName,
 } from "../lib/instruksi";
+import { Select } from "./Select";
 
 /** Batas berkas subagent yang sama dengan server. */
 const AGENT_MAX_BYTES = 64 * 1024;
@@ -151,20 +152,20 @@ export function AgentsPanel({ api, cwd }: AgentsPanelProps) {
           <div class="jk-field-row">
             <div class="jk-field">
               <span class="jk-label">Cakupan</span>
-              <select
-                class="jk-select"
-                aria-label="Cakupan subagent baru"
+              <Select
+                ariaLabel="Cakupan subagent baru"
                 value={creating.scope}
-                onChange={(event) =>
+                options={[
+                  { value: "project", label: "Proyek" },
+                  { value: "user", label: "Pengguna" },
+                ]}
+                onChange={(value) =>
                   setCreating({
                     ...creating,
-                    scope: event.currentTarget.value === "user" ? "user" : "project",
+                    scope: value === "user" ? "user" : "project",
                   })
                 }
-              >
-                <option value="project">Proyek</option>
-                <option value="user">Pengguna</option>
-              </select>
+              />
             </div>
             <div class="jk-field">
               <label class="jk-label" for="jk-agent-new-name">

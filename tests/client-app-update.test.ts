@@ -6,6 +6,7 @@ import {
   type AppUpdateViewProps,
 } from "../src/client/components/AppUpdateSettings";
 import type { UpdaterStatus } from "../src/client/lib/desktop";
+import { isSelectVNode, selectOptions } from "./helpers/select-vnode";
 
 /* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
 
@@ -15,6 +16,8 @@ function textOf(node: ComponentChild): string {
   if (Array.isArray(node)) return node.map(textOf).join("");
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return "";
     return textOf((vnode.type as (props: unknown) => ComponentChild)(vnode.props));
   }
   return textOf(vnode.props.children as ComponentChild);
@@ -26,6 +29,8 @@ function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): 
   if (Array.isArray(node)) return node.flatMap((child) => findNodes(child, predicate));
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return predicate(vnode) ? [vnode] : [];
     const rendered = (vnode.type as (props: unknown) => ComponentChild)(vnode.props);
     return findNodes(rendered, predicate);
   }
@@ -35,6 +40,10 @@ function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): 
 
 function byTag(node: ComponentChild, tag: string): VNode[] {
   return findNodes(node, (vnode) => vnode.type === tag);
+}
+
+function bySelect(node: ComponentChild): VNode[] {
+  return findNodes(node, (vnode) => isSelectVNode(vnode));
 }
 
 function propsOf(vnode: VNode | undefined): Record<string, unknown> {
@@ -181,9 +190,9 @@ describe("AppUpdateView", () => {
       (node) => propsOf(node).type === "checkbox",
     )[0];
     expect(propsOf(checkbox).checked).toBe(true);
-    const select = byTag(vnode, "select")[0];
+    const select = bySelect(vnode)[0];
     expect(propsOf(select).value).toBe("stable");
-    const opsi = byTag(vnode, "option").map((node) => textOf(node.props.children as ComponentChild));
+    const opsi = selectOptions(select).map((option) => option.label);
     expect(opsi).toEqual(["Stabil", "Beta"]);
   });
 

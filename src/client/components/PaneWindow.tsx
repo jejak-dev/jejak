@@ -11,6 +11,7 @@ import {
 } from "../lib/panel-rail";
 import type { PanelRepoOption } from "../lib/workspace";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 export interface PaneWindowViewProps {
   /** Jendela yang digambar: deretan tab dan tab aktifnya. */
@@ -242,20 +243,17 @@ export function PaneWindowView(props: PaneWindowViewProps) {
           <label class="jk-chip" title="Repo">
             <Icon name="folder" />
             <span>{repoLabel}</span>
-            <select
+            <Select
               class="jk-chip-select"
-              aria-label="Repo"
+              ariaLabel="Repo"
               value={repoLabel ?? ""}
-              onChange={(event) =>
-                onRepoChange?.((event.currentTarget as HTMLSelectElement).value)
-              }
-            >
-              {repoOptions.map((option) => (
-                <option key={option.value} value={option.value} disabled={option.missing}>
-                  {option.missing ? `${option.label} (hilang)` : option.label}
-                </option>
-              ))}
-            </select>
+              options={repoOptions.map((option) => ({
+                value: option.value,
+                label: option.missing ? `${option.label} (hilang)` : option.label,
+                disabled: option.missing,
+              }))}
+              onChange={(value) => onRepoChange?.(value)}
+            />
           </label>
         )}
 

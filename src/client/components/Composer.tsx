@@ -22,6 +22,7 @@ import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { useAttachments } from "./useAttachments";
 import { useDictation } from "../lib/use-dictation";
+import { Select } from "./Select";
 
 export interface ComposerProps {
   api: ApiClient;
@@ -418,21 +419,18 @@ export function Composer({
             <label class="jk-chip" title="Workspace">
               <Icon name="workspace" />
               <span>{selectedWorkspace?.name ?? "Tanpa workspace"}</span>
-              <select
+              <Select
                 id="jk-workspace"
                 class="jk-chip-select"
-                aria-label="Workspace"
+                ariaLabel="Workspace"
                 value={workspaceId}
-                onChange={(event) => setWorkspaceId((event.currentTarget as HTMLSelectElement).value)}
+                options={[
+                  { value: "", label: "Tanpa workspace" },
+                  ...workspaces.map((workspace) => ({ value: workspace.id, label: workspace.name })),
+                ]}
+                onChange={(value) => setWorkspaceId(value)}
                 disabled={busy}
-              >
-                <option value="">Tanpa workspace</option>
-                {workspaces.map((workspace) => (
-                  <option key={workspace.id} value={workspace.id}>
-                    {workspace.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           )}
 
@@ -440,22 +438,21 @@ export function Composer({
             <label class="jk-chip" title="Repo">
               <Icon name="folder" />
               <span>{repoLabel}</span>
-              <select
+              <Select
                 id="jk-repo"
                 class="jk-chip-select"
-                aria-label="Repo"
+                ariaLabel="Repo"
                 value={repoPath}
-                onChange={(event) => setRepoPath((event.currentTarget as HTMLSelectElement).value)}
+                options={repoOptions.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                  disabled: option.missing,
+                }))}
+                onChange={(value) => setRepoPath(value)}
                 disabled={busy}
-                aria-invalid={cwdError !== undefined}
-                aria-describedby={cwdError !== undefined ? "jk-cwd-error" : undefined}
-              >
-                {repoOptions.map((option) => (
-                  <option key={option.value} value={option.value} disabled={option.missing}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                invalid={cwdError !== undefined}
+                describedBy={cwdError !== undefined ? "jk-cwd-error" : undefined}
+              />
             </label>
           ) : (
             <>

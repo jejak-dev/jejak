@@ -23,6 +23,7 @@ import {
   skillTemplate,
   validSkillName,
 } from "../lib/instruksi";
+import { Select } from "./Select";
 
 export interface InstruksiPageProps {
   api: ApiClient;
@@ -504,19 +505,18 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
 
         <label class="jk-instruksi-project">
           <span class="jk-label">Proyek</span>
-          <select
-            class="jk-select jk-instruksi-select"
-            aria-label="Folder proyek"
+          <Select
+            class="jk-instruksi-select"
+            ariaLabel="Folder proyek"
             value={cwd}
-            onChange={(event) => requestCwd(event.currentTarget.value)}
-          >
-            {projects.length === 0 && <option value="">Belum ada folder proyek</option>}
-            {projects.map((project) => (
-              <option key={project.cwd} value={project.cwd}>
-                {project.label}
-              </option>
-            ))}
-          </select>
+            placeholder="Belum ada folder proyek"
+            options={
+              projects.length === 0
+                ? [{ value: "", label: "Belum ada folder proyek" }]
+                : projects.map((project) => ({ value: project.cwd, label: project.label }))
+            }
+            onChange={(value) => requestCwd(value)}
+          />
         </label>
       </div>
 
@@ -655,20 +655,20 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
               <div class="jk-field-row">
                 <div class="jk-field">
                   <span class="jk-label">Cakupan</span>
-                  <select
-                    class="jk-select"
-                    aria-label="Cakupan skill baru"
+                  <Select
+                    ariaLabel="Cakupan skill baru"
                     value={newSkill.scope}
-                    onChange={(event) =>
+                    options={[
+                      { value: "project", label: "Proyek" },
+                      { value: "user", label: "Pengguna" },
+                    ]}
+                    onChange={(value) =>
                       setNewSkill({
                         ...newSkill,
-                        scope: event.currentTarget.value === "user" ? "user" : "project",
+                        scope: value === "user" ? "user" : "project",
                       })
                     }
-                  >
-                    <option value="project">Proyek</option>
-                    <option value="user">Pengguna</option>
-                  </select>
+                  />
                 </div>
                 <div class="jk-field">
                   <label class="jk-label" for="jk-instruksi-new-name">

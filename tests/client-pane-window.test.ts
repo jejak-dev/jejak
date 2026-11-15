@@ -4,6 +4,7 @@ import { PaneWindowView } from "../src/client/components/PaneWindow";
 import { toggleMaximize, visibleLayout, type Pane, type PaneLayout } from "../src/client/lib/pane-layout";
 import type { PanelTab } from "../src/client/lib/panel-prefs";
 import { PANEL_RAIL_TABS } from "../src/client/lib/panel-rail";
+import { isSelectVNode } from "./helpers/select-vnode";
 
 /* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
 
@@ -13,6 +14,8 @@ function textOf(node: ComponentChild): string {
   if (Array.isArray(node)) return node.map(textOf).join("");
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return "";
     return textOf((vnode.type as (props: unknown) => ComponentChild)(vnode.props));
   }
   return textOf(vnode.props.children as ComponentChild);
@@ -24,6 +27,8 @@ function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): 
   if (Array.isArray(node)) return node.flatMap((child) => findNodes(child, predicate));
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return predicate(vnode) ? [vnode] : [];
     const rendered = (vnode.type as (props: unknown) => ComponentChild)(vnode.props);
     return findNodes(rendered, predicate);
   }
@@ -59,8 +64,8 @@ function byAriaLabel(node: ComponentChild, label: string): VNode[] {
 }
 
 /** Semua elemen (bukan hanya tombol) yang memakai aria-label tertentu. */
-function byAnyAriaLabel(node: ComponentChild, label: string): VNode[] {
-  return findNodes(node, (vnode) => propsOf(vnode)["aria-label"] === label);
+function bySelect(node: ComponentChild): VNode[] {
+  return findNodes(node, (vnode) => isSelectVNode(vnode));
 }
 
 const NOOP = (): void => {};
@@ -258,14 +263,14 @@ describe("jendela bertumpuk: menu tambah tab", () => {
 describe("jendela bertumpuk: tombol header", () => {
   test("chip repo hanya tampil bila diminta", () => {
     const tanpa = render({ showRepo: false });
-    expect(byAnyAriaLabel(tanpa, "Repo")).toHaveLength(0);
+    expect(bySelect(tanpa)).toHaveLength(0);
 
     const dengan = render({
       showRepo: true,
       repoLabel: "jejak",
       repoOptions: [{ value: "jejak", label: "jejak (utama)", missing: false }],
     });
-    const pilih = byAnyAriaLabel(dengan, "Repo");
+    const pilih = bySelect(dengan).filter((vnode) => propsOf(vnode)["ariaLabel"] === "Repo");
     expect(pilih).toHaveLength(1);
     expect(propsOf(pilih[0])["value"]).toBe("jejak");
   });

@@ -1,6 +1,7 @@
 import type { ConnectionTestView } from "../lib/api";
 import { describeToolCalling } from "../lib/format";
 import { fieldForMessage, type FallbackOption, type KeyMode, type ProfileDraft } from "../lib/registry-edit";
+import { Select } from "./Select";
 
 export interface ProfileFormProps {
   profile: ProfileDraft;
@@ -340,23 +341,17 @@ export function ProfileForm({
               aria-describedby={errorId("defaultModel")}
             />
           ) : (
-            <select
+            <Select
               id="jk-pf-defaultModel"
-              class="jk-select"
               value={profile.defaultModel}
-              onChange={(event) =>
-                onChange({ defaultModel: (event.currentTarget as HTMLSelectElement).value })
-              }
-              aria-invalid={invalid("defaultModel")}
-              aria-describedby={errorId("defaultModel")}
-            >
-              <option value="">Bawaan</option>
-              {models.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "Bawaan" },
+                ...models.map((model) => ({ value: model, label: model })),
+              ]}
+              onChange={(value) => onChange({ defaultModel: value })}
+              invalid={invalid("defaultModel")}
+              describedBy={errorId("defaultModel")}
+            />
           )}
           <FieldError id="jk-pf-defaultModel-error" messages={messagesFor("defaultModel")} />
         </div>
@@ -380,23 +375,17 @@ export function ProfileForm({
               aria-describedby={errorId("lightModel")}
             />
           ) : (
-            <select
+            <Select
               id="jk-pf-lightModel"
-              class="jk-select"
               value={profile.lightModel}
-              onChange={(event) =>
-                onChange({ lightModel: (event.currentTarget as HTMLSelectElement).value })
-              }
-              aria-invalid={invalid("lightModel")}
-              aria-describedby={errorId("lightModel")}
-            >
-              <option value="">Bawaan</option>
-              {models.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "Bawaan" },
+                ...models.map((model) => ({ value: model, label: model })),
+              ]}
+              onChange={(value) => onChange({ lightModel: value })}
+              invalid={invalid("lightModel")}
+              describedBy={errorId("lightModel")}
+            />
           )}
           <FieldError id="jk-pf-lightModel-error" messages={messagesFor("lightModel")} />
         </div>
@@ -446,27 +435,21 @@ export function ProfileForm({
         <label class="jk-label" for="jk-pf-fallback">
           Profil cadangan
         </label>
-        <select
+        <Select
           id="jk-pf-fallback"
-          class="jk-select"
           value={profile.fallbackProfileId ?? ""}
-          onChange={(event) =>
-            onChange({ fallbackProfileId: (event.currentTarget as HTMLSelectElement).value })
-          }
-          aria-invalid={invalid("fallback")}
-          aria-describedby={describedBy("jk-pf-fallback-help", errorId("fallback"))}
-        >
-          <option value="">Tanpa cadangan</option>
-          {fallbackOptions.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.name}
-            </option>
-          ))}
-          {(profile.fallbackProfileId ?? "") !== "" &&
-            !fallbackOptions.some((option) => option.id === profile.fallbackProfileId) && (
-              <option value={profile.fallbackProfileId}>{profile.fallbackProfileId}</option>
-            )}
-        </select>
+          options={[
+            { value: "", label: "Tanpa cadangan" },
+            ...fallbackOptions.map((option) => ({ value: option.id, label: option.name })),
+            ...(profile.fallbackProfileId ?? "") !== "" &&
+            !fallbackOptions.some((option) => option.id === profile.fallbackProfileId)
+              ? [{ value: profile.fallbackProfileId as string, label: profile.fallbackProfileId as string }]
+              : [],
+          ]}
+          onChange={(value) => onChange({ fallbackProfileId: value })}
+          invalid={invalid("fallback")}
+          describedBy={describedBy("jk-pf-fallback-help", errorId("fallback"))}
+        />
         <p class="jk-help" id="jk-pf-fallback-help">
           Bila giliran gagal karena provider (koneksi, 429, 5xx, autentikasi) sebelum ada output,
           Jejak mengulang sekali dengan profil ini. Prompt dan konteks akan terkirim ke penyedia

@@ -27,6 +27,7 @@ import {
 } from "../lib/wiki-project";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
+import { Select } from "./Select";
 
 export interface WikiState {
   /** Proyek wiki yang cocok dengan remote origin folder sesi. */
@@ -213,21 +214,16 @@ function WikiProjectPicker({ state, actions }: { state: WikiState; actions: Wiki
           <label class="jk-label" for="jk-wiki-provider">
             Penyedia GitLab
           </label>
-          <select
+          <Select
             id="jk-wiki-provider"
-            class="jk-select"
             value={state.providerId ?? ""}
-            onChange={(event) =>
-              actions.onSelectProvider((event.currentTarget as HTMLSelectElement).value)
-            }
-          >
-            {state.providers.length > 1 && <option value="">Pilih penyedia…</option>}
-            {state.providers.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.name}
-              </option>
-            ))}
-          </select>
+            placeholder="Pilih penyedia…"
+            options={[
+              ...(state.providers.length > 1 ? [{ value: "", label: "Pilih penyedia…" }] : []),
+              ...state.providers.map((provider) => ({ value: provider.id, label: provider.name })),
+            ]}
+            onChange={(value) => actions.onSelectProvider(value)}
+          />
         </>
       )}
 

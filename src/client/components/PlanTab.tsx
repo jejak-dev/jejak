@@ -4,6 +4,7 @@ import type { PlanEntry } from "../lib/plans";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { PlanActionsView, PlanTimer, usePlanDecision, type PlanDecisionState } from "./PlanCard";
+import { Select } from "./Select";
 
 export interface PlanTabViewProps extends PlanDecisionState {
   /** Semua rencana pada sesi aktif, urut dari yang paling lama. */
@@ -44,19 +45,19 @@ export function PlanTabView(props: PlanTabViewProps) {
           <label class="jk-visually-hidden" for="jk-plan-picker">
             Pilih rencana
           </label>
-          <select
+          <Select
             id="jk-plan-picker"
             value={aktif.id}
-            onChange={(event) =>
-              props.onSelect?.((event.currentTarget as HTMLSelectElement).value)
-            }
-          >
-            {plans.map((entry) => (
-              <option value={entry.id} key={entry.id}>
-                {entry.title}
-              </option>
-            ))}
-          </select>
+            options={plans.map((entry, index) => ({
+              value: entry.id,
+              label: `#${index + 1} ${entry.title}`,
+              hint:
+                entry.status === "menunggu"
+                  ? "Menunggu"
+                  : (DONE_LABELS[entry.status]?.text ?? entry.status),
+            }))}
+            onChange={(value) => props.onSelect?.(value)}
+          />
         </div>
       )}
 

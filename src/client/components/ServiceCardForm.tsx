@@ -8,6 +8,7 @@ import {
   validateCardDraft,
   type CardDraft,
 } from "../lib/workspace";
+import { Select } from "./Select";
 
 export interface ServiceCardDraft {
   description: string;
@@ -92,20 +93,12 @@ export function ServiceCardForm({
         <label class="jk-label" for={`${id}-kind`}>
           Jenis
         </label>
-        <select
+        <Select
           id={`${id}-kind`}
-          class="jk-select"
           value={draft.kind}
-          onChange={(event) =>
-            patch({ kind: (event.currentTarget as HTMLSelectElement).value as ServiceKind })
-          }
-        >
-          {KIND_OPTIONS.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={KIND_OPTIONS.map((option) => ({ value: option.id, label: option.label }))}
+          onChange={(value) => patch({ kind: value as ServiceKind })}
+        />
       </div>
 
       {(

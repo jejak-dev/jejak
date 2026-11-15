@@ -27,6 +27,7 @@ import {
 } from "../src/client/components/WikiTab";
 import { Markdown } from "../src/client/components/Markdown";
 import { parsePanelPrefs } from "../src/client/lib/panel-prefs";
+import { isSelectVNode, selectOptions } from "./helpers/select-vnode";
 
 /* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
 
@@ -36,6 +37,8 @@ function textOf(node: ComponentChild): string {
   if (Array.isArray(node)) return node.map(textOf).join("");
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return "";
     return textOf((vnode.type as (props: unknown) => ComponentChild)(vnode.props));
   }
   return textOf(vnode.props.children as ComponentChild);
@@ -47,6 +50,8 @@ function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): 
   if (Array.isArray(node)) return node.flatMap((child) => findNodes(child, predicate));
   const vnode = node as VNode;
   if (typeof vnode.type === "function") {
+    // `Select` memakai hook, jadi tak bisa dipanggil langsung tanpa DOM.
+    if (isSelectVNode(vnode)) return predicate(vnode) ? [vnode] : [];
     const rendered = (vnode.type as (props: unknown) => ComponentChild)(vnode.props);
     return findNodes(rendered, predicate);
   }
@@ -56,6 +61,10 @@ function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): 
 
 function byTag(node: ComponentChild, tag: string): VNode[] {
   return findNodes(node, (vnode) => vnode.type === tag);
+}
+
+function bySelect(node: ComponentChild): VNode[] {
+  return findNodes(node, (vnode) => isSelectVNode(vnode));
 }
 
 function byClass(node: ComponentChild, className: string): VNode[] {
@@ -764,7 +773,7 @@ describe("WikiView pemilih proyek manual", () => {
     }) as unknown as ComponentChild;
 
     expect(textOf(node)).toContain("Tambahkan penyedia GitLab di halaman Workspace");
-    expect(byTag(node, "select")).toHaveLength(0);
+    expect(bySelect(node)).toHaveLength(0);
   });
 
   test("pemilih menampilkan daftar penyedia dan repo", () => {
@@ -779,10 +788,9 @@ describe("WikiView pemilih proyek manual", () => {
       canQuote: false,
     }) as unknown as ComponentChild;
 
-    const selects = byTag(node, "select");
+    const selects = bySelect(node);
     expect(selects).toHaveLength(1);
-    const options = byTag(selects[0]!, "option");
-    expect(options.map((vnode) => propsOf(vnode).value)).toEqual(["", "p_1", "p_2"]);
+    expect(selectOptions(selects[0]).map((option) => option.value)).toEqual(["", "p_1", "p_2"]);
     expect(textOf(node)).toContain("grup/proyek");
     expect(textOf(node)).toContain("grup/lain");
   });
@@ -799,8 +807,8 @@ describe("WikiView pemilih proyek manual", () => {
       canQuote: false,
     }) as unknown as ComponentChild;
 
-    const selects = byTag(node, "select");
-    expect(byTag(selects[0]!, "option")).toHaveLength(1);
+    const selects = bySelect(node);
+    expect(selectOptions(selects[0])).toHaveLength(1);
   });
 
   test("daftar repo yang dimuat menampilkan status memuat", () => {

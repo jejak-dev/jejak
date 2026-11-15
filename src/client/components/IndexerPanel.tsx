@@ -16,6 +16,7 @@ import {
   providerSummary,
   type ProviderForm,
 } from "../lib/indexer";
+import { Select } from "./Select";
 
 const NOTE =
   "Membuat salinan dangkal hanya-baca di cache Jejak; repo aslinya tidak diubah. Token tetap di server dan tidak dikirim ke model. Hasil indeks diberi label mungkin tertinggal.";
@@ -218,22 +219,22 @@ export function IndexerPanel({ api }: IndexerPanelProps) {
                   <label class="jk-label" for="jk-gp-kind">
                     Jenis
                   </label>
-                  <select
+                  <Select
                     id="jk-gp-kind"
-                    class="jk-select"
                     value={form.kind}
-                    onChange={(event) =>
+                    options={[
+                      { value: "gitlab", label: "GitLab" },
+                      { value: "local", label: "Folder lokal" },
+                    ]}
+                    onChange={(value) =>
                       setForm({
                         ...form,
-                        kind: event.currentTarget.value === "local" ? "local" : "gitlab",
+                        kind: value === "local" ? "local" : "gitlab",
                         token: "",
                         clearToken: false,
                       })
                     }
-                  >
-                    <option value="gitlab">GitLab</option>
-                    <option value="local">Folder lokal</option>
-                  </select>
+                  />
                 </div>
               </div>
               <div class="jk-field">

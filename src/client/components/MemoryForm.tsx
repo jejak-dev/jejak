@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import type { MemoryLayer } from "../lib/api";
 import { MEMORY_BODY_MAX, MEMORY_TITLE_MAX, validateDraft, type MemoryDraft } from "../lib/memory";
+import { Select } from "./Select";
 
 export interface MemoryFormProps {
   /** Isian awal; saat ini undefined berarti form tambah baru. */
@@ -77,22 +78,18 @@ export function MemoryForm({
           <label class="jk-label" for="jk-memory-project">
             Folder proyek
           </label>
-          <select
+          <Select
             id="jk-memory-project"
-            class="jk-select"
             value={draft.projectKey}
             disabled={lockedLayer}
-            onChange={(event) =>
-              patch({ projectKey: (event.currentTarget as HTMLSelectElement).value })
+            placeholder="Belum ada folder dikenal"
+            options={
+              projects.length === 0
+                ? [{ value: "", label: "Belum ada folder dikenal" }]
+                : projects.map((project) => ({ value: project, label: project }))
             }
-          >
-            {projects.length === 0 && <option value="">Belum ada folder dikenal</option>}
-            {projects.map((project) => (
-              <option key={project} value={project}>
-                {project}
-              </option>
-            ))}
-          </select>
+            onChange={(value) => patch({ projectKey: value })}
+          />
         </div>
       )}
 

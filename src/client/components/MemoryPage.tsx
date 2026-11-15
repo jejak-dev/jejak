@@ -20,6 +20,7 @@ import { MemoryRow } from "./MemoryRow";
 import { ClaudeMemorySection } from "./ClaudeMemorySection";
 import { ClaudeMemorySync } from "./ClaudeMemorySync";
 import { QuestionsPanel } from "./QuestionsPanel";
+import { Select } from "./Select";
 
 export interface MemoryPageProps {
   api: ApiClient;
@@ -354,21 +355,14 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
             </div>
           ) : (
             <div class="jk-memory-import-row">
-              <select
-                class="jk-select jk-memory-import-select"
-                aria-label="Folder proyek"
+              <Select
+                class="jk-memory-import-select"
+                ariaLabel="Folder proyek"
                 value={importProject}
                 disabled={importBusy}
-                onChange={(event) =>
-                  setImportProject((event.currentTarget as HTMLSelectElement).value)
-                }
-              >
-                {projects.map((project) => (
-                  <option key={project} value={project}>
-                    {project}
-                  </option>
-                ))}
-              </select>
+                options={projects.map((project) => ({ value: project, label: project }))}
+                onChange={(value) => setImportProject(value)}
+              />
               <button
                 type="button"
                 class="jk-button jk-button-primary"

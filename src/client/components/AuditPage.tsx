@@ -18,6 +18,7 @@ import {
   sessionLabel,
   summaryLine,
 } from "../lib/audit";
+import { Select } from "./Select";
 
 export interface AuditPageProps {
   api: ApiClient;
@@ -170,32 +171,31 @@ export function AuditPage({ api, sessions }: AuditPageProps) {
               ))}
             </div>
             <div class="jk-audit-filters">
-              <select
+              <Select
                 class="jk-audit-select"
-                aria-label="Filter jenis"
+                size="compact"
+                ariaLabel="Filter jenis"
                 value={filterKind}
-                onChange={(event) => setFilterKind(event.currentTarget.value)}
-              >
-                <option value="">Semua jenis</option>
-                {KIND_ORDER.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kindLabel(kind)}
-                  </option>
-                ))}
-              </select>
-              <select
+                options={[
+                  { value: "", label: "Semua jenis" },
+                  ...KIND_ORDER.map((kind) => ({ value: kind, label: kindLabel(kind) })),
+                ]}
+                onChange={(value) => setFilterKind(value)}
+              />
+              <Select
                 class="jk-audit-select"
-                aria-label="Filter sesi"
+                size="compact"
+                ariaLabel="Filter sesi"
                 value={filterSession}
-                onChange={(event) => setFilterSession(event.currentTarget.value)}
-              >
-                <option value="">Semua sesi</option>
-                {sessions.map((session) => (
-                  <option key={session.id} value={session.id}>
-                    {shortTitle(session.title)}
-                  </option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "Semua sesi" },
+                  ...sessions.map((session) => ({
+                    value: session.id,
+                    label: shortTitle(session.title),
+                  })),
+                ]}
+                onChange={(value) => setFilterSession(value)}
+              />
               <button
                 type="button"
                 class="jk-button jk-audit-refresh"

@@ -11,6 +11,7 @@ import {
   sandboxPatchFrom,
   sandboxStatusLine,
 } from "../lib/sandbox";
+import { Select } from "./Select";
 
 export interface SandboxSettingsProps {
   api: ApiClient;
@@ -193,22 +194,12 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
               <label class="jk-label" for="jk-sandbox-mode">
                 Mode
               </label>
-              <select
+              <Select
                 id="jk-sandbox-mode"
-                class="jk-select"
                 value={mode}
-                onChange={(event) =>
-                  onChange(() =>
-                    setMode((event.currentTarget as HTMLSelectElement).value as SandboxMode),
-                  )
-                }
-              >
-                {MODE_LABELS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+                options={MODE_LABELS.map((option) => ({ value: option.value, label: option.label }))}
+                onChange={(value) => onChange(() => setMode(value as SandboxMode))}
+              />
             </div>
 
             {mode === "mati" && (

@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import type { McpServerItem } from "../lib/api";
 import { MCP_NAME_PATTERN, parseKeyValueLines, type McpFormValues } from "../lib/mcp";
+import { Select } from "./Select";
 
 export interface McpFormProps {
   /** Ada saat mengubah server tersimpan; transport dikunci. */
@@ -97,18 +98,16 @@ export function McpForm({ initial, busy, serverError, onSubmit, onCancel }: McpF
         <label class="jk-label" for={`${id}-transport`}>
           Transport
         </label>
-        <select
+        <Select
           id={`${id}-transport`}
-          class="jk-select"
           value={transport}
+          options={[
+            { value: "stdio", label: "stdio" },
+            { value: "http", label: "http" },
+          ]}
           disabled={editing || busy}
-          onChange={(event) =>
-            setTransport((event.currentTarget as HTMLSelectElement).value as "stdio" | "http")
-          }
-        >
-          <option value="stdio">stdio</option>
-          <option value="http">http</option>
-        </select>
+          onChange={(value) => setTransport(value as "stdio" | "http")}
+        />
         {editing && <p class="jk-help">Transport tidak dapat diubah setelah dibuat.</p>}
       </div>
 
