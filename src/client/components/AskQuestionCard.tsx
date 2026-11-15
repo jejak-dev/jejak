@@ -11,6 +11,7 @@ import {
 } from "../lib/ask-question";
 import { formatCountdown } from "../lib/permission";
 import { Icon } from "./Icon";
+import { InterruptedNote } from "./PlanCard";
 
 export interface AskQuestionCardProps {
   id: string;
@@ -18,9 +19,18 @@ export interface AskQuestionCardProps {
   remaining: number | null;
   onSubmit: (answers: Record<string, string>) => Promise<void>;
   onSkip: () => Promise<void>;
+  /** Sesi sempat terputus: pertanyaan tetap bisa dijawab. */
+  interrupted?: boolean;
 }
 
-export function AskQuestionCard({ id, questions, remaining, onSubmit, onSkip }: AskQuestionCardProps) {
+export function AskQuestionCard({
+  id,
+  questions,
+  remaining,
+  onSubmit,
+  onSkip,
+  interrupted,
+}: AskQuestionCardProps) {
   const [selections, setSelections] = useState<AskSelection[]>(() =>
     questions.map(() => emptySelection()),
   );
@@ -133,6 +143,8 @@ export function AskQuestionCard({ id, questions, remaining, onSubmit, onSkip }: 
           </label>
         </div>
       </fieldset>
+
+      {interrupted === true && <InterruptedNote />}
 
       <div class="jk-perm-actions">
         {step < last ? (

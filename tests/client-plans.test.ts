@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import type { ComponentChild, VNode } from "preact";
 import {
   extractPlans,
+  isResumablePermission,
   planExcerpt,
   planTitle,
   PLAN_EXCERPT_MAX,
   PLAN_TITLE_FALLBACK,
+  resumablePlans,
   type PlanEntry,
 } from "../src/client/lib/plans";
 import type { PermissionStatus, TimelineItem } from "../src/client/lib/timeline";
@@ -204,6 +206,37 @@ describe("extractPlans", () => {
   });
 });
 
+describe("rencana yang terputus", () => {
+  test("rencana terputus tanpa pesan pengguna sesudahnya bisa dilanjutkan", () => {
+    const items: TimelineItem[] = [
+      { kind: "user", text: "rencanakan" },
+      permission("p1", "# Rencana A\nisi", "terputus"),
+    ];
+    const plans = extractPlans(items);
+    expect(plans[0]?.status).toBe("terputus");
+    expect(plans[0]?.resumable).toBe(true);
+    expect(resumablePlans(plans).map((entry) => entry.id)).toEqual(["p1"]);
+    expect(isResumablePermission(items, "p1")).toBe(true);
+  });
+
+  test("rencana terputus yang usang tak bisa dilanjutkan", () => {
+    const items: TimelineItem[] = [
+      permission("p1", "# Rencana A\nisi", "terputus"),
+      { kind: "user", text: "lanjut saja" },
+    ];
+    const plans = extractPlans(items);
+    expect(plans[0]?.resumable).toBeUndefined();
+    expect(resumablePlans(plans)).toEqual([]);
+    expect(isResumablePermission(items, "p1")).toBe(false);
+  });
+
+  test("rencana yang bukan terputus tak ditandai dapat dilanjutkan", () => {
+    const plans = extractPlans([permission("p1", "# Rencana A\nisi", "menunggu")]);
+    expect(plans[0]?.resumable).toBeUndefined();
+    expect(resumablePlans(plans)).toEqual([]);
+  });
+});
+
 /* ---------- Tampilan ---------- */
 
 describe("kartu ringkas rencana di chat", () => {
@@ -282,6 +315,44 @@ describe("kartu ringkas rencana di chat", () => {
     expect(teks).toContain("Ditolak");
     expect(teks).toContain("perlu detail");
   });
+
+  test("kartu terputus yang dapat dilanjutkan tetap punya tombol dan catatan", () => {
+    const kartu = PlanCardView({
+      id: "p1",
+      title: "Rencana Rilis",
+      excerpt: "Ringkasan.",
+      remaining: null,
+      interrupted: true,
+      ...DECISION,
+    });
+    const label = buttonTexts(kartu);
+    expect(label).toContain("Approve plan");
+    expect(label).toContain("Revisi");
+    const teks = textOf(kartu);
+    expect(teks).toContain("Sesi sempat terputus.");
+    expect(teks).not.toContain("ditolak otomatis dalam");
+  });
+
+  test("kartu terputus tanpa catatan tak menampilkan catatan lanjutan", () => {
+    const kartu = PlanCardView({
+      id: "p1",
+      title: "Rencana Rilis",
+      excerpt: "Ringkasan.",
+      remaining: null,
+      ...DECISION,
+    });
+    expect(textOf(kartu)).not.toContain("Sesi sempat terputus.");
+  });
+
+  test("ringkasan terputus menampilkan lencana sesi terputus", () => {
+    const baris = PlanDoneRow({
+      id: "p1",
+      title: "Rencana Rilis",
+      status: "terputus",
+    });
+    expect(textOf(baris)).toContain("Sesi terputus");
+    expect(buttonTexts(baris)).not.toContain("Approve plan");
+  });
 });
 
 describe("tab Rencana", () => {
@@ -357,5 +428,32 @@ describe("tab Rencana", () => {
       ...DECISION,
     });
     expect(bySelect(tab)).toHaveLength(0);
+  });
+
+  test("rencana terputus yang dapat dilanjutkan punya tombol tanpa hitung mundur", () => {
+    const tab = PlanTabView({
+      plans: [{ ...plan("p1", DOKUMEN, "terputus"), resumable: true }],
+      selectedId: "p1",
+      remaining: 90,
+      ...DECISION,
+    });
+    const label = buttonTexts(tab);
+    expect(label).toContain("Approve plan");
+    expect(label).toContain("Revisi");
+    expect(textOf(tab)).toContain("Sesi sempat terputus.");
+    expect(textOf(tab)).not.toContain("ditolak otomatis dalam");
+  });
+
+  test("rencana terputus yang usang tak punya tombol", () => {
+    const tab = PlanTabView({
+      plans: [plan("p1", DOKUMEN, "terputus")],
+      selectedId: "p1",
+      remaining: null,
+      ...DECISION,
+    });
+    expect(buttonTexts(tab)).not.toContain("Approve plan");
+    expect(buttonTexts(tab)).not.toContain("Revisi");
+    expect(textOf(tab)).toContain("Sesi terputus");
+    expect(textOf(tab)).not.toContain("Sesi sempat terputus.");
   });
 });

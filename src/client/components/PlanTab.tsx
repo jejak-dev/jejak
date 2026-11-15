@@ -3,7 +3,13 @@ import { DONE_LABELS, useCountdown } from "../lib/permission";
 import type { PlanEntry } from "../lib/plans";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
-import { PlanActionsView, PlanTimer, usePlanDecision, type PlanDecisionState } from "./PlanCard";
+import {
+  InterruptedNote,
+  PlanActionsView,
+  PlanTimer,
+  usePlanDecision,
+  type PlanDecisionState,
+} from "./PlanCard";
 import { Select } from "./Select";
 
 export interface PlanTabViewProps extends PlanDecisionState {
@@ -35,6 +41,8 @@ export function PlanTabView(props: PlanTabViewProps) {
     return <p class="jk-empty-line">Belum ada rencana di sesi ini.</p>;
   }
   const menunggu = aktif.status === "menunggu";
+  // Rencana terputus yang belum usang: tombol keputusan tetap hidup.
+  const lanjut = aktif.status === "terputus" && aktif.resumable === true;
   const lencana =
     aktif.status === "menunggu" ? undefined : DONE_LABELS[aktif.status];
 
@@ -75,7 +83,9 @@ export function PlanTabView(props: PlanTabViewProps) {
         <Markdown text={aktif.plan} />
       </div>
 
-      {menunggu && (
+      {lanjut && <InterruptedNote />}
+
+      {(menunggu || lanjut) && (
         <PlanActionsView
           id={aktif.id}
           busy={props.busy}

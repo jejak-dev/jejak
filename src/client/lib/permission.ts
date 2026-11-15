@@ -393,4 +393,5 @@ export const DONE_LABELS: Record<
   ditolak: { text: "Ditolak", tone: "jk-step-gagal" },
   kedaluwarsa: { text: "Kedaluwarsa", tone: "" },
   dihentikan: { text: "Sesi dihentikan", tone: "" },
+  terputus: { text: "Sesi terputus", tone: "" },
 };

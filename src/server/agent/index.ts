@@ -3,7 +3,11 @@ import { createMockRunner } from "./mock-runner";
 import { createSdkRunner } from "./sdk-runner";
 
 export type { AgentEvent, AgentRunner, PermissionMode, RunInput, RunMemory, RunWorkspace, RunClaudeConfig, PermissionRequest, PermissionDecision, PermissionHandler, ResolvedMcpServer } from "./events";
-export { PERMISSION_EXPIRED_MESSAGE, PERMISSION_STOPPED_MESSAGE } from "./events";
+export {
+  PERMISSION_EXPIRED_MESSAGE,
+  PERMISSION_INTERRUPTED_MESSAGE,
+  PERMISSION_STOPPED_MESSAGE,
+} from "./events";
 export { createMockRunner } from "./mock-runner";
 export type { MockRunnerOptions } from "./mock-runner";
 export { createSdkRunner, buildSdkEnv } from "./sdk-runner";

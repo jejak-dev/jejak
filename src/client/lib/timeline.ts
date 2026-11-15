@@ -1,12 +1,19 @@
 import {
   PERMISSION_EXPIRED_MESSAGE,
+  PERMISSION_INTERRUPTED_MESSAGE,
   PERMISSION_STOPPED_MESSAGE,
   type AgentEvent,
 } from "../../server/agent/events";
 
 export type ToolStatus = "berjalan" | "selesai" | "gagal";
 
-export type PermissionStatus = "menunggu" | "diizinkan" | "ditolak" | "kedaluwarsa" | "dihentikan";
+export type PermissionStatus =
+  | "menunggu"
+  | "diizinkan"
+  | "ditolak"
+  | "kedaluwarsa"
+  | "dihentikan"
+  | "terputus";
 
 export type TimelineItem =
   | { kind: "user"; text: string; seq?: number; auto?: "goal" }
@@ -220,7 +227,9 @@ export function reduceTimeline(
             ? "kedaluwarsa"
             : event.message === PERMISSION_STOPPED_MESSAGE
               ? "dihentikan"
-              : "ditolak";
+              : event.message === PERMISSION_INTERRUPTED_MESSAGE
+                ? "terputus"
+                : "ditolak";
       const showMessage = status === "ditolak" && event.message !== undefined && event.message !== "";
       return items.map((item) => {
         if (item.kind !== "permission" || item.id !== event.id) return item;

@@ -17,6 +17,12 @@ export interface PlanEntry {
   status: PermissionStatus;
   expiresAt?: string;
   message?: string;
+  /**
+   * Rencana terputus yang masih bisa dilanjutkan: sesi sempat terputus dan
+   * belum ada pesan pengguna sesudahnya. Hanya berlaku untuk status
+   * "terputus".
+   */
+  resumable?: boolean;
 }
 
 /** Buang penanda markdown sebaris (tebal, miring, kode, tautan). */
@@ -95,6 +101,59 @@ export function planExcerpt(markdown: string, max: number = PLAN_EXCERPT_MAX): s
   return baris.join("\n");
 }
 
+/** Indeks pesan pengguna terakhir; -1 bila tak ada sama sekali. */
+function lastUserIndex(items: readonly TimelineItem[]): number {
+  let last = -1;
+  items.forEach((item, index) => {
+    if (item.kind === "user") last = index;
+  });
+  return last;
+}
+
+/**
+ * Ada pesan pengguna sesudah item dengan id ini?
+ *
+ * Kalau ada, sesi sudah berjalan lagi sehingga permintaan yang menggantung
+ * tak bisa dilanjutkan.
+ */
+export function hasUserMessageAfter(
+  items: readonly TimelineItem[],
+  id: string,
+): boolean {
+  const index = items.findIndex((item) => item.kind === "permission" && item.id === id);
+  if (index === -1) return false;
+  return index < lastUserIndex(items);
+}
+
+/**
+ * Id izin yang terputus dan masih bisa diputuskan lewat jalur lanjutan.
+ *
+ * Berlaku untuk rencana dan pertanyaan agent: sesi sempat terputus dan belum
+ * ada pesan pengguna sesudahnya.
+ */
+export function resumablePermissionIds(
+  items: readonly TimelineItem[],
+): Set<string> {
+  const last = lastUserIndex(items);
+  const ids = new Set<string>();
+  items.forEach((item, index) => {
+    if (item.kind === "permission" && item.status === "terputus" && index > last) {
+      ids.add(item.id);
+    }
+  });
+  return ids;
+}
+
+/**
+ * True bila izin yang terputus masih bisa diputuskan lewat jalur lanjutan.
+ */
+export function isResumablePermission(
+  items: readonly TimelineItem[],
+  id: string,
+): boolean {
+  return resumablePermissionIds(items).has(id);
+}
+
 /**
  * Semua rencana yang pernah diminta dalam sebuah sesi.
  *
@@ -114,6 +173,9 @@ export function extractPlans(items: readonly TimelineItem[]): PlanEntry[] {
     };
     if (item.expiresAt !== undefined) entry.expiresAt = item.expiresAt;
     if (item.message !== undefined) entry.message = item.message;
+    if (item.status === "terputus" && !hasUserMessageAfter(items, item.id)) {
+      entry.resumable = true;
+    }
     plans.push(entry);
   }
   return plans;
@@ -127,4 +189,13 @@ export function latestPlan(plans: readonly PlanEntry[]): PlanEntry | undefined {
 /** Rencana yang masih menunggu keputusan pengguna. */
 export function pendingPlans(plans: readonly PlanEntry[]): PlanEntry[] {
   return plans.filter((entry) => entry.status === "menunggu");
+}
+
+/**
+ * Rencana yang terputus tapi masih bisa dilanjutkan.
+ *
+ * Rencana yang usang (sudah ada pesan pengguna sesudahnya) tak termasuk.
+ */
+export function resumablePlans(plans: readonly PlanEntry[]): PlanEntry[] {
+  return plans.filter((entry) => entry.status === "terputus" && entry.resumable === true);
 }

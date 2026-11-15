@@ -570,7 +570,7 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
 
           const answers = parseAnswers(record.answers);
 
-          manager.resolvePermission(
+          await manager.resolvePermission(
             params.id,
             params.requestId,
             decision as "allow" | "deny",
@@ -583,6 +583,24 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
           if (error instanceof SessionError && error.code === "tidak-ditemukan") {
             return jsonResponse(404, { error: error.message });
           }
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/sessions/:id/continue",
+      async ({ params }) => {
+        try {
+          const result = await manager.continue(params.id);
+          recordAudit(audit, {
+            kind: "pengaturan",
+            sessionId: params.id,
+            summary: "Sesi dilanjutkan",
+            meta: { aksi: "lanjutkan-sesi" },
+          });
+          return jsonResponse(200, { ok: true, queued: result.queued });
+        } catch (error) {
           return errorResponse(error);
         }
       },

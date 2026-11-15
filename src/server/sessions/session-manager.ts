@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import {
   PERMISSION_EXPIRED_MESSAGE,
+  PERMISSION_INTERRUPTED_MESSAGE,
   PERMISSION_STOPPED_MESSAGE,
   type AgentEvent,
   type AgentRunner,
@@ -112,6 +113,11 @@ export interface SessionInfo {
    * field internal seperti `startCostUsd`).
    */
   goal?: GoalView;
+  /**
+   * Sesi bisa dilanjutkan setelah aplikasi berhenti mendadak: sesi tak
+   * berjalan dan punya riwayat SDK. Dihitung saat dibaca, tidak disimpan.
+   */
+  canContinue?: boolean;
 }
 
 export interface SequencedEvent {
@@ -328,6 +334,13 @@ const CHECKPOINT_TIMEOUT_MS = 30_000;
 const ASIDE_TIMEOUT_MS = 120_000;
 
 const MAX_QUEUED_MESSAGES = 5;
+
+/** Galat yang ditambahkan saat pemulihan sesi yang masih berjalan. */
+const RECOVERY_ERROR_MESSAGE = "server dimulai ulang saat sesi berjalan";
+
+/** Pesan lanjutan untuk sesi yang terputus karena aplikasi berhenti. */
+const CONTINUE_MESSAGE =
+  "Sesi sempat terputus karena aplikasi berhenti. Lanjutkan pekerjaan terakhirmu dari titik tadi dan minta izin lagi bila perlu.";
 
 /** Label Bahasa Indonesia untuk alasan berakhir/berjeda tujuan. */
 const GOAL_REASON_LABEL: Record<GoalEndReason, string> = {
@@ -905,16 +918,18 @@ export class SessionManager {
       }
       this.sessions.set(record.info.id, record);
 
+      // Izin yang menggantung ditutup lebih dulu supaya UI tak menampilkan
+      // hitung mundur untuk sesi yang sudah mati. Penutupan ini berlaku untuk
+      // semua sesi hasil muat ulang, bukan hanya yang berstatus berjalan.
+      this.closePendingPermissionsOnRecovery(record, loaded);
+
       if (record.info.status === "berjalan") {
         record.info.status = "gagal";
-        // Izin yang menggantung ditutup lebih dulu supaya UI tak menampilkan
-        // tombol Approve/Revisi dan hitung mundur untuk sesi yang sudah mati.
-        this.closePendingPermissionsOnRecovery(record, loaded);
-        this.append(record, { type: "error", message: "server dimulai ulang saat sesi berjalan" });
+        this.append(record, { type: "error", message: RECOVERY_ERROR_MESSAGE });
         this.append(record, {
           type: "result",
           ok: false,
-          error: "server dimulai ulang saat sesi berjalan",
+          error: RECOVERY_ERROR_MESSAGE,
         });
         record.info.updatedAt = this.now().toISOString();
         this.persistSession(record);
@@ -940,9 +955,12 @@ export class SessionManager {
   /**
    * Menutup izin yang menggantung saat pemulihan sesi: setiap
    * `permission_request` yang belum punya `permission_resolved` dengan id sama
-   * ditutup dengan penolakan "sesi dihentikan". Idempoten: izin yang sudah
-   * diputuskan (event lama) tidak disentuh dan pemulihan ulang tidak menambah
-   * event ganda.
+   * ditutup dengan penolakan "sesi terputus". Penutupan ini berlaku untuk semua
+   * sesi hasil muat ulang, bukan hanya yang berstatus berjalan.
+   *
+   * Idempoten: izin yang sudah diputuskan (event lama) tidak disentuh dan
+   * pemulihan ulang tidak menambah event ganda. Izin berstatus "terputus"
+   * masih bisa diputuskan lewat jalur lanjutan (`resolvePermission`).
    */
   private closePendingPermissionsOnRecovery(record: SessionRecord, events: SequencedEvent[]): void {
     const decided = new Set<string>();
@@ -961,7 +979,7 @@ export class SessionManager {
         type: "permission_resolved",
         id: event.id,
         decision: "deny",
-        message: PERMISSION_STOPPED_MESSAGE,
+        message: PERMISSION_INTERRUPTED_MESSAGE,
       });
     }
 
@@ -1187,6 +1205,10 @@ export class SessionManager {
         missing: !existsSync(info.worktree.path),
       };
     }
+    // Sesi yang tak berjalan tapi punya riwayat bisa dilanjutkan (aplikasi
+    // berhenti mendadak); dihitung di sini, tidak disimpan.
+    copy.canContinue =
+      record.sdkSessionId !== undefined && info.status !== "berjalan";
     return copy;
   }
 
@@ -3158,13 +3180,13 @@ export class SessionManager {
     }
   }
 
-  resolvePermission(
+  async resolvePermission(
     sessionId: string,
     requestId: string,
     decision: "allow" | "deny",
     message?: string,
     answers?: Record<string, string>,
-  ): void {
+  ): Promise<void> {
     const record = this.sessions.get(sessionId);
     if (record === undefined) {
       throw new SessionError("sesi tidak ditemukan", "tidak-ditemukan");
@@ -3172,7 +3194,10 @@ export class SessionManager {
 
     const pending = record.pending.get(requestId);
     if (pending === undefined) {
-      throw new SessionError("izin tidak ditemukan atau sudah diputuskan", "tidak-ditemukan");
+      // Izin tak ada di antrean memori: mungkin sesi sempat terputus dan
+      // permintaannya ditutup saat pemulihan.
+      await this.resolveOrphanPermission(record, requestId, decision, message, answers);
+      return;
     }
 
     // Remove from pending map
@@ -3221,5 +3246,176 @@ export class SessionManager {
         message: message ? collapseWhitespace(message).substring(0, 200) : "ditolak pengguna",
       });
     }
+  }
+
+  /**
+   * Jalur yatim: izin yang sudah ada di log sesi tapi prosesnya mati.
+   *
+   * Permintaan ditutup saat pemulihan dengan status "terputus", jadi tak ada
+   * antrean memori. Keputusan pengguna diterjemahkan jadi pesan lanjutan yang
+   * dikirim ke sesi; izin tool biasa tak pernah disetujui otomatis.
+   */
+  private async resolveOrphanPermission(
+    record: SessionRecord,
+    requestId: string,
+    decision: "allow" | "deny",
+    message?: string,
+    answers?: Record<string, string>,
+  ): Promise<void> {
+    if (record.info.status === "berjalan") {
+      throw new SessionError("izin tidak ditemukan atau sudah diputuskan", "tidak-ditemukan");
+    }
+
+    const events = this.sessionEvents(record);
+    const index = events.findIndex(
+      (item) => item.event.type === "permission_request" && item.event.id === requestId,
+    );
+    if (index === -1) {
+      throw new SessionError("izin tidak ditemukan atau sudah diputuskan", "tidak-ditemukan");
+    }
+    const request = events[index]!.event;
+    if (request.type !== "permission_request") {
+      throw new SessionError("izin tidak ditemukan atau sudah diputuskan", "tidak-ditemukan");
+    }
+
+    // Izin harus berstatus "terputus": ditutup saat pemulihan, bukan diputuskan.
+    const sesudah = events.slice(index + 1);
+    const terputus = sesudah.some(
+      (item) =>
+        item.event.type === "permission_resolved" &&
+        item.event.id === requestId &&
+        item.event.message === PERMISSION_INTERRUPTED_MESSAGE,
+    );
+    if (!terputus) {
+      throw new SessionError("izin tidak ditemukan atau sudah diputuskan", "tidak-ditemukan");
+    }
+
+    // Usang: ada giliran atau pesan baru sesudah permintaan (bukan event
+    // pemulihan), artinya sesi sudah berjalan lagi.
+    if (sesudah.some((item) => !this.isRecoveryEvent(item.event))) {
+      throw new SessionError("Izin ini sudah usang; sesi sudah berlanjut.", "konflik");
+    }
+
+    const name = request.name;
+    if (name === "ExitPlanMode") {
+      await this.resumePlanPermission(record, decision, message);
+    } else if (name === "AskUserQuestion") {
+      await this.resumeQuestionPermission(record, decision, answers);
+    } else {
+      // Izin tool biasa tak pernah disetujui dari jalur yatim.
+      throw new SessionError(
+        "Sesi terputus; pilih Lanjutkan sesi agar agent mengulang pekerjaannya dan meminta izin lagi.",
+        "konflik",
+      );
+    }
+
+    // Catat keputusan sebenarnya supaya kartu berubah jadi Diizinkan/Ditolak.
+    const resolvedEvent: Extract<AgentEvent, { type: "permission_resolved" }> = {
+      type: "permission_resolved",
+      id: requestId,
+      decision,
+      message: message ? collapseWhitespace(message).substring(0, 200) : undefined,
+    };
+    if (decision === "allow" && name === "AskUserQuestion" && answers !== undefined) {
+      resolvedEvent.answers = answers;
+    }
+    this.append(record, resolvedEvent);
+    this.audit(
+      "izin",
+      `Izin ${decision === "allow" ? "diizinkan" : "ditolak"}: ${name}`,
+      record.info.id,
+      { tool: name, decision: decision === "allow" ? "diizinkan" : "ditolak" },
+    );
+  }
+
+  /**
+   * Rencana yang disetujui (atau perlu direvisi) setelah sesi terputus.
+   *
+   * Persetujuan mengubah mode izin dari `plan` ke `default`; penolakan
+   * membiarkan mode tetap agar agent menyusun ulang rencana.
+   */
+  private async resumePlanPermission(
+    record: SessionRecord,
+    decision: "allow" | "deny",
+    message?: string,
+  ): Promise<void> {
+    if (decision === "allow") {
+      if (record.info.permissionMode === "plan") {
+        this.setPermissionMode(record.info.id, "default");
+      }
+      await this.send(
+        record.info.id,
+        "Rencana yang kamu ajukan sudah disetujui. Lanjutkan implementasi sesuai rencana itu.",
+      );
+      return;
+    }
+    const catatan = message === undefined || message.trim() === ""
+      ? "Rencana ditolak; susun ulang."
+      : `Rencana perlu direvisi: ${collapseWhitespace(message)}. Susun ulang rencananya sesuai catatan itu lalu ajukan lagi.`;
+    await this.send(record.info.id, catatan);
+  }
+
+  /** Jawaban pertanyaan agent yang sempat menggantung saat sesi terputus. */
+  private async resumeQuestionPermission(
+    record: SessionRecord,
+    decision: "allow" | "deny",
+    answers?: Record<string, string>,
+  ): Promise<void> {
+    if (decision === "deny") {
+      await this.send(record.info.id, "Pengguna melewati pertanyaan tadi.");
+      return;
+    }
+    const baris = Object.entries(answers ?? {}).map(
+      ([pertanyaan, jawaban]) => `${pertanyaan} → ${jawaban}`,
+    );
+    const isi =
+      baris.length === 0
+        ? "Jawaban untuk pertanyaanmu sebelum sesi terputus: (tidak ada jawaban)"
+        : `Jawaban untuk pertanyaanmu sebelum sesi terputus:\n${baris.join("\n")}`;
+    await this.send(record.info.id, isi);
+  }
+
+  /** Event yang dibuat saat pemulihan; bukan giliran baru. */
+  private isRecoveryEvent(event: AgentEvent): boolean {
+    if (event.type === "permission_resolved") {
+      return event.message === PERMISSION_INTERRUPTED_MESSAGE;
+    }
+    if (event.type === "error") return event.message === RECOVERY_ERROR_MESSAGE;
+    if (event.type === "result") return event.error === RECOVERY_ERROR_MESSAGE;
+    return false;
+  }
+
+  /**
+   * Seluruh event log sesi; dari penyimpanan bila ada, kalau tidak dari
+   * buffer di memori.
+   */
+  private sessionEvents(record: SessionRecord): SequencedEvent[] {
+    const store = this.store;
+    if (store !== undefined) {
+      try {
+        const loaded = store.loadEvents(record.info.id);
+        if (loaded.length > 0) return loaded;
+      } catch {
+        // Penyimpanan tak terbaca; pakai buffer di memori.
+      }
+    }
+    return record.buffer;
+  }
+
+  /**
+   * Lanjutkan sesi yang terputus karena aplikasi berhenti.
+   *
+   * Hanya untuk sesi tak-berjalan yang punya riwayat SDK: pesan dikirim
+   * sebagai giliran biasa sehingga agent mengulang pekerjaannya.
+   */
+  async continue(id: string): Promise<{ queued: boolean }> {
+    const record = this.sessions.get(id);
+    if (record === undefined) {
+      throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
+    }
+    if (record.info.status === "berjalan") {
+      throw new SessionError("Sesi sedang berjalan.", "konflik");
+    }
+    return this.send(id, CONTINUE_MESSAGE);
   }
 }

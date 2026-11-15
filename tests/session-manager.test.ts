@@ -1274,7 +1274,7 @@ describe("SessionManager + store", () => {
     return { type: "permission_request", id, name, input: {} };
   }
 
-  test("pemulihan menutup izin rencana menggantung dengan deny sesi dihentikan", async () => {
+  test("pemulihan menutup izin rencana menggantung dengan deny sesi terputus", async () => {
     const path = storePath();
     const first = new SqliteSessionStore(path);
     seedSession(first, {
@@ -1299,7 +1299,7 @@ describe("SessionManager + store", () => {
     );
     expect(resolved.length).toBe(1);
     expect(resolved[0]?.decision).toBe("deny");
-    expect(resolved[0]?.message).toBe("sesi dihentikan");
+    expect(resolved[0]?.message).toBe("sesi terputus");
 
     // Event penolakan izin muncul sebelum event error/result pemulihan.
     const indexResolved = events.findIndex((item) => item.type === "permission_resolved");
@@ -1340,13 +1340,13 @@ describe("SessionManager + store", () => {
     for (const id of ["p2", "p3"]) {
       const item = resolved.find((entry) => entry.id === id);
       expect(item?.decision).toBe("deny");
-      expect(item?.message).toBe("sesi dihentikan");
+      expect(item?.message).toBe("sesi terputus");
     }
     expect(restored.get("s_campuran")?.pendingPermissions).toBe(0);
     second.close();
   });
 
-  test("pemulihan tidak mengubah sesi yang tidak berjalan", async () => {
+  test("pemulihan menutup izin menggantung pada sesi yang tak berjalan tanpa mengubah status", async () => {
     const path = storePath();
     const first = new SqliteSessionStore(path);
     seedSession(first, {
@@ -1360,7 +1360,9 @@ describe("SessionManager + store", () => {
     const restored = manager({ runner: scriptedRunner([]), store: second });
     expect(restored.get("s_selesai")?.status).toBe("selesai");
     const events = (await collect(restored.events("s_selesai"))).map((item) => item.event);
-    expect(events.some((item) => item.type === "permission_resolved")).toBe(false);
+    const resolved = events.filter((item) => item.type === "permission_resolved");
+    expect(resolved.length).toBe(1);
+    expect(resolved[0]?.message).toBe("sesi terputus");
     second.close();
   });
 

@@ -1,6 +1,8 @@
 import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { CANCELLED_MESSAGE, dedupeToolPermission, type TimelineItem } from "../lib/timeline";
+import { resumablePermissionIds } from "../lib/plans";
+import { endedByRestart } from "../lib/sessions";
 import { StepsGroup } from "./StepsGroup";
 import { groupSteps, stepsStatus, summarizeSteps, type StepItem } from "../lib/step-groups";
 import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
@@ -32,6 +34,10 @@ export interface TimelineProps {
   onRewind?: (seq: number) => Promise<void>;
   /** Buka tab Rencana pada rencana ini (dokumennya tak tampil di chat). */
   onOpenPlan?: (permissionId: string) => void;
+  /** Sesi bisa dilanjutkan (aplikasi berhenti mendadak); tampilkan spanduk. */
+  canContinue?: boolean;
+  /** Lanjutkan sesi yang terputus. */
+  onContinue?: () => Promise<void>;
 }
 
 const MAX_INPUT_CHARS = 2000;
@@ -241,6 +247,40 @@ export function UserItem({
   );
 }
 
+/**
+ * Spanduk lanjutkan sesi di dasar timeline.
+ *
+ * Tampilan murni tanpa hook supaya bisa diuji tanpa DOM.
+ */
+export function ResumeBannerView(props: {
+  visible: boolean;
+  busy: boolean;
+  error?: string;
+  onContinue: () => void;
+}) {
+  if (!props.visible) return null;
+  return (
+    <>
+      <div class="jk-resume-banner" role="status">
+        <span>Sesi terputus karena aplikasi berhenti.</span>
+        <button
+          type="button"
+          class="jk-button jk-button-primary"
+          disabled={props.busy}
+          onClick={props.onContinue}
+        >
+          {props.busy ? "Melanjutkan…" : "Lanjutkan sesi"}
+        </button>
+      </div>
+      {props.error !== undefined && (
+        <p class="jk-error-line jk-resume-error" role="alert">
+          {props.error}
+        </p>
+      )}
+    </>
+  );
+}
+
 export function Timeline({
   items: rawItems,
   connection,
@@ -251,6 +291,8 @@ export function Timeline({
   rewindableSeqs,
   onRewind,
   onOpenPlan,
+  canContinue,
+  onContinue,
 }: TimelineProps) {
   // Sesi sudah berhenti (gagal, selesai, server restart): izin yang masih "menunggu"
   // tidak bisa diputuskan lagi, jadi tampilkan sebagai dihentikan.
@@ -263,6 +305,8 @@ export function Timeline({
         )
       : rawItems;
   const visibleItems = dedupeToolPermission(items);
+  // Izin terputus yang masih bisa diputuskan (rencana atau pertanyaan agent).
+  const resumableIds = resumablePermissionIds(items);
   // Nomor giliran otomatis yang terlihat (pesan lanjutan mode Goal).
   const autoTurns = new Map<number, number>();
   let autoTotal = 0;
@@ -283,6 +327,29 @@ export function Timeline({
   const [confirmSeq, setConfirmSeq] = useState<number | undefined>(undefined);
   const [rewinding, setRewinding] = useState(false);
   const [rewindError, setRewindError] = useState<string | undefined>(undefined);
+
+  // Sesi terputus karena aplikasi berhenti: tombol lanjutkan di dasar timeline.
+  const [continuing, setContinuing] = useState(false);
+  const [continueError, setContinueError] = useState<string | undefined>(undefined);
+  const restartVisible =
+    canContinue === true && running !== true && endedByRestart(items);
+
+  const runContinue = async (): Promise<void> => {
+    if (onContinue === undefined || continuing) return;
+    setContinuing(true);
+    setContinueError(undefined);
+    try {
+      await onContinue();
+    } catch (error) {
+      setContinueError(
+        error instanceof Error && error.message !== ""
+          ? error.message
+          : "gagal melanjutkan sesi",
+      );
+    } finally {
+      setContinuing(false);
+    }
+  };
 
   const runRewind = async (seq: number): Promise<void> => {
     if (onRewind === undefined || rewinding) return;
@@ -504,6 +571,7 @@ export function Timeline({
                     cwd={cwd}
                     onDecide={onDecide}
                     onOpenPlan={onOpenPlan}
+                    resumable={resumableIds.has(item.id)}
                   />
                 );
 
@@ -561,6 +629,12 @@ export function Timeline({
       </div>
 
       <div class="jk-timeline-foot">
+        <ResumeBannerView
+          visible={restartVisible}
+          busy={continuing}
+          error={continueError}
+          onContinue={() => void runContinue()}
+        />
         {rewindError !== undefined && (
           <p class="jk-error-line" role="alert">
             {rewindError}

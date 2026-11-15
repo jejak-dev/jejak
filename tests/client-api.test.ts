@@ -235,6 +235,18 @@ describe("createApiClient", () => {
     expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
   });
 
+  test("continueSession POST ke /continue dan mengembalikan queued", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, queued: false }));
+    const api = createApiClient({ fetch });
+
+    const result = await api.continueSession("a b");
+
+    expect(result).toEqual({ ok: true, queued: false });
+    expect(calls[0]?.url).toBe("/api/sessions/a%20b/continue");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+  });
+
   test("sendMessage POST JSON ke /messages dan mengembalikan queued", async () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, queued: true }));
     const api = createApiClient({ fetch });

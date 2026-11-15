@@ -636,6 +636,13 @@ export function App() {
   const goalVisible =
     sessionGoal !== undefined && sessionGoal !== null && !goalDismissed.includes(sessionGoal.id);
 
+  // Lanjutkan sesi yang terputus karena aplikasi berhenti.
+  const onContinue = useCallback(async (): Promise<void> => {
+    if (selected === undefined) return;
+    await api.continueSession(selected.id);
+    void refresh();
+  }, [api, refresh, selected]);
+
   const onDecide = useCallback(
     async (
       requestId: string,
@@ -875,6 +882,8 @@ export function App() {
                   rewindableSeqs={rewindable}
                   onRewind={onRewind}
                   onOpenPlan={openPlanTab}
+                  canContinue={selected.canContinue === true}
+                  onContinue={onContinue}
                 />
                 {goalVisible && sessionGoal !== undefined && sessionGoal !== null && (
                   <div class="jk-goal-slot">

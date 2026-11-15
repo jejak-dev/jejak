@@ -61,6 +61,8 @@ export type AgentEvent =
 
 export const PERMISSION_EXPIRED_MESSAGE = "waktu izin habis";
 export const PERMISSION_STOPPED_MESSAGE = "sesi dihentikan";
+/** Izin yang menggantung karena proses mati mendadak (aplikasi berhenti). */
+export const PERMISSION_INTERRUPTED_MESSAGE = "sesi terputus";
 
 export interface PermissionRequest { toolUseId?: string; name: string; input: unknown }
 export type PermissionDecision =

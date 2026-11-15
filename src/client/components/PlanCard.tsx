@@ -7,6 +7,23 @@ import { Icon } from "./Icon";
 /** Status keputusan; dipakai juga untuk lencana di tab Rencana. */
 export type PlanDecisionStatus = PermissionStatus;
 
+/**
+ * Catatan untuk rencana yang sempat terputus tapi masih bisa diputuskan.
+ *
+ * Menyetujui akan melanjutkan sesi; agent mulai lagi dari rencana ini.
+ */
+export const PLAN_INTERRUPTED_NOTE =
+  "Sesi sempat terputus. Menyetujui akan melanjutkan sesi dan agent mulai dari rencana ini.";
+
+/**
+ * Catatan kecil untuk keputusan yang diambil setelah sesi terputus.
+ *
+ * Tampilan murni tanpa hook supaya bisa diuji tanpa DOM.
+ */
+export function InterruptedNote() {
+  return <p class="jk-perm-note jk-interrupted-note">{PLAN_INTERRUPTED_NOTE}</p>;
+}
+
 /** Keadaan aksi keputusan; dipisahkan dari tampilan supaya bisa diuji tanpa hook. */
 export interface PlanDecisionState {
   busy: boolean;
@@ -159,6 +176,8 @@ export interface PlanCardViewProps extends PlanDecisionState {
   excerpt: string;
   remaining: number | null;
   onOpenPlan?: () => void;
+  /** Sesi sempat terputus: tombol tetap aktif tanpa hitung mundur. */
+  interrupted?: boolean;
 }
 
 /**
@@ -188,6 +207,8 @@ export function PlanCardView(props: PlanCardViewProps) {
         {excerpt !== "" && <p class="jk-plan-excerpt">{excerpt}</p>}
       </div>
 
+      {props.interrupted === true && <InterruptedNote />}
+
       <PlanActionsView
         id={id}
         busy={props.busy}
@@ -213,10 +234,20 @@ export interface PlanCardProps {
   onRevise: (feedback: string) => Promise<void>;
   /** Buka tab Rencana pada rencana ini; undefined = tombol tak tampil. */
   onOpenPlan?: () => void;
+  /** Sesi sempat terputus: tombol tetap aktif tanpa hitung mundur. */
+  interrupted?: boolean;
 }
 
 /** Kartu ringkas rencana yang masih menunggu keputusan. */
-export function PlanCard({ id, plan, remaining, onApprove, onRevise, onOpenPlan }: PlanCardProps) {
+export function PlanCard({
+  id,
+  plan,
+  remaining,
+  onApprove,
+  onRevise,
+  onOpenPlan,
+  interrupted,
+}: PlanCardProps) {
   const state = usePlanDecision(onApprove, onRevise);
   return (
     <PlanCardView
@@ -234,6 +265,7 @@ export function PlanCard({ id, plan, remaining, onApprove, onRevise, onOpenPlan 
       onApprove={state.onApprove}
       onSubmitRevise={state.onSubmitRevise}
       onOpenPlan={onOpenPlan}
+      interrupted={interrupted}
     />
   );
 }

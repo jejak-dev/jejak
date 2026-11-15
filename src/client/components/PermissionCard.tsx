@@ -26,6 +26,11 @@ export interface PermissionCardProps {
   ) => Promise<void>;
   /** Buka tab Rencana pada rencana ini; undefined = tombol tak tampil. */
   onOpenPlan?: (permissionId: string) => void;
+  /**
+   * Izin terputus yang masih bisa diputuskan (rencana atau pertanyaan agent).
+   * Izin tool biasa tak pernah bisa diputuskan dari jalur ini.
+   */
+  resumable?: boolean;
 }
 
 const PREVIEW_LINES = 7;
@@ -139,12 +144,23 @@ function Preview({ preview, cwd }: { preview: PermissionPreview; cwd: string }) 
   }
 }
 
-export function PermissionCard({ item, cwd, onDecide, onOpenPlan }: PermissionCardProps) {
+export function PermissionCard({
+  item,
+  cwd,
+  onDecide,
+  onOpenPlan,
+  resumable,
+}: PermissionCardProps) {
   const view = describePermission(item.name, item.input, cwd);
   const asks = item.name === "AskUserQuestion" ? parseAskQuestions(item.input) : undefined;
   const plan = item.name === "ExitPlanMode" ? parsePlan(item.input) : undefined;
   const pending = item.status === "menunggu";
+  // Sesi sempat terputus: rencana dan pertanyaan masih bisa diputuskan.
+  const terputus = item.status === "terputus";
+  const lanjut = terputus && resumable === true;
   const remaining = useCountdown(item.expiresAt, pending);
+  // Hitung mundur tak berlaku untuk izin yang sudah terputus.
+  const sisaWaktu = terputus ? null : remaining;
 
   const [busy, setBusy] = useState<"allow" | "deny" | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
@@ -166,6 +182,33 @@ export function PermissionCard({ item, cwd, onDecide, onOpenPlan }: PermissionCa
       setBusy(undefined);
     }
   };
+
+  if ((pending || lanjut) && plan !== undefined) {
+    return (
+      <PlanCard
+        id={item.id}
+        plan={plan}
+        remaining={sisaWaktu}
+        interrupted={terputus}
+        onApprove={() => onDecide(item.id, "allow")}
+        onRevise={(feedback) => onDecide(item.id, "deny", feedback)}
+        onOpenPlan={onOpenPlan === undefined ? undefined : () => onOpenPlan(item.id)}
+      />
+    );
+  }
+
+  if ((pending || lanjut) && asks !== undefined) {
+    return (
+      <AskQuestionCard
+        id={item.id}
+        questions={asks}
+        remaining={sisaWaktu}
+        interrupted={terputus}
+        onSubmit={(answers) => onDecide(item.id, "allow", undefined, answers)}
+        onSkip={() => onDecide(item.id, "deny", "pengguna melewati pertanyaan")}
+      />
+    );
+  }
 
   if (item.status !== "menunggu") {
     // Rencana yang sudah diputuskan: hanya baris ringkasan, dokumennya
@@ -204,6 +247,9 @@ export function PermissionCard({ item, cwd, onDecide, onOpenPlan }: PermissionCa
           {item.status === "kedaluwarsa" && (
             <p class="jk-perm-note">Tidak ada keputusan sampai batas waktu, jadi ditolak otomatis.</p>
           )}
+          {item.status === "terputus" && (
+            <p class="jk-perm-note">Sesi terputus sebelum izin ini diputuskan.</p>
+          )}
           {asks !== undefined ? (
             <AskQuestionSummary questions={asks} answers={item.answers} />
           ) : (
@@ -211,31 +257,6 @@ export function PermissionCard({ item, cwd, onDecide, onOpenPlan }: PermissionCa
           )}
         </div>
       </details>
-    );
-  }
-
-  if (plan !== undefined) {
-    return (
-      <PlanCard
-        id={item.id}
-        plan={plan}
-        remaining={remaining}
-        onApprove={() => onDecide(item.id, "allow")}
-        onRevise={(feedback) => onDecide(item.id, "deny", feedback)}
-        onOpenPlan={onOpenPlan === undefined ? undefined : () => onOpenPlan(item.id)}
-      />
-    );
-  }
-
-  if (asks !== undefined) {
-    return (
-      <AskQuestionCard
-        id={item.id}
-        questions={asks}
-        remaining={remaining}
-        onSubmit={(answers) => onDecide(item.id, "allow", undefined, answers)}
-        onSkip={() => onDecide(item.id, "deny", "pengguna melewati pertanyaan")}
-      />
     );
   }
 

@@ -340,6 +340,27 @@ code {
   font-size: 12px;
 }
 
+/* Spanduk lanjutkan sesi di dasar timeline. */
+.jk-resume-banner {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 16px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--t2);
+  font-size: 13px;
+}
+
+.jk-resume-error {
+  pointer-events: auto;
+  margin: 0;
+}
+
 .jk-secret-warning {
   margin: 6px 0 0;
   color: var(--warn);

@@ -329,6 +329,15 @@ describe("reduceTimeline: izin", () => {
     expect(stopped[0]).toMatchObject({ status: "dihentikan" });
   });
 
+  test("pesan terputus dipetakan ke status terputus tanpa alasan", () => {
+    const items = reduceAll([
+      request,
+      { type: "permission_resolved", id: "p1", decision: "deny", message: "sesi terputus" },
+    ]);
+    expect(items[0]).toMatchObject({ status: "terputus" });
+    expect(items[0]).not.toHaveProperty("message");
+  });
+
   test("resolved untuk id lain tidak mengubah kartu", () => {
     const items = reduceAll([request, { type: "permission_resolved", id: "lain", decision: "allow" }]);
     expect(items[0]).toMatchObject({ status: "menunggu" });

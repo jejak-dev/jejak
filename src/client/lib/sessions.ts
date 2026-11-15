@@ -1,4 +1,5 @@
 import type { SessionInfo } from "../../server/sessions/session-manager";
+import type { TimelineItem } from "./timeline";
 
 /**
  * Batas yang sama dengan server (`validateTitle` di `session-manager.ts`).
@@ -59,4 +60,26 @@ export function validateTitle(text: string): string | undefined {
 /** Arsip dan hapus ditolak server selama sesi berjalan. */
 export function canMutate(session: SessionInfo): boolean {
   return session.status !== "berjalan";
+}
+
+/** Pesan galat yang ditambahkan saat server dimulai ulang di tengah sesi. */
+export const SESSION_RESTART_MESSAGE = "server dimulai ulang saat sesi berjalan";
+
+/**
+ * True bila sesi terakhir berakhir karena server dimulai ulang (aplikasi
+ * berhenti mendadak) dan belum ada giliran baru sesudahnya.
+ */
+export function endedByRestart(items: readonly TimelineItem[]): boolean {
+  let index = -1;
+  for (let position = items.length - 1; position >= 0; position -= 1) {
+    if (items[position]!.kind === "error") {
+      index = position;
+      break;
+    }
+  }
+  if (index === -1) return false;
+  const item = items[index]!;
+  if (item.kind !== "error" || item.message !== SESSION_RESTART_MESSAGE) return false;
+  // Ada pesan pengguna sesudahnya: sesi sudah berjalan lagi.
+  return !items.slice(index + 1).some((entry) => entry.kind === "user");
 }

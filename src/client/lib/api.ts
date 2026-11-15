@@ -551,6 +551,8 @@ export interface ApiClient {
     sandbox?: SandboxMode;
   }): Promise<SessionInfo>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
+  /** Lanjutkan sesi yang terputus karena aplikasi berhenti. */
+  continueSession(id: string): Promise<{ ok: true; queued: boolean }>;
   /** Mulai tujuan (mode Goal) pada sesi yang sudah ada. */
   startGoal(id: string, input: GoalStartInput): Promise<{ goal: GoalView | null }>;
   /** Jeda tujuan; giliran yang sedang berjalan dibiarkan selesai. */
@@ -1595,6 +1597,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         {},
       );
       return { interrupted: field(data, "interrupted") === true };
+    },
+
+    async continueSession(id) {
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/continue`,
+        {},
+      );
+      return { ok: true as const, queued: field(data, "queued") === true };
     },
 
     async startGoal(id, input) {
