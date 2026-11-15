@@ -267,6 +267,10 @@ export function reduceTimeline(
         { kind: "notice", text: event.text, level: event.level ?? "info" },
       ];
 
+    case "suggestion":
+      // Saran prompt bukan isi timeline; ditampilkan sebagai chip di komposer.
+      return [...items];
+
     case "result": {
       const result: TimelineItem = { kind: "result", ok: event.ok };
       if (event.summary !== undefined) result.summary = event.summary;

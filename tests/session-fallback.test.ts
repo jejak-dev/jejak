@@ -426,3 +426,24 @@ describe("SessionManager fallback provider", () => {
     expect(events.map((event) => event.type)).toEqual(["session", "notice", "result"]);
   });
 });
+
+describe("saran prompt di jalur fallback", () => {
+  test("saran setelah result diteruskan di percobaan yang berhasil", async () => {
+    const runner: AgentRunner = {
+      async *run() {
+        yield { type: "text", text: "halo" };
+        yield { type: "result", ok: true };
+        yield { type: "suggestion", text: "Jalankan tesnya" };
+      },
+    };
+    const mgr = manager(runner, { fallbackProvider: FALLBACK });
+
+    const info = await mgr.create({ prompt: "Halo", cwd: dir });
+    await mgr.done(info.id);
+
+    const events = eventsOf(await collect(mgr, info.id));
+    expect(events.some((event) => event.type === "suggestion")).toBe(true);
+    expect(events.filter((event) => event.type === "result")).toHaveLength(1);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+  });
+});

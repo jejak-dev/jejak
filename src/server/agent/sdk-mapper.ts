@@ -190,6 +190,23 @@ function mapResult(message: Record<string, unknown>): AgentEvent[] {
   return [event];
 }
 
+/** Panjang maksimum teks saran yang dikirim ke klien. */
+const MAX_SUGGESTION = 300;
+
+/**
+ * Saran prompt berikutnya dari SDK (`prompt_suggestion`).
+ *
+ * Teks dipotong supaya chip di komposer tetap satu baris; saran kosong
+ * diabaikan.
+ */
+function mapPromptSuggestion(message: Record<string, unknown>): AgentEvent[] {
+  const suggestion = message.suggestion;
+  if (typeof suggestion !== "string") return [];
+  const text = suggestion.trim();
+  if (text === "") return [];
+  return [{ type: "suggestion", text: text.slice(0, MAX_SUGGESTION) }];
+}
+
 export function mapSdkMessage(message: unknown): AgentEvent[] {
   if (!isRecord(message)) return [];
 
@@ -211,6 +228,8 @@ export function mapSdkMessage(message: unknown): AgentEvent[] {
       return mapUser(message);
     case "result":
       return mapResult(message);
+    case "prompt_suggestion":
+      return mapPromptSuggestion(message);
     default:
       return [];
   }

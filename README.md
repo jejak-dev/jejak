@@ -105,6 +105,8 @@ Useful flags and environment variables:
 - `--tls-cert <path> --tls-key <path>` — serve HTTPS with your own certificate.
 - `HOST`, `PORT` — bind address and port (default `127.0.0.1:3000`).
 - `JEJAK_HOME` — data folder (default `~/.jejak`).
+- `JEJAK_PROMPT_SUGGESTION=0` — turn off the prompt suggestion shown after each
+  turn (on by default).
 
 ## Security
 

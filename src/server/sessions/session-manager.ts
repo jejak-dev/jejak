@@ -301,6 +301,15 @@ interface SessionRecord {
   /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
   turns: number;
   /**
+   * Giliran masih berjalan di sisi runner.
+   *
+   * Status sesi berubah ke "selesai" begitu pesan `result` masuk, tetapi
+   * stream SDK masih membuka jalan untuk saran prompt. Selama flag ini aktif,
+   * aliran SSE tetap dibuka dan pesan baru masuk antrean (tak memulai giliran
+   * kedua).
+   */
+  turnActive?: boolean;
+  /**
    * Tujuan sesi (isi penuh; yang dikirim ke klien adalah bentuk ringkas).
    * Disimpan di kolom data JSON baris sesi, seperti `rewindTo`.
    */
@@ -464,6 +473,17 @@ function isSubstantiveEvent(event: AgentEvent): boolean {
     event.type === "tool_call" ||
     event.type === "permission_request"
   );
+}
+
+/**
+ * Event transien: disiarkan ke pelanggan, tapi tidak disimpan ke DB dan tidak
+ * dihitung sebagai event percakapan (tak bisa dimundurkan).
+ *
+ * `text_delta` digantikan teks final; `suggestion` (saran prompt berikutnya)
+ * hanya relevan di layar terakhir.
+ */
+function isTransientEvent(event: AgentEvent): boolean {
+  return event.type === "text_delta" || event.type === "suggestion";
 }
 
 function collapseWhitespace(text: string): string {
@@ -1834,7 +1854,7 @@ export class SessionManager {
         if (isAborted(signal)) return;
       }
 
-      if (record.info.status !== "berjalan") return;
+      if (record.info.status !== "berjalan" && record.turnActive !== true) return;
       await waitForChange(record, version, signal);
     }
   }
@@ -1848,7 +1868,7 @@ export class SessionManager {
     const message = this.validateMessage(text);
     this.assertWorktreeUsable(record);
 
-    if (record.info.status === "berjalan") {
+    if (record.info.status === "berjalan" || record.turnActive === true) {
       if (record.queue.length >= MAX_QUEUED_MESSAGES) {
         throw new SessionError(
           `Antrean pesan penuh; maksimal ${MAX_QUEUED_MESSAGES} pesan.`,
@@ -1990,7 +2010,7 @@ export class SessionManager {
 
     // (c) hitung ulang field turunan.
     record.info.eventCount = record.buffer.filter(
-      (item) => item.event.type !== "text_delta",
+      (item) => !isTransientEvent(item.event),
     ).length;
     record.queue.length = 0;
     record.info.queued = 0;
@@ -2673,6 +2693,7 @@ export class SessionManager {
       }
     }
 
+    record.turnActive = true;
     try {
       if (this.fallback === undefined) {
         await this.runPlain(record, input);
@@ -2680,6 +2701,7 @@ export class SessionManager {
         await this.runWithFallback(record, input, provider, plannedFallback);
       }
     } finally {
+      record.turnActive = false;
       try {
         closeMemory?.();
       } catch {
@@ -2761,6 +2783,12 @@ export class SessionManager {
     let sawResult = false;
     try {
       for await (const event of this.runner.run(input)) {
+        if (sawResult) {
+          // Setelah `result` yang diterima hanya saran prompt; event lain
+          // diabaikan supaya giliran tak dobel.
+          if (event.type === "suggestion") this.append(record, event);
+          continue;
+        }
         if (event.type === "session") {
           this.handleSessionEvent(record, event.sessionId);
         }
@@ -2774,7 +2802,8 @@ export class SessionManager {
             record,
             event.ok ? "selesai" : event.error === "dibatalkan" ? "dibatalkan" : "gagal",
           );
-          return;
+          // Stream diteruskan: saran prompt datang setelah `result`.
+          continue;
         }
         this.append(record, event);
       }
@@ -2807,6 +2836,8 @@ export class SessionManager {
     let substantive = false;
     let sawResult = false;
     let lastErrorMessage: string | undefined;
+    /** Hasil giliran yang sudah tercatat; setelah itu hanya saran prompt. */
+    let outcome: AttemptOutcome | undefined;
 
     const flush = (): void => {
       for (const event of buffered.splice(0)) this.append(record, event);
@@ -2819,6 +2850,13 @@ export class SessionManager {
 
     try {
       for await (const event of this.runner.run(input)) {
+        if (outcome !== undefined) {
+          // Hasil sudah tercatat; yang diterima hanya saran prompt yang
+          // datang setelah `result`.
+          if (event.type === "suggestion") this.append(record, event);
+          continue;
+        }
+
         if (event.type === "session") {
           this.handleSessionEvent(record, event.sessionId);
           // Event sesi diteruskan langsung, bukan bagian buffer fallback.
@@ -2838,7 +2876,9 @@ export class SessionManager {
               record,
               event.ok ? "selesai" : event.error === "dibatalkan" ? "dibatalkan" : "gagal",
             );
-            return { kind: "selesai" };
+            // Stream diteruskan sebentar: saran prompt datang setelah `result`.
+            outcome = { kind: "selesai" };
+            continue;
           }
           return {
             kind: "gagal",
@@ -2879,6 +2919,7 @@ export class SessionManager {
         }
       }
 
+      if (outcome !== undefined) return outcome;
       if (sawResult) return { kind: "selesai" };
 
       if (substantive) {
@@ -2898,6 +2939,7 @@ export class SessionManager {
         },
       };
     } catch (error) {
+      if (outcome !== undefined) return outcome;
       if (sawResult) return { kind: "selesai" };
       if (substantive) {
         const keys = [record.apiKey, ...(record.extraApiKeys ?? [])];
@@ -3077,7 +3119,7 @@ export class SessionManager {
       }
     }
 
-    if (event.type === "text_delta") {
+    if (isTransientEvent(event)) {
       // Transien: disiarkan ke pelanggan tetapi tidak disimpan ke DB maupun dihitung.
       record.buffer.push({ seq: record.nextSeq, event: storedEvent });
       record.nextSeq += 1;

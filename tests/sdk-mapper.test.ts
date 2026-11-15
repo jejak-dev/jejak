@@ -343,3 +343,23 @@ test("stream_event text_delta menjadi event text_delta, delta lain diabaikan", (
   expect(mapSdkMessage(delta({ type: "text_delta", text: "" }))).toEqual([]);
   expect(mapSdkMessage({ type: "stream_event", event: { type: "message_start" } })).toEqual([]);
 });
+
+test("prompt_suggestion menjadi event suggestion", () => {
+  expect(
+    mapSdkMessage({
+      type: "prompt_suggestion",
+      suggestion: "Jalankan tesnya",
+      uuid: "u-1",
+      session_id: "s-1",
+    }),
+  ).toEqual([{ type: "suggestion", text: "Jalankan tesnya" }]);
+});
+
+test("saran prompt dipotong 300 karakter dan saran kosong diabaikan", () => {
+  const panjang = "x".repeat(400);
+  const events = mapSdkMessage({ type: "prompt_suggestion", suggestion: panjang });
+  expect(events).toHaveLength(1);
+  expect((events[0] as { text: string }).text).toHaveLength(300);
+  expect(mapSdkMessage({ type: "prompt_suggestion", suggestion: "   " })).toEqual([]);
+  expect(mapSdkMessage({ type: "prompt_suggestion" })).toEqual([]);
+});

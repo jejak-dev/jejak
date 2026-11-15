@@ -1338,3 +1338,73 @@ test("catatan mode plan hanya ditambahkan ke append bila permissionMode plan", a
   const appendLain = await appendFor(PROVIDER, { permissionMode: "acceptEdits" });
   expect(appendLain).not.toContain(PLAN_MODE_APPEND_NOTE);
 });
+
+const SUGGESTION = {
+  type: "prompt_suggestion",
+  suggestion: "Jalankan tesnya",
+  uuid: "u-1",
+  session_id: "s-1",
+};
+
+test("opsi promptSuggestions dikirim ke SDK", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+
+  expect(received?.promptSuggestions).toBe(true);
+});
+
+test("promptSuggestions tidak dikirim saat env JEJAK_PROMPT_SUGGESTION=0", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({
+      load: async () => sdk.module,
+      baseEnv: { JEJAK_PROMPT_SUGGESTION: "0" },
+    }).run(baseInput()),
+  );
+
+  expect("promptSuggestions" in (received ?? {})).toBe(false);
+});
+
+test("stream diteruskan setelah result sehingga saran prompt diterima", async () => {
+  const sdk = fakeSdk({ messages: [RESULT_OK, SUGGESTION] });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+
+  expect(events[events.length - 1]).toEqual({ type: "suggestion", text: "Jalankan tesnya" });
+});
+
+test("SDK lama yang tak kenal opsi promptSuggestions tetap jalan", async () => {
+  let received: Record<string, unknown> | undefined;
+  let panggilan = 0;
+  const module: SdkModule = {
+    query(args) {
+      panggilan += 1;
+      received = args.options;
+      if (panggilan === 1) {
+        throw new Error("Unknown option: promptSuggestions");
+      }
+      const query: SdkQuery = {
+        async *[Symbol.asyncIterator]() {
+          yield RESULT_OK;
+        },
+      };
+      return query;
+    },
+  };
+
+  const events = await collect(
+    createSdkRunner({ load: async () => module, baseEnv: {} }).run(baseInput()),
+  );
+
+  expect(panggilan).toBe(2);
+  expect("promptSuggestions" in (received ?? {})).toBe(false);
+  expect(events.some((event) => event.type === "result")).toBe(true);
+});

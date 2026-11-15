@@ -50,6 +50,7 @@ import {
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 import { rewindableSeqs } from "./lib/rewind";
+import { latestSuggestion } from "./lib/suggestion";
 import type { GoalView } from "./lib/goal";
 
 /**
@@ -706,6 +707,15 @@ export function App() {
     () => rewindableSeqs(timeline.events ?? []),
     [timeline.events],
   );
+  // Saran prompt terakhir; chipnya tampil di atas komposer balasan.
+  const suggestion = useMemo(
+    () => latestSuggestion(timeline.events ?? []),
+    [timeline.events],
+  );
+  // Sesi berjalan menurut aliran event (lebih cepat daripada polling); andal
+  // hanya bila sambungan sehat.
+  const liveRunning =
+    timeline.connection === "galat" ? undefined : timeline.status === "berjalan";
   const reloadTimeline = timeline.reload;
   const onRewind = useCallback(
     async (seq: number): Promise<void> => {
@@ -955,6 +965,8 @@ export function App() {
                   context={contextUsage(timeline.context)}
                   registry={view}
                   draft={draft !== undefined && draft.sessionId === selected.id ? draft : undefined}
+                  suggestion={suggestion}
+                  liveRunning={liveRunning}
                   onGoalChanged={(goal) =>
                     setGoalOverride({ sessionId: selected.id, goal })
                   }

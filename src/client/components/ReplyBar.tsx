@@ -9,6 +9,7 @@ import { parseBtw } from "../lib/btw";
 import { parseGoalCommand, validateGoalOptions, type GoalView } from "../lib/goal";
 import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
+import { showsSuggestion, fillSuggestion, replyKeyAction, type Suggestion } from "../lib/suggestion";
 import { useDictation } from "../lib/use-dictation";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -29,6 +30,14 @@ export interface ReplyBarProps {
   registry?: RegistryView;
   /** Teks yang ditaruh di kolom input (mis. pesan yang dibuang saat mundur). */
   draft?: { text: string; nonce: number; append?: boolean };
+  /** Saran prompt berikutnya; chipnya tampil di atas komposer. */
+  suggestion?: Suggestion;
+  /**
+   * Sesi berjalan menurut aliran event (lebih cepat daripada polling).
+   *
+   * `undefined` berarti sinyal tak andal; pakai status sesi biasa.
+   */
+  liveRunning?: boolean;
   /** Dipanggil setelah tujuan dimulai atau berubah agar pita Goal langsung sinkron. */
   onGoalChanged?: (goal: GoalView | null) => void;
   /** Hentikan giliran yang sedang berjalan (tombol stop di dalam komposer). */
@@ -86,6 +95,45 @@ export function StopButton({ onInterrupt, interrupting }: StopButtonProps) {
   );
 }
 
+export interface SuggestionChipProps {
+  /** Teks saran yang ditawarkan. */
+  text: string;
+  /** Isi kolom balasan dengan teks saran (tak langsung mengirim). */
+  onUse: () => void;
+  /** Tutup saran tanpa memakainya. */
+  onDismiss: () => void;
+}
+
+/**
+ * Chip saran prompt: satu baris kecil tepat di atas komposer balasan.
+ *
+ * Klik pada teksnya mengisi kolom balasan; tombol "x" menutupnya.
+ */
+export function SuggestionChip({ text, onUse, onDismiss }: SuggestionChipProps) {
+  return (
+    <div class="jk-suggestion" role="group" aria-label="Saran prompt">
+      <button
+        type="button"
+        class="jk-suggestion-text"
+        onClick={onUse}
+        title="Isi kolom balasan dengan saran ini"
+      >
+        <span class="jk-suggestion-label">Saran:</span>
+        <span class="jk-suggestion-body">{text}</span>
+      </button>
+      <button
+        type="button"
+        class="jk-suggestion-close"
+        onClick={onDismiss}
+        aria-label="Tutup saran"
+        title="Tutup saran"
+      >
+        <Icon name="close" />
+      </button>
+    </div>
+  );
+}
+
 export function ReplyBar({
   api,
   session,
@@ -93,6 +141,8 @@ export function ReplyBar({
   context,
   registry,
   draft,
+  suggestion,
+  liveRunning,
   onGoalChanged,
   onInterrupt,
   interrupting,
@@ -100,6 +150,8 @@ export function ReplyBar({
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  /** Saran yang sudah dipakai atau ditutup; nomornya jadi penanda chip mati. */
+  const [dismissedSeq, setDismissedSeq] = useState<number | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const att = useAttachments(api);
   const ctxRef = useRef<HTMLDetailsElement | null>(null);
@@ -177,6 +229,33 @@ export function ReplyBar({
     disabled: !usable.allowed || busy,
   });
   const abortDictation = dict.abort;
+
+  // Chip saran: tampil hanya saat sesi diam dan kolom balasan kosong.
+  // Sinyal aliran event lebih cepat daripada polling; bila tak andal pakai status sesi.
+  const giliranBerjalan = liveRunning ?? running;
+  const suggestionVisible = showsSuggestion({
+    suggestion,
+    running: giliranBerjalan,
+    text,
+    dismissedSeq,
+  });
+
+  /** Isi kolom balasan dengan teks saran; tidak langsung mengirim. */
+  const applySuggestion = (): void => {
+    if (suggestion === undefined) return;
+    const fill = fillSuggestion(suggestion);
+    setText(fill.text);
+    setDismissedSeq(fill.dismissedSeq);
+    if (textareaRef.current !== null) {
+      autosize(textareaRef.current);
+      textareaRef.current.focus();
+    }
+  };
+
+  // Ganti sesi: saran lama tak berlaku untuk sesi lain.
+  useEffect(() => {
+    setDismissedSeq(undefined);
+  }, [sessionId]);
 
   const canSend =
     !busy &&
@@ -415,6 +494,8 @@ export function ReplyBar({
     try {
       await api.sendMessage(sessionId, trimmed);
       setText("");
+      // Saran lama tak berlaku setelah pesan terkirim.
+      setDismissedSeq(suggestion?.seq);
       att.clear();
       if (textareaRef.current !== null) {
         autosize(textareaRef.current);
@@ -470,7 +551,19 @@ export function ReplyBar({
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
-    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    const action = replyKeyAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      composing: event.isComposing,
+      suggestionVisible,
+    });
+    // Tab di kolom kosong: isi kolom dengan saran (tak langsung mengirim).
+    if (action.kind === "pakai-saran") {
+      event.preventDefault();
+      applySuggestion();
+      return;
+    }
+    if (action.kind !== "kirim") return;
     event.preventDefault();
     void submit();
   };
@@ -512,6 +605,13 @@ export function ReplyBar({
           disabled={!running || queueBusy}
           removeDisabled={queueBusy}
         />
+        {suggestionVisible && suggestion !== undefined && (
+          <SuggestionChip
+            text={suggestion.text}
+            onUse={applySuggestion}
+            onDismiss={() => setDismissedSeq(suggestion.seq)}
+          />
+        )}
         <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
           {att.dragging && <DropHint />}
           <AttachmentTray items={att.items} pending={att.pending} error={att.error} onRemove={att.remove} />

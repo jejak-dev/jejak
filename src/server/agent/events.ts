@@ -54,6 +54,13 @@ export type AgentEvent =
     }
   | { type: "notice"; text: string; level?: "info" | "warn" }
   /**
+   * Saran prompt berikutnya (pesan SDK `prompt_suggestion`).
+   *
+   * Transien: tidak mengubah status sesi dan tidak dihitung sebagai event
+   * percakapan, jadi tak bisa dimundurkan.
+   */
+  | { type: "suggestion"; text: string }
+  /**
    * Pesan pengguna. `auto: "goal"` menandai pesan yang dibuat otomatis oleh
    * loop Goal (bukan ketikan pengguna); pesan ini tidak bisa dimundurkan.
    */

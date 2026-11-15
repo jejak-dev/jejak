@@ -2454,3 +2454,80 @@ describe("SessionManager.setSandbox", () => {
     expect(() => mgr.setSandbox(info.id, "mati")).toThrow(SessionError);
   });
 });
+
+describe("saran prompt", () => {
+  test("diteruskan ke pelanggan setelah result tapi tak dihitung sebagai event", async () => {
+    const mgr = manager({
+      runner: scriptedRunner([
+        { type: "text", text: "halo" },
+        { type: "result", ok: true, summary: "selesai" },
+        { type: "suggestion", text: "Jalankan tesnya" },
+      ]),
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    // Saran bersifat transien: tak dihitung sebagai event percakapan.
+    expect(mgr.get(info.id)?.eventCount).toBe(2);
+
+    const events = await collect(mgr.events(info.id, {}));
+    const saran = events.find((item) => item.event.type === "suggestion");
+    expect(saran?.event).toEqual({ type: "suggestion", text: "Jalankan tesnya" });
+    // Hasil tetap satu giliran: tak ada result kedua.
+    expect(events.filter((item) => item.event.type === "result")).toHaveLength(1);
+  });
+
+  test("saran tak tersimpan ke database", async () => {
+    const dirSesi = await mkdtemp(join(tmpdir(), "jejak-session-saran-"));
+    const store = new SqliteSessionStore(join(dirSesi, "sesi.db"));
+    const mgr = manager({
+      runner: scriptedRunner([
+        { type: "result", ok: true },
+        { type: "suggestion", text: "Jalankan tesnya" },
+      ]),
+      store,
+    });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+    store.close();
+
+    const events = store.loadEvents(info.id);
+    expect(events.some((item) => item.event.type === "suggestion")).toBe(false);
+    await rm(dirSesi, { recursive: true, force: true });
+  });
+});
+
+describe("saran prompt di aliran klien", () => {
+  test("aliran tetap terbuka setelah result sehingga saran sampai ke klien", async () => {
+    let lepas: (() => void) | undefined;
+    const gerbang = new Promise<void>((resolve) => {
+      lepas = resolve;
+    });
+    const runner: AgentRunner = {
+      async *run() {
+        yield { type: "result", ok: true, summary: "selesai" };
+        await gerbang;
+        yield { type: "suggestion", text: "Jalankan tesnya" };
+      },
+    };
+    const mgr = manager({ runner });
+    const info = await createOk(mgr);
+
+    const terkumpul: SequencedEvent[] = [];
+    const menyimak = (async () => {
+      for await (const item of mgr.events(info.id, {})) terkumpul.push(item);
+    })();
+
+    await Bun.sleep(20);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    // Sesi masih menutup giliran: pesan baru masuk antrean, bukan giliran baru.
+    expect(await mgr.send(info.id, "pesan kedua")).toEqual({ queued: true });
+
+    lepas?.();
+    await menyimak;
+
+    expect(terkumpul.some((item) => item.event.type === "suggestion")).toBe(true);
+    await mgr.done(info.id);
+  });
+});

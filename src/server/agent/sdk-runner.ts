@@ -285,6 +285,31 @@ export function withMaxRetries(
   return { ...env, CLAUDE_CODE_MAX_RETRIES: String(maxRetries) };
 }
 
+/**
+ * Saran prompt berikutnya dari SDK.
+ *
+ * Mati lewat env `JEJAK_PROMPT_SUGGESTION=0`; nilai lain (termasuk kosong)
+ * membiarkannya nyala.
+ */
+export function promptSuggestionsEnabled(env: Record<string, string | undefined>): boolean {
+  return env.JEJAK_PROMPT_SUGGESTION?.trim() !== "0";
+}
+
+/**
+ * Galat SDK karena opsi query tak dikenal (SDK lama tak kenal
+ * `promptSuggestions`). Saran dilewati tanpa menggagalkan giliran.
+ */
+function isUnknownOptionError(error: unknown): boolean {
+  const message = errorMessage(error).toLowerCase();
+  if (!message.includes("promptsuggestions")) return false;
+  return (
+    message.includes("unknown") ||
+    message.includes("unrecognized") ||
+    message.includes("invalid") ||
+    message.includes("not supported")
+  );
+}
+
 export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
   const load = options.load ?? defaultLoad;
   const baseEnv = options.baseEnv ?? process.env;
@@ -366,6 +391,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           append,
         },
       };
+
+      // Saran prompt berikutnya: dikirim SDK setelah pesan `result`.
+      const wantSuggestions = promptSuggestionsEnabled(baseEnv);
+      if (wantSuggestions) {
+        sdkOptions.promptSuggestions = true;
+      }
 
       // Tanpa `claude` perilaku lama persis; dengan `claude`, sumber pengguna
       // opt-in dan saklar global hooks diteruskan ke SDK.
@@ -508,7 +539,14 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       let query: SdkQuery | undefined;
       let sawResult = false;
       try {
-        query = sdk.query({ prompt: input.prompt, options: sdkOptions });
+        try {
+          query = sdk.query({ prompt: input.prompt, options: sdkOptions });
+        } catch (error) {
+          // SDK lama tak mengenal opsi `promptSuggestions`: ulangi tanpa opsi itu.
+          if (!wantSuggestions || !isUnknownOptionError(error)) throw error;
+          delete sdkOptions.promptSuggestions;
+          query = sdk.query({ prompt: input.prompt, options: sdkOptions });
+        }
         // Delta teks digabung ~50 ms agar tidak membanjiri SSE; event final menggantikannya.
         let pendingDelta = "";
         let pendingParent: string | undefined;
