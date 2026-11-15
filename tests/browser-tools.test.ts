@@ -11,8 +11,11 @@ import {
   type PageSnapshot,
 } from "../src/server/browser/browser-manager";
 import {
+  BROWSER_AGENT_LABELS,
   BROWSER_DISABLED_MESSAGE,
+  BROWSER_READ_TOOL_NAMES,
   BROWSER_RESULT_MAX_CHARS,
+  BROWSER_TOOL_NAMES,
   BrowserTools,
   WEB_CONTENT_FOOTER,
   WEB_CONTENT_HEADER,
@@ -84,6 +87,25 @@ class ManajerPalsu {
     return this.snapshotPalsu;
   }
 
+  async screenshotForAgent(): Promise<{
+    data: string;
+    mimeType: "image/jpeg";
+    width: number;
+    height: number;
+    url: string;
+    title: string;
+  }> {
+    if (this.galat !== undefined) throw this.galat;
+    return {
+      data: "YmFzZTY0",
+      mimeType: "image/jpeg",
+      width: 1280,
+      height: 800,
+      url: "https://contoh.test/",
+      title: "Judul",
+    };
+  }
+
   async navigate(): Promise<BrowserState> {
     if (this.galat !== undefined) throw this.galat;
     return stateKosong();
@@ -144,6 +166,7 @@ describe("definisi tool browser", () => {
     expect(tools.definitions.map((tool) => tool.name)).toEqual([
       "browser_tabs",
       "browser_snapshot",
+      "browser_screenshot",
       "browser_navigate",
       "browser_new_tab",
       "browser_switch_tab",
@@ -173,13 +196,19 @@ describe("definisi tool browser", () => {
       .direction;
     expect(arah?.enum).toEqual(["up", "down"]);
   });
+
+  test("screenshot adalah tool baca-saja", () => {
+    expect(BROWSER_READ_TOOL_NAMES).toContain("browser_screenshot");
+    expect(BROWSER_TOOL_NAMES).toContain("browser_screenshot");
+    expect(BROWSER_AGENT_LABELS.browser_screenshot).toBe("mengambil screenshot");
+  });
 });
 
 describe("BrowserTools", () => {
   test("fitur browser mati menolak semua panggilan", async () => {
     const tools = new BrowserTools({ resolve: () => undefined });
     expect(tools.aktif()).toBe(false);
-    for (const nama of ["browser_tabs", "browser_snapshot", "browser_click"]) {
+    for (const nama of ["browser_tabs", "browser_snapshot", "browser_screenshot", "browser_click"]) {
       const hasil = await tools.call(nama, {});
       expect(hasil.isError).toBe(true);
       expect(hasil.text).toBe(BROWSER_DISABLED_MESSAGE);
@@ -323,6 +352,40 @@ describe("BrowserTools", () => {
     expect(umum.text).not.toContain("stack");
   });
 
+  test("screenshot mengembalikan blok gambar dan teks ringkas", async () => {
+    const koneksi = new KoneksiPalsu();
+    const manager = buatManager(koneksi);
+    const tools = new BrowserTools({ resolve: () => manager });
+
+    const hasil = await tools.call("browser_screenshot", {});
+    expect(hasil.isError).toBe(false);
+    expect(hasil.image?.data).toBe("YmVuaWgtMTE=");
+    expect(hasil.image?.mimeType).toBe("image/jpeg");
+    expect(hasil.text.startsWith(WEB_CONTENT_HEADER)).toBe(true);
+    expect(hasil.text.endsWith(WEB_CONTENT_FOOTER)).toBe(true);
+    expect(hasil.text).toContain("URL:");
+    expect(hasil.text).toContain("Judul:");
+    expect(hasil.text).toContain("1280x800");
+    expect(hasil.text).toContain("[Screenshot 1280x800, 1 KB]");
+    // Teks tak pernah memuat data gambar.
+    expect(hasil.text).not.toContain("YmVuaWgtMTE=");
+  });
+
+  test("screenshot menolak argumen tak dikenal dan mencatat galat", async () => {
+    const palsu = new ManajerPalsu();
+    const tools = new BrowserTools({ resolve: () => sebagaiManager(palsu) });
+
+    const argumen = await tools.call("browser_screenshot", { fullPage: true });
+    expect(argumen.isError).toBe(true);
+    expect(argumen.text).toContain("tidak dikenal");
+
+    palsu.galat = new BrowserError("Screenshot terlalu besar.", "batas");
+    const gagal = await tools.call("browser_screenshot", {});
+    expect(gagal.isError).toBe(true);
+    expect(gagal.text).toBe("Screenshot terlalu besar.");
+    expect(gagal.image).toBeUndefined();
+  });
+
   test("navigate memakai manajer sehingga skema berbahaya ditolak", async () => {
     const koneksi = new KoneksiPalsu();
     const manager = buatManager(koneksi);
@@ -342,6 +405,7 @@ describe("aktivitas agent di tool browser", () => {
 
     await tools.call("browser_tabs", {});
     await tools.call("browser_snapshot", {});
+    await tools.call("browser_screenshot", {});
     await tools.call("browser_navigate", { url: "https://rahasia.test/token" });
     await tools.call("browser_new_tab", {});
     await tools.call("browser_switch_tab", { id: "T1" });
@@ -355,6 +419,7 @@ describe("aktivitas agent di tool browser", () => {
     expect(palsu.catatanAgent).toEqual([
       "membaca halaman",
       "membaca halaman",
+      "mengambil screenshot",
       "membuka alamat",
       "membuka tab baru",
       "berpindah tab",

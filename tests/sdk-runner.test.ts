@@ -1281,7 +1281,7 @@ test("pesan assistant subagent tidak dipakai sebagai jangkar", async () => {
   expect(result).toMatchObject({ anchorUuid: "uuid-satu" });
 });
 
-test("hanya dua tool baca browser yang diizinkan otomatis; tool aksi lewat izin", async () => {
+test("hanya tool baca browser yang diizinkan otomatis; tool aksi lewat izin", async () => {
   let received: Record<string, unknown> | undefined;
   const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
 
@@ -1297,6 +1297,7 @@ test("hanya dua tool baca browser yang diizinkan otomatis; tool aksi lewat izin"
             "memory_propose",
             "browser_tabs",
             "browser_snapshot",
+            "browser_screenshot",
             "browser_navigate",
             "browser_new_tab",
             "browser_switch_tab",
@@ -1318,6 +1319,7 @@ test("hanya dua tool baca browser yang diizinkan otomatis; tool aksi lewat izin"
     "mcp__jejak-memory__memory_propose",
     "mcp__jejak-memory__browser_tabs",
     "mcp__jejak-memory__browser_snapshot",
+    "mcp__jejak-memory__browser_screenshot",
   ]);
   const daftar = JSON.stringify(received?.allowedTools ?? []);
   for (const aksi of ["browser_navigate", "browser_click", "browser_type", "browser_press"]) {

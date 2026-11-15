@@ -123,6 +123,7 @@ describe("tool browser lewat /mcp (CDP palsu)", () => {
       const nama = (result?.tools ?? []).map((tool) => tool.name ?? "");
       expect(nama).toContain("browser_tabs");
       expect(nama).toContain("browser_snapshot");
+      expect(nama).toContain("browser_screenshot");
       expect(nama).toContain("browser_navigate");
 
       const nav = await mcp(app, token, "tools/call", {
@@ -143,6 +144,20 @@ describe("tool browser lewat /mcp (CDP palsu)", () => {
       expect(teks).toContain("halo dari halaman lokal");
       expect(teks).toContain("[1] button");
       expect(halaman).toContain("halo dari halaman lokal");
+
+      // Screenshot: blok gambar plus teks ringkas.
+      const shot = await mcp(app, token, "tools/call", {
+        name: "browser_screenshot",
+        arguments: {},
+      });
+      const content = (shot.result as { content?: Array<Record<string, unknown>> } | undefined)
+        ?.content;
+      const blokGambar = content?.find((blok) => blok.type === "image");
+      expect(blokGambar?.data).toBe("YmVuaWgtMTE=");
+      expect(blokGambar?.mimeType).toBe("image/jpeg");
+      const blokTeks = content?.find((blok) => blok.type === "text");
+      expect(String(blokTeks?.text ?? "")).toContain("1280x800");
+      expect(String(blokTeks?.text ?? "")).not.toContain("YmVuaWgtMTE=");
     } finally {
       opened?.close();
       await manager.close();

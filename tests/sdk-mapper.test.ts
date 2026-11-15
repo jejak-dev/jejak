@@ -91,10 +91,54 @@ test("tool_result dari array blok teks digabung dengan newline", () => {
     {
       type: "tool_result",
       id: "tu-2",
-      output: "baris satu\n[bukan teks]\nbaris dua",
+      output: "baris satu\n[gambar]\nbaris dua",
       isError: false,
     },
   ]);
+});
+
+test("blok gambar diganti penanda; data base64 tak ikut ke event tersimpan", () => {
+  const data = "A".repeat(2048);
+  const events = mapSdkMessage({
+    type: "user",
+    message: {
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "tu-3",
+          content: [
+            { type: "image", data, mimeType: "image/jpeg" },
+            { type: "text", text: "[Screenshot 1280x800, 2 KB]" },
+          ],
+        },
+      ],
+    },
+  });
+
+  const output = String((events[0] as { output?: string } | undefined)?.output ?? "");
+  expect(output).toContain("[gambar 2 KB]");
+  expect(output).toContain("[Screenshot 1280x800, 2 KB]");
+  expect(output).not.toContain(data);
+});
+
+test("gambar yang diratakan jadi teks base64 tetap tak ikut tersimpan", () => {
+  const data = "ABCDEF0123456789+/".repeat(100);
+  const events = mapSdkMessage({
+    type: "user",
+    message: {
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "tu-4",
+          content: [{ type: "text", text: `gambar: ${data}` }],
+        },
+      ],
+    },
+  });
+
+  const output = String((events[0] as { output?: string } | undefined)?.output ?? "");
+  expect(output).toContain("[data biner dipotong]");
+  expect(output).not.toContain(data);
 });
 
 test("is_error hanya true bila bernilai boolean true", () => {

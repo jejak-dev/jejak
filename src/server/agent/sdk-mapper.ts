@@ -3,6 +3,14 @@ import type { AgentEvent } from "./events";
 const MAX_OUTPUT = 4000;
 const TRUNCATION_SUFFIX = "\n…(dipotong)";
 const NON_TEXT_PLACEHOLDER = "[bukan teks]";
+/** Penanda gambar pada event yang disimpan; data gambar tak ikut tersimpan. */
+const IMAGE_PLACEHOLDER = "[gambar]";
+/** Panjang minimum rentetan base64 yang dianggap data biner (bukan teks biasa). */
+const MIN_BASE64_RUN = 1024;
+/** Penanda data biner yang dibuang dari event yang disimpan. */
+const BINARY_PLACEHOLDER = "[data biner dipotong]";
+/** Rentetan base64 panjang; diganti penanda supaya tak mengembang di database. */
+const BASE64_RUN = new RegExp(`[A-Za-z0-9+/]{${MIN_BASE64_RUN},}={0,2}`, "g");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -55,13 +63,52 @@ function mapAssistantBlock(
   return null;
 }
 
+/**
+ * Penanda singkat untuk blok gambar.
+ *
+ * Data gambar (base64) tak pernah ikut ke event yang disimpan; yang tersimpan
+ * cuma penanda ukuran. Bentuk blok bisa berupa MCP (`data`) atau API
+ * (`source.data`); keduanya ditangani.
+ */
+function imagePlaceholder(block: Record<string, unknown>): string {
+  const sumber = block.source;
+  const data =
+    typeof block.data === "string"
+      ? block.data
+      : isRecord(sumber) && typeof sumber.data === "string"
+        ? sumber.data
+        : undefined;
+  if (data === undefined || data === "") return IMAGE_PLACEHOLDER;
+  const kib = Math.max(1, Math.round((data.length * 3) / 4 / 1024));
+  return `[gambar ${kib} KB]`;
+}
+
+/**
+ * Buang data biner panjang dari teks event yang disimpan.
+ *
+ * Kalau gambar sampai sebagai teks (misalnya runtime meratakan blok gambar
+ * jadi base64), data itu tak boleh mengembang di database. Teks asli tetap
+ * sampai ke model; yang dibuang hanya salinan pada event.
+ *
+ * Rangkaian huruf panjang (mis. satu kata panjang) tak dianggap biner: rentetan
+ * harus memuat angka atau tanda base64.
+ */
+function buangBiner(text: string): string {
+  return text.replace(BASE64_RUN, (rentetan) =>
+    /[0-9+/]/.test(rentetan) ? BINARY_PLACEHOLDER : rentetan,
+  );
+}
+
 function renderToolResultContent(content: unknown): string {
-  if (typeof content === "string") return content;
+  if (typeof content === "string") return buangBiner(content);
   if (!Array.isArray(content)) return "";
   return content
     .map((block: unknown) => {
       if (isRecord(block) && block.type === "text" && typeof block.text === "string") {
-        return block.text;
+        return buangBiner(block.text);
+      }
+      if (isRecord(block) && block.type === "image") {
+        return imagePlaceholder(block);
       }
       return NON_TEXT_PLACEHOLDER;
     })

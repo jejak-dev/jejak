@@ -76,7 +76,15 @@ export interface RunMemory {
   indexLine: string;
   /** Nama tool yang tersedia untuk sesi ini (tanpa awalan `mcp__`). */
   tools?: string[];
-  call(name: string, args: unknown): Promise<{ text: string; isError: boolean }>;
+  call(
+    name: string,
+    args: unknown,
+  ): Promise<{
+    text: string;
+    isError: boolean;
+    /** Gambar hasil tool (base64); tak pernah ikut ke event yang disimpan. */
+    image?: { data: string; mimeType: string };
+  }>;
 }
 
 export interface RunWorkspace {

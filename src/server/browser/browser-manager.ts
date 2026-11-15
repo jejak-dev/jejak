@@ -160,6 +160,22 @@ export interface PageSnapshot {
   elements: PageElement[];
 }
 
+/** Hasil screenshot halaman untuk agent. */
+export interface PageScreenshot {
+  /** Isi JPEG dalam base64 (tanpa prefiks data URL). */
+  data: string;
+  /** Tipe MIME gambar. */
+  mimeType: "image/jpeg";
+  /** Lebar tampilan (piksel). */
+  width: number;
+  /** Tinggi tampilan (piksel). */
+  height: number;
+  /** URL halaman saat gambar diambil. */
+  url: string;
+  /** Judul halaman saat gambar diambil. */
+  title: string;
+}
+
 /** Seluruh bentuk event input yang diterima. */
 export type BrowserInputEvent = BrowserMouseInput | BrowserKeyInput | BrowserTextInput;
 
@@ -301,6 +317,15 @@ const DEFAULT_SCROLL_PX = 600;
 const MAX_SCROLL_PX = 5_000;
 /** Batas bawah jarak gulir (piksel). */
 const MIN_SCROLL_PX = 1;
+/**
+ * Mutu JPEG screenshot untuk agent, dari tinggi ke rendah.
+ *
+ * Screenshot terlalu besar diulang dengan mutu lebih rendah; paling banyak
+ * dua kali percobaan ulang (tiga permintaan paling banyak).
+ */
+const AGENT_SCREENSHOT_QUALITIES = [70, 45, 30];
+/** Batas panjang base64 screenshot yang boleh dikirim ke agent. */
+const MAX_AGENT_SCREENSHOT_CHARS = 1_500_000;
 
 /** Skema yang boleh dipakai untuk navigasi. */
 const ALLOWED_SCHEMES = new Set(["http", "https"]);
@@ -2403,6 +2428,55 @@ export class BrowserManager {
       text: potongTeks(hasil.text, maxChars),
       elements: hasil.elements,
     };
+  }
+
+  /**
+   * Ambil screenshot tab aktif untuk agent (gambar, bukan teks).
+   *
+   * Jalur terpisah dari screencast panel: permintaan ini tak menyentuh
+   * `capturePending` dan aliran frame panel tak terpengaruh. Mutu JPEG
+   * diturunkan bila gambar masih terlalu besar; paling banyak dua kali
+   * percobaan ulang. Isi gambar adalah data tak tepercaya; manajer tak
+   * menafsirkannya.
+   */
+  async screenshotForAgent(): Promise<PageScreenshot> {
+    await this.ensure();
+    const client = this.client;
+    if (client === undefined) throw new BrowserError("Browser tidak berjalan.", "mati");
+    const tab = this.activeTab();
+    if (tab === undefined) {
+      throw new BrowserError("Tidak ada tab browser aktif.", "tidak-ditemukan");
+    }
+    for (const quality of AGENT_SCREENSHOT_QUALITIES) {
+      let data: unknown;
+      try {
+        const result = (await client.send(
+          "Page.captureScreenshot",
+          { format: "jpeg", quality },
+          tab.sessionId,
+        )) as { data?: unknown } | undefined;
+        data = result?.data;
+      } catch {
+        throw new BrowserError("Gagal mengambil screenshot halaman.", "gagal");
+      }
+      if (typeof data !== "string" || data === "") {
+        throw new BrowserError("Gagal mengambil screenshot halaman.", "gagal");
+      }
+      if (data.length <= MAX_AGENT_SCREENSHOT_CHARS) {
+        return {
+          data,
+          mimeType: "image/jpeg",
+          width: this.viewport.width,
+          height: this.viewport.height,
+          url: tab.url,
+          title: tab.title,
+        };
+      }
+    }
+    throw new BrowserError(
+      "Screenshot terlalu besar untuk dikirim ke agent; perkecil halaman.",
+      "batas",
+    );
   }
 
   /** Klik elemen berdasarkan ref dari snapshot terakhir. */

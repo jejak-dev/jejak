@@ -515,8 +515,10 @@ describe("createMemoryBridge + browser", () => {
     const opened = await bridge.open({ sessionId: "s_browser_aktif", cwd: dir });
     try {
       expect(opened.memory.indexLine).toContain("browser yang sama dengan panel");
+      expect(opened.memory.indexLine).toContain("browser_screenshot");
       expect(opened.memory.tools).toContain("browser_tabs");
       expect(opened.memory.tools).toContain("browser_snapshot");
+      expect(opened.memory.tools).toContain("browser_screenshot");
       expect(opened.memory.tools).toContain("browser_navigate");
     } finally {
       opened.close();
@@ -534,6 +536,7 @@ describe("createMemoryBridge + browser", () => {
       expect(opened.memory.tools).toEqual([
         "browser_tabs",
         "browser_snapshot",
+        "browser_screenshot",
         "browser_navigate",
         "browser_new_tab",
         "browser_switch_tab",

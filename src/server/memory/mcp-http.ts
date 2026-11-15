@@ -25,9 +25,24 @@ export interface McpToolDefinition {
   inputSchema: Record<string, unknown>;
 }
 
+/** Gambar(base64) yang ikut dikembalikan sebuah tool. */
+export interface McpToolImage {
+  /** Isi gambar dalam base64 (tanpa prefiks data URL). */
+  data: string;
+  /** Tipe MIME gambar (mis. "image/jpeg"). */
+  mimeType: string;
+}
+
 export interface McpToolOutcome {
   text: string;
   isError: boolean;
+  /**
+   * Gambar hasil tool; opsional.
+   *
+   * Blok gambar tak pernah masuk ke teks event yang disimpan; teks ringkas
+   * saja yang ikut ke model bersama gambarnya.
+   */
+  image?: McpToolImage;
 }
 
 /** Kumpulan tool komposit: definisi dan panggilan dipilih per token. */
@@ -207,8 +222,19 @@ export function mcpRoutes(options: McpRoutesOptions): Elysia {
         });
       }
       const outcome = await tools.call(ctx, name, params.arguments);
+      // Tool yang mengembalikan gambar mengirim blok gambar (MCP) lalu teks
+      // ringkas; model menerima keduanya, event yang disimpan hanya teks.
+      const content: Array<Record<string, unknown>> = [];
+      if (outcome.image !== undefined) {
+        content.push({
+          type: "image",
+          data: outcome.image.data,
+          mimeType: outcome.image.mimeType,
+        });
+      }
+      content.push({ type: "text", text: outcome.text });
       return rpcResult(id, {
-        content: [{ type: "text", text: outcome.text }],
+        content,
         isError: outcome.isError,
       });
     }

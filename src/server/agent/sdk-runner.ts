@@ -238,7 +238,7 @@ const WORKSPACE_TOOL_ALLOWLIST = [
  * Tool aksi browser (klik, ketik, navigasi, dan sejenisnya) sengaja tak ada
  * di sini: semuanya lewat modal izin yang sudah ada.
  */
-const BROWSER_READ_TOOLS = new Set(["browser_tabs", "browser_snapshot"]);
+const BROWSER_READ_TOOLS = new Set(["browser_tabs", "browser_snapshot", "browser_screenshot"]);
 
 const MCP_SERVER_NAME = "mcp__jejak-memory__";
 
