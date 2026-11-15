@@ -144,8 +144,12 @@ function externalMcpServers(
   return result;
 }
 
+function sanitizeText(text: string): string {
+  return text.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+}
+
 function sanitizeCwd(cwd: string): string {
-  return cwd.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+  return sanitizeText(cwd);
 }
 
 /** Pengingat system prompt saat Bash berjalan di dalam sandbox. */
@@ -155,6 +159,31 @@ export const SANDBOX_APPEND_NOTE =
 /** Catatan system prompt untuk giliran pertanyaan sampingan (`/btw`). */
 export const ASIDE_APPEND_NOTE =
   "Pertanyaan ini adalah pertanyaan sampingan: jawab singkat berdasarkan percakapan yang ada, tanpa memakai tool.";
+
+/**
+ * Catatan identitas model untuk provider non-Claude lewat baseUrl kustom.
+ *
+ * Preset `claude_code` menyisipkan daftar model Claude terbaru ke system
+ * prompt; model lain bisa salah mengira itu model yang sedang dipakai dan
+ * mengaku sebagai Opus/Sonnet/Haiku. Catatan ini tegas soal identitas model.
+ */
+export function modelIdentityNote(model: string): string {
+  return `Kamu berjalan di model "${sanitizeText(model)}" lewat provider kustom. Daftar model Claude di konteks ini hanyalah informasi umum, bukan model yang sedang kamu pakai; jangan mengaku sebagai model Claude dan jangan menyebut dirimu Opus, Sonnet, atau Haiku. Bila ditanya model apa yang kamu pakai, jawab dengan nama model di atas.`;
+}
+
+/**
+ * Catatan identitas model hanya perlu untuk provider kustom non-Claude.
+ *
+ * Sesi Claude asli (tanpa baseUrl kustom, atau model bernama `claude-*`)
+ * tidak berubah sama sekali.
+ */
+function modelIdentityModel(provider: ResolvedProvider): string | undefined {
+  const model = provider.model;
+  if (model === undefined || model === "") return undefined;
+  if (provider.baseUrl === undefined || provider.baseUrl === "") return undefined;
+  if (model.toLowerCase().startsWith("claude")) return undefined;
+  return model;
+}
 
 type SecretGuard = NonNullable<RunInput["secretGuard"]>;
 
@@ -303,6 +332,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       const noTools = input.noTools === true;
       if (noTools) {
         append = `${append} ${ASIDE_APPEND_NOTE}`;
+      }
+      // Model non-Claude lewat provider kustom: tegaskan identitas model
+      // supaya tidak salah mengaku sebagai Opus/Sonnet/Haiku.
+      const identityModel = modelIdentityModel(input.provider);
+      if (identityModel !== undefined) {
+        append = `${append} ${modelIdentityNote(identityModel)}`;
       }
 
       const sdkOptions: Record<string, unknown> = {

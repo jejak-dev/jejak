@@ -5,6 +5,7 @@ import {
   buildSdkEnv,
   withMaxRetries,
   createSdkRunner,
+  modelIdentityNote,
   SANDBOX_APPEND_NOTE,
   type SdkModule,
   type SdkQuery,
@@ -408,6 +409,77 @@ test("catatan sandbox hanya ditambahkan ke append bila input.sandbox ada", async
   expect(appendDengan).toContain(SANDBOX_APPEND_NOTE);
   expect(appendDengan).toContain("DIBLOKIR sandbox");
   expect(dengan?.sandbox).toEqual({ enabled: true });
+});
+
+const IDENTITY_MARKER = "Kamu berjalan di model";
+
+const PROVIDER_MINIMAX: ResolvedProvider = {
+  profileId: "kustom1",
+  baseUrl: "https://api.minimax.test/v1",
+  apiKey: "sk-minimax-rahasia-0123456789",
+  model: "MiniMax-M3.1-Flash",
+};
+
+async function appendFor(
+  provider: ResolvedProvider,
+  overrides: Partial<RunInput> = {},
+): Promise<string> {
+  let received: Record<string, unknown> | undefined;
+  await collect(
+    createSdkRunner({
+      load: async () =>
+        fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) }).module,
+      baseEnv: {},
+    }).run(baseInput({ provider, ...overrides })),
+  );
+  return (received?.systemPrompt as Record<string, unknown> | undefined)?.append as string;
+}
+
+test("modelIdentityNote menyebut nama model dan melarang mengaku sebagai Claude", () => {
+  const note = modelIdentityNote("MiniMax-M3.1-Flash");
+  expect(note).toContain("MiniMax-M3.1-Flash");
+  expect(note).toContain("provider kustom");
+  expect(note).toContain("jangan mengaku sebagai model Claude");
+});
+
+test("provider kustom non-Claude mendapat catatan identitas model di append", async () => {
+  const append = await appendFor(PROVIDER_MINIMAX);
+  expect(append).toContain(IDENTITY_MARKER);
+  expect(append).toContain("MiniMax-M3.1-Flash");
+});
+
+test("model claude dengan baseUrl tidak mendapat catatan identitas model", async () => {
+  const append = await appendFor({
+    profileId: "proxy",
+    baseUrl: "https://proxy.test/v1",
+    apiKey: API_KEY,
+    model: "claude-opus-5-5",
+  });
+  expect(append).not.toContain(IDENTITY_MARKER);
+});
+
+test("tanpa baseUrl tidak mendapat catatan identitas model", async () => {
+  const append = await appendFor({
+    profileId: "anthropic",
+    apiKey: API_KEY,
+    model: "MiniMax-M3.1-Flash",
+  });
+  expect(append).not.toContain(IDENTITY_MARKER);
+});
+
+test("catatan identitas model tidak membocorkan baseUrl, key, atau nama profil", async () => {
+  const append = await appendFor(PROVIDER_MINIMAX);
+  expect(append).toContain(IDENTITY_MARKER);
+  expect(append).not.toContain(PROVIDER_MINIMAX.baseUrl as string);
+  expect(append).not.toContain(PROVIDER_MINIMAX.apiKey as string);
+  expect(append).not.toContain(PROVIDER_MINIMAX.profileId);
+});
+
+test("catatan identitas model hadir bersama catatan sandbox tanpa merusaknya", async () => {
+  const append = await appendFor(PROVIDER_MINIMAX, { sandbox: { enabled: true } });
+  expect(append).toContain(IDENTITY_MARKER);
+  expect(append).toContain("MiniMax-M3.1-Flash");
+  expect(append).toContain(SANDBOX_APPEND_NOTE);
 });
 
 test("opsi lain tidak berubah setelah penambahan systemPrompt", async () => {  let received: Record<string, unknown> | undefined;
