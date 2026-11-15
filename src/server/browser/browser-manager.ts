@@ -176,6 +176,12 @@ export interface DevToolsEndpoint {
   path: string;
 }
 
+/** Hasil menunggu port DevTools Chrome. */
+type HasilPort =
+  | { status: "siap"; endpoint: DevToolsEndpoint }
+  | { status: "keluar" }
+  | { status: "timeout" };
+
 /** Pembaca baris perintah proses; undefined bila proses tak ada. */
 export type ReadCommandLine = (pid: number) => string | undefined;
 
@@ -1201,6 +1207,20 @@ export class BrowserManager {
   }
 
   /**
+   * Hapus berkas port DevTools lama di dalam profil (bila ada).
+   *
+   * Chrome yang mati keras bisa meninggalkan port usang; berkas itu tak boleh
+   * dipakai karena isinya menunjuk ke proses yang sudah tak ada.
+   */
+  private removeDevToolsPort(profileDir: string): void {
+    try {
+      unlinkSync(join(profileDir, "DevToolsActivePort"));
+    } catch {
+      // Berkas tak ada; abaikan.
+    }
+  }
+
+  /**
    * Bunuh Chrome yatim dari proses Jejak sebelumnya.
    *
    * Hanya proses yang baris perintahnya memuat path profil Jejak yang boleh
@@ -1269,6 +1289,9 @@ export class BrowserManager {
     } catch {
       throw new BrowserError("Folder profil browser tidak dapat dibuat.", "gagal");
     }
+    // Port DevTools usang (dari Chrome yang mati keras) dibuang sebelum Chrome
+    // baru dijalankan; kalau dibiarkan, manajer bisa menyambung ke port mati.
+    this.removeDevToolsPort(profileDir);
 
     let proc: BrowserProcess;
     try {
@@ -1286,23 +1309,41 @@ export class BrowserManager {
       this.removePidFile(profileDir);
       throw browserMati();
     }
+    // Penanda proses keluar; dipakai waitForPort agar tak menunggu timeout
+    // penuh bila Chrome mati sebelum port DevTools muncul.
+    let prosesKeluar: boolean = false;
+    const tandaiKeluar = (): void => {
+      prosesKeluar = true;
+    };
     void proc.exited
-      .then(() => this.handleExit(proc))
-      .catch(() => this.handleExit(proc));
+      .then(() => {
+        tandaiKeluar();
+        this.handleExit(proc);
+      })
+      .catch(() => {
+        tandaiKeluar();
+        this.handleExit(proc);
+      });
 
-    const endpoint = await this.waitForPort(profileDir);
+    const hasil = await this.waitForPort(profileDir, () => prosesKeluar);
     if (this.sudahDimatikan) {
       await this.terminate(proc);
       this.process = undefined;
       this.removePidFile(profileDir);
       throw browserMati();
     }
-    if (endpoint === undefined) {
+    if (hasil.status === "keluar") {
+      // Chrome berhenti sebelum siap: proses sudah mati, tak ada yang dibunuh.
+      this.process = undefined;
+      this.removePidFile(profileDir);
+      throw new BrowserError("Chrome berhenti sebelum siap; coba lagi.", "gagal");
+    }
+    if (hasil.status === "timeout") {
       await this.terminate(proc);
       this.process = undefined;
       throw new BrowserError("Browser tidak siap; port DevTools tak terbaca.", "gagal");
     }
-
+    const endpoint = hasil.endpoint;
     let client: CdpConnection;
     try {
       // URL CDP hanya dipakai di dalam proses ini; tak pernah ke log atau klien.
@@ -1336,16 +1377,21 @@ export class BrowserManager {
     }
   }
 
-  private async waitForPort(profileDir: string): Promise<DevToolsEndpoint | undefined> {
+  private async waitForPort(
+    profileDir: string,
+    sudahKeluar: () => boolean,
+  ): Promise<HasilPort> {
     const deadline = Date.now() + this.portTimeoutMs;
     while (Date.now() < deadline) {
       // Manajer dimatikan saat menunggu: tak perlu menunggu port lagi.
-      if (this.sudahDimatikan) return undefined;
+      if (this.sudahDimatikan) return { status: "timeout" };
       const endpoint = this.readPort(profileDir);
-      if (endpoint !== undefined) return endpoint;
+      if (endpoint !== undefined) return { status: "siap", endpoint };
+      // Chrome boleh mati sebelum port muncul: jangan tunggu timeout penuh.
+      if (sudahKeluar()) return { status: "keluar" };
       await Bun.sleep(PORT_POLL_MS);
     }
-    return undefined;
+    return { status: "timeout" };
   }
 
   /** Pasang sesi CDP dan 준비kan tab halaman. */

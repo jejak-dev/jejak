@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import type { CdpConnection, CdpEventHandler } from "../src/server/browser/cdp-c
 import {
   BrowserManager,
   normalizeBrowserUrl,
+  readDevToolsPortFile,
   type BrowserFrame,
   type BrowserProcess,
   type BrowserState,
@@ -544,5 +546,90 @@ describe("aktivitas agent di browser", () => {
     expect(manager.state().agent?.action).toHaveLength(60);
     manager.noteAgent("   ");
     expect(manager.state().agent?.action).toHaveLength(60);
+  });
+});
+
+describe("port DevTools", () => {
+  /**
+   * Manajer yang membaca port DevTools dari berkas sungguhan.
+   *
+   * `spawn` palsu menentukan apakah berkas port ditulis (seperti Chrome
+   * sungguhan) atau tidak.
+   */
+  function buatManajerPort(
+    opsi: { spawn: () => BrowserProcess; portTimeoutMs?: number },
+  ): { manager: BrowserManager; sambung: string[] } {
+    const sambung: string[] = [];
+    const manager = new BrowserManager({
+      env: { JEJAK_HOME: dir, JEJAK_CHROME_PATH: "/fake/chrome" },
+      platform: "linux",
+      exists: (path) => path === "/fake/chrome",
+      spawn: opsi.spawn,
+      connect: async (wsUrl) => {
+        sambung.push(wsUrl);
+        return new KoneksiPalsu();
+      },
+      readDevToolsPort: readDevToolsPortFile,
+      portTimeoutMs: opsi.portTimeoutMs,
+    });
+    return { manager, sambung };
+  }
+
+  test("port usang dihapus dan tak pernah disambung", async () => {
+    const profil = join(dir, "browser-profile");
+    mkdirSync(profil, { recursive: true });
+    writeFileSync(join(profil, "DevToolsActivePort"), "1234\n/devtools/browser/lama\n", "utf8");
+    const { manager, sambung } = buatManajerPort({
+      // Chrome palsu tak menulis berkas port.
+      spawn: () => prosesPalsu(),
+      portTimeoutMs: 200,
+    });
+
+    await expect(manager.ensure()).rejects.toThrow(BrowserError);
+    // Berkas port usang dibuang sebelum Chrome dijalankan.
+    expect(existsSync(join(profil, "DevToolsActivePort"))).toBe(false);
+    // Manajer tak pernah menyambung ke port usang.
+    expect(sambung).toHaveLength(0);
+  });
+
+  test("port baru dari Chrome dipakai", async () => {
+    const profil = join(dir, "browser-profile");
+    mkdirSync(profil, { recursive: true });
+    writeFileSync(join(profil, "DevToolsActivePort"), "1234\n/devtools/browser/lama\n", "utf8");
+    const { manager, sambung } = buatManajerPort({
+      // Chrome palsu menulis port barunya sendiri.
+      spawn: () => {
+        const proses = prosesPalsu();
+        writeFileSync(
+          join(profil, "DevToolsActivePort"),
+          "9999\n/devtools/browser/baru\n",
+          "utf8",
+        );
+        return proses;
+      },
+      portTimeoutMs: 2_000,
+    });
+
+    await manager.ensure();
+    expect(sambung).toEqual(["ws://127.0.0.1:9999/devtools/browser/baru"]);
+    await manager.close();
+  });
+
+  test("Chrome berhenti sebelum port muncul -> galat cepat", async () => {
+    mkdirSync(join(dir, "browser-profile"), { recursive: true });
+    const { manager } = buatManajerPort({
+      // Chrome palsu mati sendiri tanpa pernah menulis berkas port.
+      spawn: () => {
+        const proses = prosesPalsu();
+        setTimeout(() => proses.mati(), 10);
+        return proses;
+      },
+      portTimeoutMs: 30_000,
+    });
+
+    const mulai = Date.now();
+    await expect(manager.ensure()).rejects.toThrow("Chrome berhenti sebelum siap; coba lagi.");
+    // Tak menunggu timeout penuh (30 detik).
+    expect(Date.now() - mulai).toBeLessThan(5_000);
   });
 });
