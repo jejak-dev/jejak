@@ -1370,6 +1370,14 @@ code {
   gap: 18px;
 }
 
+/* Ringkasan langkah dan teks agen yang menyambung dirapatkan: jarak 18px jadi ~7px.
+   Blok lain (pesan user, kartu izin, hasil) tetap jaraknya 18px. */
+.jk-col > .jk-steps + .jk-text,
+.jk-col > .jk-text + .jk-steps,
+.jk-col > .jk-steps + .jk-steps {
+  margin-top: -11px;
+}
+
 .jk-user {
   align-self: flex-end;
   max-width: 82%;
@@ -1723,7 +1731,7 @@ h2.jk-md-heading {
 
 .jk-steps > summary {
   gap: 10px;
-  min-height: 30px;
+  min-height: 26px;
   color: var(--t3);
   font-size: 14.5px;
 }

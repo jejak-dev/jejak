@@ -58,12 +58,23 @@ describe("lebar sidebar", () => {
 
 describe("lebar panel kanan", () => {
   test("batas, default, dan arah panah (melebar ke kiri)", async () => {
-    const { panelWidth, PANEL_DEFAULT } = await import("../src/client/lib/panel-width");
-    expect(panelWidth.clamp(100)).toBe(320);
-    expect(panelWidth.clamp(2000)).toBe(760);
+    const { panelWidth, PANEL_DEFAULT, PANEL_MAX, PANEL_MIN } = await import(
+      "../src/client/lib/panel-width"
+    );
+    expect(panelWidth.clamp(100)).toBe(PANEL_MIN);
+    expect(panelWidth.clamp(2000)).toBe(PANEL_MAX);
     expect(panelWidth.parse("x")).toBe(PANEL_DEFAULT);
     expect(panelWidth.forKey(460, "ArrowLeft", "ArrowLeft")).toBe(480);
     expect(panelWidth.forKey(460, "ArrowRight", "ArrowLeft")).toBe(440);
     expect(panelWidth.forKey(600, "Home", "ArrowLeft")).toBe(PANEL_DEFAULT);
+  });
+
+  test("nilai lama 320-760 tetap valid; batas barunya 280-1400", async () => {
+    const { panelWidth, PANEL_MAX, PANEL_MIN } = await import("../src/client/lib/panel-width");
+    expect(PANEL_MIN).toBe(280);
+    expect(PANEL_MAX).toBe(1400);
+    expect(panelWidth.parse("320")).toBe(320);
+    expect(panelWidth.parse("760")).toBe(760);
+    expect(panelWidth.parse("900")).toBe(900);
   });
 });

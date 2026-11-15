@@ -37,7 +37,8 @@ import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
 import { extractPlans } from "./lib/plans";
-import { panelWidth } from "./lib/panel-width";
+import { effectiveMax, effectiveMaxNarrow, panelWidth } from "./lib/panel-width";
+import { useNarrowViewport } from "./lib/pane-narrow";
 import {
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
@@ -206,6 +207,18 @@ export function App() {
       return loadSidebarWidth(undefined);
     }
   });
+  const [viewportW, setViewportW] = useState(() =>
+    typeof window === "undefined" ? 1280 : window.innerWidth
+  );
+
+  // Lebar jendela berubah: batas panel ikut menyesuaikan supaya kolom chat
+  // tak pernah terlalu sempit.
+  useEffect(() => {
+    const onResize = (): void => setViewportW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   const [panelOpen, setPanelOpen] = useState(() => readPanelPrefs().open);
   const [panelTabRequest, setPanelTabRequest] = useState<
     { tab: PanelTab; nonce: number } | undefined
@@ -226,6 +239,35 @@ export function App() {
     { sessionId: string; text: string; nonce: number; append?: boolean } | undefined
   >(undefined);
   const draftNonceRef = useRef(0);
+
+  // Batas lebar panel mengikuti ruang jendela yang tersisa.
+  const sempit = useNarrowViewport();
+  const panelMax = sempit ? effectiveMaxNarrow(viewportW) : effectiveMax(viewportW, sideWidth);
+
+  // Panel menyusut bila jendela mengecil; nilai tersimpan pengguna tak
+  // ditimpa (hanya geseran pengguna yang menyimpannya).
+  useEffect(() => {
+    setPanelW((current) => (current > panelMax ? panelMax : current));
+  }, [panelMax]);
+
+  const clampPanel = useMemo(
+    () => (value: number): number => {
+      if (!Number.isFinite(value)) return panelWidth.spec.def;
+      return Math.min(panelMax, Math.max(panelWidth.spec.min, Math.round(value)));
+    },
+    [panelMax]
+  );
+
+  const panelKeyFor = useMemo(
+    () => (current: number, key: string): number | undefined => {
+      const next = panelWidth.forKey(current, key, "ArrowLeft");
+      return next === undefined ? undefined : clampPanel(next);
+    },
+    [clampPanel]
+  );
+
+  /** Lebar panel yang benar-benar tampil; tak pernah melebihi batas efektif. */
+  const panelNow = Math.min(panelW, panelMax);
 
   // Ganti sesi: status tujuan lokal (override) tidak berlaku untuk sesi lain.
   useEffect(() => {
@@ -936,20 +978,20 @@ export function App() {
                   tabRequest={panelTabRequest}
                   onSessionChanged={() => void refresh()}
                   onQuote={onQuote}
-                  width={panelW}
+                  width={panelNow}
                 />
               )}
               {panelOpen && (
                 <PaneResizer
-                  width={panelW}
+                  width={panelNow}
                   min={panelWidth.spec.min}
-                  max={panelWidth.spec.max}
+                  max={panelMax}
                   def={panelWidth.spec.def}
                   label="Lebar panel"
                   edge="start"
-                  style={{ right: `${panelW - 3}px` }}
-                  clamp={panelWidth.clamp}
-                  keyFor={(current, key) => panelWidth.forKey(current, key, "ArrowLeft")}
+                  style={{ right: `${panelNow - 3}px` }}
+                  clamp={clampPanel}
+                  keyFor={panelKeyFor}
                   onChange={setPanelW}
                   onCommit={(width) => {
                     setPanelW(width);
