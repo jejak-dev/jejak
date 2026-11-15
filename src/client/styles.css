@@ -1419,12 +1419,13 @@ code {
   gap: 18px;
 }
 
-/* Ringkasan langkah dan teks agen yang menyambung dirapatkan: jarak 18px jadi ~7px.
-   Blok lain (pesan user, kartu izin, hasil) tetap jaraknya 18px. */
+/* Ringkasan langkah dan teks agen yang menyambung dirapatkan: jarak 18px jadi ~4px
+   sehingga jarak visual teks<->ringkasan ~13px. Blok lain (pesan user, kartu izin,
+   hasil) tetap jaraknya 18px. */
 .jk-col > .jk-steps + .jk-text,
 .jk-col > .jk-text + .jk-steps,
 .jk-col > .jk-steps + .jk-steps {
-  margin-top: -11px;
+  margin-top: -14px;
 }
 
 .jk-user {
@@ -1463,6 +1464,12 @@ code {
 }
 
 .jk-md > *:last-child {
+  margin-bottom: 0;
+}
+
+/* Baris tombol salin adalah anak terakhir, jadi blok isi terakhir tetap perlu
+   margin bawah 0 agar tak menambah jarak ke blok berikutnya. */
+.jk-md > *:has(+ .jk-md-foot) {
   margin-bottom: 0;
 }
 
@@ -1651,25 +1658,44 @@ h2.jk-md-heading {
   margin-bottom: 0;
 }
 
+/* Baris tombol salin tidak boleh memakai ruang layout: di perangkat berkemampuan
+   hover, baris ini setinggi 0 dan tombolnya diletakkan absolut di kanan bawah teks,
+   sehingga tak mendorong blok berikutnya. */
 .jk-md-foot {
   display: flex;
   justify-content: flex-end;
-  margin-top: 6px;
+  height: 0;
+  margin: 0;
+  position: relative;
 }
 
+/* Tombol yang tak terlihat tak boleh menelan klik blok di bawahnya. */
 .jk-md-foot .jk-copy {
+  position: absolute;
+  right: 0;
+  top: 2px;
   opacity: 0;
+  pointer-events: none;
   transition: opacity 0.12s ease;
 }
 
 .jk-md:hover .jk-md-foot .jk-copy,
 .jk-md:focus-within .jk-md-foot .jk-copy {
   opacity: 1;
+  pointer-events: auto;
 }
 
+/* Layar sentuh: tombol selalu terlihat, jadi kembali ke alur normal agar bisa diketuk. */
 @media (hover: none) {
+  .jk-md-foot {
+    height: auto;
+    margin: 6px 0 0;
+  }
+
   .jk-md-foot .jk-copy {
+    position: static;
     opacity: 1;
+    pointer-events: auto;
   }
 }
 
