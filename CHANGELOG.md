@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.4] - 2026-11-15
+
 ### Ditambah
 
 - Panel Browser: Chromium terpisah dengan tampilan langsung, banyak tab, riwayat, ukuran tampilan, kontrol klik, gulir, ketik, salin, tempel, dan layar penuh. Bisa dinyalakan dari kartu Fitur di Pengaturan tanpa restart.
