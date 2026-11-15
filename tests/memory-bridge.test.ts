@@ -400,6 +400,7 @@ describe("createMemoryBridge + browser", () => {
       tabs: () => [],
       snapshot: async () => snapshot(),
       state: () => state(),
+      noteAgent: () => undefined,
       navigate: async () => state(),
       newTab: async () => state(),
       activateTab: async () => state(),

@@ -118,6 +118,20 @@ function Preview({ preview, cwd }: { preview: PermissionPreview; cwd: string }) 
         </div>
       );
 
+    case "browser":
+      return (
+        <div class="jk-perm-preview">
+          <div class="jk-perm-preview-head">
+            <span>{preview.label}</span>
+          </div>
+          {preview.lines.length > 0 && (
+            <div class="jk-perm-cmd" tabIndex={0} role="region" aria-label={preview.label}>
+              {preview.lines.join("\n")}
+            </div>
+          )}
+        </div>
+      );
+
     default:
       return (
         <div class="jk-perm-preview">

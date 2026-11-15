@@ -9,6 +9,7 @@ import {
   normalizeBrowserUrl,
   type BrowserFrame,
   type BrowserProcess,
+  type BrowserState,
 } from "../src/server/browser/browser-manager";
 
 /** Koneksi CDP palsu: mencatat perintah dan menyiarkan peristiwa. */
@@ -475,5 +476,73 @@ describe("BrowserManager", () => {
     expect(koneksi.tertutup).toBe(true);
     expect(proses[0]?.jumlahKill).toBeGreaterThan(0);
     expect(manager.state().status).toBe("mati");
+  });
+});
+
+/** Penjadwac palsu: mencatat tundaan, bisa dipicu, dan bisa dibatalkan. */
+function penjadwacAgen(): {
+  schedule: (callback: () => void, delayMs: number) => () => void;
+  tundaan: () => number[];
+  picu: () => void;
+  batal: () => number;
+} {
+  const tundaan: number[] = [];
+  let antre: (() => void) | undefined;
+  let batal = 0;
+  return {
+    schedule: (callback, delayMs) => {
+      tundaan.push(delayMs);
+      antre = callback;
+      return () => {
+        batal += 1;
+        antre = undefined;
+      };
+    },
+    tundaan: () => tundaan,
+    picu: () => antre?.(),
+    batal: () => batal,
+  };
+}
+
+describe("aktivitas agent di browser", () => {
+  test("noteAgent mencatat aktivitas dan mendorong state ke pelanggan", async () => {
+    const jam = jamPalsu();
+    const { manager } = setup({ now: jam.now });
+    const terkirim: BrowserState[] = [];
+    manager.subscribeState((state) => {
+      terkirim.push(state);
+    });
+    manager.noteAgent("membuka alamat");
+    await Bun.sleep(120);
+    const terakhir = terkirim[terkirim.length - 1];
+    expect(terakhir?.agent).toEqual({ action: "membuka alamat", at: jam.now() });
+    await manager.close();
+  });
+
+  test("catatan hilang setelah 4 detik dan timer dibersihkan saat close", async () => {
+    const jam = jamPalsu();
+    const penjadwac = penjadwacAgen();
+    const { manager } = setup({ now: jam.now, schedule: penjadwac.schedule });
+    manager.noteAgent("membuka alamat");
+    expect(penjadwac.tundaan()).toEqual([4_000]);
+    expect(manager.state().agent).toEqual({ action: "membuka alamat", at: jam.now() });
+    penjadwac.picu();
+    expect(manager.state().agent).toBeUndefined();
+
+    manager.noteAgent("mengetik");
+    expect(penjadwac.batal()).toBe(0);
+    await manager.close();
+    expect(penjadwac.batal()).toBe(1);
+    expect(manager.state().agent).toBeUndefined();
+  });
+
+  test("label dibatasi 60 karakter dan kosong diabaikan", () => {
+    const { manager } = setup();
+    manager.noteAgent("membuka alamat");
+    expect(manager.state().agent?.action).toBe("membuka alamat");
+    manager.noteAgent("x".repeat(120));
+    expect(manager.state().agent?.action).toHaveLength(60);
+    manager.noteAgent("   ");
+    expect(manager.state().agent?.action).toHaveLength(60);
   });
 });

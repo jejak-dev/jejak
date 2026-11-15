@@ -6117,8 +6117,22 @@ h2.jk-md-heading {
 .jk-browser-tab-new { flex: none; }
 .jk-browser-status { margin: 0; }
 
+/* Chip aktivitas agent */
+.jk-browser-agent { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--t2); font-size: 12px; }
+.jk-browser-agent-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); animation: jk-agent-pulse 1.2s ease-in-out infinite; }
+.jk-browser-agent-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+@keyframes jk-agent-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.3; transform: scale(0.75); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .jk-browser-tab-load {
+    animation: none;
+  }
+
+  .jk-browser-agent-dot {
     animation: none;
   }
 }

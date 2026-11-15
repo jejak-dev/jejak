@@ -187,6 +187,26 @@ export const BROWSER_TOOL_NAMES = [
 /** Tool browser yang hanya membaca; boleh dipakai tanpa izin khusus. */
 export const BROWSER_READ_TOOL_NAMES = ["browser_tabs", "browser_snapshot"] as const;
 
+/**
+ * Label aktivitas agent per tool.
+ *
+ * Label tetap dan singkat: tak pernah memuat URL, teks halaman, atau teks
+ * yang diketik. Dipakai supaya pengguna tahu sedang ada agent yang bekerja.
+ */
+export const BROWSER_AGENT_LABELS: Record<string, string> = {
+  browser_tabs: "membaca halaman",
+  browser_snapshot: "membaca halaman",
+  browser_navigate: "membuka alamat",
+  browser_new_tab: "membuka tab baru",
+  browser_switch_tab: "berpindah tab",
+  browser_close_tab: "menutup tab",
+  browser_back: "kembali",
+  browser_click: "mengeklik elemen",
+  browser_type: "mengetik",
+  browser_press: "menekan tombol",
+  browser_scroll: "menggulir",
+};
+
 function ok(text: string): McpToolOutcome {
   return { text, isError: false };
 }
@@ -320,6 +340,13 @@ export class BrowserTools {
     });
   }
 
+  /** Tandai bahwa agent sedang bertindak (label tetap, tanpa isi halaman). */
+  private catatAktivitas(manager: BrowserManager, tool: string): void {
+    const label = BROWSER_AGENT_LABELS[tool];
+    if (label === undefined) return;
+    manager.noteAgent(label);
+  }
+
   /** Jumlah elemen interaktif terbaru; undefined bila gagal diukur. */
   private async hitungElemen(manager: BrowserManager): Promise<number | undefined> {
     try {
@@ -384,6 +411,7 @@ export class BrowserTools {
 
   /** Daftar tab terbuka. */
   private async tabs(manager: BrowserManager): Promise<McpToolOutcome> {
+    this.catatAktivitas(manager, "browser_tabs");
     const daftar = manager.tabs();
     if (daftar.length === 0) return ok(this.bungkus("Tidak ada tab terbuka."));
     const baris = daftar.map(
@@ -409,6 +437,7 @@ export class BrowserTools {
         "tidak-valid",
       );
     }
+    this.catatAktivitas(manager, "browser_snapshot");
     const snap = await manager.snapshot(maxChars === undefined ? undefined : { maxChars });
     this.catat("browser_snapshot");
     return ok(this.bungkus(susunSnapshot(snap)));
@@ -424,6 +453,7 @@ export class BrowserTools {
     if (url.trim() === "") {
       throw new BrowserError("Argumen \"url\" tidak boleh kosong.", "tidak-valid");
     }
+    this.catatAktivitas(manager, "browser_navigate");
     const hasil = await this.jalankan(manager, "Navigasi selesai.", () => manager.navigate(url));
     this.catat("browser_navigate", manager.state().url);
     return hasil;
@@ -433,6 +463,7 @@ export class BrowserTools {
   private async newTab(manager: BrowserManager, args: unknown): Promise<McpToolOutcome> {
     const rec = cekArgs(args, ["url"]);
     const url = rec.url === undefined ? undefined : bacaTeks(rec.url);
+    this.catatAktivitas(manager, "browser_new_tab");
     const hasil = await this.jalankan(manager, "Tab baru dibuat.", () => manager.newTab(url));
     this.catat("browser_new_tab", manager.state().url);
     return hasil;
@@ -445,6 +476,7 @@ export class BrowserTools {
       throw new BrowserError("Argumen \"id\" wajib diisi.", "tidak-valid");
     }
     const id = bacaIdTab(rec.id);
+    this.catatAktivitas(manager, "browser_switch_tab");
     const hasil = await this.jalankan(manager, "Tab diganti.", () => manager.activateTab(id));
     this.catat("browser_switch_tab");
     return hasil;
@@ -457,6 +489,7 @@ export class BrowserTools {
       throw new BrowserError("Argumen \"id\" wajib diisi.", "tidak-valid");
     }
     const id = bacaIdTab(rec.id);
+    this.catatAktivitas(manager, "browser_close_tab");
     const hasil = await this.jalankan(manager, "Tab ditutup.", () => manager.closeTab(id));
     this.catat("browser_close_tab");
     return hasil;
@@ -465,6 +498,7 @@ export class BrowserTools {
   /** Mundur satu entri riwayat. */
   private async back(manager: BrowserManager, args: unknown): Promise<McpToolOutcome> {
     cekArgs(args, []);
+    this.catatAktivitas(manager, "browser_back");
     const hasil = await this.jalankan(manager, "Kembali ke halaman sebelumnya.", () =>
       manager.back(),
     );
@@ -479,6 +513,7 @@ export class BrowserTools {
       throw new BrowserError("Argumen \"ref\" wajib diisi.", "tidak-valid");
     }
     const ref = bacaRef(rec.ref);
+    this.catatAktivitas(manager, "browser_click");
     const hasil = await this.jalankan(manager, "Klik dilakukan.", () => manager.clickRef(ref));
     this.catat("browser_click");
     return hasil;
@@ -499,6 +534,7 @@ export class BrowserTools {
     if (submit !== undefined && typeof submit !== "boolean") {
       throw new BrowserError("Argumen \"submit\" harus true atau false.", "tidak-valid");
     }
+    this.catatAktivitas(manager, "browser_type");
     const hasil = await this.jalankan(manager, "Teks diketik.", () =>
       manager.typeRef(ref, text, submit === undefined ? undefined : { submit }),
     );
@@ -513,6 +549,7 @@ export class BrowserTools {
       throw new BrowserError("Argumen \"key\" wajib diisi.", "tidak-valid");
     }
     const key = bacaTeks(rec.key);
+    this.catatAktivitas(manager, "browser_press");
     const hasil = await this.jalankan(manager, "Tombol ditekan.", () => manager.pressKey(key));
     this.catat("browser_press");
     return hasil;
@@ -535,6 +572,7 @@ export class BrowserTools {
     ) {
       throw new BrowserError("Jumlah gulir harus bilangan bulat positif.", "tidak-valid");
     }
+    this.catatAktivitas(manager, "browser_scroll");
     const hasil = await this.jalankan(manager, "Halaman digulir.", () =>
       manager.scroll(arah, amount),
     );

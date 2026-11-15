@@ -19,6 +19,7 @@ import {
   browserStop,
   browserView,
   activeTab,
+  agentChipLabel,
   dialogLabel,
   fitFrameSize,
   parseBrowserEvent,
@@ -28,6 +29,7 @@ import {
   tabLabel,
   type BrowserStateInfo,
 } from "../src/client/lib/browser";
+import { BrowserAgentChip } from "../src/client/components/BrowserAgentChip";
 import { BrowserTabStrip } from "../src/client/components/BrowserTabStrip";
 import { BrowserToolbar } from "../src/client/components/BrowserToolbar";
 
@@ -427,6 +429,69 @@ describe("BrowserToolbar", () => {
     // Klik berikutnya saat sudah fokus: jangan memilih lagi.
     (propsOf(input).onClick as (event: unknown) => void)(event);
     expect(dipilih).toBe(2);
+  });
+});
+
+describe("aktivitas agent di panel browser", () => {
+  test("state membaca catatan agent dan membuang bentuk asing", () => {
+    const parsed = parseBrowserState({
+      status: "menyala",
+      agent: { action: "membuka alamat", at: 1700 },
+    });
+    expect(parsed?.agent).toEqual({ action: "membuka alamat", at: 1700 });
+    expect(parseBrowserState({ status: "menyala" })?.agent).toBeUndefined();
+    expect(parseBrowserState({ status: "menyala", agent: "bukan objek" })?.agent).toBeUndefined();
+    expect(parseBrowserState({ status: "menyala", agent: { action: "", at: 1 } })?.agent).toBeUndefined();
+    expect(
+      parseBrowserState({ status: "menyala", agent: { action: "x", at: "bukan angka" } })?.agent,
+    ).toBeUndefined();
+  });
+
+  test("label aktivitas dipotong 60 karakter", () => {
+    const parsed = parseBrowserState({
+      status: "menyala",
+      agent: { action: "a".repeat(100), at: 1 },
+    });
+    expect(parsed?.agent?.action).toHaveLength(60);
+  });
+
+  test("label chip kosong saat tak ada aktivitas", () => {
+    expect(agentChipLabel(undefined)).toBe("");
+    expect(agentChipLabel({ action: "   ", at: 1 })).toBe("");
+    expect(agentChipLabel({ action: "membuka alamat", at: 1 })).toBe("Agent sedang membuka alamat");
+  });
+
+  test("chip hilang saat tak ada agent dan tampil saat agent bekerja", () => {
+    const kosong = BrowserAgentChip({ agent: undefined });
+    expect(kosong).toBeNull();
+    expect(findNodes(kosong, () => true)).toHaveLength(0);
+
+    const node = BrowserAgentChip({ agent: { action: "membuka alamat", at: 1 } });
+    const status = byRole(node, "status");
+    expect(status).toHaveLength(1);
+    expect(propsOf(status[0])["aria-live"]).toBe("polite");
+    expect(textOf(node)).toContain("Agent sedang membuka alamat");
+  });
+
+  test("gaya chip memakai token terang dan gelap serta hormati prefers-reduced-motion", () => {
+    const css = readFileSync(join(import.meta.dir, "..", "src", "client", "styles.css"), "utf8");
+    const baris = css.split("\n");
+    const chip = baris.find((satu) => satu.startsWith(".jk-browser-agent {"));
+    expect(chip).toBeDefined();
+    expect(chip).toContain("var(--surface)");
+    expect(chip).toContain("var(--t2)");
+    const titik = baris.find((satu) => satu.startsWith(".jk-browser-agent-dot {"));
+    expect(titik).toContain("var(--warn)");
+    // Titik berdenyut.
+    expect(css).toContain("@keyframes jk-agent-pulse");
+    // Gerak dihormati bila pengguna meminta lebih sedikit gerak.
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.jk-browser-agent-dot \{[\s\S]*?animation: none;/,
+    );
+    // Token warn ada di terang dan gelap.
+    expect(css).toContain("--warn: #b4690e;");
+    const gelap = css.slice(css.indexOf(':root[data-theme="dark"]'));
+    expect(gelap).toContain("--warn: #e0a24a;");
   });
 });
 

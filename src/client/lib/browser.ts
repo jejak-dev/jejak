@@ -13,6 +13,9 @@ const MAX_TITLE = 300;
 /** Panjang maksimum pesan dialog. */
 const MAX_DIALOG = 200;
 
+/** Panjang maksimum label aktivitas agent. */
+const MAX_AGENT_ACTION = 60;
+
 /** Satu tab browser di state server. */
 export interface BrowserTabInfo {
   id: string;
@@ -36,6 +39,14 @@ export interface BrowserDialogInfo {
   message: string;
 }
 
+/** Aktivitas agent yang sedang berjalan di browser. */
+export interface BrowserAgentInfo {
+  /** Label aksi singkat (mis. "membuka alamat"); tanpa isi halaman. */
+  action: string;
+  /** Waktu pencatatan (ms). */
+  at: number;
+}
+
 /** Keadaan browser yang dikirim server. */
 export interface BrowserStateInfo {
   status: "mati" | "menyala";
@@ -53,6 +64,8 @@ export interface BrowserStateInfo {
   viewport: BrowserViewportInfo;
   /** Dialog JavaScript terakhir (hilang sendiri dari state). */
   lastDialog?: BrowserDialogInfo;
+  /** Aktivitas agent terakhir (hilang sendiri dari state). */
+  agent?: BrowserAgentInfo;
 }
 
 /** Satu frame screencast (JPEG base64). */
@@ -118,6 +131,16 @@ function parseBrowserDialog(raw: unknown): BrowserDialogInfo | undefined {
   return { type, message };
 }
 
+/** Baca catatan aktivitas agent; bentuk asing dibuang. */
+function parseBrowserAgent(raw: unknown): BrowserAgentInfo | undefined {
+  if (!isRecord(raw)) return undefined;
+  const action = cut(raw.action, MAX_AGENT_ACTION);
+  const at = raw.at;
+  if (action === "") return undefined;
+  if (typeof at !== "number" || !Number.isFinite(at)) return undefined;
+  return { action, at };
+}
+
 /** Baca state browser dari JSON server; bentuk asing ditolak. */
 export function parseBrowserState(raw: unknown): BrowserStateInfo | undefined {
   if (!isRecord(raw)) return undefined;
@@ -135,6 +158,7 @@ export function parseBrowserState(raw: unknown): BrowserStateInfo | undefined {
     loading: raw.loading === true,
     viewport: parseBrowserViewport(raw.viewport),
     lastDialog: parseBrowserDialog(raw.lastDialog),
+    agent: parseBrowserAgent(raw.agent),
   };
 }
 
@@ -175,6 +199,18 @@ export function dialogLabel(dialog: BrowserDialogInfo | undefined): string {
   if (dialog.message === "") return `Halaman menampilkan dialog: ${dialog.type}`;
   if (dialog.type === "") return `Halaman menampilkan dialog: ${dialog.message}`;
   return `Halaman menampilkan dialog: ${dialog.message} (${dialog.type})`;
+}
+
+/**
+ * Label chip aktivitas agent.
+ *
+ * String kosong berarti tak ada aktivitas agent; chip lalu tak ditampilkan.
+ */
+export function agentChipLabel(agent: BrowserAgentInfo | undefined): string {
+  if (agent === undefined) return "";
+  const action = agent.action.trim();
+  if (action === "") return "";
+  return `Agent sedang ${action}`;
 }
 
 /** Baca frame screencast dari JSON server; bentuk asing ditolak. */

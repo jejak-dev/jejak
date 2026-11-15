@@ -135,3 +135,67 @@ describe("isOutsideCwd dengan symlink macOS", () => {
     expect(isOutsideCwd("/tmp/proj", "/private/tmp/lain/a.txt")).toBe(true);
   });
 });
+
+describe("izin tool browser", () => {
+  const prefix = "mcp__jejak-memory__";
+
+  test("judul ramah per tool", () => {
+    const judul: Array<[string, string]> = [
+      ["browser_navigate", "Buka alamat di browser"],
+      ["browser_click", "Klik elemen di browser"],
+      ["browser_type", "Ketik di browser"],
+      ["browser_press", "Tekan tombol di browser"],
+      ["browser_scroll", "Gulir browser"],
+      ["browser_new_tab", "Tab baru di browser"],
+      ["browser_switch_tab", "Pindah tab browser"],
+      ["browser_close_tab", "Tutup tab browser"],
+      ["browser_back", "Kembali di browser"],
+    ];
+    for (const [tool, nama] of judul) {
+      const view = describePermission(`${prefix}${tool}`, {}, CWD);
+      expect(view.tool).toBe(nama);
+      expect(view.risk).toBe("Mengendalikan browser");
+    }
+  });
+
+  test("pratinjau ringkas dari input", () => {
+    const nav = describePermission(`${prefix}browser_navigate`, { url: "https://a.test/x" }, CWD);
+    expect(nav.target).toBe("https://a.test/x");
+    expect(nav.preview).toEqual({ kind: "browser", label: "alamat", lines: ["https://a.test/x"] });
+
+    const klik = describePermission(`${prefix}browser_click`, { ref: 3 }, CWD);
+    expect(klik.target).toBe("elemen #3");
+    expect(klik.preview).toEqual({ kind: "browser", label: "elemen", lines: ["#3"] });
+
+    const ketik = describePermission(`${prefix}browser_type`, { ref: 2, text: "halo" }, CWD);
+    expect(ketik.preview).toEqual({ kind: "browser", label: "teks yang diketik", lines: ["halo"] });
+    expect(ketik.warning).toBe("Jangan setujui bila teks berisi rahasia");
+
+    const tekan = describePermission(`${prefix}browser_press`, { key: "Enter" }, CWD);
+    expect(tekan.preview).toEqual({ kind: "browser", label: "tombol", lines: ["Enter"] });
+
+    const gulir = describePermission(`${prefix}browser_scroll`, { direction: "down" }, CWD);
+    expect(gulir.preview).toEqual({ kind: "browser", label: "arah", lines: ["down"] });
+
+    const tab = describePermission(`${prefix}browser_switch_tab`, { id: "T7" }, CWD);
+    expect(tab.preview).toEqual({ kind: "browser", label: "tab", lines: ["T7"] });
+  });
+
+  test("teks panjang yang diketik dipotong 200 karakter", () => {
+    const panjang = "x".repeat(500);
+    const view = describePermission(`${prefix}browser_type`, { ref: 1, text: panjang }, CWD);
+    expect(view.preview.kind).toBe("browser");
+    if (view.preview.kind !== "browser") throw new Error("pratinjau browser");
+    const baris = view.preview.lines[0] ?? "";
+    expect(baris.length).toBeLessThanOrEqual(201);
+    expect(baris.endsWith("…")).toBe(true);
+  });
+
+  test("tool lain tak berubah", () => {
+    const bash = describePermission("Bash", { command: "bun test" }, CWD);
+    expect(bash.tool).toBe("Bash");
+    expect(bash.preview).toEqual({ kind: "command", command: "bun test" });
+    const lain = describePermission("mcp__jejak-memory__memory_search", { query: "x" }, CWD);
+    expect(lain.preview.kind).toBe("json");
+  });
+});

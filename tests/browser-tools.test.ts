@@ -69,6 +69,12 @@ class ManajerPalsu {
   galat: unknown = undefined;
   snapshotPalsu: PageSnapshot = { url: "", title: "", text: "", elements: [] };
   tabPalsu = [{ id: "T1", title: "Judul", url: "https://contoh.test/", active: true, loading: false }];
+  /** Label aktivitas agent yang dicatat (urutan pemanggilan). */
+  readonly catatanAgent: string[] = [];
+
+  noteAgent(action: string): void {
+    this.catatanAgent.push(action);
+  }
 
   async tabs(): Promise<typeof this.tabPalsu> {
     return this.tabPalsu;
@@ -120,6 +126,10 @@ class ManajerPalsu {
 
   async scroll(): Promise<BrowserState> {
     if (this.galat !== undefined) throw this.galat;
+    return stateKosong();
+  }
+
+  state(): BrowserState {
     return stateKosong();
   }
 }
@@ -322,5 +332,52 @@ describe("BrowserTools", () => {
     expect(hasil.isError).toBe(true);
     expect(hasil.text).toContain("tidak diizinkan");
     expect(koneksi.calls("Page.navigate")).toHaveLength(0);
+  });
+});
+
+describe("aktivitas agent di tool browser", () => {
+  test("setiap tool mencatat label tetap sebelum bertindak", async () => {
+    const palsu = new ManajerPalsu();
+    const tools = new BrowserTools({ resolve: () => sebagaiManager(palsu) });
+
+    await tools.call("browser_tabs", {});
+    await tools.call("browser_snapshot", {});
+    await tools.call("browser_navigate", { url: "https://rahasia.test/token" });
+    await tools.call("browser_new_tab", {});
+    await tools.call("browser_switch_tab", { id: "T1" });
+    await tools.call("browser_close_tab", { id: "T1" });
+    await tools.call("browser_back", {});
+    await tools.call("browser_click", { ref: 3 });
+    await tools.call("browser_type", { ref: 3, text: "kata-sandi-rahasia" });
+    await tools.call("browser_press", { key: "Enter" });
+    await tools.call("browser_scroll", { direction: "down" });
+
+    expect(palsu.catatanAgent).toEqual([
+      "membaca halaman",
+      "membaca halaman",
+      "membuka alamat",
+      "membuka tab baru",
+      "berpindah tab",
+      "menutup tab",
+      "kembali",
+      "mengeklik elemen",
+      "mengetik",
+      "menekan tombol",
+      "menggulir",
+    ]);
+  });
+
+  test("label tak pernah memuat URL, isi halaman, atau teks yang diketik", async () => {
+    const palsu = new ManajerPalsu();
+    const tools = new BrowserTools({ resolve: () => sebagaiManager(palsu) });
+    await tools.call("browser_navigate", { url: "https://rahasia.test/token" });
+    await tools.call("browser_type", { ref: 1, text: "kata-sandi-rahasia" });
+    const gabungan = palsu.catatanAgent.join(" ");
+    expect(gabungan).not.toContain("rahasia");
+    expect(gabungan).not.toContain("http");
+    expect(gabungan).not.toContain("kata-sandi");
+    for (const label of palsu.catatanAgent) {
+      expect(label.length).toBeLessThanOrEqual(60);
+    }
   });
 });

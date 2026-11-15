@@ -35,6 +35,7 @@ import {
   type BrowserStateInfo,
   type BrowserViewportInfo,
 } from "../lib/browser";
+import { BrowserAgentChip } from "./BrowserAgentChip";
 import { BrowserTabStrip } from "./BrowserTabStrip";
 import { BrowserToolbar } from "./BrowserToolbar";
 
@@ -496,6 +497,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
         </p>
       )}
       {dialog !== "" && <p class="jk-note">{dialog}</p>}
+      <BrowserAgentChip agent={state?.agent} />
       <div class="jk-browser-view">
         {frame === undefined ? (
           <p class="jk-note jk-browser-waiting" role="status">

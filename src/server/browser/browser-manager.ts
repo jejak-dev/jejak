@@ -36,6 +36,19 @@ export interface BrowserDialogInfo {
   message: string;
 }
 
+/**
+ * Catatan aktivitas agent yang sedang berjalan (hilang setelah 4 detik).
+ *
+ * `action` hanya berisi label aksi singkat (mis. "membuka alamat"); isi
+ * halaman dan teks yang diketik tak pernah masuk ke sini.
+ */
+export interface BrowserAgentActivity {
+  /** Label aksi singkat; dibatasi 60 karakter. */
+  action: string;
+  /** Waktu pencatatan (ms). */
+  at: number;
+}
+
 export interface BrowserState {
   status: BrowserStatus;
   /** Semua tab yang terbuka. */
@@ -53,6 +66,8 @@ export interface BrowserState {
   viewport: BrowserViewport;
   /** Dialog JavaScript terakhir (hilang dalam 5 detik). */
   lastDialog?: BrowserDialogInfo;
+  /** Aktivitas agent terakhir (hilang dalam 4 detik). */
+  agent?: BrowserAgentActivity;
 }
 
 /** Satu frame screencast (JPEG base64). */
@@ -203,6 +218,8 @@ export interface BrowserManagerOptions {
   pidFileName?: string;
   /** Umur catatan dialog di state (ms); bawaan 5 detik. */
   dialogTtlMs?: number;
+  /** Umur catatan aktivitas agent di state (ms); bawaan 4 detik. */
+  agentTtlMs?: number;
 }
 
 const DEFAULT_PORT_TIMEOUT_MS = 10_000;
@@ -231,6 +248,10 @@ const MAX_SELECTION_CHARS = 100_000;
 const STATE_DEBOUNCE_MS = 50;
 /** Umur catatan dialog di state (ms). */
 const DIALOG_TTL_MS = 5_000;
+/** Umur catatan aktivitas agent di state (ms). */
+const AGENT_TTL_MS = 4_000;
+/** Batas panjang label aktivitas agent. */
+const MAX_AGENT_ACTION_CHARS = 60;
 /** Batas ukuran tampilan. */
 const VIEWPORT_MIN_WIDTH = 320;
 const VIEWPORT_MAX_WIDTH = 1920;
@@ -990,6 +1011,11 @@ export class BrowserManager {
   private viewport: BrowserViewport = { ...DEFAULT_VIEWPORT };
   private lastDialog: BrowserDialogInfo | undefined;
   private dialogTimer: ReturnType<typeof setTimeout> | undefined;
+  private readonly agentTtlMs: number;
+  /** Catatan aktivitas agent terakhir. */
+  private agent: BrowserAgentActivity | undefined;
+  /** Pembatal timer aktivitas agent (dibersihkan saat close). */
+  private agentCancel: (() => void) | undefined;
   private lastFrame: BrowserFrame | undefined;
   private screencastOn = false;
   /** Waktu frame terakhir yang diterima (ms); undefined bila belum ada. */
@@ -1044,6 +1070,7 @@ export class BrowserManager {
     this.isProcessAlive = options.isProcessAlive ?? isProcessAliveById;
     this.pidFileName = options.pidFileName ?? DEFAULT_PID_FILE_NAME;
     this.dialogTtlMs = options.dialogTtlMs ?? DIALOG_TTL_MS;
+    this.agentTtlMs = options.agentTtlMs ?? AGENT_TTL_MS;
   }
 
   /** PID proses Chrome yang sedang berjalan (undefined bila belum ada). */
@@ -1066,7 +1093,28 @@ export class BrowserManager {
       loading: aktif?.loading ?? false,
       viewport: { width: this.viewport.width, height: this.viewport.height },
       lastDialog: this.lastDialog,
+      agent: this.agent,
     };
+  }
+
+  /**
+   * Catat aktivitas agent yang sedang berjalan lalu dorong state ke pelanggan.
+   *
+   * `action` hanya label singkat (mis. "membuka alamat"); isi halaman dan teks
+   * yang diketik tak boleh masuk ke sini. Catatan hilang sendiri 4 detik
+   * setelah aktivitas terakhir (pola sama seperti catatan dialog).
+   */
+  noteAgent(action: string): void {
+    const teks = action.trim().slice(0, MAX_AGENT_ACTION_CHARS);
+    if (teks === "") return;
+    this.agent = { action: teks, at: this.now() };
+    this.agentCancel?.();
+    this.agentCancel = this.schedule(() => {
+      this.agentCancel = undefined;
+      this.agent = undefined;
+      this.notifyState();
+    }, this.agentTtlMs);
+    this.notifyState();
   }
 
   /** Daftar tab terbuka (urut sesuai pembuatan). */
@@ -2551,6 +2599,9 @@ export class BrowserManager {
       clearTimeout(this.dialogTimer);
       this.dialogTimer = undefined;
     }
+    this.agentCancel?.();
+    this.agentCancel = undefined;
+    this.agent = undefined;
     this.lastFrame = undefined;
     const client = this.client;
     this.client = undefined;
@@ -2623,6 +2674,9 @@ export class BrowserManager {
       clearTimeout(this.dialogTimer);
       this.dialogTimer = undefined;
     }
+    this.agentCancel?.();
+    this.agentCancel = undefined;
+    this.agent = undefined;
     if (client !== undefined) {
       try {
         client.close();
