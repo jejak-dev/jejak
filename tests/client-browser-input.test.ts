@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
   InputBatcher,
+  browserBitmapSize,
   browserRenderPlan,
   browserSendInput,
   browserSetViewport,
   canvasToPage,
   clampViewportSize,
   copySelectionToClipboard,
+  devicePixelRatioOf,
   keyEventFrom,
   modifiersOf,
   mouseEventFrom,
@@ -554,5 +556,109 @@ describe("browserRenderPlan", () => {
     );
     expect(event.x).toBe(320);
     expect(event.y).toBe(600);
+  });
+});
+
+/* ---------- Ketajaman layar (devicePixelRatio) ---------- */
+
+describe("rencana gambar dengan rasio piksel layar", () => {
+  test("rasio 1: ukuran gambar tetap sama dengan area", () => {
+    const rencana = browserRenderPlan({ width: 800, height: 600 }, { width: 800, height: 600 }, 1);
+    expect(rencana.dpr).toBe(1);
+    expect(rencana.draw).toEqual({ offsetX: 0, offsetY: 0, width: 800, height: 600 });
+  });
+
+  test("rasio 2: ukuran gambar dua kali area (piksel bitmap)", () => {
+    const rencana = browserRenderPlan({ width: 800, height: 600 }, { width: 800, height: 600 }, 2);
+    expect(rencana.dpr).toBe(2);
+    expect(rencana.viewport).toEqual({ width: 800, height: 600 });
+    expect(rencana.page).toEqual({ width: 800, height: 600 });
+    expect(rencana.draw).toEqual({ offsetX: 0, offsetY: 0, width: 1600, height: 1200 });
+  });
+
+  test("rasio 1,5: ukuran gambar satu setengah kali area", () => {
+    const rencana = browserRenderPlan({ width: 800, height: 600 }, { width: 800, height: 600 }, 1.5);
+    expect(rencana.dpr).toBe(1.5);
+    expect(rencana.draw).toEqual({ offsetX: 0, offsetY: 0, width: 1200, height: 900 });
+  });
+
+  test("huruf letterbox ikut dikali rasio", () => {
+    const rencana = browserRenderPlan({ width: 320, height: 600 }, { width: 300, height: 600 }, 2);
+    // Lebar pas (300 CSS px), tinggi mengikuti rasio halaman (563 CSS px).
+    expect(rencana.draw.width).toBe(600);
+    expect(rencana.draw.height).toBe(1126);
+    // Sisa ruang di atas dan bawah dibagi dua (19 CSS px -> 38 piksel).
+    expect(rencana.draw.offsetX).toBe(0);
+    expect(rencana.draw.offsetY).toBe(38);
+  });
+
+  test("klik di tengah area terpetakan ke tengah halaman", () => {
+    for (const dpr of [1, 2, 1.5]) {
+      const rencana = browserRenderPlan({ width: 800, height: 600 }, { width: 800, height: 600 }, dpr);
+      const rect: BrowserCanvasRect = { left: 0, top: 0, width: 800, height: 600 };
+      expect(canvasToPage(400, 300, rect, rencana.page, rencana.draw, rencana.dpr)).toEqual({
+        x: 400,
+        y: 300,
+      });
+      const event = mouseEventFrom(
+        "down",
+        { clientX: 400, clientY: 300 },
+        rect,
+        rencana.page,
+        undefined,
+        rencana.draw,
+        rencana.dpr,
+      );
+      expect(event.x).toBe(400);
+      expect(event.y).toBe(300);
+    }
+  });
+
+  test("klik di tengah area tetap pas saat ada letterbox", () => {
+    for (const dpr of [1, 2, 1.5]) {
+      const rencana = browserRenderPlan({ width: 320, height: 600 }, { width: 300, height: 600 }, dpr);
+      const rect: BrowserCanvasRect = { left: 0, top: 0, width: 300, height: 600 };
+      // Gambar terpusat vertikal, jadi tengah area = tengah halaman.
+      // Pembulatan huruf (19 piksel CSS) membuat selisih paling jauh 1 px.
+      const titik = canvasToPage(150, 300, rect, rencana.page, rencana.draw, rencana.dpr);
+      expect(titik.x).toBe(160);
+      expect(titik.y).toBeGreaterThanOrEqual(299);
+      expect(titik.y).toBeLessThanOrEqual(300);
+    }
+  });
+
+  test("sudut gambar terpetakan ke sudut halaman walau rasio 2", () => {
+    const rencana = browserRenderPlan({ width: 320, height: 600 }, { width: 300, height: 600 }, 2);
+    const rect: BrowserCanvasRect = { left: 0, top: 0, width: 300, height: 600 };
+    // Sudut kiri atas gambar (19 CSS px dari atas) adalah sudut halaman.
+    expect(canvasToPage(0, 19, rect, rencana.page, rencana.draw, rencana.dpr)).toEqual({
+      x: 0,
+      y: 0,
+    });
+    // Sudut kanan bawah gambar adalah sudut kanan bawah halaman.
+    expect(canvasToPage(300, 582, rect, rencana.page, rencana.draw, rencana.dpr)).toEqual({
+      x: 320,
+      y: 600,
+    });
+  });
+});
+
+describe("ukuran bitmap kanvas", () => {
+  test("bitmap mengikuti area dikali rasio layar", () => {
+    expect(browserBitmapSize({ width: 800, height: 600 }, 1)).toEqual({ width: 800, height: 600 });
+    expect(browserBitmapSize({ width: 800, height: 600 }, 2)).toEqual({ width: 1600, height: 1200 });
+    expect(browserBitmapSize({ width: 801, height: 601 }, 1.5)).toEqual({
+      width: 1202,
+      height: 902,
+    });
+  });
+
+  test("rasio aneh aman: minimal satu piksel", () => {
+    expect(browserBitmapSize({ width: 0, height: 0 }, 2)).toEqual({ width: 1, height: 1 });
+    expect(devicePixelRatioOf(undefined)).toBe(1);
+    expect(devicePixelRatioOf(0)).toBe(1);
+    expect(devicePixelRatioOf(Number.NaN)).toBe(1);
+    expect(devicePixelRatioOf(-2)).toBe(1);
+    expect(devicePixelRatioOf(2)).toBe(2);
   });
 });

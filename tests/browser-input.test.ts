@@ -70,7 +70,7 @@ describe("ukuran tampilan", () => {
     expect(override[override.length - 1]?.params).toEqual({
       width: 1920,
       height: 1200,
-      deviceScaleFactor: 1,
+      deviceScaleFactor: 2,
       mobile: false,
     });
     expect(override[override.length - 1]?.sessionId).toBe("S-T1");
@@ -103,9 +103,9 @@ describe("ukuran tampilan", () => {
     await Bun.sleep(5);
     expect(koneksi.calls("Page.startScreencast")[0]?.params).toEqual({
       format: "jpeg",
-      quality: 60,
-      maxWidth: 1280,
-      maxHeight: 800,
+      quality: 80,
+      maxWidth: 2560,
+      maxHeight: 1600,
     });
     await manager.setViewport(640, 480);
     await Bun.sleep(5);
@@ -113,9 +113,9 @@ describe("ukuran tampilan", () => {
     expect(mulai.length).toBe(2);
     expect(mulai[1]?.params).toEqual({
       format: "jpeg",
-      quality: 60,
-      maxWidth: 640,
-      maxHeight: 480,
+      quality: 80,
+      maxWidth: 1280,
+      maxHeight: 960,
     });
     expect(frames[frames.length - 1]).toEqual({ width: 640, height: 480 });
     await manager.close();
@@ -132,7 +132,7 @@ describe("ukuran tampilan", () => {
     expect(terakhir?.params).toEqual({
       width: 640,
       height: 480,
-      deviceScaleFactor: 1,
+      deviceScaleFactor: 2,
       mobile: false,
     });
     expect(terakhir?.sessionId).toBe("S-X1");

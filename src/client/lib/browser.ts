@@ -276,7 +276,12 @@ export interface BrowserBoxSize {
   height: number;
 }
 
-/** Kotak gambar frame di dalam kanvas (px CSS). */
+/**
+ * Kotak gambar frame di dalam kanvas (piksel bitmap kanvas).
+ *
+ * Piksel bitmap = piksel CSS dikali rasio piksel layar, supaya gambar yang
+ * digambar tetap tajam di layar Retina.
+ */
 export interface BrowserDrawRect {
   /** Offset gambar dari tepi kiri kanvas. */
   offsetX: number;
@@ -294,8 +299,40 @@ export interface BrowserRenderPlan {
   viewport: BrowserViewportInfo;
   /** Ukuran halaman yang dipetakan ke koordinat (px halaman). */
   page: BrowserViewportInfo;
-  /** Kotak gambar frame di dalam kanvas. */
+  /** Rasio piksel layar yang dipakai saat rencana ini dibuat. */
+  dpr: number;
+  /** Kotak gambar frame di dalam kanvas (piksel bitmap). */
   draw: BrowserDrawRect;
+}
+
+/**
+ * Rasio piksel layar yang aman.
+ *
+ * Nilai aneh (tak hingga, nol, negatif, atau tak ada) jadi 1.
+ */
+export function devicePixelRatioOf(dpr: number | undefined): number {
+  if (dpr === undefined || !Number.isFinite(dpr) || dpr <= 0) return 1;
+  return dpr;
+}
+
+/**
+ * Ukuran bitmap kanvas dari ukuran area layar (piksel CSS).
+ *
+ * Bitmap kanvas memakai piksel CSS dikali rasio piksel layar supaya isi
+ * kanvas tetap tajam di layar Retina. Ukuran tampil (CSS) kanvas tetap
+ * mengikuti area layar.
+ */
+export function browserBitmapSize(
+  box: BrowserBoxSize,
+  dpr = 1,
+): { width: number; height: number } {
+  const rasio = devicePixelRatioOf(dpr);
+  const lebar = box.width > 0 ? Math.round(box.width * rasio) : 1;
+  const tinggi = box.height > 0 ? Math.round(box.height * rasio) : 1;
+  return {
+    width: Math.max(1, lebar),
+    height: Math.max(1, tinggi),
+  };
 }
 
 /**
@@ -306,11 +343,17 @@ export interface BrowserRenderPlan {
  * Bila klem server membuat tampilan lebih kecil dari area, gambar digambar
  * dengan skala `contain` dan terpusat (tak meregang); kotak gambarnya ikut
  * dipakai untuk memetakan koordinat klik.
+ *
+ * `dpr` adalah rasio piksel layar. Ukuran gambar dalam kanvas dihitung dalam
+ * piksel bitmap (piksel CSS dikali `dpr`) supaya isi kanvas tetap tajam di
+ * layar Retina; ukuran halaman tetap memakai piksel CSS halaman.
  */
 export function browserRenderPlan(
   frame: { width: number; height: number },
   box: BrowserBoxSize,
+  dpr = 1,
 ): BrowserRenderPlan {
+  const rasio = devicePixelRatioOf(dpr);
   const viewport = clampViewportSize(box.width, box.height);
   const pageWidth = frame.width > 0 ? frame.width : viewport.width;
   const pageHeight = frame.height > 0 ? frame.height : viewport.height;
@@ -323,14 +366,21 @@ export function browserRenderPlan(
   );
   const width = Math.max(1, Math.round(pageWidth * skala));
   const height = Math.max(1, Math.round(pageHeight * skala));
+  // Huruf (sisa ruang) dihitung dalam piksel CSS lalu dibulatkan.
+  const offsetX = Math.round((boxWidth - width) / 2);
+  const offsetY = Math.round((boxHeight - height) / 2);
   return {
     viewport,
     page: { width: pageWidth, height: pageHeight },
+    dpr: rasio,
     draw: {
-      offsetX: Math.round((boxWidth - width) / 2),
-      offsetY: Math.round((boxHeight - height) / 2),
-      width,
-      height,
+      // Piksel bitmap: ukuran CSS dikali rasio piksel layar. Nilai dikali
+      // persis (tak dibulatkan) supaya kotak gambar bisa dikembalikan ke
+      // piksel CSS tanpa selisih saat memetakan koordinat mouse.
+      offsetX: offsetX * rasio,
+      offsetY: offsetY * rasio,
+      width: width * rasio,
+      height: height * rasio,
     },
   };
 }
@@ -700,6 +750,10 @@ export interface BrowserKeySource {
  * dibulatkan dan diklem ke area tampilan. Bila gambar tak mengisi kanvas
  * seluruhnya (skala contain), `gambar` memberi kotak gambar supaya huruf di
  * tepi tak ikut dihitung sebagai koordinat halaman.
+ *
+ * `gambar` memakai piksel bitmap kanvas, jadi nilainya dibagi `dpr` dulu
+ * supaya kembali ke piksel CSS. `dpr` harus sama dengan rasio yang dipakai
+ * saat kanvas digambar (lihat `browserRenderPlan`).
  */
 export function canvasToPage(
   clientX: number,
@@ -707,13 +761,21 @@ export function canvasToPage(
   rect: BrowserCanvasRect,
   viewport: BrowserViewportInfo,
   gambar?: BrowserDrawRect,
+  dpr = 1,
 ): { x: number; y: number } {
-  const offsetX = gambar?.offsetX ?? 0;
-  const offsetY = gambar?.offsetY ?? 0;
-  const lebarGambar = gambar !== undefined && gambar.width > 0 ? gambar.width : 0;
-  const tinggiGambar = gambar !== undefined && gambar.height > 0 ? gambar.height : 0;
-  const lebar = lebarGambar > 0 ? lebarGambar : rect.width > 0 ? rect.width : viewport.width;
-  const tinggi = tinggiGambar > 0 ? tinggiGambar : rect.height > 0 ? rect.height : viewport.height;
+  const rasio = devicePixelRatioOf(dpr);
+  let offsetX = 0;
+  let offsetY = 0;
+  let lebar = 0;
+  let tinggi = 0;
+  if (gambar !== undefined && gambar.width > 0 && gambar.height > 0) {
+    offsetX = gambar.offsetX / rasio;
+    offsetY = gambar.offsetY / rasio;
+    lebar = gambar.width / rasio;
+    tinggi = gambar.height / rasio;
+  }
+  if (lebar <= 0) lebar = rect.width > 0 ? rect.width : viewport.width;
+  if (tinggi <= 0) tinggi = rect.height > 0 ? rect.height : viewport.height;
   const skalaX = lebar > 0 ? viewport.width / lebar : 1;
   const skalaY = tinggi > 0 ? viewport.height / tinggi : 1;
   const x = Math.round((clientX - rect.left - offsetX) * skalaX);
@@ -793,6 +855,7 @@ export function keyEventFrom(event: BrowserKeySource): BrowserKeyEvent | undefin
  *
  * Koordinat diubah ke koordinat halaman memakai kotak kanvas, ukuran
  * tampilan halaman, dan (bila ada) kotak gambar frame di dalam kanvas.
+ * `dpr` adalah rasio piksel layar yang dipakai saat kanvas digambar.
  */
 export function mouseEventFrom(
   type: BrowserMouseType,
@@ -801,8 +864,9 @@ export function mouseEventFrom(
   viewport: BrowserViewportInfo,
   clickCount?: number,
   gambar?: BrowserDrawRect,
+  dpr = 1,
 ): BrowserMouseEvent {
-  const point = canvasToPage(event.clientX, event.clientY, rect, viewport, gambar);
+  const point = canvasToPage(event.clientX, event.clientY, rect, viewport, gambar, dpr);
   const out: BrowserMouseEvent = {
     kind: "mouse",
     type,

@@ -248,7 +248,14 @@ const DEFAULT_PORT_TIMEOUT_MS = 10_000;
 const DEFAULT_CLOSE_TIMEOUT_MS = 3_000;
 const PORT_POLL_MS = 100;
 const DEFAULT_IDLE_SCREENSHOT_MS = 2_000;
-const SCREENSHOT_QUALITY = 60;
+const SCREENCAST_QUALITY = 80;
+/**
+ * Faktor skala perangkat saat emulasi tampilan.
+ *
+ * Dua kali supaya frame yang dipancarkan tetap tajam di layar Retina;
+ * ukuran tampilan logis (piksel CSS) tak berubah.
+ */
+const DEVICE_SCALE_FACTOR = 2;
 const DEFAULT_PID_FILE_NAME = "jejak-chrome.pid";
 const ORPHAN_POLL_MS = 100;
 
@@ -2235,7 +2242,7 @@ export class BrowserManager {
         {
           width: this.viewport.width,
           height: this.viewport.height,
-          deviceScaleFactor: 1,
+          deviceScaleFactor: DEVICE_SCALE_FACTOR,
           mobile: false,
         },
         tab.sessionId,
@@ -2452,7 +2459,19 @@ export class BrowserManager {
       try {
         const result = (await client.send(
           "Page.captureScreenshot",
-          { format: "jpeg", quality },
+          {
+            format: "jpeg",
+            quality,
+            // Skala emulasi 2; clip berskala 1/2 mengembalikan ukuran logis.
+            captureBeyondViewport: false,
+            clip: {
+              x: 0,
+              y: 0,
+              width: this.viewport.width,
+              height: this.viewport.height,
+              scale: 1 / DEVICE_SCALE_FACTOR,
+            },
+          },
           tab.sessionId,
         )) as { data?: unknown } | undefined;
         data = result?.data;
@@ -2730,9 +2749,10 @@ export class BrowserManager {
         "Page.startScreencast",
         {
           format: "jpeg",
-          quality: SCREENSHOT_QUALITY,
-          maxWidth: this.viewport.width,
-          maxHeight: this.viewport.height,
+          quality: SCREENCAST_QUALITY,
+          // Frame dibuat dua kali ukuran logis supaya tajam di layar Retina.
+          maxWidth: this.viewport.width * DEVICE_SCALE_FACTOR,
+          maxHeight: this.viewport.height * DEVICE_SCALE_FACTOR,
         },
         tab.sessionId,
       );
@@ -2776,7 +2796,7 @@ export class BrowserManager {
     try {
       const result = (await client.send(
         "Page.captureScreenshot",
-        { format: "jpeg", quality: SCREENSHOT_QUALITY },
+        { format: "jpeg", quality: SCREENCAST_QUALITY },
         tab.sessionId,
       )) as { data?: string } | undefined;
       const data = result?.data;

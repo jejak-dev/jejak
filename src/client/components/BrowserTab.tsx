@@ -5,6 +5,7 @@ import { parseSse } from "../lib/sse";
 import {
   browserActivateTab,
   browserBack,
+  browserBitmapSize,
   browserClose,
   browserCloseTab,
   browserForward,
@@ -21,6 +22,7 @@ import {
   clampViewportSize,
   cobaLayarPenuh,
   copySelectionToClipboard,
+  devicePixelRatioOf,
   dialogLabel,
   fullscreenPath,
   keyEventFrom,
@@ -216,21 +218,29 @@ export function BrowserTab({ api, onToggleMaximize, maximized }: BrowserTabProps
    *
    * Kanvas memakai seluruh area (lebar dan tinggi), jadi isi kanvas tak
    * bergantung pada frame dan tak bisa membuat lingkaran umpan balik.
+   * Bitmap kanvas memakai rasio piksel layar supaya isi tetap tajam di layar
+   * Retina; ukuran tampil (CSS) kanvas tetap mengikuti area layar.
    */
   const gambarKeKanvas = useCallback((): void => {
     const canvas = canvasRef.current;
     const view = viewRef.current;
     const tersimpan = gambarRef.current;
     if (canvas === null || view === null || tersimpan === undefined) return;
+    const dpr = devicePixelRatioOf(
+      typeof window === "undefined" ? undefined : window.devicePixelRatio,
+    );
     const lebar = Math.max(1, Math.round(view.clientWidth));
     const tinggi = Math.max(1, Math.round(view.clientHeight));
-    const rencana = browserRenderPlan(tersimpan.bingkai, { width: lebar, height: tinggi });
+    const rencana = browserRenderPlan(tersimpan.bingkai, { width: lebar, height: tinggi }, dpr);
     rencanaRef.current = rencana;
-    if (canvas.width !== lebar) canvas.width = lebar;
-    if (canvas.height !== tinggi) canvas.height = tinggi;
+    const bitmap = browserBitmapSize({ width: lebar, height: tinggi }, dpr);
+    if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
+    if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
     const context = canvas.getContext("2d");
     if (context === null) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
     context.drawImage(
       tersimpan.gambar,
       rencana.draw.offsetX,
@@ -288,6 +298,28 @@ export function BrowserTab({ api, onToggleMaximize, maximized }: BrowserTabProps
       if (timer !== undefined) clearTimeout(timer);
     };
   }, [adaFrame, gambarKeKanvas]);
+
+  // Rasio piksel layar bisa berubah (jendela dipindah antarlayar); kanvas
+  // digambar ulang supaya ukuran bitmanya ikut rasio terbaru.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    let media: MediaQueryList | undefined;
+    const onUbah = (): void => {
+      pasang();
+      gambarKeKanvas();
+    };
+    const pasang = (): void => {
+      const dpr = devicePixelRatioOf(window.devicePixelRatio);
+      media?.removeEventListener("change", onUbah);
+      media = window.matchMedia(`(resolution: ${dpr}dppx)`);
+      media.addEventListener("change", onUbah);
+    };
+    pasang();
+    return () => {
+      media?.removeEventListener("change", onUbah);
+      media = undefined;
+    };
+  }, [gambarKeKanvas]);
 
   // Dukungan layar penuh peramban; status layar penuh dipantau per peristiwa.
   const bisaLayarPenuh =
@@ -422,7 +454,15 @@ export function BrowserTab({ api, onToggleMaximize, maximized }: BrowserTabProps
       if (batcher === undefined || kotak === undefined) return;
       const rencana = rencanaRef.current;
       batcher.push(
-        mouseEventFrom(type, event, kotak, viewportSekarang(), clickCount, rencana?.draw),
+        mouseEventFrom(
+          type,
+          event,
+          kotak,
+          viewportSekarang(),
+          clickCount,
+          rencana?.draw,
+          rencana?.dpr,
+        ),
       );
     },
     [kotakKanvas, viewportSekarang],

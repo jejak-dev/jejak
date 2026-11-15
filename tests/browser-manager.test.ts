@@ -293,9 +293,9 @@ describe("BrowserManager", () => {
     expect(mulai).toHaveLength(1);
     expect(mulai[0]?.params).toEqual({
       format: "jpeg",
-      quality: 60,
-      maxWidth: 1280,
-      maxHeight: 800,
+      quality: 80,
+      maxWidth: 2560,
+      maxHeight: 1600,
     });
     expect(mulai[0]?.sessionId).toBe("S1");
     unsubscribe();
@@ -389,7 +389,7 @@ describe("BrowserManager", () => {
     expect(diterima[0]?.height).toBe(800);
     const tangkap = koneksi.calls("Page.captureScreenshot");
     expect(tangkap).toHaveLength(1);
-    expect(tangkap[0]?.params).toEqual({ format: "jpeg", quality: 60 });
+    expect(tangkap[0]?.params).toEqual({ format: "jpeg", quality: 80 });
     expect(tangkap[0]?.sessionId).toBe("S1");
     await manager.close();
   });

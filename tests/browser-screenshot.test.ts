@@ -127,6 +127,29 @@ describe("screenshot untuk agent", () => {
     }
   });
 
+  test("gambar agent tetap ukuran logis: clip berskala 1/2", async () => {
+    const koneksi = new KoneksiScreenshot();
+    const manager = buatManager(koneksi);
+    try {
+      await manager.screenshotForAgent();
+      const params = koneksi.calls("Page.captureScreenshot")[0]?.params as
+        | { format?: string; quality?: number; clip?: Record<string, unknown> }
+        | undefined;
+      expect(params?.format).toBe("jpeg");
+      // Mutu awal tetap 70 (bukan mutu screencast panel).
+      expect(params?.quality).toBe(70);
+      expect(params?.clip).toEqual({
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 800,
+        scale: 0.5,
+      });
+    } finally {
+      await manager.close();
+    }
+  });
+
   test("tak ada tab aktif: galat berbahasa Indonesia", async () => {
     const koneksi = new KoneksiScreenshot();
     koneksi.tanpaTab = true;
