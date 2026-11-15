@@ -72,6 +72,13 @@ async function createOk(mgr: SessionManager, overrides: Record<string, unknown> 
   return mgr.create({ prompt: "Halo dunia", cwd: dir, ...overrides });
 }
 
+/** Status internal giliran: true selama giliran (termasuk menunggu saran) aktif. */
+function turnAktif(mgr: SessionManager, id: string): boolean | undefined {
+  const sessions = (mgr as unknown as { sessions: Map<string, { turnActive?: boolean }> })
+    .sessions;
+  return sessions.get(id)?.turnActive;
+}
+
 describe("SessionManager.create", () => {
   test("membuat sesi berjalan dan mengembalikan info", async () => {
     const mgr = manager({
@@ -2511,7 +2518,7 @@ describe("saran prompt di aliran klien", () => {
         yield { type: "suggestion", text: "Jalankan tesnya" };
       },
     };
-    const mgr = manager({ runner });
+    const mgr = manager({ runner, suggestionWaitMs: 5_000 });
     const info = await createOk(mgr);
 
     const terkumpul: SequencedEvent[] = [];
@@ -2521,13 +2528,108 @@ describe("saran prompt di aliran klien", () => {
 
     await Bun.sleep(20);
     expect(mgr.get(info.id)?.status).toBe("selesai");
-    // Sesi masih menutup giliran: pesan baru masuk antrean, bukan giliran baru.
-    expect(await mgr.send(info.id, "pesan kedua")).toEqual({ queued: true });
+    // Sesi masih menutup giliran: saran masih ditunggu dalam batas waktu.
+    expect(turnAktif(mgr, info.id)).toBe(true);
 
     lepas?.();
     await menyimak;
 
     expect(terkumpul.some((item) => item.event.type === "suggestion")).toBe(true);
     await mgr.done(info.id);
+  });
+});
+
+describe("batas menunggu saran prompt", () => {
+  test("stream yang menggantung setelah result diakhiri setelah batas", async () => {
+    let sinyal: AbortSignal | undefined;
+    const runner: AgentRunner = {
+      async *run(input) {
+        sinyal = input.signal;
+        yield { type: "result", ok: true, summary: "selesai" };
+        // Stream menggantung: tak pernah menghasilkan saran.
+        await new Promise<void>(() => {});
+      },
+    };
+    const mgr = manager({ runner, suggestionWaitMs: 40 });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    // Status dan jumlah event tak berubah oleh berakhirnya penantian saran.
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(mgr.get(info.id)?.eventCount).toBe(1);
+    // Giliran tak lagi menahan sesi.
+    expect(turnAktif(mgr, info.id)).toBe(false);
+    // Stream dihentikan lewat abort yang sama dengan penghentian giliran.
+    expect(sinyal?.aborted).toBe(true);
+
+    const events = await collect(mgr.events(info.id, {}));
+    expect(events.map((item) => item.event.type)).toEqual(["result"]);
+  });
+
+  test("pesan yang masuk saat menunggu saran langsung diproses", async () => {
+    let mulaiKedua: (() => void) | undefined;
+    const keduaMulai = new Promise<void>((resolve) => {
+      mulaiKedua = resolve;
+    });
+    let giliranKedua = false;
+    let sinyal: AbortSignal | undefined;
+    const runner: AgentRunner = {
+      async *run(input) {
+        if (giliranKedua) {
+          mulaiKedua?.();
+          yield { type: "text", text: "jawaban kedua" };
+          yield { type: "result", ok: true, summary: "selesai" };
+          return;
+        }
+        giliranKedua = true;
+        sinyal = input.signal;
+        yield { type: "result", ok: true, summary: "selesai" };
+        // Saran tak pernah datang; penantian harus dipotong pesan baru.
+        await new Promise<void>(() => {});
+      },
+    };
+    const mgr = manager({ runner, suggestionWaitMs: 10_000 });
+    const info = await createOk(mgr);
+    await Bun.sleep(20);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(turnAktif(mgr, info.id)).toBe(true);
+
+    const mulai = Date.now();
+    expect(await mgr.send(info.id, "pesan kedua")).toEqual({ queued: true });
+
+    await keduaMulai;
+    await mgr.done(info.id);
+
+    // Pesan diproses tanpa menunggu batas saran.
+    expect(Date.now() - mulai).toBeLessThan(5_000);
+    // Penantian dipotong lewat abort yang sama dengan penghentian giliran.
+    expect(sinyal?.aborted).toBe(true);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    const events = await collect(mgr.events(info.id, {}));
+    expect(
+      events.some(
+        (item) => item.event.type === "user_message" && item.event.text === "pesan kedua",
+      ),
+    ).toBe(true);
+    expect(events.filter((item) => item.event.type === "result")).toHaveLength(2);
+  });
+
+  test("saran yang tiba sebelum batas tetap diteruskan", async () => {
+    const runner: AgentRunner = {
+      async *run() {
+        yield { type: "result", ok: true, summary: "selesai" };
+        await Bun.sleep(10);
+        yield { type: "suggestion", text: "Jalankan tesnya" };
+      },
+    };
+    const mgr = manager({ runner, suggestionWaitMs: 2_000 });
+    const info = await createOk(mgr);
+    await mgr.done(info.id);
+
+    const events = await collect(mgr.events(info.id, {}));
+    expect(events.some((item) => item.event.type === "suggestion")).toBe(true);
+    expect(mgr.get(info.id)?.status).toBe("selesai");
+    expect(mgr.get(info.id)?.eventCount).toBe(1);
+    expect(turnAktif(mgr, info.id)).toBe(false);
   });
 });

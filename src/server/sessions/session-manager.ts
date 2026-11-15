@@ -203,6 +203,11 @@ export interface SessionManagerOptions {
   maxPromptLength?: number;
   now?: () => Date;
   permissionTimeoutMs?: number;
+  /**
+   * Batas menunggu saran prompt setelah pesan `result` (ms); bawaan 15 detik.
+   * Lewat batas giliran selesai dan stream dihentikan.
+   */
+  suggestionWaitMs?: number;
   store?: SessionStore;
   memoryBridge?: MemoryBridge;
   /**
@@ -310,6 +315,11 @@ interface SessionRecord {
    */
   turnActive?: boolean;
   /**
+   * Penantian saran dipotong oleh pesan yang masuk: giliran selesai tapi
+   * stream masih menunggu saran, lalu pengguna mengirim pesan baru.
+   */
+  suggestionCut?: boolean;
+  /**
    * Tujuan sesi (isi penuh; yang dikirim ke klien adalah bentuk ringkas).
    * Disimpan di kolom data JSON baris sesi, seperti `rewindTo`.
    */
@@ -364,6 +374,12 @@ const CHECKPOINT_TIMEOUT_MS = 30_000;
 const ASIDE_TIMEOUT_MS = 120_000;
 
 const MAX_QUEUED_MESSAGES = 5;
+
+/**
+ * Batas menunggu saran prompt setelah pesan `result`. Lewat batas giliran
+ * dianggap selesai: stream dihentikan agar tak menahan sesi.
+ */
+const SUGGESTION_WAIT_MS = 15_000;
 
 /** Tool penyunting berkas yang disetujui otomatis pada mode acceptEdits. */
 const EDIT_TOOL_NAMES: ReadonlySet<string> = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -566,6 +582,7 @@ export class SessionManager {
   private readonly now: () => Date;
   private readonly sessions = new Map<string, SessionRecord>();
   private readonly permissionTimeoutMs: number;
+  private readonly suggestionWaitMs: number;
   private readonly store: SessionStore | undefined;
   private readonly memoryBridge: MemoryBridge | undefined;
   private readonly onTurnEnd: SessionManagerOptions["onTurnEnd"];
@@ -608,6 +625,7 @@ export class SessionManager {
     this.maxPromptLength = options.maxPromptLength ?? DEFAULTS.maxPromptLength;
     this.now = options.now ?? (() => new Date());
     this.permissionTimeoutMs = options.permissionTimeoutMs ?? DEFAULTS.permissionTimeoutMs;
+    this.suggestionWaitMs = options.suggestionWaitMs ?? SUGGESTION_WAIT_MS;
     this.store = options.store;
     this.memoryBridge = options.memoryBridge;
     this.onTurnEnd = options.onTurnEnd;
@@ -1879,6 +1897,12 @@ export class SessionManager {
       record.info.queued = record.queue.length;
       this.persistSession(record);
       this.notify(record);
+      if (record.info.status !== "berjalan") {
+        // Giliran sudah selesai tapi masih menunggu saran: potong penantian
+        // supaya pesan tak tertahan sampai batas saran habis.
+        record.suggestionCut = true;
+        this.stopTurn(record);
+      }
       return { queued: true };
     }
 
@@ -2720,6 +2744,10 @@ export class SessionManager {
       const sendNow = record.sendNowPending === true;
       record.sendNowPending = false;
       const aborted = record.controller.signal.aborted === true;
+      // Potongan penantian saran: pesan yang masuk saat giliran selesai
+      // menunggu saran harus diproses, bukan dibuang bersama antrean.
+      const cut = record.suggestionCut === true;
+      record.suggestionCut = false;
       const stopped =
         record.info.status === "dibatalkan" || record.info.status === "gagal";
       if (sendNow && aborted && record.queue.length > 0) {
@@ -2731,7 +2759,7 @@ export class SessionManager {
           true,
           next.hidden === true ? "sistem" : undefined,
         );
-      } else if (stopped) {
+      } else if (stopped && !cut) {
         this.clearQueue(record);
         this.finishGoalOnFailure(record);
       } else if (record.queue.length > 0) {
@@ -2775,6 +2803,74 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Iterate event giliran dengan batas menunggu saran prompt.
+   *
+   * Setelah pesan `result` giliran selesai, tapi stream SDK masih membuka
+   * jalan untuk saran prompt. Iterasi lalu dibatasi `suggestionWaitMs`;
+   * lewat batas (atau saat giliran dihentikan) stream dihentikan lewat abort
+   * yang sama dengan penghentian giliran biasa. Status sesi tak diubah dan
+   * tak ada event baru yang dicatat.
+   */
+  private async *iterateTurn(
+    record: SessionRecord,
+    input: Parameters<AgentRunner["run"]>[0],
+  ): AsyncGenerator<AgentEvent, void, undefined> {
+    const iterator = this.runner.run(input)[Symbol.asyncIterator]();
+    const signal = record.controller.signal;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stop: (() => void) | undefined;
+    let batas: Promise<void> | undefined;
+
+    const hentikan = (): void => {
+      stop?.();
+    };
+
+    try {
+      while (true) {
+        const pending = iterator.next();
+        if (batas === undefined) {
+          const langkah = await pending;
+          if (langkah.done) return;
+          if (langkah.value.type === "result") {
+            // Giliran selesai; saran prompt yang menyusul dibatasi waktunya.
+            batas = new Promise<void>((resolve) => {
+              stop = resolve;
+              timer = setTimeout(resolve, this.suggestionWaitMs);
+            });
+            if (signal.aborted) hentikan();
+            else signal.addEventListener("abort", hentikan, { once: true });
+          }
+          yield langkah.value;
+          continue;
+        }
+        const tunggu = batas;
+        const hasil = await Promise.race([
+          pending.then((langkah) => ({ jenis: "event" as const, langkah })),
+          tunggu.then(() => ({ jenis: "batas" as const })),
+        ]);
+        if (hasil.jenis === "batas") {
+          // Batas habis atau giliran dihentikan: hentikan stream.
+          this.stopTurn(record);
+          return;
+        }
+        if (hasil.langkah.done) return;
+        yield hasil.langkah.value;
+      }
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      signal.removeEventListener("abort", hentikan);
+      // Tutup stream runner; penutupannya tak boleh menggagalkan giliran.
+      void iterator.return?.(undefined);
+    }
+  }
+
+  /** Hentikan giliran lewat abort yang sama dengan tombol hentikan. */
+  private stopTurn(record: SessionRecord): void {
+    if (record.controller.signal.aborted) return;
+    record.controller.abort();
+  }
+
   /** Jalur lama: event diteruskan apa adanya tanpa buffer/fallback. */
   private async runPlain(
     record: SessionRecord,
@@ -2782,7 +2878,7 @@ export class SessionManager {
   ): Promise<void> {
     let sawResult = false;
     try {
-      for await (const event of this.runner.run(input)) {
+      for await (const event of this.iterateTurn(record, input)) {
         if (sawResult) {
           // Setelah `result` yang diterima hanya saran prompt; event lain
           // diabaikan supaya giliran tak dobel.
@@ -2849,7 +2945,7 @@ export class SessionManager {
     };
 
     try {
-      for await (const event of this.runner.run(input)) {
+      for await (const event of this.iterateTurn(record, input)) {
         if (outcome !== undefined) {
           // Hasil sudah tercatat; yang diterima hanya saran prompt yang
           // datang setelah `result`.
