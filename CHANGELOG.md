@@ -6,6 +6,39 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambah
+
+- Panel Browser: Chromium terpisah dengan tampilan langsung, banyak tab, riwayat, ukuran tampilan, kontrol klik, gulir, ketik, salin, tempel, dan layar penuh. Bisa dinyalakan dari kartu Fitur di Pengaturan tanpa restart.
+- Agen memakai browser yang sama dengan panel lewat tool `browser_*` (navigasi, snapshot, klik, ketik, tab, dan `browser_screenshot`). Tool baca berjalan otomatis, aksi lewat modal izin, dan isi halaman diperlakukan sebagai data tak tepercaya.
+- Panel kanan berupa jendela bertumpuk dengan strip tab dan rel ikon vertikal berkelompok; lebarnya bisa digeser 280–1400 px mengikuti ukuran jendela.
+- Mode plan dengan kartu rencana ringkas di chat dan dokumen lengkap di panel Rencana.
+- Memory Claude Code per proyek tampil di panel Memory (baca-saja), dengan sinkron opsional memory proyek aktif Jejak ke folder memory Claude Code (hanya berkas `jejak_*`, dengan deteksi konflik).
+- Revisi memory lewat `replaces` dengan blok Sebelum/Sesudah dan tombol Terapkan revisi; berkas memory bernama terbaca dengan judul H1 dan `INDEX.md` otomatis.
+- Antrean pesan terlihat di bawah komposer, dengan Kirim sekarang dan hapus per pesan.
+- Sesi yang terputus (aplikasi berhenti) bisa dilanjutkan; Approve, Revisi, dan jawaban pertanyaan tetap aktif setelah pemulihan.
+- Komponen Select bersama menggantikan semua `<select>` bawaan peramban.
+- Konfirmasi modal untuk hapus provider, memory, worktree, checkpoint, perubahan, MCP, workspace, runner, mundur percakapan, mulai tujuan, rollback SDK, dan restart pembaruan.
+
+### Diubah
+
+- Mengganti mode izin di tengah giliran langsung berlaku untuk izin berikutnya dan yang sedang menunggu.
+- Mengganti sandbox saat sesi berjalan menghentikan giliran lalu melanjutkannya otomatis dengan mode baru.
+- Jarak antara ringkasan langkah dan teks agen dirapatkan; baris tombol salin tidak lagi memakai ruang di layout.
+- Tampilan panel Browser tajam di layar Retina (render 2×, kualitas JPEG 80, kanvas memakai rasio piksel layar).
+- Profil tanpa model bawaan memakai model pertamanya, dan catatan identitas model ditambahkan di system prompt untuk penyedia non-Claude.
+- Nama bawaan profil baru menjadi Provider dengan penomoran.
+
+### Diperbaiki
+
+- Browser menyingkirkan Chrome yatim yang menahan profil dan mencoba ulang sekali; port DevTools usang dibuang sebelum Chrome dijalankan, dan peluncuran gagal cepat bila Chrome berhenti.
+- Browser tidak meninggalkan Chrome yatim saat Jejak berhenti atau server berhenti di tengah peluncuran.
+- Back, forward, dan reload browser menunggu navigasi selesai.
+- Penjaga rahasia memory tidak lagi menolak jalur berkas panjang; ringkasan sesi memakai jalur relatif dan galat penyimpanannya dicatat.
+- Pemulihan setelah restart menutup permintaan izin yang menggantung sebagai sesi dihentikan.
+- Entitlement JIT untuk sidecar Bun agar Claude Agent SDK dapat dimuat di Jejak.app.
+- Pemutaran ulang event sesi lama dibatch agar antarmuka tidak membeku.
+- Isi memory dirender sebagai Markdown.
+
 ## [0.1.0-beta.3] - 2026-11-14
 
 ### Diubah
