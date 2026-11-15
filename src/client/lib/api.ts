@@ -27,7 +27,13 @@ import type {
 } from "../../server/memory/memory-files";
 import type { ImportResult } from "../../server/memory/memory-service";
 import type { ClaudeMemoryResponse } from "../../server/memory/claude-memory";
-import { parseClaudeMemoryResponse } from "./claude-memory";
+import {
+  parseClaudeMemoryResponse,
+  parseClaudeMemorySyncRun,
+  parseClaudeMemorySyncState,
+  type ClaudeMemorySyncRun,
+  type ClaudeMemorySyncState,
+} from "./claude-memory";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
 import type { TerminalInfo } from "../../server/terminal/terminal-manager";
@@ -606,6 +612,12 @@ export interface ApiClient {
   listMemory(params?: MemoryQuery): Promise<MemoryList>;
   /** Memory Claude Code untuk satu proyek; baca-saja. */
   listClaudeMemory(project: string): Promise<ClaudeMemoryResponse>;
+  /** Status saklar sinkron memory ke Claude Code. */
+  getClaudeMemorySync(): Promise<ClaudeMemorySyncState>;
+  /** Nyalakan atau matikan sinkron memory ke Claude Code. */
+  setClaudeMemorySync(enabled: boolean): Promise<ClaudeMemorySyncState>;
+  /** Jalankan sinkron penuh; mengembalikan ringkasan hasil. */
+  runClaudeMemorySync(): Promise<ClaudeMemorySyncRun>;
   createMemory(input: MemoryCreateInput): Promise<MemoryItem>;
   updateMemory(id: string, input: MemoryUpdateInput): Promise<MemoryItem>;
   createTerminal(cwd: string, size?: { cols: number; rows: number }): Promise<TerminalItem>;
@@ -1987,6 +1999,27 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async createMemory(input) {
       return memoryFrom(await request("POST", "/api/memory", input));
+    },
+
+    async getClaudeMemorySync() {
+      const data = await request("GET", "/api/memory/claude/sync");
+      const parsed = parseClaudeMemorySyncState(data);
+      if (parsed === null) throw new ApiError("respons server tidak valid", 200);
+      return parsed;
+    },
+
+    async setClaudeMemorySync(enabled) {
+      const data = await request("PUT", "/api/memory/claude/sync", { enabled });
+      const parsed = parseClaudeMemorySyncState(data);
+      if (parsed === null) throw new ApiError("respons server tidak valid", 200);
+      return parsed;
+    },
+
+    async runClaudeMemorySync() {
+      const data = await request("POST", "/api/memory/claude/sync/run", {});
+      const parsed = parseClaudeMemorySyncRun(data);
+      if (parsed === null) throw new ApiError("respons server tidak valid", 200);
+      return parsed;
     },
 
     async updateMemory(id, input) {

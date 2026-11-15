@@ -18,6 +18,7 @@ import {
 import { MemoryForm } from "./MemoryForm";
 import { MemoryRow } from "./MemoryRow";
 import { ClaudeMemorySection } from "./ClaudeMemorySection";
+import { ClaudeMemorySync } from "./ClaudeMemorySync";
 import { QuestionsPanel } from "./QuestionsPanel";
 
 export interface MemoryPageProps {
@@ -527,7 +528,13 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
         Memory yang dibaca agent ikut terkirim ke penyedia model.
       </p>
 
-      <ClaudeMemorySection api={api} projects={projects} />
+      <ClaudeMemorySync api={api} />
+
+      <ClaudeMemorySection
+        api={api}
+        projects={projects}
+        jejakIds={visible.map((item) => item.id)}
+      />
       </>
       )}
     </section>

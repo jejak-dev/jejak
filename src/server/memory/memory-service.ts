@@ -59,6 +59,21 @@ export interface MemoryServiceOptions {
   now?: () => Date;
 }
 
+/** Peristiwa perubahan memory; dipakai sinkron ke folder Claude Code. */
+export interface MemoryChangeEvent {
+  /** `simpan` bila isi memory berubah, `hapus` bila memory dihapus. */
+  kind: "simpan" | "hapus";
+  memory: Memory;
+}
+
+/**
+ * Pendengar perubahan memory. Kegagalan listener tak pernah menggagalkan
+ * operasi memory Jejak.
+ */
+export type MemoryChangeListener = (
+  event: MemoryChangeEvent,
+) => void | Promise<void>;
+
 export interface CreateMemoryInput {
   layer?: unknown;
   projectKey?: unknown;
@@ -211,11 +226,30 @@ export class MemoryService {
   private readonly store: MemoryStore;
   private readonly cwd: string | undefined;
   private readonly now: () => Date;
+  private listener: MemoryChangeListener | undefined;
 
   constructor(options: MemoryServiceOptions) {
     this.store = options.store;
     this.cwd = options.cwd;
     this.now = options.now ?? (() => new Date());
+  }
+
+  /**
+   * Pasang pendengar perubahan memory (mis. sinkron ke folder Claude Code).
+   * Kegagalan pendengar tak menggagalkan operasi memory.
+   */
+  setChangeListener(listener: MemoryChangeListener | undefined): void {
+    this.listener = listener;
+  }
+
+  private async notify(event: MemoryChangeEvent): Promise<void> {
+    const listener = this.listener;
+    if (listener === undefined) return;
+    try {
+      await listener(event);
+    } catch {
+      // Sinkron luar tak boleh menggagalkan operasi memory Jejak.
+    }
   }
 
   private clock(): string {
@@ -354,7 +388,9 @@ export class MemoryService {
       decidedAt: null,
       replaces: null,
     };
-    return this.store.create(memory);
+    const created = await this.store.create(memory);
+    await this.notify({ kind: "simpan", memory: created });
+    return created;
   }
 
   async create(input: CreateMemoryInput): Promise<Memory> {
@@ -381,7 +417,9 @@ export class MemoryService {
       decidedAt: null,
       replaces: null,
     };
-    return this.store.create(memory);
+    const created = await this.store.create(memory);
+    await this.notify({ kind: "simpan", memory: created });
+    return created;
   }
 
   /**
@@ -727,6 +765,14 @@ export class MemoryService {
     return this.withStale(memory);
   }
 
+  /**
+   * Semua memory proyek (semua status) tanpa batas tampilan; dipakai sinkron
+   * penuh ke folder memory Claude Code.
+   */
+  async listProjectMemories(limit = 5000): Promise<Memory[]> {
+    return this.store.list({ layer: "project", limit });
+  }
+
   /** Menghitung ulang tanda basi tanpa menulis apa pun ke indeks. */
   private async withStale(memory: Memory): Promise<Memory> {
     const reason = await this.staleReason(memory);
@@ -793,7 +839,11 @@ export class MemoryService {
     }
 
     next.updatedAt = this.clock();
-    return this.store.update(next);
+    const updated = await this.store.update(next);
+    if (updated.status === "active") {
+      await this.notify({ kind: "simpan", memory: updated });
+    }
+    return updated;
   }
 
   private async transition(
@@ -853,6 +903,7 @@ export class MemoryService {
       if (updated === null) {
         throw notFound(id);
       }
+      await this.notify({ kind: "simpan", memory: updated });
       return updated;
     }
     return this.acceptRevision(current);
@@ -889,6 +940,7 @@ export class MemoryService {
     // Target ditulis lebih dulu; baru berkas usulan dihapus.
     const written = await this.store.update(updated);
     await this.store.delete(proposal.id);
+    await this.notify({ kind: "simpan", memory: written });
     return written;
   }
 
@@ -909,8 +961,10 @@ export class MemoryService {
     return { id: target.id, title: target.title, body: target.body };
   }
 
-  archive(id: string): Promise<Memory> {
-    return this.transition(id, ["active"], "archived", "confirmed", false);
+  async archive(id: string): Promise<Memory> {
+    const archived = await this.transition(id, ["active"], "archived", "confirmed", false);
+    await this.notify({ kind: "hapus", memory: archived });
+    return archived;
   }
 
   async delete(id: string): Promise<void> {
@@ -922,5 +976,6 @@ export class MemoryService {
     if (!removed) {
       throw notFound(id);
     }
+    await this.notify({ kind: "hapus", memory: current });
   }
 }

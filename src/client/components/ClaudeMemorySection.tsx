@@ -2,7 +2,6 @@ import { useEffect, useState } from "preact/hooks";
 import type { VNode } from "preact";
 import { ApiError, type ApiClient } from "../lib/api";
 import {
-  claudeMemoryCount,
   claudeMemoryDescriptionLine,
   claudeMemoryTypeLabel,
   type ClaudeMemoryItem,
@@ -15,6 +14,8 @@ export interface ClaudeMemorySectionProps {
   api: ApiClient;
   /** Kunci proyek yang dibaca; biasanya folder kerja sesi. */
   projects: string[];
+  /** Id memory Jejak yang tampil di daftar Jejak; berkasnya disembunyikan. */
+  jejakIds?: readonly string[];
 }
 
 /** Keadaan satu proyek pada tampilan bagian memory Claude Code. */
@@ -28,6 +29,8 @@ export interface ClaudeMemoryProjectState {
 /** Tampilan bagian memory Claude Code tanpa pemuatan data. */
 export interface ClaudeMemorySectionViewProps {
   states: ClaudeMemoryProjectState[];
+  /** Id memory Jejak yang sudah tampil di daftar Jejak. */
+  jejakIds?: readonly string[];
 }
 
 const EMPTY_MESSAGE = "Belum ada memory Claude Code untuk proyek ini.";
@@ -36,6 +39,17 @@ function errorMessage(caught: unknown): string {
   if (caught instanceof ApiError) return caught.message;
   if (caught instanceof Error && caught.message !== "") return caught.message;
   return "memory Claude Code tidak dapat dimuat";
+}
+
+/**
+ * True bila berkas ini ditulis Jejak dan memory aslinya sudah tampil di
+ * daftar Jejak; berkas seperti itu disembunyikan agar tak Appear dua kali.
+ */
+export function isDuplicateJejakItem(
+  item: ClaudeMemoryItem,
+  jejakIds: readonly string[],
+): boolean {
+  return item.jejakId !== undefined && jejakIds.includes(item.jejakId);
 }
 
 /** Baris memory Claude Code; isi dibuka lewat `details` (baca-saja). */
@@ -47,6 +61,9 @@ export function ClaudeMemoryRow({ item }: { item: ClaudeMemoryItem }): VNode {
         <span class="jk-memory-title">{item.title}</span>
         {description !== "" && <span class="jk-claude-desc">{description}</span>}
         <span class="jk-claude-type">{claudeMemoryTypeLabel(item.type)}</span>
+        {item.jejakId !== undefined && (
+          <span class="jk-claude-badge">Jejak</span>
+        )}
         <span class="jk-claude-time">{formatRelative(item.updatedAt, new Date())}</span>
         <span class="jk-claude-origin">Claude</span>
       </summary>
@@ -62,6 +79,7 @@ export function ClaudeMemoryRow({ item }: { item: ClaudeMemoryItem }): VNode {
 
 export function ClaudeMemorySectionView(props: ClaudeMemorySectionViewProps): VNode {
   const states = props.states;
+  const jejakIds = props.jejakIds ?? [];
   return (
     <section class="jk-claude-memory" aria-labelledby="jk-claude-memory-title">
       <header class="jk-claude-head">
@@ -76,8 +94,11 @@ export function ClaudeMemorySectionView(props: ClaudeMemorySectionViewProps): VN
       )}
 
       {states.map((state) => {
-        const dirs = state.response?.dirs ?? [];
-        const total = state.response === undefined ? 0 : claudeMemoryCount(state.response);
+        const dirs = (state.response?.dirs ?? []).map((dir) => ({
+          ...dir,
+          items: dir.items.filter((item) => !isDuplicateJejakItem(item, jejakIds)),
+        }));
+        const total = dirs.reduce((sum, dir) => sum + dir.items.length, 0);
         return (
           <div class="jk-claude-project" key={state.project}>
             {states.length > 1 && (
@@ -114,6 +135,7 @@ export function ClaudeMemorySectionView(props: ClaudeMemorySectionViewProps): VN
 export function ClaudeMemorySection({
   api,
   projects,
+  jejakIds,
 }: ClaudeMemorySectionProps): VNode {
   const [states, setStates] = useState<ClaudeMemoryProjectState[]>([]);
 
@@ -155,5 +177,5 @@ export function ClaudeMemorySection({
     };
   }, [api, projects]);
 
-  return <ClaudeMemorySectionView states={states} />;
+  return <ClaudeMemorySectionView states={states} {...(jejakIds === undefined ? {} : { jejakIds })} />;
 }

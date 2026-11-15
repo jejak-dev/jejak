@@ -52,6 +52,30 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Status saklar sinkron ke Claude Code. */
+export interface ClaudeMemorySyncState {
+  /** True bila sinkron menyala. */
+  enabled: boolean;
+  /** True bila saklar dikunci variabel lingkungan. */
+  locked: boolean;
+}
+
+/** Ringkasan hasil sinkron penuh. */
+export interface ClaudeMemorySyncRun {
+  /** Berkas baru yang ditulis. */
+  ditulis: number;
+  /** Berkas lama yang diperbarui. */
+  diperbarui: number;
+  /** Memory yang dilewati. */
+  dilewati: number;
+  /** Berkas Jejak yang dihapus. */
+  dihapus: number;
+  /** Nama berkas yang bentrok dengan suntingan sisi Claude. */
+  konflik: string[];
+  /** Memory yang ditolak karena memuat rahasia. */
+  ditolakRahasia: number;
+}
+
 const TYPES: readonly ClaudeMemoryType[] = [
   "user",
   "feedback",
@@ -78,6 +102,9 @@ function itemFrom(value: unknown): ClaudeMemoryItem | null {
     body,
     updatedAt,
     truncated: value.truncated === true,
+    ...(typeof value.jejakId === "string" && value.jejakId !== ""
+      ? { jejakId: value.jejakId }
+      : {}),
   };
 }
 
@@ -119,4 +146,52 @@ export function parseClaudeMemoryResponse(value: unknown): ClaudeMemoryResponse 
 /** Jumlah item pada seluruh folder yang dicek. */
 export function claudeMemoryCount(response: ClaudeMemoryResponse): number {
   return response.dirs.reduce((total, dir) => total + dir.items.length, 0);
+}
+
+/** Baca status saklar sinkron; bentuk asing ditolak. */
+export function parseClaudeMemorySyncState(
+  raw: unknown,
+): ClaudeMemorySyncState | null {
+  if (!isRecord(raw)) return null;
+  if (typeof raw.enabled !== "boolean" || typeof raw.locked !== "boolean") return null;
+  return { enabled: raw.enabled, locked: raw.locked };
+}
+
+/** Baca ringkasan sinkron; bentuk asing ditolak. */
+export function parseClaudeMemorySyncRun(
+  raw: unknown,
+): ClaudeMemorySyncRun | null {
+  if (!isRecord(raw)) return null;
+  const { ditulis, diperbarui, dilewati, ditolakRahasia } = raw;
+  if (
+    typeof ditulis !== "number" ||
+    typeof diperbarui !== "number" ||
+    typeof dilewati !== "number" ||
+    typeof ditolakRahasia !== "number"
+  ) {
+    return null;
+  }
+  const konflik = Array.isArray(raw.konflik)
+    ? raw.konflik.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  return {
+    ditulis,
+    diperbarui,
+    dilewati,
+    ditolakRahasia,
+    konflik,
+    dihapus: typeof raw.dihapus === "number" ? raw.dihapus : 0,
+  };
+}
+
+/** Ringkasan hasil sinkron dalam satu kalimat. */
+export function claudeSyncSummaryLine(run: ClaudeMemorySyncRun): string {
+  const parts = [
+    `${run.ditulis} ditulis`,
+    `${run.diperbarui} diperbarui`,
+    `${run.dihapus} dihapus`,
+    `${run.dilewati} dilewati`,
+  ];
+  if (run.ditolakRahasia > 0) parts.push(`${run.ditolakRahasia} ditolak (rahasia)`);
+  return parts.join(", ");
 }

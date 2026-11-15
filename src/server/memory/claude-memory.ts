@@ -32,6 +32,8 @@ export interface ClaudeMemoryItem {
   updatedAt: string;
   /** True bila isi berkas dipotong karena melebihi batas ukuran. */
   truncated: boolean;
+  /** Id memory Jejak bila berkas ini ditulis Jejak (frontmatter `jejak_id`). */
+  jejakId?: string;
 }
 
 export interface ClaudeMemoryListing {
@@ -103,7 +105,7 @@ export function claudeMemoryDir(configRoot: string, projectPath: string): string
 }
 
 /** Path absolut ternormalisasi; sama dengan input bila tak bisa di-resolve. */
-function canonical(path: string): string {
+export function canonicalPath(path: string): string {
   const absolute = resolve(path);
   try {
     return realpathSync(absolute);
@@ -129,7 +131,7 @@ function unquote(raw: string): string {
  * Frontmatter Claude Code: kunci sederhana di baris atas dan blok
  * `metadata:` dengan kunci anak yang menjorot. Kunci tak dikenal diabaikan.
  */
-function parseFrontmatter(
+export function parseFrontmatter(
   text: string,
 ): { fields: Map<string, string>; body: string } | null {
   const normalized = text.replace(/\r\n/g, "\n");
@@ -202,7 +204,11 @@ export function parseClaudeMemory(
   }
   const name = unquote(split.fields.get("name") ?? "");
   const description = unquote(split.fields.get("description") ?? "");
-  return {
+  // Berkas yang ditulis Jejak memuat `jejak_id` di frontmatter.
+  const jejakRaw = unquote(
+    split.fields.get("metadata.jejak_id") ?? split.fields.get("jejak_id") ?? "",
+  );
+  const item: ClaudeMemoryItem = {
     file: fileName,
     title: name === "" ? fallbackTitle : name,
     description,
@@ -211,6 +217,8 @@ export function parseClaudeMemory(
     updatedAt,
     truncated: false,
   };
+  if (jejakRaw !== "") item.jejakId = jejakRaw;
+  return item;
 }
 
 /** Baca isi berkas dengan batas ukuran; True bila isinya dipotong. */
@@ -365,7 +373,7 @@ export function claudeProjectEntries(
   };
 
   for (const seed of seeds) {
-    const path = canonical(seed.cwd);
+    const path = canonicalPath(seed.cwd);
     const aliases = path === seed.cwd ? [] : [path];
     const altPaths = path === seed.cwd ? [] : [seed.cwd];
     // Repo asal hanya relevan bila folder kerja memang berada di dalam
@@ -375,7 +383,7 @@ export function claudeProjectEntries(
       worktree !== undefined &&
       (seed.cwd === worktree.path || seed.cwd.startsWith(`${worktree.path}/`));
     const originPath =
-      isWorktree && worktree !== undefined ? canonical(worktree.repoRoot) : undefined;
+      isWorktree && worktree !== undefined ? canonicalPath(worktree.repoRoot) : undefined;
     const originAltPath =
       originPath === undefined || worktree === undefined
         ? undefined
@@ -394,7 +402,7 @@ export function claudeProjectEntries(
 
   for (const cwd of extraCwds) {
     if (cwd.trim() === "") continue;
-    const path = canonical(cwd);
+    const path = canonicalPath(cwd);
     const aliases = path === cwd ? [] : [path];
     const altPaths = path === cwd ? [] : [cwd];
     push({
@@ -419,8 +427,8 @@ export function resolveClaudeProject(
   if (direct !== undefined) return direct;
   const alias = entries.find((entry) => entry.aliases?.includes(key) === true);
   if (alias !== undefined) return alias;
-  const canonicalKey = canonical(key);
-  return entries.find((entry) => canonical(entry.path) === canonicalKey);
+  const canonicalKey = canonicalPath(key);
+  return entries.find((entry) => canonicalPath(entry.path) === canonicalKey);
 }
 
 /** Label folder tanpa membocorkan struktur disk penuh. */

@@ -4383,6 +4383,51 @@ h2.jk-md-heading {
   margin-bottom: 0;
 }
 
+/* Sinkron memory ke Claude Code */
+
+.jk-claude-sync {
+  margin-top: 22px;
+}
+
+.jk-claude-sync-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.jk-claude-sync-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.jk-claude-sync-text .jk-note {
+  margin: 0 0 4px;
+}
+
+.jk-claude-sync-result {
+  margin-top: 10px;
+}
+
+.jk-claude-sync-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--t2);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.jk-claude-badge {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--t2);
+  font-size: 11px;
+}
+
 @media (max-width: 760px) {
   .jk-memory-add {
     margin-left: 0;

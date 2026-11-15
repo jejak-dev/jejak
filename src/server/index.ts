@@ -56,7 +56,15 @@ import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
 import { claudeMemoryRoutes } from "./routes/claude-memory";
+import { claudeMemorySyncRoutes } from "./routes/claude-memory-sync";
+import { ClaudeMemorySync } from "./memory/claude-memory-sync";
 import {
+  defaultMemorySyncStore,
+  resolveMemorySync,
+  type MemorySyncStore,
+} from "./memory/memory-sync-store";
+import {
+  claudeConfigRoot,
   claudeProjectEntries,
   type ClaudeProjectEntry,
   type ClaudeProjectSeed,
@@ -198,6 +206,8 @@ export interface CreateAppOptions {
   browser?: BrowserManager;
   /** Penyimpanan status fitur (terminal, browser); default berkas di JEJAK_HOME. */
   features?: FeatureStore;
+  /** Penyimpanan status sinkron memory ke Claude Code; default berkas di JEJAK_HOME. */
+  memorySync?: MemorySyncStore;
   /** Layanan peluncur perintah; tanpa opsi ini dibuat dari store bawaan. */
   runnerService?: RunnerService;
   /** Lokasi berkas `runner.json`; default `<jejakHome(env)>/runner.json`. */
@@ -461,6 +471,28 @@ export function createApp(options: CreateAppOptions = {}) {
     return claudeProjectEntries(seeds, [options.cwd ?? process.cwd()]);
   };
 
+  // Sinkron memory proyek Jejak ke folder memory Claude Code. Saklar default
+  // mati; env `JEJAK_CLAUDE_SYNC` mengunci nilainya.
+  const memorySyncStore = options.memorySync ?? defaultMemorySyncStore(env);
+  const claudeSync = new ClaudeMemorySync({
+    configRoot: claudeConfigRoot(env, options.home),
+    enabled: () => resolveMemorySync(env, memorySyncStore.get()).enabled,
+    projects: claudeProjects,
+    ...(options.memory === undefined
+      ? {}
+      : { memories: () => options.memory?.listProjectMemories() ?? Promise.resolve([]) }),
+  });
+  // Perubahan memory memicu sinkron per peristiwa; kegagalannya tak pernah
+  // menggagalkan operasi memory Jejak.
+  const memoryService = options.memory;
+  if (memoryService !== undefined) {
+    memoryService.setChangeListener((event) =>
+      event.kind === "simpan"
+        ? claudeSync.apply(event.memory).then(() => undefined)
+        : claudeSync.remove(event.memory).then(() => undefined),
+    );
+  }
+
   // Peluncur perintah: folder yang boleh dipakai adalah folder sesi aktif
   // (dan worktree miliknya); perintah hanya dijalankan lewat terminal.
   const runnerService =
@@ -597,6 +629,14 @@ export function createApp(options: CreateAppOptions = {}) {
         projects: claudeProjects,
         env,
         ...(options.home === undefined ? {} : { home: options.home }),
+      }),
+    )
+    .use(
+      claudeMemorySyncRoutes({
+        store: memorySyncStore,
+        env,
+        sync: claudeSync,
+        audit: options.audit,
       }),
     )
     .use(
