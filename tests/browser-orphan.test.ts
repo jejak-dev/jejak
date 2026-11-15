@@ -4,6 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  BrowserError,
   BrowserManager,
   type BrowserProcess,
   type KillProcess,
@@ -190,5 +191,79 @@ describe("Chrome yatim", () => {
     expect(readFileSync(join(profil, "jejak-chrome.pid"), "utf8").trim()).toBe("4242");
     await manager.close();
     expect(existsSync(join(profil, "jejak-chrome.pid"))).toBe(false);
+  });
+});
+
+describe("shutdownSync", () => {
+  test("proses yang baru lahir saat peluncuran tertunda langsung dibunuh", async () => {
+    const kejadian: string[] = [];
+    const profil = join(dir, "browser-profile");
+    const proses = prosesPalsu(kejadian);
+    let manager!: BrowserManager;
+    manager = new BrowserManager({
+      env: { JEJAK_HOME: dir, JEJAK_CHROME_PATH: "/fake/chrome" },
+      platform: "linux",
+      exists: (path) => path === "/fake/chrome",
+      // Peluncuran tertunda: proses dimatikan justru saat Chrome dijalankan.
+      spawn: () => {
+        manager.shutdownSync();
+        return proses;
+      },
+      connect: async () => new KoneksiPalsu(kejadian),
+      readDevToolsPort: () => ({ port: 9222, path: "/devtools/browser/abc" }),
+      readCommandLine: () => undefined,
+      killProcess: () => undefined,
+      isProcessAlive: () => true,
+    });
+
+    await expect(manager.ensure()).rejects.toThrow(BrowserError);
+    // Chrome yang baru dilunc tak boleh lolos: prosesnya dibunuh.
+    expect(proses.jumlahKill).toBe(1);
+    expect(kejadian).toContain("kill:SIGTERM");
+    // Berkas pid proses yang baru lahir dibuang.
+    expect(existsSync(join(profil, "jejak-chrome.pid"))).toBe(false);
+  });
+
+  test("ensure() setelah shutdown ditolak", async () => {
+    const kejadian: string[] = [];
+    const { manager } = buatManajer(kejadian);
+    await manager.ensure();
+    manager.shutdownSync();
+    let galat: unknown;
+    try {
+      await manager.ensure();
+    } catch (error) {
+      galat = error;
+    }
+    expect(galat).toBeInstanceOf(BrowserError);
+    expect((galat as BrowserError).code).toBe("mati");
+  });
+
+  test("close() biasa tak mengunci manajer: browser bisa dinyalakan ulang", async () => {
+    const kejadian: string[] = [];
+    const profil = join(dir, "browser-profile");
+    const proses1 = prosesPalsu(kejadian, 4242);
+    const proses2 = prosesPalsu(kejadian, 4343);
+    let dipakai = 0;
+    const manager = new BrowserManager({
+      env: { JEJAK_HOME: dir, JEJAK_CHROME_PATH: "/fake/chrome" },
+      platform: "linux",
+      exists: (path) => path === "/fake/chrome",
+      spawn: () => {
+        dipakai += 1;
+        return dipakai === 1 ? proses1 : proses2;
+      },
+      connect: async () => new KoneksiPalsu(kejadian),
+      readDevToolsPort: () => ({ port: 9222, path: "/devtools/browser/abc" }),
+      readCommandLine: () => undefined,
+      killProcess: () => undefined,
+      isProcessAlive: () => true,
+    });
+    await manager.ensure();
+    await manager.close();
+    // Penutup biasa tak menyetel penanda: Chrome boleh dijalankan lagi.
+    await manager.ensure();
+    expect(dipakai).toBe(2);
+    expect(readFileSync(join(profil, "jejak-chrome.pid"), "utf8").trim()).toBe("4343");
   });
 });

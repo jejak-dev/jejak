@@ -36,6 +36,14 @@ export class FeatureGate<T> {
     this.enabled = true;
   }
 
+  /**
+   * Manajer yang sudah dibuat; `undefined` bila fitur mati atau belum pernah
+   * dipakai. Tak pernah membuat manajer baru (dipakai jalur keluar proses).
+   */
+  peek(): T | undefined {
+    return this.manager;
+  }
+
   /** Matikan fitur: manajer ditutup dan dilepas. */
   async disable(): Promise<void> {
     this.enabled = false;

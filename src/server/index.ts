@@ -768,7 +768,12 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   if (gates !== undefined) {
     closers.push(() => {
       void gates.terminal.shutdown().catch(() => undefined);
+      // Manajer diambil lebih dulu: `shutdown()` melepasnya dari gerbang.
+      const browser = gates.browser.peek();
       void gates.browser.shutdown().catch(() => undefined);
+      // Penanda permanen: setelah keluar, browser tak boleh menyalakan
+      // Chrome lagi (Chrome yang baru luncur tak boleh jadi yatim).
+      browser?.shutdownSync();
     });
   }
   // Penutup yang boleh menunggu (dipakai `stop()`).

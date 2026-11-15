@@ -354,6 +354,14 @@ function elemenTidakDitemukan(): BrowserError {
   return new BrowserError("Elemen tidak ditemukan; ambil snapshot baru.", "tidak-valid");
 }
 
+/** Galat saat manajer sudah dimatikan lewat jalur keluar proses. */
+function browserMati(): BrowserError {
+  return new BrowserError(
+    "Browser sudah dimatikan; jalankan ulang aplikasi.",
+    "mati",
+  );
+}
+
 /** Ambil titik tengah dari hasil skrip aksi; undefined bila tak ada. */
 function titikDari(
   hasil: Record<string, unknown> | undefined,
@@ -998,6 +1006,13 @@ export class BrowserManager {
   private readonly isProcessAlive: IsProcessAlive;
   private readonly pidFileName: string;
   private readonly dialogTtlMs: number;
+  /**
+   * Penanda permanen: manajer sudah dimatikan lewat jalur keluar proses.
+   *
+   * Setelah aktif, manajer tak boleh menyalakan Chrome lagi; Chrome yang
+   * baru diligentakkan saat peluncuran tetap dibunuh supaya tak jadi yatim.
+   */
+  private sudahDimatikan = false;
 
   private client: CdpConnection | undefined;
   private process: BrowserProcess | undefined;
@@ -1140,6 +1155,8 @@ export class BrowserManager {
 
   /** Pastikan Chrome berjalan; luncurkan bila belum. */
   async ensure(): Promise<void> {
+    // Manajer yang sudah dimatikan tak boleh menyalakan Chrome lagi.
+    if (this.sudahDimatikan) throw browserMati();
     if (this.client !== undefined) return;
     if (!this.orphanChecked) {
       this.orphanChecked = true;
@@ -1238,6 +1255,7 @@ export class BrowserManager {
   }
 
   private async start(): Promise<void> {
+    if (this.sudahDimatikan) throw browserMati();
     const command = locateChrome(this.env, this.platform, this.exists);
     if (command === undefined) {
       throw new BrowserError(
@@ -1260,11 +1278,25 @@ export class BrowserManager {
     }
     this.process = proc;
     this.writePidFile(profileDir, proc.pid);
+    // Manajer dimatikan saat Chrome sedang dijalankan: proses baru ini tak
+    // boleh lolos sebagai yatim, jadi langsung dibunuh dan berkas pid dibuang.
+    if (this.sudahDimatikan) {
+      this.bunuhProses(proc);
+      this.process = undefined;
+      this.removePidFile(profileDir);
+      throw browserMati();
+    }
     void proc.exited
       .then(() => this.handleExit(proc))
       .catch(() => this.handleExit(proc));
 
     const endpoint = await this.waitForPort(profileDir);
+    if (this.sudahDimatikan) {
+      await this.terminate(proc);
+      this.process = undefined;
+      this.removePidFile(profileDir);
+      throw browserMati();
+    }
     if (endpoint === undefined) {
       await this.terminate(proc);
       this.process = undefined;
@@ -1278,7 +1310,19 @@ export class BrowserManager {
     } catch {
       await this.terminate(proc);
       this.process = undefined;
+      if (this.sudahDimatikan) throw browserMati();
       throw new BrowserError("Gagal terhubung ke browser.", "gagal");
+    }
+    if (this.sudahDimatikan) {
+      try {
+        client.close();
+      } catch {
+        // Soket sudah tertutup.
+      }
+      await this.terminate(proc);
+      this.process = undefined;
+      this.removePidFile(profileDir);
+      throw browserMati();
     }
     this.client = client;
     try {
@@ -1295,6 +1339,8 @@ export class BrowserManager {
   private async waitForPort(profileDir: string): Promise<DevToolsEndpoint | undefined> {
     const deadline = Date.now() + this.portTimeoutMs;
     while (Date.now() < deadline) {
+      // Manajer dimatikan saat menunggu: tak perlu menunggu port lagi.
+      if (this.sudahDimatikan) return undefined;
       const endpoint = this.readPort(profileDir);
       if (endpoint !== undefined) return endpoint;
       await Bun.sleep(PORT_POLL_MS);
@@ -2577,8 +2623,25 @@ export class BrowserManager {
   killSync(): void {
     const proc = this.process;
     if (proc === undefined) return;
+    this.bunuhProses(proc);
+  }
+
+  /**
+   * Matikan browser untuk jalur keluar proses: bunuh Chrome seketika lalu
+   * tandai manajer supaya tak pernah menyalakan Chrome lagi.
+   *
+   * Penanda tak pernah dihapus: setelah proses Jejak keluar, Chrome yang
+   * baru saja luncur tak boleh lolos menjadi yatim.
+   */
+  shutdownSync(): void {
+    this.killSync();
+    this.sudahDimatikan = true;
+  }
+
+  /** Bunuh satu proses Chrome; diam-diam bila prosesnya sudah berhenti. */
+  private bunuhProses(proc: BrowserProcess, signal: number | NodeJS.Signals = "SIGTERM"): void {
     try {
-      proc.kill("SIGTERM");
+      proc.kill(signal);
     } catch {
       // Proses sudah berhenti.
     }
