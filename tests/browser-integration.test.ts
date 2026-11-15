@@ -60,6 +60,8 @@ const HALAMAN = `<!doctype html>
   <body>
     <button id="tombol" onclick="document.title = 'diklik'">Klik</button>
     <input id="kotak" />
+    <a id="tautan" href="/kedua" style="position: absolute; left: 100px; top: 300px; width: 200px; height: 40px">Tautan</a>
+    <input id="sandi" type="password" value="rahasia123" style="position: absolute; left: 100px; top: 360px; width: 200px; height: 40px" />
   </body>
 </html>`;
 
@@ -203,6 +205,64 @@ describe("integrasi browser (Chrome nyata)", () => {
         const ditutup = await manager.closeTab(denganTab.activeId ?? "");
         expect(ditutup.tabs.length).toBe(sebelum);
         expect(ditutup.activeId).toBeDefined();
+      } finally {
+        cdp?.tutup();
+        await manager.close();
+        server.stop();
+        await rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  test.skipIf(!boleh)(
+    "snapshot menemukan elemen; klik dan ketik lewat ref bekerja; sandi tak bocor",
+    async () => {
+      const dir = await mkdtemp(join(tmpdir(), "jejak-browser-integrasi-"));
+      const profil = join(dir, "browser-profile");
+      const server = jalankanServer();
+      const manager = new BrowserManager({
+        env: { JEJAK_HOME: dir, JEJAK_CHROME_PATH: chrome },
+        platform: process.platform,
+        exists: existsSync,
+      });
+      let cdp: Awaited<ReturnType<typeof hubungkanCdp>> | undefined;
+      try {
+        await manager.ensure();
+        await manager.navigate(`http://localhost:${server.port}/`);
+        await tungguSelesai(manager);
+        cdp = await hubungkanCdp(profil);
+
+        const snap = await manager.snapshot();
+        expect(snap.url).toContain("localhost");
+        expect(snap.title).toBe("jejak-satu");
+        expect(snap.text).toContain("Klik");
+        expect(snap.elements.length).toBeGreaterThanOrEqual(4);
+
+        const tombol = snap.elements.find((el) => el.name === "Klik");
+        expect(tombol).toBeDefined();
+        const kotak = snap.elements.find((el) => el.tag === "input" && el.type === "text");
+        expect(kotak).toBeDefined();
+        const sandi = snap.elements.find((el) => el.type === "password");
+        expect(sandi).toBeDefined();
+        // Isi kata sandi tak pernah ikut keluar dari snapshot.
+        expect(JSON.stringify(snap)).not.toContain("rahasia123");
+
+        // Klik tombol lewat ref: judul halaman berubah.
+        await manager.clickRef(tombol?.ref ?? 0);
+        expect(await baca(cdp, "document.title")).toBe("diklik");
+
+        // Ketik lewat ref: nilai input terisi.
+        await manager.typeRef(kotak?.ref ?? 0, "abc");
+        expect(await baca(cdp, "document.getElementById('kotak').value")).toBe("abc");
+
+        // Tak ada proses browser-profile yang tertinggal.
+        const pid = manager.pid;
+        await manager.close();
+        if (pid !== undefined) {
+          await tungguSyarat(() => !hidup(pid), 5_000);
+          expect(hidup(pid)).toBe(false);
+        }
+        expect(prosesDengan(profil)).toEqual([]);
       } finally {
         cdp?.tutup();
         await manager.close();

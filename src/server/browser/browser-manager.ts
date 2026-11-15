@@ -109,6 +109,42 @@ export interface BrowserTextInput {
   text: string;
 }
 
+/** Satu elemen interaktif yang terlihat di halaman. */
+export interface PageElement {
+  /** Nomor acuan elemen (1..n) dari snapshot terakhir. */
+  ref: number;
+  /** Nama tag HTML (huruf kecil). */
+  tag: string;
+  /** Peran elemen (atribut `role` atau peran bawaan). */
+  role?: string;
+  /** Nama yang dilihat pengguna; sudah dipotong. */
+  name: string;
+  /** Jenis input (hanya untuk `input`). */
+  type?: string;
+  /** Isi input; tak pernah diisi untuk input kata sandi. */
+  value?: string;
+  /** Alamat tautan (hanya untuk `a[href]`). */
+  href?: string;
+  /** Titik tengah elemen dalam piksel viewport. */
+  x: number;
+  /** Titik tengah elemen dalam piksel viewport. */
+  y: number;
+  /** Elemen tak bisa dipakai? */
+  disabled?: boolean;
+}
+
+/** Cuplikan halaman aktif untuk agent. */
+export interface PageSnapshot {
+  /** URL halaman. */
+  url: string;
+  /** Judul halaman. */
+  title: string;
+  /** Teks halaman; dipotong bila terlalu panjang. */
+  text: string;
+  /** Elemen interaktif yang terlihat di viewport. */
+  elements: PageElement[];
+}
+
 /** Seluruh bentuk event input yang diterima. */
 export type BrowserInputEvent = BrowserMouseInput | BrowserKeyInput | BrowserTextInput;
 
@@ -203,6 +239,33 @@ const VIEWPORT_MAX_HEIGHT = 1200;
 /** Ukuran tampilan bawaan. */
 const DEFAULT_VIEWPORT: BrowserViewport = { width: 1280, height: 800 };
 
+/** Bawaan jumlah karakter teks pada snapshot. */
+const DEFAULT_SNAPSHOT_CHARS = 12_000;
+/** Batas atas jumlah karakter teks pada snapshot. */
+const MAX_SNAPSHOT_CHARS = 30_000;
+/** Batas jumlah elemen interaktif pada satu snapshot. */
+const MAX_SNAPSHOT_ELEMENTS = 80;
+/** Batas panjang nama elemen. */
+const MAX_ELEMENT_NAME_CHARS = 80;
+/** Batas panjang tautan elemen. */
+const MAX_ELEMENT_HREF_CHARS = 200;
+/** Batas panjang isi input pada snapshot. */
+const MAX_ELEMENT_VALUE_CHARS = 200;
+/** Batas panjang teks yang diketik lewat `typeRef`. */
+const MAX_TYPE_REF_CHARS = 10_000;
+/** Penanda teks yang dipotong. */
+const POTONGAN_TANDAA = "[dipotong]";
+/** Lama tenang halaman sebelum aksi dianggap selesai (ms). */
+const ACTION_SETTLE_MS = 300;
+/** Batas total tunggu halaman tenang (ms). */
+const ACTION_TIMEOUT_MS = 1_500;
+/** Bawaan jarak gulir (piksel). */
+const DEFAULT_SCROLL_PX = 600;
+/** Batas atas jarak gulir (piksel). */
+const MAX_SCROLL_PX = 5_000;
+/** Batas bawah jarak gulir (piksel). */
+const MIN_SCROLL_PX = 1;
+
 /** Skema yang boleh dipakai untuk navigasi. */
 const ALLOWED_SCHEMES = new Set(["http", "https"]);
 
@@ -257,6 +320,309 @@ const CONTROL_KEYS = new Set([
 
 function invalid(message: string): BrowserError {
   return new BrowserError(message, "tidak-valid");
+}
+
+/** Galat standar saat ref tak dikenal atau elemennya sudah hilang. */
+function elemenTidakDitemukan(): BrowserError {
+  return new BrowserError("Elemen tidak ditemukan; ambil snapshot baru.", "tidak-valid");
+}
+
+/** Ambil titik tengah dari hasil skrip aksi; undefined bila tak ada. */
+function titikDari(
+  hasil: Record<string, unknown> | undefined,
+): { x: number; y: number } | undefined {
+  if (hasil === undefined) return undefined;
+  const x = hasil.x;
+  const y = hasil.y;
+  if (typeof x !== "number" || !Number.isFinite(x)) return undefined;
+  if (typeof y !== "number" || !Number.isFinite(y)) return undefined;
+  return { x, y };
+}
+
+/**
+ * Skrip konstan snapshot halaman.
+ *
+ * Skrip ini TIDAK PERNAH menerima masukan dari agent atau pengguna: seluruh
+ * parameter (batas karakter, batas elemen) dipangkas di sisi TypeScript.
+ * Hasil halaman adalah data tak dipercaya; manajer tak menafsirkan isinya.
+ */
+export const SNAPSHOT_SCRIPT = `(function () {
+  var PEMILIH = "a[href],button,input,select,textarea,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[contenteditable],[onclick]";
+  var BATAS_ELEMEN = 80;
+  var BATAS_TEKS = 60000;
+  function potong(s, n) {
+    if (s === undefined || s === null) return "";
+    var t = String(s);
+    var a = 0;
+    var b = t.length;
+    while (a < b && t.charCodeAt(a) <= 32) a += 1;
+    while (b > a && t.charCodeAt(b - 1) <= 32) b -= 1;
+    var isi = "";
+    var spasi = false;
+    for (var i = a; i < b; i += 1) {
+      if (t.charCodeAt(i) <= 32) {
+        if (!spasi) { isi += " "; spasi = true; }
+      } else {
+        isi += t.charAt(i);
+        spasi = false;
+      }
+    }
+    if (isi.length > n) isi = isi.slice(0, n);
+    return isi;
+  }
+  function terlihat(el) {
+    var r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    if (r.bottom <= 0 || r.right <= 0) return false;
+    if (r.top >= window.innerHeight || r.left >= window.innerWidth) return false;
+    var st = window.getComputedStyle(el);
+    if (!st) return false;
+    if (st.visibility === "hidden" || st.display === "none") return false;
+    if (Number(st.opacity) === 0) return false;
+    return true;
+  }
+  function peran(el, tag, tipe) {
+    var dariAtribut = el.getAttribute("role");
+    if (dariAtribut) return dariAtribut;
+    if (tag === "a") return el.hasAttribute("href") ? "link" : "";
+    if (tag === "button") return "button";
+    if (tag === "select") return "combobox";
+    if (tag === "textarea") return "textbox";
+    if (tag === "input") {
+      if (tipe === "checkbox") return "checkbox";
+      if (tipe === "radio") return "radio";
+      if (tipe === "button" || tipe === "submit" || tipe === "reset") return "button";
+      return "textbox";
+    }
+    return "";
+  }
+  var nodes = document.querySelectorAll(PEMILIH);
+  var daftar = [];
+  var refs = [];
+  for (var i = 0; i < nodes.length && daftar.length < BATAS_ELEMEN; i += 1) {
+    var el = nodes[i];
+    if (!terlihat(el)) continue;
+    var tag = String(el.tagName || "").toLowerCase();
+    var tipe = tag === "input" ? String(el.getAttribute("type") || "text").toLowerCase() : "";
+    var nama = el.getAttribute("aria-label");
+    if (!nama) nama = el.getAttribute("placeholder");
+    if (!nama) nama = el.getAttribute("alt");
+    if (!nama) nama = el.getAttribute("title");
+    if (!nama) nama = el.textContent;
+    var item = { ref: daftar.length + 1, tag: tag, name: potong(nama, 80) };
+    var per = peran(el, tag, tipe);
+    if (per) item.role = per;
+    if (tipe) item.type = tipe;
+    if (tipe && tipe !== "password" && el.value !== undefined && el.value !== null && el.value !== "") {
+      item.value = potong(el.value, 200);
+    }
+    if (tag === "a" && el.hasAttribute("href")) item.href = potong(el.href, 200);
+    var kotak = el.getBoundingClientRect();
+    item.x = Math.round(kotak.left + kotak.width / 2);
+    item.y = Math.round(kotak.top + kotak.height / 2);
+    if (el.disabled === true || el.getAttribute("aria-disabled") === "true") item.disabled = true;
+    daftar.push(item);
+    refs.push(el);
+  }
+  window.__jejakRefs = refs;
+  window.__jejakSnapshot = daftar.length;
+  var body = document.body;
+  var teks = body && body.innerText ? String(body.innerText) : "";
+  if (teks.length > BATAS_TEKS) teks = teks.slice(0, BATAS_TEKS);
+  return { url: String(location.href), title: String(document.title), text: teks, elements: daftar };
+})()`;
+
+/**
+ * Tubuh skrip konstan aksi berbasis elemen.
+ *
+ * Hanya dipakai lewat `ACTION_SCRIPT`; isian sebaris berisi nomor ref
+ * (angka bulat yang sudah divalidasi), bukan teks bebas dari agent.
+ */
+export const ACTION_SCRIPT = `
+  function ambilRef(ref) {
+    var refs = window.__jejakRefs;
+    if (!refs || typeof refs.length !== "number") return undefined;
+    var el = refs[ref - 1];
+    return el ? el : undefined;
+  }
+  function keAtas(el) {
+    try { el.scrollIntoView({ block: "center", inline: "center", behavior: "instant" }); return; } catch (e) {}
+    try { el.scrollIntoView({ block: "center", inline: "center" }); } catch (e) {}
+  }
+  function titik(el) {
+    var kotak = el.getBoundingClientRect();
+    return { x: Math.round(kotak.left + kotak.width / 2), y: Math.round(kotak.top + kotak.height / 2) };
+  }
+  var __jejakAksi = {
+    klik: function (ref) {
+      var el = ambilRef(ref);
+      if (!el) return null;
+      keAtas(el);
+      return titik(el);
+    },
+    fokus: function (ref) {
+      var el = ambilRef(ref);
+      if (!el) return null;
+      keAtas(el);
+      try { el.focus({ preventScroll: true }); } catch (e) { try { el.focus(); } catch (e2) {} }
+      return titik(el);
+    },
+    pilih: function (ref) {
+      var el = ambilRef(ref);
+      if (!el) return null;
+      try {
+        if (typeof el.select === "function") {
+          el.select();
+        } else if (el.isContentEditable) {
+          var pilihan = window.getSelection();
+          if (pilihan) {
+            var rentang = document.createRange();
+            rentang.selectNodeContents(el);
+            pilihan.removeAllRanges();
+            pilihan.addRange(rentang);
+          }
+        }
+      } catch (e) {}
+      return { ok: true };
+    }
+  };
+`;
+
+/** Nama tombol yang boleh ditekan beserta kode dan nomor tombolnya. */
+const TOMBOL_NAMA: Record<string, { key: string; code: string; keyCode: number }> = {
+  Enter: { key: "Enter", code: "Enter", keyCode: 13 },
+  Tab: { key: "Tab", code: "Tab", keyCode: 9 },
+  Escape: { key: "Escape", code: "Escape", keyCode: 27 },
+  Backspace: { key: "Backspace", code: "Backspace", keyCode: 8 },
+  Delete: { key: "Delete", code: "Delete", keyCode: 46 },
+  ArrowUp: { key: "ArrowUp", code: "ArrowUp", keyCode: 38 },
+  ArrowDown: { key: "ArrowDown", code: "ArrowDown", keyCode: 40 },
+  ArrowLeft: { key: "ArrowLeft", code: "ArrowLeft", keyCode: 37 },
+  ArrowRight: { key: "ArrowRight", code: "ArrowRight", keyCode: 39 },
+  Home: { key: "Home", code: "Home", keyCode: 36 },
+  End: { key: "End", code: "End", keyCode: 35 },
+  PageUp: { key: "PageUp", code: "PageUp", keyCode: 33 },
+  PageDown: { key: "PageDown", code: "PageDown", keyCode: 34 },
+};
+
+/** Bentuk ekspresi skrip aksi: skrip konstan + nomor ref (angka bulat). */
+function ekspresiAksi(aksi: "klik" | "fokus" | "pilih", ref: number): string {
+  return `(function () {${ACTION_SCRIPT}
+  return __jejakAksi.${aksi}(${ref});
+})()`;
+}
+
+/** Terjemahkan nama tombol ke detail tombol; undefined bila tak diizinkan. */
+function infoTombol(
+  key: unknown,
+): { key: string; code: string; keyCode: number; text?: string } | undefined {
+  if (typeof key !== "string" || key === "") return undefined;
+  const nama = TOMBOL_NAMA[key];
+  if (nama !== undefined) return nama;
+  if (/^[a-zA-Z]$/.test(key)) {
+    const atas = key.toUpperCase();
+    return { key, code: `Key${atas}`, keyCode: atas.charCodeAt(0), text: key };
+  }
+  if (/^[0-9]$/.test(key)) {
+    return { key, code: `Digit${key}`, keyCode: key.charCodeAt(0), text: key };
+  }
+  return undefined;
+}
+
+/** Batas jumlah karakter teks pada snapshot. */
+function batasSnapshotChars(value: unknown): number {
+  if (value === undefined || value === null) return DEFAULT_SNAPSHOT_CHARS;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw invalid("Batas karakter snapshot tidak valid.");
+  }
+  if (value < 0) throw invalid("Batas karakter snapshot tidak valid.");
+  return Math.min(MAX_SNAPSHOT_CHARS, Math.max(1, Math.round(value)));
+}
+
+/** Batas jarak gulir dalam piksel. */
+function batasGulir(value: unknown): number {
+  if (value === undefined || value === null) return DEFAULT_SCROLL_PX;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw invalid("Jumlah gulir tidak valid.");
+  }
+  return Math.min(MAX_SCROLL_PX, Math.max(MIN_SCROLL_PX, Math.round(value)));
+}
+
+/** Potong teks halaman dan beri penanda bila terpotong. */
+function potongTeks(teks: string, maxChars: number): string {
+  if (teks.length <= maxChars) return teks;
+  const sisa = Math.max(0, maxChars - POTONGAN_TANDAA.length);
+  return teks.slice(0, sisa) + POTONGAN_TANDAA;
+}
+
+/** Bentuk mentah hasil snapshot (belum dipangkas). */
+interface SnapshotMentah {
+  url: string;
+  title: string;
+  text: string;
+  elements: PageElement[];
+}
+
+/**
+ * Urai hasil snapshot; datanya tak dipercaya sehingga setiap field diperiksa.
+ *
+ * Isi input kata sandi dibuang di sini juga, bukan hanya di skrip halaman.
+ */
+function uraiSnapshot(nilai: unknown): SnapshotMentah {
+  let data: unknown = nilai;
+  if (typeof data === "string") {
+    try {
+      data = JSON.parse(data);
+    } catch {
+      data = undefined;
+    }
+  }
+  if (typeof data !== "object" || data === null) {
+    return { url: "", title: "", text: "", elements: [] };
+  }
+  const rec = data as Record<string, unknown>;
+  const elements: PageElement[] = [];
+  const daftar = Array.isArray(rec.elements) ? rec.elements : [];
+  for (const item of daftar.slice(0, MAX_SNAPSHOT_ELEMENTS)) {
+    const el = uraiElemen(item);
+    if (el !== undefined) elements.push(el);
+  }
+  return {
+    url: typeof rec.url === "string" ? rec.url : "",
+    title: typeof rec.title === "string" ? rec.title : "",
+    text: typeof rec.text === "string" ? rec.text : "",
+    elements,
+  };
+}
+
+/** Urai satu elemen snapshot; undefined bila tak berbentuk elemen. */
+function uraiElemen(item: unknown): PageElement | undefined {
+  if (typeof item !== "object" || item === null) return undefined;
+  const rec = item as Record<string, unknown>;
+  const ref = rec.ref;
+  if (typeof ref !== "number" || !Number.isInteger(ref) || ref < 1) return undefined;
+  const el: PageElement = {
+    ref,
+    tag: typeof rec.tag === "string" ? rec.tag : "",
+    name:
+      typeof rec.name === "string" ? rec.name.slice(0, MAX_ELEMENT_NAME_CHARS) : "",
+    x: 0,
+    y: 0,
+  };
+  if (typeof rec.role === "string" && rec.role !== "") el.role = rec.role;
+  const tipe = typeof rec.type === "string" ? rec.type : "";
+  if (tipe !== "") el.type = tipe;
+  // Isi input kata sandi tak pernah keluar dari manajer.
+  if (tipe !== "password" && typeof rec.value === "string" && rec.value !== "") {
+    el.value = rec.value.slice(0, MAX_ELEMENT_VALUE_CHARS);
+  }
+  if (typeof rec.href === "string" && rec.href !== "") {
+    el.href = rec.href.slice(0, MAX_ELEMENT_HREF_CHARS);
+  }
+  if (typeof rec.x === "number" && Number.isFinite(rec.x)) el.x = Math.round(rec.x);
+  if (typeof rec.y === "number" && Number.isFinite(rec.y)) el.y = Math.round(rec.y);
+  if (rec.disabled === true) el.disabled = true;
+  return el;
 }
 
 /** Nama host dari masukan tanpa skema (tanpa port). */
@@ -639,6 +1005,8 @@ export class BrowserManager {
   private readonly pressedButtons = new Set<BrowserMouseButton>();
   /** Waktu event input terakhir (untuk batas laju). */
   private inputTimes: number[] = [];
+  /** Jumlah elemen pada snapshot terakhir (ref valid hanya sampai snapshot berikutnya). */
+  private snapshotCount = 0;
 
   constructor(options: BrowserManagerOptions = {}) {
     this.env = options.env ?? process.env;
@@ -1269,6 +1637,8 @@ export class BrowserManager {
     await this.refreshTabInfo(tab);
     // URL yang diminta tampil lebih dulu; info target bisa tertinggal.
     tab.url = url;
+    // Halaman berganti; ref dari snapshot sebelumnya tak berlaku lagi.
+    this.snapshotCount = 0;
     await this.refreshHistory();
     this.notifyState();
     return this.state();
@@ -1316,6 +1686,8 @@ export class BrowserManager {
     if (this.activeId === id) return this.state();
     const lama = this.activeTab();
     this.activeId = id;
+    // Tab berganti; ref dari snapshot sebelumnya tak berlaku lagi.
+    this.snapshotCount = 0;
     await this.stopScreencastOn(lama);
     const client = this.client;
     if (client !== undefined) {
@@ -1393,6 +1765,8 @@ export class BrowserManager {
     await client.send("Page.navigateToHistoryEntry", { entryId: target.id }, tab.sessionId);
     // URL entri tujuan langsung dipakai; peristiwa navigasi akan menyelaraskan.
     tab.url = target.url;
+    // Halaman berganti; ref dari snapshot sebelumnya tak berlaku lagi.
+    this.snapshotCount = 0;
     await this.refreshHistory();
     this.notifyState();
     return this.state();
@@ -1413,6 +1787,8 @@ export class BrowserManager {
     await client.send("Page.navigateToHistoryEntry", { entryId: target.id }, tab.sessionId);
     // URL entri tujuan langsung dipakai; peristiwa navigasi akan menyelaraskan.
     tab.url = target.url;
+    // Halaman berganti; ref dari snapshot sebelumnya tak berlaku lagi.
+    this.snapshotCount = 0;
     await this.refreshHistory();
     this.notifyState();
     return this.state();
@@ -1427,6 +1803,8 @@ export class BrowserManager {
       throw new BrowserError("Browser tidak berjalan.", "mati");
     }
     await client.send("Page.reload", { ignoreCache: false }, tab.sessionId);
+    // Halaman berganti; ref dari snapshot sebelumnya tak berlaku lagi.
+    this.snapshotCount = 0;
     await this.refreshHistory();
     this.notifyState();
     return this.state();
@@ -1662,6 +2040,174 @@ export class BrowserManager {
     const value = result?.result?.value;
     if (typeof value !== "string") return "";
     return value.slice(0, MAX_SELECTION_CHARS);
+  }
+
+  /**
+   * Ambil cuplikan halaman aktif: teks dan elemen interaktif yang terlihat.
+   *
+   * Hasil halaman adalah data tak dipercaya; manajer tak menafsirkan isinya
+   * dan tak pernah menjalankan JavaScript dari agent.
+   */
+  async snapshot(options?: { maxChars?: number }): Promise<PageSnapshot> {
+    await this.ensure();
+    const client = this.client;
+    const tab = this.activeTab();
+    if (client === undefined || tab === undefined) {
+      throw new BrowserError("Browser tidak berjalan.", "mati");
+    }
+    const maxChars = batasSnapshotChars(options?.maxChars);
+    const nilai = await this.evaluate(SNAPSHOT_SCRIPT, tab);
+    const hasil = uraiSnapshot(nilai);
+    this.snapshotCount = hasil.elements.length;
+    return {
+      url: hasil.url,
+      title: hasil.title,
+      text: potongTeks(hasil.text, maxChars),
+      elements: hasil.elements,
+    };
+  }
+
+  /** Klik elemen berdasarkan ref dari snapshot terakhir. */
+  async clickRef(ref: number): Promise<BrowserState> {
+    await this.ensure();
+    const hasil = await this.jalankanAksi("klik", ref);
+    const posisi = titikDari(hasil);
+    if (posisi === undefined) throw elemenTidakDitemukan();
+    const x = Math.min(this.viewport.width, Math.max(0, posisi.x));
+    const y = Math.min(this.viewport.height, Math.max(0, posisi.y));
+    await this.dispatchInput([
+      { kind: "mouse", type: "move", x, y },
+      { kind: "mouse", type: "down", x, y, button: "left", clickCount: 1 },
+      { kind: "mouse", type: "up", x, y, button: "left", clickCount: 1 },
+    ]);
+    await this.tungguDiam();
+    this.notifyState();
+    return this.state();
+  }
+
+  /**
+   * Isi elemen (input) berdasarkan ref dari snapshot terakhir.
+   *
+   * Isi yang diketik tak boleh ikut muncul di pesan galat maupun log.
+   */
+  async typeRef(
+    ref: number,
+    text: string,
+    options?: { submit?: boolean },
+  ): Promise<BrowserState> {
+    await this.ensure();
+    if (typeof text !== "string") throw invalid("Teks yang diketik harus berupa teks.");
+    if (text.length > MAX_TYPE_REF_CHARS) {
+      throw new BrowserError(
+        `Teks yang diketik melebihi batas ${MAX_TYPE_REF_CHARS} karakter.`,
+        "batas",
+      );
+    }
+    const fokus = await this.jalankanAksi("fokus", ref);
+    const posisi = titikDari(fokus);
+    if (posisi === undefined) throw elemenTidakDitemukan();
+    const x = Math.min(this.viewport.width, Math.max(0, posisi.x));
+    const y = Math.min(this.viewport.height, Math.max(0, posisi.y));
+    // Klik tengah supaya elemen benar-benar terfokus.
+    await this.dispatchInput([
+      { kind: "mouse", type: "move", x, y },
+      { kind: "mouse", type: "down", x, y, button: "left", clickCount: 1 },
+      { kind: "mouse", type: "up", x, y, button: "left", clickCount: 1 },
+    ]);
+    // Pilih isi lama supaya teks baru menggantikannya.
+    const pilih = await this.jalankanAksi("pilih", ref);
+    if (pilih === undefined) throw elemenTidakDitemukan();
+    await this.dispatchInput([{ kind: "text", text }]);
+    if (options?.submit === true) {
+      await this.dispatchInput([
+        { kind: "key", type: "down", key: "Enter", code: "Enter", keyCode: 13 },
+        { kind: "key", type: "up", key: "Enter", code: "Enter", keyCode: 13 },
+      ]);
+    }
+    await this.tungguDiam();
+    this.notifyState();
+    return this.state();
+  }
+
+  /** Tekan satu tombol yang aman (daftar putih tetap). */
+  async pressKey(key: string): Promise<BrowserState> {
+    await this.ensure();
+    const tombol = infoTombol(key);
+    if (tombol === undefined) throw invalid("Tombol tidak diizinkan.");
+    await this.dispatchInput([
+      {
+        kind: "key",
+        type: "down",
+        key: tombol.key,
+        code: tombol.code,
+        keyCode: tombol.keyCode,
+        ...(tombol.text === undefined ? {} : { text: tombol.text }),
+      },
+      { kind: "key", type: "up", key: tombol.key, code: tombol.code, keyCode: tombol.keyCode },
+    ]);
+    await this.tungguDiam();
+    this.notifyState();
+    return this.state();
+  }
+
+  /** Gulir halaman ke atas atau ke bawah di tengah tampilan. */
+  async scroll(direction: "up" | "down", amount?: number): Promise<BrowserState> {
+    await this.ensure();
+    if (direction !== "up" && direction !== "down") throw invalid("Arah gulir tidak valid.");
+    const px = batasGulir(amount);
+    const x = Math.round(this.viewport.width / 2);
+    const y = Math.round(this.viewport.height / 2);
+    await this.dispatchInput([
+      {
+        kind: "mouse",
+        type: "wheel",
+        x,
+        y,
+        deltaX: 0,
+        deltaY: direction === "down" ? px : -px,
+      },
+    ]);
+    await this.tungguDiam();
+    this.notifyState();
+    return this.state();
+  }
+
+  /** Jalankan skrip tetap di tab aktif dan ambil nilai balikanya. */
+  private async evaluate(expression: string, tab: TabRecord): Promise<unknown> {
+    const client = this.client;
+    if (client === undefined) return undefined;
+    const hasil = (await client.send(
+      "Runtime.evaluate",
+      { expression, returnByValue: true },
+      tab.sessionId,
+    )) as { result?: { value?: unknown } } | undefined;
+    return hasil?.result?.value;
+  }
+
+  /** Jalankan aksi berbasis elemen; undefined bila ref tak dikenal. */
+  private async jalankanAksi(
+    aksi: "klik" | "fokus" | "pilih",
+    ref: number,
+  ): Promise<Record<string, unknown> | undefined> {
+    if (!Number.isInteger(ref) || ref < 1 || ref > this.snapshotCount) return undefined;
+    const client = this.client;
+    const tab = this.activeTab();
+    if (client === undefined || tab === undefined) return undefined;
+    const nilai = await this.evaluate(ekspresiAksi(aksi, ref), tab);
+    if (typeof nilai !== "object" || nilai === null) return undefined;
+    return nilai as Record<string, unknown>;
+  }
+
+  /** Tunggu halaman tenang agar snapshot berikutnya segar. */
+  private async tungguDiam(): Promise<void> {
+    const deadline = Date.now() + ACTION_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const tab = this.activeTab();
+      if (tab === undefined || !tab.loading) break;
+      await Bun.sleep(50);
+    }
+    const sisa = deadline - Date.now();
+    if (sisa > 0) await Bun.sleep(Math.min(ACTION_SETTLE_MS, sisa));
   }
 
   /** Dialog JavaScript: alert diterima, sisanya ditolak. */

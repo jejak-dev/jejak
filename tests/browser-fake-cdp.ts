@@ -31,6 +31,12 @@ export class KoneksiPalsu implements CdpConnection {
   aktif: string | undefined;
   /** Teks pilihan yang dikembalikan `Runtime.evaluate`. */
   pilihan = "";
+  /** Hasil `Runtime.evaluate` untuk skrip snapshot. */
+  snapshot: unknown = undefined;
+  /** Hasil `Runtime.evaluate` untuk skrip aksi (klik/fokus/pilih). */
+  aksi: unknown = undefined;
+  /** Antrean hasil skrip aksi; dipakai bila tak kosong. */
+  antreanAksi: unknown[] = [];
   /** Data screenshot palsu. */
   dataScreenshot = "YmVuaWgtMTE=";
   /** Bila true, `Page.captureScreenshot` tak pernah selesai. */
@@ -127,8 +133,16 @@ export class KoneksiPalsu implements CdpConnection {
         };
         return {};
       }
-      case "Runtime.evaluate":
+      case "Runtime.evaluate": {
+        const expression = (params as { expression?: string } | undefined)?.expression ?? "";
+        // Skrip snapshot dan skrip aksi punya penanda sendiri.
+        if (expression.includes("__jejakSnapshot")) return { result: { value: this.snapshot } };
+        if (expression.includes("__jejakAksi")) {
+          const berikut = this.antreanAksi.shift();
+          return { result: { value: berikut !== undefined ? berikut : this.aksi } };
+        }
         return { result: { value: this.pilihan } };
+      }
       default:
         return {};
     }
