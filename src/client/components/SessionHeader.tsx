@@ -18,12 +18,11 @@ export interface TopbarProps {
   secretBadge?: { label: string; title: string };
   budgetBadge?: { label: string; title: string; tone: "warn" | "bad" };
   sandboxBadge?: { label: string; title: string; tone: "warn" };
-  action?: { label: string; onClick: () => void; disabled?: boolean };
   panel?: { open: boolean; onToggle: () => void };
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, budgetBadge, sandboxBadge: sandbox, action, panel, error }: TopbarProps) {
+export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, budgetBadge, sandboxBadge: sandbox, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
       <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
@@ -91,12 +90,6 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
           <Icon name="folder" />
         </button>
       )}
-      {action !== undefined && (
-        <button type="button" class="jk-pill-btn" onClick={action.onClick} disabled={action.disabled}>
-          <Icon name="stop" />
-          {action.label}
-        </button>
-      )}
       {error !== undefined && (
         <p class="jk-top-error" role="alert">
           {error}
@@ -109,9 +102,7 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
 export interface SessionHeaderProps {
   session: SessionInfo;
   status: string;
-  onInterrupt: () => void;
   onMenu: () => void;
-  busy: boolean;
   panelOpen: boolean;
   onTogglePanel: () => void;
   error?: string;
@@ -134,9 +125,7 @@ export function sessionState(
 export function SessionHeader({
   session,
   status,
-  onInterrupt,
   onMenu,
-  busy,
   panelOpen,
   onTogglePanel,
   error,
@@ -149,7 +138,6 @@ export function SessionHeader({
     state: sessionState(status, session.pendingPermissions),
     panel: { open: panelOpen, onToggle: onTogglePanel },
   };
-  if (status === "berjalan") props.action = { label: "Hentikan", onClick: onInterrupt, disabled: busy };
   if (showsBypassMarker(session.permissionMode)) props.bypass = true;
   const badge = worktreeBadge(session);
   if (badge !== undefined) props.badge = badge;

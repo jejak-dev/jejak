@@ -31,6 +31,10 @@ export interface ReplyBarProps {
   draft?: { text: string; nonce: number; append?: boolean };
   /** Dipanggil setelah tujuan dimulai atau berubah agar pita Goal langsung sinkron. */
   onGoalChanged?: (goal: GoalView | null) => void;
+  /** Hentikan giliran yang sedang berjalan (tombol stop di dalam komposer). */
+  onInterrupt: () => void;
+  /** Permintaan henti sedang dikirim; tombol stop dinonaktifkan. */
+  interrupting: boolean;
 }
 
 const MAX_TEXTAREA_PX = 8 * 24;
@@ -56,6 +60,32 @@ function autosize(element: HTMLTextAreaElement): void {
   element.style.height = `${Math.min(element.scrollHeight, MAX_TEXTAREA_PX)}px`;
 }
 
+/** Tombol stop hanya tampil saat giliran sedang berjalan. */
+export function showsStopButton(session: SessionInfo): boolean {
+  return session.status === "berjalan";
+}
+
+export interface StopButtonProps {
+  onInterrupt: () => void;
+  interrupting: boolean;
+}
+
+/** Tombol hentikan: kotak berisi di dalam komposer, di kiri tombol mikrofon. */
+export function StopButton({ onInterrupt, interrupting }: StopButtonProps) {
+  return (
+    <button
+      type="button"
+      class="jk-stop"
+      onClick={onInterrupt}
+      disabled={interrupting}
+      aria-label="Hentikan"
+      title="Hentikan"
+    >
+      <Icon name="stop" />
+    </button>
+  );
+}
+
 export function ReplyBar({
   api,
   session,
@@ -64,6 +94,8 @@ export function ReplyBar({
   registry,
   draft,
   onGoalChanged,
+  onInterrupt,
+  interrupting,
 }: ReplyBarProps) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -137,7 +169,7 @@ export function ReplyBar({
     return () => observer.disconnect();
   }, []);
 
-  const running = session.status === "berjalan";
+  const running = showsStopButton(session);
   const usable = canSendToSession(session);
   const dict = useDictation({
     draft: text,
@@ -501,6 +533,9 @@ export function ReplyBar({
               disabled={!usable.allowed || busy}
               aria-describedby={describedBy === "" ? undefined : describedBy}
             />
+            {running && (
+              <StopButton onInterrupt={onInterrupt} interrupting={interrupting} />
+            )}
             <DictationButton dict={dict} />
             <button
               type="submit"

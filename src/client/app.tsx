@@ -892,9 +892,7 @@ export function App() {
             <SessionHeader
               session={selected}
               status={timeline.status ?? selected.status}
-              onInterrupt={onInterrupt}
               onMenu={openDrawer}
-              busy={interrupting}
               panelOpen={panelOpen}
               onTogglePanel={togglePanel}
               error={headerError}
@@ -960,6 +958,8 @@ export function App() {
                   onGoalChanged={(goal) =>
                     setGoalOverride({ sessionId: selected.id, goal })
                   }
+                  onInterrupt={onInterrupt}
+                  interrupting={interrupting}
                 />
               </div>
               {panelOpen && (

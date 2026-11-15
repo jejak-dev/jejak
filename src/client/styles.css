@@ -7413,6 +7413,11 @@ h2.jk-md-heading {
     min-height: 44px;
   }
 
+  .jk-stop {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
   .jk-step > summary {
     min-height: 44px;
   }
@@ -7860,4 +7865,26 @@ h2.jk-md-heading {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 16px;
+}
+
+/* Tombol hentikan di dalam komposer: kotak berisi di sebelah mikrofon. */
+
+.jk-stop {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--on-ink);
+  cursor: pointer;
+}
+
+.jk-stop:disabled {
+  background: var(--hover-2);
+  color: var(--t3);
+  cursor: not-allowed;
 }
