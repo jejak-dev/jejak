@@ -335,6 +335,9 @@ const ASIDE_TIMEOUT_MS = 120_000;
 
 const MAX_QUEUED_MESSAGES = 5;
 
+/** Tool penyunting berkas yang disetujui otomatis pada mode acceptEdits. */
+const EDIT_TOOL_NAMES: ReadonlySet<string> = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+
 /** Galat yang ditambahkan saat pemulihan sesi yang masih berjalan. */
 const RECOVERY_ERROR_MESSAGE = "server dimulai ulang saat sesi berjalan";
 
@@ -1223,8 +1226,8 @@ export class SessionManager {
   }
 
   /**
-   * Ganti mode izin sesi; berlaku mulai giliran berikutnya (giliran yang sedang
-   * berjalan tetap memakai mode lamanya). Pindah ke bypass butuh konfirmasi
+   * Ganti mode izin sesi; berlaku segera untuk izin yang diminta sesudahnya (SDK giliran
+   * berjalan tetap memakai mode lamanya, jadi Jejak yang memutuskan). Pindah ke bypass butuh konfirmasi
    * eksplisit dan tidak boleh dimatikan oleh `allowBypass`.
    */
   setPermissionMode(id: string, mode: unknown, confirmBypass?: unknown): SessionInfo {
@@ -1250,6 +1253,7 @@ export class SessionManager {
     }
     this.persistSession(record);
     this.notify(record);
+    this.flushPendingByMode(record);
     return this.viewInfo(record);
   }
 
@@ -3067,6 +3071,26 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Apakah mode izin sesi saat ini menyetujui tool ini tanpa bertanya.
+   * Rencana dan pertanyaan agent selalu butuh keputusan pengguna.
+   */
+  private autoAllowedByMode(record: SessionRecord, name: string): boolean {
+    if (name === "ExitPlanMode" || name === "AskUserQuestion") return false;
+    const mode = record.info.permissionMode;
+    if (mode === "bypassPermissions") return this.allowBypass;
+    if (mode === "acceptEdits") return EDIT_TOOL_NAMES.has(name);
+    return false;
+  }
+
+  /** Setujui izin yang sedang menunggu bila mode baru sudah mengizinkannya. */
+  private flushPendingByMode(record: SessionRecord): void {
+    for (const [requestId, pending] of Array.from(record.pending)) {
+      if (!this.autoAllowedByMode(record, pending.name)) continue;
+      this.resolvePermission(record.info.id, requestId, "allow").catch(() => {});
+    }
+  }
+
   private generateRequestId(): string {
     return crypto.randomUUID();
   }
@@ -3077,6 +3101,17 @@ export class SessionManager {
   ): Promise<PermissionDecision> {
     // Permintaan izin adalah output substantif: hentikan buffer fallback.
     record.flushPending?.();
+
+    // Mode diganti di tengah giliran: SDK masih memakai mode lamanya dan tetap
+    // bertanya, jadi keputusan mengikuti mode sesi saat ini.
+    if (this.autoAllowedByMode(record, request.name)) {
+      this.audit("izin", `Izin diizinkan otomatis (mode): ${request.name}`, record.info.id, {
+        tool: request.name,
+        decision: "diizinkan",
+        alasan: "mode",
+      });
+      return { behavior: "allow" };
+    }
 
     const requestId = this.generateRequestId();
 

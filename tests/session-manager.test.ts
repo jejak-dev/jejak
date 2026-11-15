@@ -2095,6 +2095,92 @@ describe("SessionManager.setPermissionMode", () => {
   });
 });
 
+describe("SessionManager: mode diganti di tengah giliran", () => {
+  // Runner yang menahan giliran sampai `lepas()`, lalu meminta izin tool.
+  function runnerMinta(nama: string, hasil: Array<string>) {
+    let lepas: () => void = () => {};
+    const gerbang = new Promise<void>((resolve) => {
+      lepas = resolve;
+    });
+    const runner: AgentRunner = {
+      async *run(input) {
+        yield { type: "session", sessionId: "sdk-1" };
+        await gerbang;
+        const keputusan = await input.requestPermission!({ name: nama, input: {}, toolUseId: "tu1" }, input.signal ?? new AbortController().signal);
+        hasil.push(keputusan.behavior);
+        yield { type: "result", ok: true };
+      },
+    };
+    return { runner, lepas: () => lepas() };
+  }
+
+  test("bypass diganti saat giliran berjalan: izin tool langsung diizinkan tanpa bertanya", async () => {
+    const hasil: string[] = [];
+    const { runner, lepas } = runnerMinta("Bash", hasil);
+    const mgr = manager({ runner });
+    const info = await createOk(mgr);
+    mgr.setPermissionMode(info.id, "bypassPermissions", true);
+    lepas();
+    await mgr.done(info.id);
+    expect(hasil).toEqual(["allow"]);
+    expect(mgr.get(info.id)?.pendingPermissions).toBe(0);
+  });
+
+  test("acceptEdits menyetujui Edit tapi tetap bertanya untuk Bash", async () => {
+    const hasil: string[] = [];
+    const { runner, lepas } = runnerMinta("Bash", hasil);
+    const mgr = manager({ runner });
+    const info = await createOk(mgr);
+    mgr.setPermissionMode(info.id, "acceptEdits");
+    lepas();
+    await Bun.sleep(20);
+    expect(mgr.get(info.id)?.pendingPermissions).toBe(1);
+    let idIzin: string | undefined;
+    for await (const item of mgr.events(info.id)) {
+      if (item.event.type === "permission_request") {
+        idIzin = item.event.id;
+        break;
+      }
+    }
+    expect(idIzin).toBeDefined();
+    await mgr.resolvePermission(info.id, idIzin as string, "deny");
+    await mgr.done(info.id);
+    expect(hasil).toEqual(["deny"]);
+
+    const hasil2: string[] = [];
+    const lain = runnerMinta("Edit", hasil2);
+    const mgr2 = manager({ runner: lain.runner });
+    const info2 = await createOk(mgr2);
+    mgr2.setPermissionMode(info2.id, "acceptEdits");
+    lain.lepas();
+    await mgr2.done(info2.id);
+    expect(hasil2).toEqual(["allow"]);
+  });
+
+  test("izin yang sudah menunggu disetujui saat mode pindah ke bypass; ExitPlanMode tetap manual", async () => {
+    const hasil: string[] = [];
+    const { runner, lepas } = runnerMinta("Bash", hasil);
+    const mgr = manager({ runner });
+    const info = await createOk(mgr);
+    lepas();
+    await Bun.sleep(20);
+    expect(mgr.get(info.id)?.pendingPermissions).toBe(1);
+    mgr.setPermissionMode(info.id, "bypassPermissions", true);
+    await mgr.done(info.id);
+    expect(hasil).toEqual(["allow"]);
+
+    const hasil2: string[] = [];
+    const plan = runnerMinta("ExitPlanMode", hasil2);
+    const mgr2 = manager({ runner: plan.runner });
+    const info2 = await createOk(mgr2);
+    mgr2.setPermissionMode(info2.id, "bypassPermissions", true);
+    plan.lepas();
+    await Bun.sleep(20);
+    expect(mgr2.get(info2.id)?.pendingPermissions).toBe(1);
+    mgr2.interrupt(info2.id);
+  });
+});
+
 describe("SessionManager.setArchived", () => {
   test("set lalu hapus arsip tanpa mengubah updatedAt dan bertahan di store", async () => {
     const store = new SqliteSessionStore(":memory:");
