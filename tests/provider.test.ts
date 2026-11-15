@@ -678,3 +678,62 @@ describe("jendela konteks model", () => {
     expect(again.profiles[0]?.models[1]?.contextWindow).toBe(123456);
   });
 });
+
+test("resolveProvider memakai model pertama profil bila tak ada defaultModel", () => {
+  const registry: ProviderRegistry = {
+    activeProfileId: "minimax",
+    profiles: [
+      {
+        id: "minimax",
+        name: "MiniMax",
+        models: [{ id: "minimax-m2" }, { id: "minimax-m1" }],
+      },
+    ],
+  };
+
+  const resolved = resolveProvider(registry);
+  expect(resolved.model).toBe("minimax-m2");
+  expect(toSdkEnv(resolved).ANTHROPIC_MODEL).toBe("minimax-m2");
+});
+
+test("resolveProvider tetap memakai defaultModel profil bila ada", () => {
+  const registry: ProviderRegistry = {
+    activeProfileId: "minimax",
+    profiles: [
+      {
+        id: "minimax",
+        name: "MiniMax",
+        models: [{ id: "minimax-m2" }, { id: "minimax-m1" }],
+        defaultModel: "minimax-m1",
+      },
+    ],
+  };
+
+  expect(resolveProvider(registry).model).toBe("minimax-m1");
+});
+
+test("resolveProvider tetap memakai model yang dipilih sesi", () => {
+  const registry: ProviderRegistry = {
+    activeProfileId: "minimax",
+    profiles: [
+      {
+        id: "minimax",
+        name: "MiniMax",
+        models: [{ id: "minimax-m2" }, { id: "minimax-m1" }],
+      },
+    ],
+  };
+
+  expect(resolveProvider(registry, { model: "minimax-m1" }).model).toBe("minimax-m1");
+});
+
+test("resolveProvider tanpa daftar model tetap tanpa model", () => {
+  const registry: ProviderRegistry = {
+    activeProfileId: "tanpa-model",
+    profiles: [{ id: "tanpa-model", name: "Tanpa Model", models: [] }],
+  };
+
+  const resolved = resolveProvider(registry);
+  expect(resolved.model).toBeUndefined();
+  expect(toSdkEnv(resolved).ANTHROPIC_MODEL).toBeUndefined();
+});

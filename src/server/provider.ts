@@ -445,7 +445,13 @@ export function resolveProvider(
   if (profile.baseUrl !== undefined) resolved.baseUrl = profile.baseUrl;
   if (profile.apiKey !== undefined) resolved.apiKey = profile.apiKey;
 
-  const model = selection.model ?? profile.defaultModel;
+  // Tanpa model yang dipilih dan tanpa defaultModel, model pertama profil
+  // dipakai; kalau tak ada, CLI memakai alias bawaannya sendiri.
+  const modelPertama = profile.models[0]?.id;
+  const model =
+    selection.model ??
+    profile.defaultModel ??
+    (modelPertama === undefined || modelPertama === "" ? undefined : modelPertama);
   if (model !== undefined) {
     resolved.model = model;
     const modelEntry = profile.models.find((entry) => entry.id === model);
