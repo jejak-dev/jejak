@@ -1207,3 +1207,47 @@ test("pesan assistant subagent tidak dipakai sebagai jangkar", async () => {
   const result = events.find((event) => event.type === "result");
   expect(result).toMatchObject({ anchorUuid: "uuid-satu" });
 });
+
+test("hanya dua tool baca browser yang diizinkan otomatis; tool aksi lewat izin", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({
+        memory: {
+          url: "http://127.0.0.1:3000/mcp",
+          token: MEMORY_TOKEN,
+          indexLine: "Indeks.",
+          tools: [
+            "memory_search",
+            "memory_propose",
+            "browser_tabs",
+            "browser_snapshot",
+            "browser_navigate",
+            "browser_new_tab",
+            "browser_switch_tab",
+            "browser_close_tab",
+            "browser_back",
+            "browser_click",
+            "browser_type",
+            "browser_press",
+            "browser_scroll",
+          ],
+          call: async () => ({ text: "", isError: false }),
+        },
+      }),
+    ),
+  );
+
+  expect(received?.allowedTools).toEqual([
+    "mcp__jejak-memory__memory_search",
+    "mcp__jejak-memory__memory_propose",
+    "mcp__jejak-memory__browser_tabs",
+    "mcp__jejak-memory__browser_snapshot",
+  ]);
+  const daftar = JSON.stringify(received?.allowedTools ?? []);
+  for (const aksi of ["browser_navigate", "browser_click", "browser_type", "browser_press"]) {
+    expect(daftar).not.toContain(aksi);
+  }
+});

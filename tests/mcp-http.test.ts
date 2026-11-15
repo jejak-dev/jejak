@@ -203,7 +203,7 @@ describe("alur JSON-RPC", () => {
     expect(body.result.content[0]?.text).toContain("query");
   });
 
-  test("tanpa opsi memory dan workspace rute /mcp 404", async () => {
+  test("tanpa opsi memory dan workspace rute /mcp tetap ada tanpa tool", async () => {
     const noMemory = createApp({
       providersPath: providersFile,
       env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
@@ -215,7 +215,18 @@ describe("alur JSON-RPC", () => {
         body: JSON.stringify(rpc(1, "ping")),
       }),
     );
-    expect(res.status).toBe(404);
+    // Jembatan selalu ada (tool browser bisa dinyalakan sewaktu-waktu),
+    // jadi rute tak lagi 404; tanpa token tetap ditolak.
+    expect(res.status).toBe(401);
+
+    const noMemoryBridge = (noMemory as unknown as { memoryBridge: MemoryBridge }).memoryBridge;
+    const openedNoMemory = await noMemoryBridge.open({ sessionId: "s_kosong", cwd: dir });
+    try {
+      const tools = await listTools(noMemory, openedNoMemory.memory.token ?? "");
+      expect(tools).toEqual([]);
+    } finally {
+      openedNoMemory.close();
+    }
   });
 });
 

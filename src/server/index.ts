@@ -308,18 +308,24 @@ export function createApp(options: CreateAppOptions = {}) {
   // begitu manajer siap (tool `goal_update` menolak sebelum itu).
   const goalReporter = new GoalReporterHolder();
 
-  const memoryBridge =
-    options.memory === undefined && options.workspaces === undefined
-      ? undefined
-      : createMemoryBridge({
-          ...(options.memory === undefined ? {} : { service: options.memory }),
-          ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
-          ...(questionService === undefined ? {} : { questions: questionService }),
-          ...(options.indexer === undefined ? {} : { indexer: options.indexer }),
-          goalReporter: (sessionId, report) => goalReporter.report(sessionId, report),
-          goalActive: (sessionId) => goalReporter.hasGoal(sessionId),
-          mcpUrl: options.mcpUrl,
-        });
+  // Tool browser ikut jembatan supaya agent memakai browser yang sama dengan
+  // panel. Sumber manajer dibaca setiap permintaan: saklar fitur berlaku
+  // seketika (tool tak tampil dan panggilan ditolak saat browser mati).
+  // Jembatan selalu dibuat; Mode Goal tetap butuh tool `goal_update` yang
+  // hanya ada bila layanan memory tersedia.
+  const memoryBridge = createMemoryBridge({
+    ...(options.memory === undefined ? {} : { service: options.memory }),
+    ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
+    ...(questionService === undefined ? {} : { questions: questionService }),
+    ...(options.indexer === undefined ? {} : { indexer: options.indexer }),
+    browser: {
+      resolve: () => browserGate.get(),
+      ...(options.audit === undefined ? {} : { audit: options.audit }),
+    },
+    goalReporter: (sessionId, report) => goalReporter.report(sessionId, report),
+    goalActive: (sessionId) => goalReporter.hasGoal(sessionId),
+    mcpUrl: options.mcpUrl,
+  });
 
   const attachments = new AttachmentStore({
     root: options.attachmentsDir ?? join(jejakHome(env), "attachments"),

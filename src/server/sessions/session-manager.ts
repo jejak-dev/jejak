@@ -1275,7 +1275,9 @@ export class SessionManager {
    */
   startGoal(id: string, input: unknown): SessionInfo {
     const record = this.requireRecord(id);
-    if (this.memoryBridge === undefined) {
+    // Jembatan internal harus bisa menyajikan tool `goal_update`; jembatan
+    // tanpa layanan memory (misalnya hanya tool browser) tak memenuhi syarat.
+    if (this.memoryBridge === undefined || this.memoryBridge.goalTools === false) {
       throw new SessionError("Mode Goal butuh MCP internal aktif.", "konflik");
     }
     if (record.goal !== undefined && record.goal.status === "active") {

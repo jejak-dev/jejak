@@ -194,6 +194,14 @@ const WORKSPACE_TOOL_ALLOWLIST = [
   "mcp__jejak-memory__workspace_service",
 ];
 
+/**
+ * Tool browser yang hanya membaca; otomatis diizinkan.
+ *
+ * Tool aksi browser (klik, ketik, navigasi, dan sejenisnya) sengaja tak ada
+ * di sini: semuanya lewat modal izin yang sudah ada.
+ */
+const BROWSER_READ_TOOLS = new Set(["browser_tabs", "browser_snapshot"]);
+
 const MCP_SERVER_NAME = "mcp__jejak-memory__";
 
 /** Daftar tool yang diizinkan dari nama tool mentah pada RunMemory. */
@@ -206,6 +214,8 @@ function allowedToolsFor(input: RunInput): string[] {
       if (tool === "memory_search" || tool === "memory_propose" || tool === "question_ask" || tool === "index_repos" || tool === "index_search" || tool === "index_file") {
         allowed.push(`${MCP_SERVER_NAME}${tool}`);
       } else if (hasWorkspace && (tool === "workspace_overview" || tool === "workspace_service")) {
+        allowed.push(`${MCP_SERVER_NAME}${tool}`);
+      } else if (BROWSER_READ_TOOLS.has(tool)) {
         allowed.push(`${MCP_SERVER_NAME}${tool}`);
       }
     }

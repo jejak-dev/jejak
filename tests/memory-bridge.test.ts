@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRunner, RunInput } from "../src/server/agent/events";
+import type { BrowserManager, BrowserState, PageSnapshot } from "../src/server/browser/browser-manager";
 import { createMemoryBridge, type MemoryBridge } from "../src/server/memory/memory-bridge";
 import { MemoryService } from "../src/server/memory/memory-service";
 import { FileMemoryStore } from "../src/server/memory/memory-store";
@@ -373,5 +374,180 @@ describe("createMemoryBridge + workspace", () => {
     expect(capture.inputs[0]?.memory?.indexLine).not.toContain("punya workspace");
     expect(capture.inputs[0]?.memory?.tools).toEqual(["memory_search", "memory_propose"]);
     expect(calls).toEqual([]);
+  });
+});
+
+describe("createMemoryBridge + browser", () => {
+  /** Manajer browser palsu: hanya snapshot dan daftar tab yang dipakai. */
+  function managerPalsu(): BrowserManager {
+    const state = (): BrowserState => ({
+      status: "menyala",
+      tabs: [],
+      url: "https://contoh.test/",
+      title: "Judul",
+      canGoBack: false,
+      canGoForward: false,
+      loading: false,
+      viewport: { width: 1280, height: 800 },
+    });
+    const snapshot = (): PageSnapshot => ({
+      url: "https://contoh.test/",
+      title: "Judul",
+      text: "isi halaman",
+      elements: [],
+    });
+    const palsu = {
+      tabs: () => [],
+      snapshot: async () => snapshot(),
+      state: () => state(),
+      navigate: async () => state(),
+      newTab: async () => state(),
+      activateTab: async () => state(),
+      closeTab: async () => state(),
+      back: async () => state(),
+      clickRef: async () => state(),
+      typeRef: async () => state(),
+      pressKey: async () => state(),
+      scroll: async () => state(),
+    };
+    return palsu as unknown as BrowserManager;
+  }
+
+  /** Panggil /mcp dengan token sesi dan kembalikan hasil JSON-RPC. */
+  async function mcp(
+    routes: ReturnType<typeof createMemoryBridge>["routes"],
+    token: string,
+    method: string,
+    params?: unknown,
+  ): Promise<Record<string, unknown>> {
+    const res = await routes.handle(
+      new Request("http://127.0.0.1:1/mcp", {
+        method: "POST",
+        headers: {
+          host: "127.0.0.1:1",
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, ...(params === undefined ? {} : { params }) }),
+      }),
+    );
+    return (await res.json()) as Record<string, unknown>;
+  }
+
+  /** Nama tool pada hasil tools/list. */
+  function namaTool(hasil: Record<string, unknown>): string[] {
+    const result = hasil.result as { tools?: Array<{ name?: string }> } | undefined;
+    return (result?.tools ?? []).map((tool) => tool.name ?? "");
+  }
+
+  test("tool browser muncul di tools/list hanya saat fitur menyala", async () => {
+    let menyala = false;
+    const manager = managerPalsu();
+    const { bridge, routes } = createMemoryBridge({
+      service,
+      browser: { resolve: () => (menyala ? manager : undefined) },
+    });
+    const opened = await bridge.open({ sessionId: "s_browser", cwd: dir });
+    try {
+      const token = opened.memory.token ?? "";
+
+      const sebelum = await mcp(routes, token, "tools/list");
+      expect(namaTool(sebelum)).not.toContain("browser_snapshot");
+      expect(namaTool(sebelum)).not.toContain("browser_navigate");
+
+      menyala = true;
+      const sesudah = await mcp(routes, token, "tools/list");
+      expect(namaTool(sesudah)).toContain("browser_tabs");
+      expect(namaTool(sesudah)).toContain("browser_snapshot");
+      expect(namaTool(sesudah)).toContain("browser_navigate");
+
+      // Saklar dimatikan lagi tanpa membuat ulang bridge.
+      menyala = false;
+      const mati = await mcp(routes, token, "tools/list");
+      expect(namaTool(mati)).not.toContain("browser_snapshot");
+      expect(namaTool(mati)).toContain("memory_search");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("call saat fitur mati ditolak", async () => {
+    const { bridge } = createMemoryBridge({
+      service,
+      browser: { resolve: () => undefined },
+    });
+    const opened = await bridge.open({ sessionId: "s_browser_mati", cwd: dir });
+    try {
+      const hasil = await opened.memory.call("browser_snapshot", {});
+      expect(hasil.isError).toBe(true);
+      expect(hasil.text).toContain("Browser dimatikan");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("call lewat /mcp saat fitur mati ditolak", async () => {
+    const { bridge, routes } = createMemoryBridge({
+      service,
+      browser: { resolve: () => undefined },
+    });
+    const opened = await bridge.open({ sessionId: "s_browser_rute", cwd: dir });
+    try {
+      const hasil = await mcp(routes, opened.memory.token ?? "", "tools/call", {
+        name: "browser_snapshot",
+        arguments: {},
+      });
+      const result = hasil.result as { content?: Array<{ text?: string }>; isError?: boolean };
+      expect(result.isError).toBe(true);
+      expect(result.content?.[0]?.text).toBe("Tool tidak tersedia.");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("indexLine dan daftar tool menyebut browser saat fitur menyala", async () => {
+    const manager = managerPalsu();
+    const { bridge } = createMemoryBridge({
+      service,
+      browser: { resolve: () => manager },
+    });
+    const opened = await bridge.open({ sessionId: "s_browser_aktif", cwd: dir });
+    try {
+      expect(opened.memory.indexLine).toContain("browser yang sama dengan panel");
+      expect(opened.memory.tools).toContain("browser_tabs");
+      expect(opened.memory.tools).toContain("browser_snapshot");
+      expect(opened.memory.tools).toContain("browser_navigate");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("bridge tetap dibuat bila hanya browser yang ada", async () => {
+    const manager = managerPalsu();
+    const { bridge, routes } = createMemoryBridge({
+      browser: { resolve: () => manager },
+    });
+    expect(routes).toBeDefined();
+    const opened = await bridge.open({ sessionId: "s_hanya_browser", cwd: dir });
+    try {
+      expect(opened.memory.tools).toEqual([
+        "browser_tabs",
+        "browser_snapshot",
+        "browser_navigate",
+        "browser_new_tab",
+        "browser_switch_tab",
+        "browser_close_tab",
+        "browser_back",
+        "browser_click",
+        "browser_type",
+        "browser_press",
+        "browser_scroll",
+      ]);
+      const hasil = await opened.memory.call("browser_snapshot", {});
+      expect(hasil.isError).toBe(false);
+      expect(hasil.text).toContain("isi halaman");
+    } finally {
+      opened.close();
+    }
   });
 });
