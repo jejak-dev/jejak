@@ -12,26 +12,28 @@ import {
   browserNavigate,
   browserNewTab,
   browserReload,
+  browserRenderPlan,
   browserSendInput,
   browserSetViewport,
   browserStop,
   browserView,
   activeTab,
   clampViewportSize,
+  cobaLayarPenuh,
   copySelectionToClipboard,
   dialogLabel,
-  fitFrameSize,
+  fullscreenPath,
   keyEventFrom,
   mouseEventFrom,
   parseBrowserEvent,
   parseBrowserState,
-  statusLabel,
   textEvent,
   InputBatcher,
   type BrowserActionResult,
   type BrowserCanvasRect,
   type BrowserFrameInfo,
   type BrowserInputEvent,
+  type BrowserRenderPlan,
   type BrowserStateInfo,
   type BrowserViewportInfo,
 } from "../lib/browser";
@@ -70,9 +72,13 @@ async function readError(response: Response): Promise<string> {
 export interface BrowserTabProps {
   /** Klien API; dipakai membaca status fitur saat browser mati. */
   api: ApiClient;
+  /** Perbesar atau pulihkan jendela panel; cadangan saat layar penuh ditolak. */
+  onToggleMaximize?: () => void;
+  /** Jendela panel sedang diperbesar? (status tombol layar penuh). */
+  maximized?: boolean;
 }
 
-export function BrowserTab({ api }: BrowserTabProps) {
+export function BrowserTab({ api, onToggleMaximize, maximized }: BrowserTabProps) {
   const [status, setStatus] = useState<number | undefined>(undefined);
   const [galat, setGalat] = useState<string | undefined>(undefined);
   const [fitur, setFitur] = useState<FeatureState | undefined>(undefined);
@@ -93,7 +99,15 @@ export function BrowserTab({ api }: BrowserTabProps) {
   const [fokus, setFokus] = useState(false);
   /** Pesan galat input yang ditampilkan sebaris (sekali saja). */
   const [galatInput, setGalatInput] = useState<string | undefined>(undefined);
+  /** Apakah browser sedang layar penuh? */
+  const [layarPenuh, setLayarPenuh] = useState(false);
+  /** Permintaan layar penuh ditolak? (ya → tombol jadi perbesaran jendela). */
+  const [layarPenuhGagal, setLayarPenuhGagal] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /** Wadah area layar; tinggi dan lebarnya menentukan ukuran tampilan. */
+  const viewRef = useRef<HTMLDivElement | null>(null);
+  /** Pembungkus browser; target layar penuh. */
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
   const streamAktif = useRef(false);
   /** Pengumpul event input; dibuat sekali saat komponen hidup. */
   const batcherRef = useRef<InputBatcher | undefined>(undefined);
@@ -101,8 +115,12 @@ export function BrowserTab({ api }: BrowserTabProps) {
   const galatTampil = useRef(new Set<string>());
   /** Ukuran tampilan terakhir yang dikirim ke server. */
   const viewportTerkirim = useRef<BrowserViewportInfo | undefined>(undefined);
-  /** Frame terakhir (dipakai saat menghitung ukuran tampilan). */
-  const frameRef = useRef<BrowserFrameInfo | undefined>(undefined);
+  /** Frame terakhir yang gambarnya sudah terpasang; dipakai menggambar ulang. */
+  const gambarRef = useRef<{ gambar: HTMLImageElement; bingkai: BrowserFrameInfo } | undefined>(
+    undefined,
+  );
+  /** Rencana gambar terakhir; dipakai memetakan koordinat klik. */
+  const rencanaRef = useRef<BrowserRenderPlan | undefined>(undefined);
   /** Apakah klik kanan terakhir sudah terkirim lewat pointerdown? */
   const klikKanan = useRef(false);
 
@@ -193,45 +211,63 @@ export function BrowserTab({ api }: BrowserTabProps) {
     };
   }, [streamKey, stopStream, api]);
 
-  // Simpan frame terakhir buat perhitungan ukuran tampilan.
-  useEffect(() => {
-    frameRef.current = frame;
-  }, [frame]);
+  /**
+   * Gambar frame tersimpan ke kanvas sesuai ukuran area layar.
+   *
+   * Kanvas memakai seluruh area (lebar dan tinggi), jadi isi kanvas tak
+   * bergantung pada frame dan tak bisa membuat lingkaran umpan balik.
+   */
+  const gambarKeKanvas = useCallback((): void => {
+    const canvas = canvasRef.current;
+    const view = viewRef.current;
+    const tersimpan = gambarRef.current;
+    if (canvas === null || view === null || tersimpan === undefined) return;
+    const lebar = Math.max(1, Math.round(view.clientWidth));
+    const tinggi = Math.max(1, Math.round(view.clientHeight));
+    const rencana = browserRenderPlan(tersimpan.bingkai, { width: lebar, height: tinggi });
+    rencanaRef.current = rencana;
+    if (canvas.width !== lebar) canvas.width = lebar;
+    if (canvas.height !== tinggi) canvas.height = tinggi;
+    const context = canvas.getContext("2d");
+    if (context === null) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(
+      tersimpan.gambar,
+      rencana.draw.offsetX,
+      rencana.draw.offsetY,
+      rencana.draw.width,
+      rencana.draw.height,
+    );
+  }, []);
 
   // Gambar frame terakhir ke kanvas.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas === null || frame === undefined) return;
+    if (frame === undefined) return;
     const image = new Image();
     image.onload = (): void => {
-      const parent = canvas.parentElement;
-      const boxWidth = parent?.clientWidth ?? 0;
-      const size = fitFrameSize(frame, { width: boxWidth, height: 0 });
-      canvas.width = size.width;
-      canvas.height = size.height;
-      const context = canvas.getContext("2d");
-      if (context === null) return;
-      context.drawImage(image, 0, 0, size.width, size.height);
+      gambarRef.current = { gambar: image, bingkai: frame };
+      gambarKeKanvas();
     };
     image.src = browserFrameUrl(frame.data);
-  }, [frame]);
+  }, [frame, gambarKeKanvas]);
 
-  // Ukuran tampilan 1:1: ukuran halaman disamakan dengan ukuran kanvas.
-  // Lebar diambil dari kanvas (ikut lebar wadah); tinggi mengikuti rasio
-  // frame supaya ukuran halaman dan kanvas tidak saling chase.
+  // Ukuran tampilan 1:1: ukuran halaman disamakan dengan ukuran area layar
+  // sehingga halaman dirender 1:1 dan memenuhi seluruh tinggi panel.
+  // Area layarnya yang diamati (bukan kanvas) tak bergantung pada frame,
+  // jadi tak ada lingkaran umpan balik.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (canvas === null) return;
+    const view = viewRef.current;
+    if (view === null) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const ukur = (): void => {
       timer = undefined;
-      const bingkai = frameRef.current;
-      const lebarKanvas = Math.round(canvas.clientWidth);
-      if (lebarKanvas <= 0 || bingkai === undefined || bingkai.width <= 0) return;
-      const tinggi = Math.round((lebarKanvas * bingkai.height) / bingkai.width);
-      if (tinggi <= 0) return;
+      const lebar = Math.round(view.clientWidth);
+      const tinggi = Math.round(view.clientHeight);
+      if (lebar <= 0 || tinggi <= 0) return;
+      // Gambar ulang supaya isi kanvas ikut ukuran area yang baru.
+      gambarKeKanvas();
       // Ukuran diklem sama seperti server supaya koordinat klik tetap pas.
-      const ukuran = clampViewportSize(lebarKanvas, tinggi);
+      const ukuran = clampViewportSize(lebar, tinggi);
       const sebelum = viewportTerkirim.current;
       if (sebelum !== undefined && sebelum.width === ukuran.width && sebelum.height === ukuran.height) {
         return;
@@ -240,16 +276,60 @@ export function BrowserTab({ api }: BrowserTabProps) {
       void browserSetViewport(ukuran.width, ukuran.height);
     };
     const observer = new ResizeObserver(() => {
+      // Gambar ulang seketika supaya isi layar tak teregang selagi menunggu.
+      gambarKeKanvas();
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(ukur, VIEWPORT_DEBOUNCE_MS);
     });
-    observer.observe(canvas);
+    observer.observe(view);
     ukur();
     return () => {
       observer.disconnect();
       if (timer !== undefined) clearTimeout(timer);
     };
-  }, [adaFrame]);
+  }, [adaFrame, gambarKeKanvas]);
+
+  // Dukungan layar penuh peramban; status layar penuh dipantau per peristiwa.
+  const bisaLayarPenuh =
+    typeof document !== "undefined" &&
+    typeof document.documentElement.requestFullscreen === "function" &&
+    typeof document.exitFullscreen === "function";
+
+  useEffect(() => {
+    if (!bisaLayarPenuh) return;
+    const onUbah = (): void => {
+      setLayarPenuh(document.fullscreenElement === wrapperRef.current);
+    };
+    document.addEventListener("fullscreenchange", onUbah);
+    return () => {
+      document.removeEventListener("fullscreenchange", onUbah);
+    };
+  }, [bisaLayarPenuh]);
+
+  /**
+   * Masuk atau keluar layar penuh; bila API ditolak atau tak tersedia,
+   * tombol memperbesar jendela panel sebagai cadangan.
+   */
+  const toggleLayarPenuh = useCallback((): void => {
+    const elemen = wrapperRef.current;
+    if (elemen === null) return;
+    if (document.fullscreenElement === elemen) {
+      void document.exitFullscreen().catch(() => undefined);
+      return;
+    }
+    if (!bisaLayarPenuh || layarPenuhGagal) {
+      // Layar penuh tak tersedia: perbesaran jendela panel yang dipakai.
+      onToggleMaximize?.();
+      return;
+    }
+    void cobaLayarPenuh(elemen).then((hasil) => {
+      if (fullscreenPath(hasil) === "perbesar") {
+        // Permintaan ditolak: tombol beralih ke perbesaran jendela.
+        setLayarPenuhGagal(true);
+        onToggleMaximize?.();
+      }
+    });
+  }, [bisaLayarPenuh, layarPenuhGagal, onToggleMaximize]);
 
   /** Jalankan aksi browser; state dari respons langsung dipakai. */
   const jalankan = useCallback(async (aksi: () => Promise<BrowserActionResult>): Promise<boolean> => {
@@ -314,8 +394,11 @@ export function BrowserTab({ api }: BrowserTabProps) {
 
   /** Ukuran tampilan halaman yang dipakai untuk pemetaan koordinat. */
   const viewportSekarang = useCallback((): BrowserViewportInfo => {
-    // Ukuran yang baru dikirim dipakai duluan supaya tak ada jeda dengan
-    // ukuran lama (server sudah menerapkan ukuran itu).
+    // Ukuran halaman yang benar-benar digambar dipakai duluan supaya
+    // koordinat klik cocok dengan isi layar.
+    const rencana = rencanaRef.current;
+    if (rencana !== undefined) return rencana.page;
+    // Ukuran yang baru dikirim dipakai kalau belum ada gambar.
     return viewportTerkirim.current ?? viewport ?? VIEWPORT_BAWAAN;
   }, [viewport]);
 
@@ -337,7 +420,10 @@ export function BrowserTab({ api }: BrowserTabProps) {
       const batcher = batcherRef.current;
       const kotak = kotakKanvas();
       if (batcher === undefined || kotak === undefined) return;
-      batcher.push(mouseEventFrom(type, event, kotak, viewportSekarang(), clickCount));
+      const rencana = rencanaRef.current;
+      batcher.push(
+        mouseEventFrom(type, event, kotak, viewportSekarang(), clickCount, rencana?.draw),
+      );
     },
     [kotakKanvas, viewportSekarang],
   );
@@ -464,7 +550,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
   }
 
   return (
-    <div class="jk-browser">
+    <div class="jk-browser" ref={wrapperRef} title={NOTE}>
       <BrowserToolbar
         state={state}
         editing={sunting}
@@ -478,6 +564,11 @@ export function BrowserTab({ api }: BrowserTabProps) {
         onReload={() => void jalankan(browserReload)}
         onStop={() => void jalankan(browserStop)}
         onClose={() => void closeBrowser()}
+        fullscreenAvailable={bisaLayarPenuh && !layarPenuhGagal}
+        maximizeAvailable={onToggleMaximize !== undefined}
+        fullscreen={layarPenuh}
+        maximized={maximized}
+        onFullscreen={toggleLayarPenuh}
       />
       <BrowserTabStrip
         tabs={state?.tabs ?? []}
@@ -498,7 +589,7 @@ export function BrowserTab({ api }: BrowserTabProps) {
       )}
       {dialog !== "" && <p class="jk-note">{dialog}</p>}
       <BrowserAgentChip agent={state?.agent} />
-      <div class="jk-browser-view">
+      <div class="jk-browser-view" ref={viewRef}>
         {frame === undefined ? (
           <p class="jk-note jk-browser-waiting" role="status">
             {ditutup ? "Browser ditutup." : "Menunggu frame pertama…"}
@@ -522,14 +613,15 @@ export function BrowserTab({ api }: BrowserTabProps) {
             onCompositionEnd={onCompositionEnd}
           />
         )}
+        {busy && (
+          <p class="jk-browser-overlay jk-browser-busy" role="status">
+            Memproses…
+          </p>
+        )}
+        {!fokus && frame !== undefined && (
+          <p class="jk-browser-overlay jk-browser-hint">Klik layar untuk mengendalikan</p>
+        )}
       </div>
-      {!fokus && frame !== undefined && (
-        <p class="jk-note jk-browser-hint">Klik layar untuk mengendalikan</p>
-      )}
-      <p class="jk-note jk-browser-status" role="status">
-        {busy ? "Memproses…" : statusLabel(state)}
-      </p>
-      <p class="jk-note">{NOTE}</p>
     </div>
   );
 }

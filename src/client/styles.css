@@ -3035,6 +3035,13 @@ h2.jk-md-heading {
   overflow-y: auto;
 }
 
+/* Isi browser mengisi tinggi jendela; wadahnya jadi kolom flex. */
+.jk-pane-body:has(> .jk-browser) {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+
 .jk-panel-body {
   padding: 12px 14px 40px;
 }
@@ -6089,14 +6096,18 @@ h2.jk-md-heading {
 .jk-terminal-screen:focus-visible { outline: 2px solid var(--line-2); outline-offset: 1px; }
 
 /* Browser */
-.jk-browser { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 24px; min-width: 0; }
+.jk-browser { display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; height: 100%; min-height: 0; padding: 12px 14px; min-width: 0; }
 .jk-browser-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .jk-browser-url { flex: 1 1 160px; min-width: 0; }
-.jk-browser-view { display: flex; align-items: center; justify-content: center; min-height: 220px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow: hidden; }
-.jk-browser-waiting { margin: 0; text-align: center; }
-.jk-browser-canvas { display: block; max-width: 100%; height: auto; border-radius: 4px; background: var(--surface); cursor: crosshair; }
+.jk-browser-view { position: relative; display: flex; align-items: stretch; justify-content: center; flex: 1 1 0; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0; overflow: hidden; }
+.jk-browser-waiting { margin: auto; text-align: center; }
+.jk-browser-canvas { display: block; width: 100%; height: 100%; background: var(--surface); cursor: default; }
 .jk-browser-canvas:focus { outline: 2px solid var(--line-2); outline-offset: 2px; }
-.jk-browser-hint { margin: 0; }
+
+/* Hamparan kecil di tepi area layar; tak memakan ruang halaman. */
+.jk-browser-overlay { position: absolute; margin: 0; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--t2); font-size: 11.5px; line-height: 1.5; pointer-events: none; }
+.jk-browser-hint { left: 50%; bottom: 8px; transform: translateX(-50%); }
+.jk-browser-busy { top: 8px; right: 8px; }
 
 /* Toolbar browser */
 .jk-browser-toolbar { display: flex; align-items: center; gap: 4px; min-width: 0; }
@@ -6115,7 +6126,6 @@ h2.jk-md-heading {
 .jk-browser-tab-close { width: 22px; height: 22px; flex: none; }
 .jk-browser-tab-close .jk-icon { width: 11px; height: 11px; }
 .jk-browser-tab-new { flex: none; }
-.jk-browser-status { margin: 0; }
 
 /* Chip aktivitas agent */
 .jk-browser-agent { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; max-width: 100%; padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--t2); font-size: 12px; }

@@ -20,8 +20,10 @@ import {
   browserView,
   activeTab,
   agentChipLabel,
+  cobaLayarPenuh,
   dialogLabel,
   fitFrameSize,
+  fullscreenPath,
   parseBrowserEvent,
   parseBrowserFrame,
   parseBrowserState,
@@ -512,6 +514,125 @@ describe("gaya area browser", () => {
     expect(css).toContain("--surface: #ffffff;");
     const gelap = css.slice(css.indexOf(':root[data-theme="dark"]'));
     expect(gelap).toContain("--surface: #262523;");
+  });
+
+  test("kanvas memakai kursor normal, bukan tanda plus", () => {
+    const baris = css.split("\n");
+    const kanvas = baris.find((satu) => satu.startsWith(".jk-browser-canvas {"));
+    expect(kanvas).toContain("cursor: default");
+    expect(kanvas).not.toContain("crosshair");
+    expect(css).not.toContain("crosshair");
+  });
+
+  test("wadah browser mengisi tinggi jendela dan area layarflex", () => {
+    const baris = css.split("\n");
+    const browser = baris.find((satu) => satu.startsWith(".jk-browser {"));
+    expect(browser).toContain("height: 100%");
+    expect(browser).toContain("min-height: 0");
+    expect(browser).toContain("flex-direction: column");
+    // Padding bawah tak lagi besar; catatan panjang tak memakan ruang.
+    expect(browser).not.toContain("24px");
+    const area = baris.find((satu) => satu.startsWith(".jk-browser-view {"));
+    expect(area).toContain("flex: 1 1 0");
+    expect(area).toContain("min-height: 0");
+    expect(area).toContain("padding: 0");
+    // Kanvas mengisi seluruh area (tak ada height auto).
+    const kanvas = baris.find((satu) => satu.startsWith(".jk-browser-canvas {"));
+    expect(kanvas).toContain("width: 100%");
+    expect(kanvas).toContain("height: 100%");
+    expect(kanvas).not.toContain("height: auto");
+  });
+
+  test("wadah tab browser jadi kolom flex isinya", () => {
+    const css2 = readFileSync(join(import.meta.dir, "..", "src", "client", "styles.css"), "utf8");
+    expect(css2).toContain(".jk-pane-body:has(> .jk-browser)");
+  });
+});
+
+describe("tombol layar penuh browser", () => {
+  test("tombol disembunyikan bila peramban tak mendukungnya", () => {
+    const node = BrowserToolbar({ state: state(), fullscreenAvailable: false });
+    expect(byLabel(node, "Layar penuh")).toHaveLength(0);
+    expect(byLabel(node, "Keluar layar penuh")).toHaveLength(0);
+  });
+
+  test("tombol tampil dan menandai keadaan layar penuh", () => {
+    const node = BrowserToolbar({ state: state(), fullscreenAvailable: true });
+    const tombol = byLabel(node, "Layar penuh")[0];
+    expect(tombol).toBeDefined();
+    expect(propsOf(tombol)["aria-pressed"]).toBe(false);
+
+    const aktif = BrowserToolbar({ state: state(), fullscreenAvailable: true, fullscreen: true });
+    const tombolAktif = byLabel(aktif, "Keluar layar penuh")[0];
+    expect(tombolAktif).toBeDefined();
+    expect(propsOf(tombolAktif)["aria-pressed"]).toBe(true);
+    expect(byLabel(aktif, "Layar penuh")).toHaveLength(0);
+  });
+
+  test("klik tombol meminta layar penuh", () => {
+    let dipanggil = 0;
+    const node = BrowserToolbar({
+      state: state(),
+      fullscreenAvailable: true,
+      onFullscreen: () => {
+        dipanggil += 1;
+      },
+    });
+    (propsOf(byLabel(node, "Layar penuh")[0]).onClick as (event: unknown) => void)({});
+    expect(dipanggil).toBe(1);
+  });
+
+  test("cadangan perbesaran jendela membuat tombol tetap tampil", () => {
+    const node = BrowserToolbar({
+      state: state(),
+      fullscreenAvailable: false,
+      maximizeAvailable: true,
+    });
+    const tombol = byLabel(node, "Perbesar jendela")[0];
+    expect(tombol).toBeDefined();
+    expect(propsOf(tombol)["aria-pressed"]).toBe(false);
+    expect(byLabel(node, "Layar penuh")).toHaveLength(0);
+  });
+
+  test("status tombol pada jalur cadangan mengikuti jendela yang diperbesar", () => {
+    const node = BrowserToolbar({
+      state: state(),
+      fullscreenAvailable: false,
+      maximizeAvailable: true,
+      maximized: true,
+    });
+    const tombol = byLabel(node, "Pulihkan ukuran")[0];
+    expect(tombol).toBeDefined();
+    expect(propsOf(tombol)["aria-pressed"]).toBe(true);
+    expect(byLabel(node, "Perbesar jendela")).toHaveLength(0);
+  });
+
+  test("tanpa layar penuh maupun cadangan tombol disembunyikan", () => {
+    const node = BrowserToolbar({ state: state(), fullscreenAvailable: false });
+    expect(byLabel(node, "Perbesar jendela")).toHaveLength(0);
+    expect(byLabel(node, "Pulihkan ukuran")).toHaveLength(0);
+  });
+});
+
+describe("jalur tombol layar penuh", () => {
+  test("permintaan yang berhasil memakai layar penuh", async () => {
+    const hasil = await cobaLayarPenuh({ requestFullscreen: () => Promise.resolve() });
+    expect(hasil).toBe("berhasil");
+    expect(fullscreenPath(hasil)).toBe("layarPenuh");
+  });
+
+  test("permintaan yang ditolak jatuh ke perbesaran jendela", async () => {
+    const hasil = await cobaLayarPenuh({
+      requestFullscreen: () => Promise.reject(new Error("Permissions check failed")),
+    });
+    expect(hasil).toBe("ditolak");
+    expect(fullscreenPath(hasil)).toBe("perbesar");
+  });
+
+  test("API yang tak tersedia jatuh ke perbesaran jendela", async () => {
+    expect(await cobaLayarPenuh(undefined)).toBe("takTersedia");
+    expect(await cobaLayarPenuh({})).toBe("takTersedia");
+    expect(fullscreenPath("takTersedia")).toBe("perbesar");
   });
 });
 

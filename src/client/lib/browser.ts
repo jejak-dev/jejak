@@ -270,6 +270,71 @@ export function fitFrameSize(
   return { width, height };
 }
 
+/** Ukuran kotak wadah area layar (px CSS). */
+export interface BrowserBoxSize {
+  width: number;
+  height: number;
+}
+
+/** Kotak gambar frame di dalam kanvas (px CSS). */
+export interface BrowserDrawRect {
+  /** Offset gambar dari tepi kiri kanvas. */
+  offsetX: number;
+  /** Offset gambar dari tepi atas kanvas. */
+  offsetY: number;
+  /** Lebar gambar yang digambar. */
+  width: number;
+  /** Tinggi gambar yang digambar. */
+  height: number;
+}
+
+/** Rencana gambar frame di dalam area layar. */
+export interface BrowserRenderPlan {
+  /** Ukuran tampilan yang diminta ke server (sudah diklem). */
+  viewport: BrowserViewportInfo;
+  /** Ukuran halaman yang dipetakan ke koordinat (px halaman). */
+  page: BrowserViewportInfo;
+  /** Kotak gambar frame di dalam kanvas. */
+  draw: BrowserDrawRect;
+}
+
+/**
+ * Rencana gambar frame di dalam area layar.
+ *
+ * Ukuran tampilan sama dengan ukuran area layar (dibulatkan lalu diklem ke
+ * batas server) sehingga halaman dirender 1:1 dan memenuhi seluruh area.
+ * Bila klem server membuat tampilan lebih kecil dari area, gambar digambar
+ * dengan skala `contain` dan terpusat (tak meregang); kotak gambarnya ikut
+ * dipakai untuk memetakan koordinat klik.
+ */
+export function browserRenderPlan(
+  frame: { width: number; height: number },
+  box: BrowserBoxSize,
+): BrowserRenderPlan {
+  const viewport = clampViewportSize(box.width, box.height);
+  const pageWidth = frame.width > 0 ? frame.width : viewport.width;
+  const pageHeight = frame.height > 0 ? frame.height : viewport.height;
+  const boxWidth = box.width > 0 ? box.width : pageWidth;
+  const boxHeight = box.height > 0 ? box.height : pageHeight;
+  // Skala contain: seluruh gambar muat di dalam area dan proporsinya terjaga.
+  const skala = Math.min(
+    pageWidth > 0 ? boxWidth / pageWidth : 1,
+    pageHeight > 0 ? boxHeight / pageHeight : 1,
+  );
+  const width = Math.max(1, Math.round(pageWidth * skala));
+  const height = Math.max(1, Math.round(pageHeight * skala));
+  return {
+    viewport,
+    page: { width: pageWidth, height: pageHeight },
+    draw: {
+      offsetX: Math.round((boxWidth - width) / 2),
+      offsetY: Math.round((boxHeight - height) / 2),
+      width,
+      height,
+    },
+  };
+}
+
 /** Normalisasi pesan galat dari server (Bahasa Indonesia). */
 export function browserErrorText(
   status: number | undefined,
@@ -346,6 +411,49 @@ export function statusLabel(state: BrowserStateInfo | undefined): string {
   if (state.loading) return "Memuat…";
   if (state.title !== "") return state.title;
   return state.url;
+}
+
+/* ---------- Layar penuh ---------- */
+
+/** Hasil percobaan masuk layar penuh. */
+export type FullscreenOutcome = "berhasil" | "ditolak" | "takTersedia";
+
+/** Jalur tombol layar penuh: layar penuh asli atau perbesaran jendela panel. */
+export type FullscreenPath = "layarPenuh" | "perbesar";
+
+/** Permukaan API layar penuh yang dipakai tab browser. */
+export interface FullscreenApi {
+  /** Meminta elemen jadi layar penuh. */
+  requestFullscreen?: () => Promise<void>;
+}
+
+/**
+ * Coba masuk layar penuh lalu laporkan hasilnya.
+ *
+ * API yang tak tersedia memberi "takTersedia"; permintaan yang ditolak
+ * (mis. pane tertanam atau WKWebView) memberi "ditolak". Keduanya membuat
+ * pemanggil jatuh ke jalur cadangan.
+ */
+export async function cobaLayarPenuh(
+  api: FullscreenApi | undefined,
+): Promise<FullscreenOutcome> {
+  if (api === undefined || typeof api.requestFullscreen !== "function") return "takTersedia";
+  try {
+    await api.requestFullscreen();
+    return "berhasil";
+  } catch {
+    return "ditolak";
+  }
+}
+
+/**
+ * Pilih jalur tombol layar penuh.
+ *
+ * Layar penuh asli hanya dipakai bila permintaannya berhasil; ditolak atau
+ * tak tersedia membuat tombol memperbesar jendela panel.
+ */
+export function fullscreenPath(outcome: FullscreenOutcome): FullscreenPath {
+  return outcome === "berhasil" ? "layarPenuh" : "perbesar";
 }
 
 /* ---------- Aksi browser ---------- */
@@ -589,20 +697,27 @@ export interface BrowserKeySource {
  *
  * Kanvas digambar mengikuti rasio frame, jadi piksel CSS kanvas tak selalu
  * sama dengan piksel halaman. Koordinat diskalakan ke ukuran tampilan lalu
- * dibulatkan dan diklem ke area tampilan.
+ * dibulatkan dan diklem ke area tampilan. Bila gambar tak mengisi kanvas
+ * seluruhnya (skala contain), `gambar` memberi kotak gambar supaya huruf di
+ * tepi tak ikut dihitung sebagai koordinat halaman.
  */
 export function canvasToPage(
   clientX: number,
   clientY: number,
   rect: BrowserCanvasRect,
   viewport: BrowserViewportInfo,
+  gambar?: BrowserDrawRect,
 ): { x: number; y: number } {
-  const lebar = rect.width > 0 ? rect.width : viewport.width;
-  const tinggi = rect.height > 0 ? rect.height : viewport.height;
+  const offsetX = gambar?.offsetX ?? 0;
+  const offsetY = gambar?.offsetY ?? 0;
+  const lebarGambar = gambar !== undefined && gambar.width > 0 ? gambar.width : 0;
+  const tinggiGambar = gambar !== undefined && gambar.height > 0 ? gambar.height : 0;
+  const lebar = lebarGambar > 0 ? lebarGambar : rect.width > 0 ? rect.width : viewport.width;
+  const tinggi = tinggiGambar > 0 ? tinggiGambar : rect.height > 0 ? rect.height : viewport.height;
   const skalaX = lebar > 0 ? viewport.width / lebar : 1;
   const skalaY = tinggi > 0 ? viewport.height / tinggi : 1;
-  const x = Math.round((clientX - rect.left) * skalaX);
-  const y = Math.round((clientY - rect.top) * skalaY);
+  const x = Math.round((clientX - rect.left - offsetX) * skalaX);
+  const y = Math.round((clientY - rect.top - offsetY) * skalaY);
   return {
     x: Math.min(viewport.width, Math.max(0, x)),
     y: Math.min(viewport.height, Math.max(0, y)),
@@ -676,8 +791,8 @@ export function keyEventFrom(event: BrowserKeySource): BrowserKeyEvent | undefin
 /**
  * Terjemahkan event mouse menjadi event input server.
  *
- * Koordinat diubah ke koordinat halaman memakai kotak kanvas dan ukuran
- * tampilan halaman.
+ * Koordinat diubah ke koordinat halaman memakai kotak kanvas, ukuran
+ * tampilan halaman, dan (bila ada) kotak gambar frame di dalam kanvas.
  */
 export function mouseEventFrom(
   type: BrowserMouseType,
@@ -685,8 +800,9 @@ export function mouseEventFrom(
   rect: BrowserCanvasRect,
   viewport: BrowserViewportInfo,
   clickCount?: number,
+  gambar?: BrowserDrawRect,
 ): BrowserMouseEvent {
-  const point = canvasToPage(event.clientX, event.clientY, rect, viewport);
+  const point = canvasToPage(event.clientX, event.clientY, rect, viewport, gambar);
   const out: BrowserMouseEvent = {
     kind: "mouse",
     type,

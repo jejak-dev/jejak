@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   InputBatcher,
+  browserRenderPlan,
   browserSendInput,
   browserSetViewport,
   canvasToPage,
@@ -494,5 +495,64 @@ describe("clampViewportSize", () => {
     expect(clampViewportSize(100, 100)).toEqual({ width: 320, height: 240 });
     expect(clampViewportSize(5000, 5000)).toEqual({ width: 1920, height: 1200 });
     expect(clampViewportSize(800.4, 600.6)).toEqual({ width: 800, height: 601 });
+  });
+});
+
+/* ---------- browserRenderPlan ---------- */
+
+describe("browserRenderPlan", () => {
+  test("ukuran tampilan mengikuti ukuran area layar dan gambar mengisi penuh", () => {
+    const rencana = browserRenderPlan({ width: 800, height: 600 }, { width: 800, height: 600 });
+    expect(rencana.viewport).toEqual({ width: 800, height: 600 });
+    expect(rencana.page).toEqual({ width: 800, height: 600 });
+    // Skala 1:1; tak ada huruf di tepi.
+    expect(rencana.draw).toEqual({ offsetX: 0, offsetY: 0, width: 800, height: 600 });
+  });
+
+  test("area lebih besar dari batas server diklem dan gambar contain terpusat", () => {
+    const rencana = browserRenderPlan({ width: 1920, height: 1200 }, { width: 2000, height: 1400 });
+    expect(rencana.viewport).toEqual({ width: 1920, height: 1200 });
+    // Seluruh gambar muat di dalam area dan proporsinya terjaga.
+    expect(rencana.draw.width).toBeLessThanOrEqual(2000);
+    expect(rencana.draw.height).toBeLessThanOrEqual(1400);
+    expect(rencana.draw.width / rencana.draw.height).toBeCloseTo(1920 / 1200, 2);
+    // Terpusat: sisa ruang sama di kiri dan kanan, serta di atas dan bawah.
+    expect(rencana.draw.offsetX).toBe((2000 - rencana.draw.width) / 2);
+    expect(rencana.draw.offsetY).toBe((1400 - rencana.draw.height) / 2);
+  });
+
+  test("area sempit diklem ke lebar minimum dan gambar diperkecil", () => {
+    const rencana = browserRenderPlan({ width: 320, height: 600 }, { width: 300, height: 600 });
+    expect(rencana.viewport).toEqual({ width: 320, height: 600 });
+    expect(rencana.draw.width).toBe(300);
+    expect(rencana.draw.height).toBe(563);
+    expect(rencana.draw.offsetX).toBe(0);
+    expect(rencana.draw.offsetY).toBe(19);
+  });
+
+  test("sudut gambar dipetakan ke sudut halaman saat klem", () => {
+    const rencana = browserRenderPlan({ width: 320, height: 600 }, { width: 300, height: 600 });
+    const rect: BrowserCanvasRect = { left: 0, top: 0, width: 300, height: 600 };
+    // Sudut kiri atas gambar adalah sudut kiri atas halaman.
+    expect(canvasToPage(0, 19, rect, rencana.page, rencana.draw)).toEqual({ x: 0, y: 0 });
+    // Sudut kanan bawah gambar adalah sudut kanan bawah halaman.
+    expect(canvasToPage(300, 582, rect, rencana.page, rencana.draw)).toEqual({ x: 320, y: 600 });
+    // Huruf di tepi tak jadi koordinat halaman; diklem ke tepi halaman.
+    expect(canvasToPage(150, 0, rect, rencana.page, rencana.draw)).toEqual({ x: 160, y: 0 });
+  });
+
+  test("koordinat mouse memakai kotak gambar", () => {
+    const rencana = browserRenderPlan({ width: 320, height: 600 }, { width: 300, height: 600 });
+    const rect: BrowserCanvasRect = { left: 0, top: 0, width: 300, height: 600 };
+    const event = mouseEventFrom(
+      "down",
+      { clientX: 300, clientY: 582 },
+      rect,
+      rencana.page,
+      undefined,
+      rencana.draw,
+    );
+    expect(event.x).toBe(320);
+    expect(event.y).toBe(600);
   });
 });

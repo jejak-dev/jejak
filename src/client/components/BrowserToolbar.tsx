@@ -1,5 +1,5 @@
 import { Icon } from "./Icon";
-import type { BrowserStateInfo } from "../lib/browser";
+import { statusLabel, type BrowserStateInfo, type FullscreenPath } from "../lib/browser";
 
 export interface BrowserToolbarProps {
   /** State browser terakhir (dari server). */
@@ -18,6 +18,16 @@ export interface BrowserToolbarProps {
   onReload?: () => void;
   onStop?: () => void;
   onClose?: () => void;
+  /** Tombol layar penuh ditampilkan? (peramban tak mendukungnya → disembunyikan). */
+  fullscreenAvailable?: boolean;
+  /** Cadangan tersedia: perbesar jendela panel (bila layar penuh ditolak). */
+  maximizeAvailable?: boolean;
+  /** Apakah browser sedang layar penuh? */
+  fullscreen?: boolean;
+  /** Jendela panel sedang diperbesar? (status tombol pada jalur cadangan). */
+  maximized?: boolean;
+  /** Masuk atau keluar layar penuh, atau memperbesar jendela panel. */
+  onFullscreen?: () => void;
 }
 
 /**
@@ -30,6 +40,24 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
   const memuat = state?.loading === true;
   // Saat disunting, teks pengguna tidak ditimpa state.
   const alamat = props.editing === true ? (props.urlText ?? "") : (state?.url ?? "");
+  // Jalur tombol: layar penuh asli, atau perbesaran jendela panel sebagai
+  // cadangan. Tanpa keduanya tombol disembunyikan.
+  const jalur: FullscreenPath | undefined =
+    props.fullscreenAvailable === true
+      ? "layarPenuh"
+      : props.maximizeAvailable === true
+        ? "perbesar"
+        : undefined;
+  // Status tombol mengikuti jalur yang sedang dipakai.
+  const ditekan = jalur === "perbesar" ? props.maximized === true : props.fullscreen === true;
+  const label =
+    jalur === "perbesar"
+      ? ditekan
+        ? "Pulihkan ukuran"
+        : "Perbesar jendela"
+      : ditekan
+        ? "Keluar layar penuh"
+        : "Layar penuh";
   return (
     <div class="jk-browser-toolbar">
       <button
@@ -75,6 +103,7 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
         value={alamat}
         placeholder="https://example.com"
         aria-label="Alamat"
+        title={statusLabel(state)}
         onInput={(event) => props.onUrlInput?.((event.currentTarget as HTMLInputElement).value)}
         onFocus={(event) => {
           // Bilah alamat: seluruh teks dipilih begitu difokus.
@@ -97,6 +126,18 @@ export function BrowserToolbar(props: BrowserToolbarProps) {
           props.onUrlSubmit?.();
         }}
       />
+      {jalur !== undefined && (
+        <button
+          type="button"
+          class="jk-icon-btn jk-browser-fullscreen"
+          aria-label={label}
+          title={label}
+          aria-pressed={ditekan}
+          onClick={() => props.onFullscreen?.()}
+        >
+          <Icon name={ditekan ? "collapse" : "expand"} />
+        </button>
+      )}
       <button
         type="button"
         class="jk-icon-btn"

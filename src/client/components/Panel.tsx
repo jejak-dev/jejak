@@ -105,6 +105,10 @@ interface PanelTabBodyProps {
   onChanged: () => void;
   onSessionChanged?: () => void;
   onQuote?: (text: string) => void;
+  /** Perbesar atau pulihkan jendela panel; cadangan tombol layar penuh browser. */
+  onToggleMaximize?: () => void;
+  /** Jendela panel sedang diperbesar? */
+  maximized?: boolean;
 }
 
 /** Badan tab yang aktif; hanya tab aktif yang dipasang di jendela. */
@@ -132,6 +136,8 @@ function PanelTabBody(props: PanelTabBodyProps) {
     onChanged,
     onSessionChanged,
     onQuote,
+    onToggleMaximize,
+    maximized,
   } = props;
 
   if (tab === "changes") {
@@ -194,7 +200,11 @@ function PanelTabBody(props: PanelTabBodyProps) {
   if (tab === "terminal") {
     return <TerminalTab api={api} cwd={session?.cwd ?? ""} attachId={terminalToAttach} />;
   }
-  if (tab === "browser") return <BrowserTab api={api} />;
+  if (tab === "browser") {
+    return (
+      <BrowserTab api={api} onToggleMaximize={onToggleMaximize} maximized={maximized} />
+    );
+  }
   return (
     <FilesTab
       api={api}
@@ -507,6 +517,8 @@ export function Panel({
                   onChanged={() => setRefreshToken((value) => value + 1)}
                   onSessionChanged={onSessionChanged}
                   onQuote={onQuote}
+                  onToggleMaximize={sempit ? undefined : () => perbesar(pane.id)}
+                  maximized={layout.maximized === pane.id}
                 />
               </PaneWindow>
             </Fragment>
