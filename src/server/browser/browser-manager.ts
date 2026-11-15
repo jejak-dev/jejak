@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { BrowserError } from "./browser-error";
 import { locateChrome, type ChromeExists } from "./chrome-locator";
@@ -235,6 +235,9 @@ const DEFAULT_IDLE_SCREENSHOT_MS = 2_000;
 const SCREENSHOT_QUALITY = 60;
 const DEFAULT_PID_FILE_NAME = "jejak-chrome.pid";
 const ORPHAN_POLL_MS = 100;
+
+/** Berkas singleton Chrome di dalam profil (kunci processes profil). */
+const SINGLETON_FILES = ["SingletonLock", "SingletonSocket", "SingletonCookie"];
 
 /** Batas jumlah tab yang boleh dibuka bersamaan. */
 const MAX_TABS = 8;
@@ -1183,12 +1186,48 @@ export class BrowserManager {
 
   /**
    * Tulis pid Chrome ke berkas profil supaya proses yatim bisa dikenai.
+   *
+   * Catatan milik proses lain yang masih hidup tak boleh ditimpa: berkas pid
+   * adalah satu-satunya jejak proses yatim yang belum sempat dibersihkan.
    */
   private writePidFile(profileDir: string, pid: number): void {
+    const path = this.pidFilePath(profileDir);
     try {
-      writeFileSync(this.pidFilePath(profileDir), `${pid}\n`, "utf8");
+      const isi = readFileSync(path, "utf8").trim();
+      const lama = Number.parseInt(isi, 10);
+      if (Number.isInteger(lama) && lama > 0 && lama !== pid && this.isProcessAlive(lama)) {
+        // Catatan milik proses lain; biarkan apa adanya.
+        return;
+      }
+    } catch {
+      // Tak ada berkas lama; tulis yang baru.
+    }
+    try {
+      writeFileSync(path, `${pid}\n`, "utf8");
     } catch {
       // Berkas pid hanya pelengkap; kegagalan tak boleh menggagalkan browser.
+    }
+  }
+
+  /**
+   * Hapus berkas pid hanya bila isinya memang pid proses itu.
+   *
+   * Catatan milik proses lain tak boleh ikut terhapus.
+   */
+  private removePidFileIfOwned(profileDir: string, pid: number): void {
+    const path = this.pidFilePath(profileDir);
+    let isi: string;
+    try {
+      isi = readFileSync(path, "utf8").trim();
+    } catch {
+      // Berkas tak ada; abaikan.
+      return;
+    }
+    if (Number.parseInt(isi, 10) !== pid) return;
+    try {
+      unlinkSync(path);
+    } catch {
+      // Berkas tak ada; abaikan.
     }
   }
 
@@ -1274,6 +1313,78 @@ export class BrowserManager {
     return !this.isProcessAlive(pid);
   }
 
+  /**
+   * Bunuh Chrome yang masih memegang profil Jejak.
+   *
+   * Chrome yang sudah tak ada tapi meninggalkan `SingletonLock` membuat Chrome
+   * baru menyerahkan diri ke instance lama lalu keluar (panel browser lalu
+   * selalu berbunyi "Chrome berhenti sebelum siap"). Jadi proses pemegang
+   * profil dibunuh dulu, lalu berkas singleton usang dibersihkan.
+   *
+   * Proses yang bukan Chrome profil ini (misalnya pid yang dipakai ulang)
+   * tak boleh dibunuh; di sana berkasnya juga tak boleh dibersihkan karena
+   * prosesnya masih hidup.
+   */
+  private async killProfileHolder(profileDir: string): Promise<void> {
+    // Windows tak memakai symlink singleton; lewati tanpa melempar galat.
+    if (this.platform === "win32") return;
+    const pid = this.pidPemegangProfil(profileDir);
+    if (pid === undefined) return;
+    if (!this.isProcessAlive(pid)) {
+      // Singleton usang: prosesnya sudah mati.
+      this.hapusSingletonUsang(profileDir);
+      return;
+    }
+    const baris = this.readCommandLine(pid) ?? "";
+    if (!baris.includes(profileDir)) {
+      // Bukan Chrome profil ini; jangan dibunuh.
+      return;
+    }
+    this.killProcess(pid, "SIGTERM");
+    const mati = await this.waitProcessGone(pid, this.closeTimeoutMs);
+    if (!mati) {
+      this.killProcess(pid, "SIGKILL");
+      await this.waitProcessGone(pid, 1_000);
+    }
+    this.hapusSingletonUsang(profileDir);
+  }
+
+  /**
+   * PID proses pemegang profil dari symlink `SingletonLock` (isi `host-PID`).
+   *
+   * Undefined bila berkas tak ada atau tak bisa dibaca.
+   */
+  private pidPemegangProfil(profileDir: string): number | undefined {
+    const lock = join(profileDir, "SingletonLock");
+    let target = "";
+    try {
+      target = readlinkSync(lock);
+    } catch {
+      // Bukan symlink (atau tak ada): coba baca sebagai berkas biasa.
+      try {
+        target = readFileSync(lock, "utf8").trim();
+      } catch {
+        return undefined;
+      }
+    }
+    const cut = target.lastIndexOf("-");
+    if (cut < 0) return undefined;
+    const pid = Number.parseInt(target.slice(cut + 1), 10);
+    if (!Number.isInteger(pid) || pid <= 0) return undefined;
+    return pid;
+  }
+
+  /** Hapus berkas singleton Chrome yang sudah tak berlaku. */
+  private hapusSingletonUsang(profileDir: string): void {
+    for (const name of SINGLETON_FILES) {
+      try {
+        unlinkSync(join(profileDir, name));
+      } catch {
+        // Berkas tak ada; abaikan.
+      }
+    }
+  }
+
   private async start(): Promise<void> {
     if (this.sudahDimatikan) throw browserMati();
     const command = locateChrome(this.env, this.platform, this.exists);
@@ -1289,53 +1400,36 @@ export class BrowserManager {
     } catch {
       throw new BrowserError("Folder profil browser tidak dapat dibuat.", "gagal");
     }
+    // Chrome yang masih memegang profil (yatim) dibunuh lebih dulu; tanpa ini
+    // Chrome baru menyerahkan diri ke instance lama lalu keluar seketika.
+    await this.killProfileHolder(profileDir);
     // Port DevTools usang (dari Chrome yang mati keras) dibuang sebelum Chrome
     // baru dijalankan; kalau dibiarkan, manajer bisa menyambung ke port mati.
     this.removeDevToolsPort(profileDir);
 
-    let proc: BrowserProcess;
-    try {
-      proc = this.spawn(command, chromeArgs(profileDir));
-    } catch {
-      throw new BrowserError("Chrome tidak dapat dijalankan.", "gagal");
-    }
-    this.process = proc;
-    this.writePidFile(profileDir, proc.pid);
-    // Manajer dimatikan saat Chrome sedang dijalankan: proses baru ini tak
-    // boleh lolos sebagai yatim, jadi langsung dibunuh dan berkas pid dibuang.
-    if (this.sudahDimatikan) {
-      this.bunuhProses(proc);
+    let percobaan = await this.launchChrome(profileDir, command);
+    let hasil = percobaan.hasil;
+    let proc = percobaan.proc;
+    if (hasil.status === "keluar") {
+      // Chrome berhenti sebelum siap: mungkin masih ada Chrome yatim yang
+      // memegang profil. Bunuh sekali lagi lalu coba luncurkan satu kali.
       this.process = undefined;
-      this.removePidFile(profileDir);
-      throw browserMati();
+      await this.killProfileHolder(profileDir);
+      this.removeDevToolsPort(profileDir);
+      percobaan = await this.launchChrome(profileDir, command);
+      hasil = percobaan.hasil;
+      proc = percobaan.proc;
     }
-    // Penanda proses keluar; dipakai waitForPort agar tak menunggu timeout
-    // penuh bila Chrome mati sebelum port DevTools muncul.
-    let prosesKeluar: boolean = false;
-    const tandaiKeluar = (): void => {
-      prosesKeluar = true;
-    };
-    void proc.exited
-      .then(() => {
-        tandaiKeluar();
-        this.handleExit(proc);
-      })
-      .catch(() => {
-        tandaiKeluar();
-        this.handleExit(proc);
-      });
-
-    const hasil = await this.waitForPort(profileDir, () => prosesKeluar);
     if (this.sudahDimatikan) {
       await this.terminate(proc);
       this.process = undefined;
-      this.removePidFile(profileDir);
+      this.removePidFileIfOwned(profileDir, proc.pid);
       throw browserMati();
     }
     if (hasil.status === "keluar") {
       // Chrome berhenti sebelum siap: proses sudah mati, tak ada yang dibunuh.
       this.process = undefined;
-      this.removePidFile(profileDir);
+      this.removePidFileIfOwned(profileDir, proc.pid);
       throw new BrowserError("Chrome berhenti sebelum siap; coba lagi.", "gagal");
     }
     if (hasil.status === "timeout") {
@@ -1362,7 +1456,7 @@ export class BrowserManager {
       }
       await this.terminate(proc);
       this.process = undefined;
-      this.removePidFile(profileDir);
+      this.removePidFileIfOwned(profileDir, proc.pid);
       throw browserMati();
     }
     this.client = client;
@@ -1375,6 +1469,50 @@ export class BrowserManager {
       if (error instanceof BrowserError) throw error;
       throw new BrowserError("Browser tidak dapat disiapkan.", "gagal");
     }
+  }
+
+  /**
+   * Jalankan Chrome lalu tunggu port DevTools; tak pernah melempar galat
+   * "berhenti sebelum siap" (itu ditangani pemanggil).
+   */
+  private async launchChrome(
+    profileDir: string,
+    command: string,
+  ): Promise<{ hasil: HasilPort; proc: BrowserProcess }> {
+    let proc: BrowserProcess;
+    try {
+      proc = this.spawn(command, chromeArgs(profileDir));
+    } catch {
+      throw new BrowserError("Chrome tidak dapat dijalankan.", "gagal");
+    }
+    this.process = proc;
+    this.writePidFile(profileDir, proc.pid);
+    // Manajer dimatikan saat Chrome sedang dijalankan: proses baru ini tak
+    // boleh lolos sebagai yatim, jadi langsung dibunuh dan berkas pid dibuang.
+    if (this.sudahDimatikan) {
+      this.bunuhProses(proc);
+      this.process = undefined;
+      this.removePidFileIfOwned(profileDir, proc.pid);
+      throw browserMati();
+    }
+    // Penanda proses keluar; dipakai waitForPort agar tak menunggu timeout
+    // penuh bila Chrome mati sebelum port DevTools muncul.
+    let prosesKeluar = false;
+    const tandaiKeluar = (): void => {
+      prosesKeluar = true;
+    };
+    void proc.exited
+      .then(() => {
+        tandaiKeluar();
+        this.handleExit(proc);
+      })
+      .catch(() => {
+        tandaiKeluar();
+        this.handleExit(proc);
+      });
+
+    const hasil = await this.waitForPort(profileDir, () => prosesKeluar);
+    return { hasil, proc };
   }
 
   private async waitForPort(
@@ -2732,7 +2870,7 @@ export class BrowserManager {
     const proc = this.process;
     this.process = undefined;
     if (proc !== undefined) await this.terminate(proc);
-    this.removePidFile(this.profileDir());
+    if (proc !== undefined) this.removePidFileIfOwned(this.profileDir(), proc.pid);
   }
 
   /** Bunuh proses Chrome; tunggu keluar, lalu paksa. */
@@ -2759,9 +2897,12 @@ export class BrowserManager {
 
   /** Chrome berhenti sendiri; state kembali "mati" supaya bisa diyalakan ulang. */
   private handleExit(proc?: BrowserProcess): void {
-    if (proc !== undefined && this.process === proc) {
+    // Proses yang tak lagi dipakai (mis. percobaan pertama yang gagal):
+    // pencleanupannya tak boleh merusak sesi yang sedang berjalan.
+    if (proc !== undefined && this.process !== proc) return;
+    if (proc !== undefined) {
       // Proses ini yang terakhir; berkas pid tak lagi berlaku.
-      this.removePidFile(this.profileDir());
+      this.removePidFileIfOwned(this.profileDir(), proc.pid);
     }
     const client = this.client;
     this.client = undefined;
