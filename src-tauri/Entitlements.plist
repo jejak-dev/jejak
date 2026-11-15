@@ -6,5 +6,14 @@
        mikrofon wajib punya entitlement ini. -->
   <key>com.apple.security.device.audio-input</key>
   <true/>
+  <!-- Sidecar `jejak` adalah binary Bun (JavaScriptCore). Di bawah hardened
+       runtime tanpa tiga entitlement ini JIT mati dan SharedArrayBuffer tidak
+       tersedia, sehingga Claude Agent SDK gagal dimuat. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-executable-page-protection</key>
+  <true/>
 </dict>
 </plist>
