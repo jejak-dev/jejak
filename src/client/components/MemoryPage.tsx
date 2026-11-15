@@ -17,6 +17,7 @@ import {
 } from "../lib/memory";
 import { MemoryForm } from "./MemoryForm";
 import { MemoryRow } from "./MemoryRow";
+import { ClaudeMemorySection } from "./ClaudeMemorySection";
 import { QuestionsPanel } from "./QuestionsPanel";
 
 export interface MemoryPageProps {
@@ -525,6 +526,8 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
       <p class="jk-note jk-memory-privacy">
         Memory yang dibaca agent ikut terkirim ke penyedia model.
       </p>
+
+      <ClaudeMemorySection api={api} projects={projects} />
       </>
       )}
     </section>

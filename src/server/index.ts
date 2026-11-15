@@ -55,6 +55,12 @@ import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
+import { claudeMemoryRoutes } from "./routes/claude-memory";
+import {
+  claudeProjectEntries,
+  type ClaudeProjectEntry,
+  type ClaudeProjectSeed,
+} from "./memory/claude-memory";
 import { featuresRoutes } from "./routes/features";
 import { terminalRoutes } from "./routes/terminal";
 import { TerminalManager } from "./terminal/terminal-manager";
@@ -438,6 +444,23 @@ export function createApp(options: CreateAppOptions = {}) {
     return paths;
   };
 
+  // Proyek yang dikenal untuk pembacaan memory Claude Code (baca-saja):
+  // folder kerja sesi beserta repo asal worktree miliknya. Daftar ini
+  // harus sama dengan daftar proyek yang dilihat klien.
+  const claudeProjects = (): ClaudeProjectEntry[] => {
+    const seeds: ClaudeProjectSeed[] = [];
+    for (const session of manager.list()) {
+      const worktree = session.worktree;
+      seeds.push({
+        cwd: session.cwd,
+        ...(worktree === undefined
+          ? {}
+          : { worktree: { path: worktree.path, repoRoot: worktree.repoRoot } }),
+      });
+    }
+    return claudeProjectEntries(seeds, [options.cwd ?? process.cwd()]);
+  };
+
   // Peluncur perintah: folder yang boleh dipakai adalah folder sesi aktif
   // (dan worktree miliknya); perintah hanya dijalankan lewat terminal.
   const runnerService =
@@ -569,6 +592,13 @@ export function createApp(options: CreateAppOptions = {}) {
       }),
     )
     .use(memoryRoutes({ service: options.memory, audit: options.audit }))
+    .use(
+      claudeMemoryRoutes({
+        projects: claudeProjects,
+        env,
+        ...(options.home === undefined ? {} : { home: options.home }),
+      }),
+    )
     .use(
       featuresRoutes({
         store: featureStore,

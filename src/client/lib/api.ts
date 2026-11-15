@@ -26,6 +26,8 @@ import type {
   MemoryStatus,
 } from "../../server/memory/memory-files";
 import type { ImportResult } from "../../server/memory/memory-service";
+import type { ClaudeMemoryResponse } from "../../server/memory/claude-memory";
+import { parseClaudeMemoryResponse } from "./claude-memory";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
 import type { TerminalInfo } from "../../server/terminal/terminal-manager";
@@ -602,6 +604,8 @@ export interface ApiClient {
   setActiveProvider(profileId: string): Promise<unknown>;
   testProvider(selection?: { profileId?: string; model?: string }): Promise<ConnectionTestView>;
   listMemory(params?: MemoryQuery): Promise<MemoryList>;
+  /** Memory Claude Code untuk satu proyek; baca-saja. */
+  listClaudeMemory(project: string): Promise<ClaudeMemoryResponse>;
   createMemory(input: MemoryCreateInput): Promise<MemoryItem>;
   updateMemory(id: string, input: MemoryUpdateInput): Promise<MemoryItem>;
   createTerminal(cwd: string, size?: { cols: number; rows: number }): Promise<TerminalItem>;
@@ -1967,6 +1971,18 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         },
         problems: Array.isArray(problems) ? (problems as MemoryProblem[]) : [],
       };
+    },
+
+    async listClaudeMemory(project) {
+      const data = await request(
+        "GET",
+        `/api/memory/claude?project=${encodeURIComponent(project)}`,
+      );
+      const parsed = parseClaudeMemoryResponse(data);
+      if (parsed === null) {
+        throw new ApiError("respons server tidak valid", 200);
+      }
+      return parsed;
     },
 
     async createMemory(input) {

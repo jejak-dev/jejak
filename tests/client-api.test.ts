@@ -950,6 +950,73 @@ describe("createApiClient: memory", () => {
   });
 });
 
+describe("createApiClient: memory Claude Code", () => {
+  const PAYLOAD = {
+    project: "proyek",
+    dirs: [
+      {
+        label: "proyek",
+        dirExists: true,
+        items: [
+          {
+            file: "satu.md",
+            title: "satu",
+            description: "ringkasan",
+            type: "project",
+            body: "isi",
+            updatedAt: "2026-11-08T10:00:00.000Z",
+          },
+        ],
+      },
+    ],
+  };
+
+  test("listClaudeMemory GET ter-encode dan mengembalikan respons", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(PAYLOAD));
+    const api = createApiClient({ fetch, baseUrl: "http://localhost:9" });
+
+    const result = await api.listClaudeMemory("/tmp/dir a");
+
+    expect(result.project).toBe("proyek");
+    expect(result.dirs[0]?.items[0]?.title).toBe("satu");
+    expect(calls[0]?.url).toBe(
+      "http://localhost:9/api/memory/claude?project=%2Ftmp%2Fdir%20a",
+    );
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("listClaudeMemory menolak respons tak dikenal", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ project: "p", dirs: "bukan" }));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.listClaudeMemory("/tmp/x");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+  });
+
+  test("listClaudeMemory meneruskan galat server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Proyek tidak dikenal." }, 404));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.listClaudeMemory("/tmp/x");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(404);
+    expect((caught as ApiError).message).toBe("Proyek tidak dikenal.");
+  });
+});
+
 const CHECKPOINT = {
   id: "a".repeat(40),
   kind: "turn" as const,
