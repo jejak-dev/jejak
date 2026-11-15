@@ -46,6 +46,16 @@ function prosesDengan(path: string): string[] {
   }
 }
 
+/**
+ * Tunggu semua proses browser profil ini benar-benar berhenti.
+ *
+ * Proses anak Chrome (misalnya helper renderer) boleh masih keluar sesaat
+ * setelah proses utama mati, jadi ditunggu dulu sebelum diperiksa.
+ */
+async function tungguProsesKeluar(profil: string, ms = 5_000): Promise<void> {
+  await tungguSyarat(() => prosesDengan(profil).length === 0, ms);
+}
+
 const HALAMAN = `<!doctype html>
 <html>
   <head>
@@ -262,6 +272,7 @@ describe("integrasi browser (Chrome nyata)", () => {
           await tungguSyarat(() => !hidup(pid), 5_000);
           expect(hidup(pid)).toBe(false);
         }
+        await tungguProsesKeluar(profil);
         expect(prosesDengan(profil)).toEqual([]);
       } finally {
         cdp?.tutup();
@@ -342,6 +353,7 @@ describe("integrasi browser (Chrome nyata)", () => {
             expect(hidup(pid)).toBe(false);
           }
           // Tak ada Chrome Jejak yang tertinggal untuk profil ini.
+          await tungguProsesKeluar(profil);
           expect(prosesDengan(profil)).toEqual([]);
         } finally {
           cdp?.tutup();

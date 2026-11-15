@@ -259,6 +259,12 @@ const POTONGAN_TANDAA = "[dipotong]";
 const ACTION_SETTLE_MS = 300;
 /** Batas total tunggu halaman tenang (ms). */
 const ACTION_TIMEOUT_MS = 1_500;
+/** Batas tunggu navigasi (riwayat/muat ulang) selesai (ms). */
+const NAVIGATION_TIMEOUT_MS = 3_000;
+/** Jarak antar pemeriksaan status navigasi (ms). */
+const NAVIGATION_POLL_MS = 50;
+/** Jeda menunggu peristiwa "halaman mulai memuat" datang (ms). */
+const NAVIGATION_GRACE_MS = 500;
 /** Bawaan jarak gulir (piksel). */
 const DEFAULT_SCROLL_PX = 600;
 /** Batas atas jarak gulir (piksel). */
@@ -1760,13 +1766,16 @@ export class BrowserManager {
     }
     const riwayat = await this.daftarRiwayat();
     if (riwayat === undefined) return this.state();
-    const target = riwayat.entries[riwayat.currentIndex - 1];
+    const indeksTujuan = riwayat.currentIndex - 1;
+    const target = riwayat.entries[indeksTujuan];
     if (target === undefined) return this.state();
     await client.send("Page.navigateToHistoryEntry", { entryId: target.id }, tab.sessionId);
     // URL entri tujuan langsung dipakai; peristiwa navigasi akan menyelaraskan.
     tab.url = target.url;
     // Halaman berganti; ref dari snapshot sebelumnya tak berlaku lagi.
     this.snapshotCount = 0;
+    // Tunggu navigasi selesai; tanpa ini riwayat berikutnya bisa dibaca basi.
+    await this.tungguRiwayat(indeksTujuan);
     await this.refreshHistory();
     this.notifyState();
     return this.state();
@@ -1782,13 +1791,16 @@ export class BrowserManager {
     }
     const riwayat = await this.daftarRiwayat();
     if (riwayat === undefined) return this.state();
-    const target = riwayat.entries[riwayat.currentIndex + 1];
+    const indeksTujuan = riwayat.currentIndex + 1;
+    const target = riwayat.entries[indeksTujuan];
     if (target === undefined) return this.state();
     await client.send("Page.navigateToHistoryEntry", { entryId: target.id }, tab.sessionId);
     // URL entri tujuan langsung dipakai; peristiwa navigasi akan menyelaraskan.
     tab.url = target.url;
     // Halaman berganti; ref dari snapshot sebelumnya tak berlaku lagi.
     this.snapshotCount = 0;
+    // Tunggu navigasi selesai; tanpa ini riwayat berikutnya bisa dibaca basi.
+    await this.tungguRiwayat(indeksTujuan);
     await this.refreshHistory();
     this.notifyState();
     return this.state();
@@ -1805,6 +1817,8 @@ export class BrowserManager {
     await client.send("Page.reload", { ignoreCache: false }, tab.sessionId);
     // Halaman berganti; ref dari snapshot sebelumnya tak berlaku lagi.
     this.snapshotCount = 0;
+    // Tunggu muat ulang selesai supaya state tak masih menampilkan halaman lama.
+    await this.tungguMuatUlang();
     await this.refreshHistory();
     this.notifyState();
     return this.state();
@@ -1842,6 +1856,52 @@ export class BrowserManager {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * Tunggu navigasi riwayat selesai: indeks riwayat mencapai entri tujuan lalu
+   * halaman berhenti memuat.
+   *
+   * Batas 3 detik supaya tak memblokir selamanya; bila belum selesai, state
+   * terakhir yang ada tetap dikembalikan.
+   */
+  private async tungguRiwayat(indeksTujuan: number): Promise<void> {
+    const deadline = Date.now() + NAVIGATION_TIMEOUT_MS;
+    while (Date.now() < deadline) {
+      const riwayat = await this.daftarRiwayat();
+      if (riwayat === undefined) return;
+      if (riwayat.currentIndex === indeksTujuan) {
+        await this.tungguMuatSelesai(deadline);
+        return;
+      }
+      await Bun.sleep(NAVIGATION_POLL_MS);
+    }
+  }
+
+  /** Tunggu halaman berhenti memuat; memakai sisa batas waktu yang diberi. */
+  private async tungguMuatSelesai(deadline: number): Promise<void> {
+    const tab = this.activeTab();
+    if (tab === undefined) return;
+    while (Date.now() < deadline && tab.loading) {
+      await Bun.sleep(NAVIGATION_POLL_MS);
+    }
+  }
+
+  /**
+   * Tunggu muat ulang selesai.
+   *
+   * Peristiwa "halaman mulai memuat" bisa datang sedikit setelah balasan
+   * perintah, jadi diberi jeda singkat sebelum menunggu halaman diam.
+   */
+  private async tungguMuatUlang(): Promise<void> {
+    const deadline = Date.now() + NAVIGATION_TIMEOUT_MS;
+    const tab = this.activeTab();
+    if (tab === undefined) return;
+    const akhir = Math.min(deadline, Date.now() + NAVIGATION_GRACE_MS);
+    while (Date.now() < akhir && !tab.loading) {
+      await Bun.sleep(NAVIGATION_POLL_MS);
+    }
+    await this.tungguMuatSelesai(deadline);
   }
 
   /** Ubah ukuran tampilan; diterapkan ke tab aktif dan tab berikutnya. */
