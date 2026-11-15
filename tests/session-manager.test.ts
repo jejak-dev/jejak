@@ -10,6 +10,7 @@ import {
   SessionManager,
   type SequencedEvent,
   type SessionManagerOptions,
+  type SessionStatus,
 } from "../src/server/sessions/session-manager";
 import { SqliteSessionStore, type SessionStore } from "../src/server/sessions/session-store";
 
@@ -1240,6 +1241,155 @@ describe("SessionManager + store", () => {
     const persisted = second.loadSessions()[0]!;
     expect(persisted.info.status).toBe("gagal");
     second.close();
+  });
+
+  function seedSession(
+    store: SqliteSessionStore,
+    options: { id: string; status: SessionStatus; events: AgentEvent[] },
+  ): void {
+    const stamp = new Date().toISOString();
+    store.saveSession(
+      {
+        id: options.id,
+        title: "Sesi uji",
+        prompt: "Halo dunia",
+        cwd: dir,
+        profileId: "lokal",
+        permissionMode: "default",
+        status: options.status,
+        createdAt: stamp,
+        updatedAt: stamp,
+        eventCount: options.events.length,
+        pendingPermissions: 0,
+        queued: 0,
+      },
+      undefined,
+    );
+    options.events.forEach((event, index) => {
+      store.appendEvent(options.id, { seq: index + 1, event });
+    });
+  }
+
+  function permissionRequest(id: string, name: string): AgentEvent {
+    return { type: "permission_request", id, name, input: {} };
+  }
+
+  test("pemulihan menutup izin rencana menggantung dengan deny sesi dihentikan", async () => {
+    const path = storePath();
+    const first = new SqliteSessionStore(path);
+    seedSession(first, {
+      id: "s_rencana",
+      status: "berjalan",
+      events: [
+        { type: "user_message", text: "rencanakan" },
+        permissionRequest("p1", "ExitPlanMode"),
+      ],
+    });
+    first.close();
+
+    const second = new SqliteSessionStore(path);
+    const restored = manager({ runner: scriptedRunner([]), store: second });
+    expect(restored.get("s_rencana")?.status).toBe("gagal");
+    expect(restored.get("s_rencana")?.pendingPermissions).toBe(0);
+
+    const events = (await collect(restored.events("s_rencana"))).map((item) => item.event);
+    const resolved = events.filter(
+      (item): item is Extract<AgentEvent, { type: "permission_resolved" }> =>
+        item.type === "permission_resolved" && item.id === "p1",
+    );
+    expect(resolved.length).toBe(1);
+    expect(resolved[0]?.decision).toBe("deny");
+    expect(resolved[0]?.message).toBe("sesi dihentikan");
+
+    // Event penolakan izin muncul sebelum event error/result pemulihan.
+    const indexResolved = events.findIndex((item) => item.type === "permission_resolved");
+    const indexError = events.findIndex(
+      (item) => item.type === "error" && item.message.includes("dimulai ulang"),
+    );
+    expect(indexResolved).toBeGreaterThanOrEqual(0);
+    expect(indexError).toBeGreaterThan(indexResolved);
+
+    expect(second.loadSessions()[0]?.info.pendingPermissions).toBe(0);
+    second.close();
+  });
+
+  test("pemulihan menutup semua izin menggantung dan tak menyentuh yang sudah diputuskan", async () => {
+    const path = storePath();
+    const first = new SqliteSessionStore(path);
+    seedSession(first, {
+      id: "s_campuran",
+      status: "berjalan",
+      events: [
+        permissionRequest("p1", "Bash"),
+        { type: "permission_resolved", id: "p1", decision: "allow" },
+        permissionRequest("p2", "ExitPlanMode"),
+        permissionRequest("p3", "AskUserQuestion"),
+      ],
+    });
+    first.close();
+
+    const second = new SqliteSessionStore(path);
+    const restored = manager({ runner: scriptedRunner([]), store: second });
+    const events = (await collect(restored.events("s_campuran"))).map((item) => item.event);
+    const resolved = events.filter(
+      (item): item is Extract<AgentEvent, { type: "permission_resolved" }> =>
+        item.type === "permission_resolved",
+    );
+    expect(resolved.filter((item) => item.id === "p1").length).toBe(1);
+    expect(resolved.find((item) => item.id === "p1")?.decision).toBe("allow");
+    for (const id of ["p2", "p3"]) {
+      const item = resolved.find((entry) => entry.id === id);
+      expect(item?.decision).toBe("deny");
+      expect(item?.message).toBe("sesi dihentikan");
+    }
+    expect(restored.get("s_campuran")?.pendingPermissions).toBe(0);
+    second.close();
+  });
+
+  test("pemulihan tidak mengubah sesi yang tidak berjalan", async () => {
+    const path = storePath();
+    const first = new SqliteSessionStore(path);
+    seedSession(first, {
+      id: "s_selesai",
+      status: "selesai",
+      events: [permissionRequest("p1", "ExitPlanMode")],
+    });
+    first.close();
+
+    const second = new SqliteSessionStore(path);
+    const restored = manager({ runner: scriptedRunner([]), store: second });
+    expect(restored.get("s_selesai")?.status).toBe("selesai");
+    const events = (await collect(restored.events("s_selesai"))).map((item) => item.event);
+    expect(events.some((item) => item.type === "permission_resolved")).toBe(false);
+    second.close();
+  });
+
+  test("pemulihan idempoten: izin menggantung tak menghasilkan event ganda", async () => {
+    const path = storePath();
+    const first = new SqliteSessionStore(path);
+    seedSession(first, {
+      id: "s_idempoten",
+      status: "berjalan",
+      events: [permissionRequest("p1", "ExitPlanMode")],
+    });
+    first.close();
+
+    const second = new SqliteSessionStore(path);
+    const restored = manager({ runner: scriptedRunner([]), store: second });
+    const events = (await collect(restored.events("s_idempoten"))).map((item) => item.event);
+    expect(events.filter((item) => item.type === "permission_resolved").length).toBe(1);
+
+    // Simulasikan server mati lagi saat sesi ditandai berjalan.
+    const stored = second.loadSessions()[0]!;
+    second.saveSession({ ...stored.info, status: "berjalan" }, stored.sdkSessionId);
+    second.close();
+
+    const third = new SqliteSessionStore(path);
+    const restoredAgain = manager({ runner: scriptedRunner([]), store: third });
+    const eventsAgain = (await collect(restoredAgain.events("s_idempoten"))).map((item) => item.event);
+    expect(eventsAgain.filter((item) => item.type === "permission_resolved").length).toBe(1);
+    expect(restoredAgain.get("s_idempoten")?.pendingPermissions).toBe(0);
+    third.close();
   });
 
   test("send pada sesi restore memakai resolveProvider {profileId, model} dan resumeSessionId", async () => {

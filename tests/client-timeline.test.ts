@@ -333,6 +333,19 @@ describe("reduceTimeline: izin", () => {
     const items = reduceAll([request, { type: "permission_resolved", id: "lain", decision: "allow" }]);
     expect(items[0]).toMatchObject({ status: "menunggu" });
   });
+
+  test("replay sesudah restart menandai kartu ExitPlanMode sebagai dihentikan", () => {
+    const items = reduceAll([
+      { type: "permission_request", id: "p1", name: "ExitPlanMode", input: { plan: "rencana" } },
+      { type: "permission_resolved", id: "p1", decision: "deny", message: "sesi dihentikan" },
+    ]);
+    expect(items[0]).toMatchObject({
+      kind: "permission",
+      name: "ExitPlanMode",
+      status: "dihentikan",
+    });
+    expect(items[0]).not.toHaveProperty("message");
+  });
 });
 
 describe("reduceTimeline: notice", () => {

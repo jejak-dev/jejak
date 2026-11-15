@@ -851,8 +851,10 @@ export class SessionManager {
 
     for (const item of stored) {
       let buffer: SequencedEvent[] = [];
+      let loaded: SequencedEvent[] = [];
       try {
-        buffer = store.loadEvents(item.info.id).slice(-this.maxEventsPerSession);
+        loaded = store.loadEvents(item.info.id);
+        buffer = loaded.slice(-this.maxEventsPerSession);
       } catch (error) {
         if (!this.storeWarned) {
           this.storeWarned = true;
@@ -905,6 +907,9 @@ export class SessionManager {
 
       if (record.info.status === "berjalan") {
         record.info.status = "gagal";
+        // Izin yang menggantung ditutup lebih dulu supaya UI tak menampilkan
+        // tombol Approve/Revisi dan hitung mundur untuk sesi yang sudah mati.
+        this.closePendingPermissionsOnRecovery(record, loaded);
         this.append(record, { type: "error", message: "server dimulai ulang saat sesi berjalan" });
         this.append(record, {
           type: "result",
@@ -930,6 +935,40 @@ export class SessionManager {
       if (victim === undefined) break;
       this.dropSession(victim);
     }
+  }
+
+  /**
+   * Menutup izin yang menggantung saat pemulihan sesi: setiap
+   * `permission_request` yang belum punya `permission_resolved` dengan id sama
+   * ditutup dengan penolakan "sesi dihentikan". Idempoten: izin yang sudah
+   * diputuskan (event lama) tidak disentuh dan pemulihan ulang tidak menambah
+   * event ganda.
+   */
+  private closePendingPermissionsOnRecovery(record: SessionRecord, events: SequencedEvent[]): void {
+    const decided = new Set<string>();
+    for (const item of events) {
+      if (item.event.type === "permission_resolved") decided.add(item.event.id);
+    }
+
+    let closed = 0;
+    for (const item of events) {
+      const event = item.event;
+      if (event.type !== "permission_request") continue;
+      if (decided.has(event.id)) continue;
+      decided.add(event.id);
+      closed += 1;
+      this.append(record, {
+        type: "permission_resolved",
+        id: event.id,
+        decision: "deny",
+        message: PERMISSION_STOPPED_MESSAGE,
+      });
+    }
+
+    if (closed === 0) return;
+    record.info.pendingPermissions = 0;
+    record.info.updatedAt = this.now().toISOString();
+    this.persistSession(record);
   }
 
   /**
