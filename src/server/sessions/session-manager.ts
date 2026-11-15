@@ -85,6 +85,11 @@ export interface SessionInfo {
   eventCount: number;
   pendingPermissions: number;
   queued: number;
+  /**
+   * Isi antrean pesan saat sesi berjalan; hanya ada bila antrean tak kosong.
+   * Teks penuh (klien yang memotong tampilan). Pesan sistem tak ikut.
+   */
+  queuedMessages?: { id: string; text: string }[];
   workspaceId?: string;
   workspaceName?: string;
   /** Waktu sesi diarsipkan (ISO); tidak ada berarti tidak diarsipkan. */
@@ -123,6 +128,17 @@ export interface SessionInfo {
 export interface SequencedEvent {
   seq: number;
   event: AgentEvent;
+}
+
+/**
+ * Satu entri antrean pesan. Id dipakai agar pesan bisa dihapus atau
+ * dikirim sekarang tanpa ikut terhapus pesan lain (indeks bergeser).
+ */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  /** Pesan sistem (mis. lanjutan ganti sandbox); tak tampil di daftar klien. */
+  hidden?: boolean;
 }
 
 export interface CreateSessionInput {
@@ -276,7 +292,12 @@ interface SessionRecord {
    * giliran itu memakai jangkar tersebut.
    */
   rewindTo?: { uuid: string; sdkSessionId: string };
-  queue: string[];
+  queue: QueuedMessage[];
+  /**
+   * Giliran yang berjalan harus dihentikan lalu dilanjutkan dengan pesan
+   * antrean teratas (dikirim lewat "Kirim sekarang" atau ganti sandbox).
+   */
+  sendNowPending?: boolean;
   /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
   turns: number;
   /**
@@ -344,6 +365,15 @@ const RECOVERY_ERROR_MESSAGE = "server dimulai ulang saat sesi berjalan";
 /** Pesan lanjutan untuk sesi yang terputus karena aplikasi berhenti. */
 const CONTINUE_MESSAGE =
   "Sesi sempat terputus karena aplikasi berhenti. Lanjutkan pekerjaan terakhirmu dari titik tadi dan minta izin lagi bila perlu.";
+
+/**
+ * Pesan lanjutan otomatis setelah mode sandbox diganti saat giliran
+ * berjalan: giliran yang berjalan dihentikan, lalu pekerjaan dilanjutkan
+ * dengan mode baru.
+ */
+function sandboxContinueMessage(mode: SandboxMode): string {
+  return `Mode sandbox diganti pengguna menjadi ${mode}. Lanjutkan pekerjaan terakhirmu dari titik tadi; ulangi perintah yang tadi terhenti bila perlu.`;
+}
 
 /** Label Bahasa Indonesia untuk alasan berakhir/berjeda tujuan. */
 const GOAL_REASON_LABEL: Record<GoalEndReason, string> = {
@@ -1212,6 +1242,11 @@ export class SessionManager {
     // berhenti mendadak); dihitung di sini, tidak disimpan.
     copy.canContinue =
       record.sdkSessionId !== undefined && info.status !== "berjalan";
+    // Isi antrean untuk klien; pesan sistem (hidden) tak ikut.
+    const visible = record.queue.filter((item) => item.hidden !== true);
+    if (visible.length > 0) {
+      copy.queuedMessages = visible.map((item) => ({ id: item.id, text: item.text }));
+    }
     return copy;
   }
 
@@ -1284,8 +1319,10 @@ export class SessionManager {
   }
 
   /**
-   * Ganti mode sandbox Bash sesi; berlaku mulai giliran berikutnya (giliran yang
-   * sedang berjalan tetap memakai mode lamanya).
+   * Ganti mode sandbox Bash sesi. Bila sesi sedang berjalan, giliran yang
+   * berjalan dihentikan lalu dilanjutkan otomatis dengan mode baru (SDK tak
+   * bisa mengubah sandbox di tengah giliran). Bila sesi tak berjalan, mode
+   * baru berlaku pada giliran berikutnya.
    */
   setSandbox(id: string, mode: unknown): SessionInfo {
     const record = this.requireRecord(id);
@@ -1295,9 +1332,30 @@ export class SessionManager {
     if (mode !== "standar" && mode !== "mati") {
       throw new SessionError('Field sandbox hanya "standar" atau "mati".', "tidak-valid");
     }
+    const previous = this.effectiveSandboxMode(record);
     record.info.sandbox = mode;
     this.persistSession(record);
     this.notify(record);
+    if (mode === "mati") {
+      this.audit("pengaturan", "Sesi tanpa sandbox", record.info.id, {
+        aksi: "sandbox-mati",
+      });
+    }
+    if (previous !== mode && record.info.status === "berjalan") {
+      // Giliran berjalan dihentikan; pesan lanjutan disisipkan di kepala
+      // antrean (tak tampil di daftar klien) lalu dijalankan sebagai giliran
+      // berikutnya dengan mode baru.
+      record.queue.unshift({
+        id: crypto.randomUUID(),
+        text: sandboxContinueMessage(mode),
+        hidden: true,
+      });
+      record.info.queued = record.queue.length;
+      record.sendNowPending = true;
+      this.persistSession(record);
+      this.notify(record);
+      record.controller.abort();
+    }
     return this.viewInfo(record);
   }
 
@@ -1797,7 +1855,7 @@ export class SessionManager {
           "penuh",
         );
       }
-      record.queue.push(message);
+      record.queue.push({ id: crypto.randomUUID(), text: message });
       record.info.queued = record.queue.length;
       this.persistSession(record);
       this.notify(record);
@@ -1829,6 +1887,46 @@ export class SessionManager {
     this.assertConcurrencyCapacity();
     this.startTurn(record, message, true);
     return { queued: false };
+  }
+
+  /**
+   * Buang satu pesan dari antrean; pesan lain tetap antre.
+   */
+  removeQueued(id: string, queueId: string): void {
+    const record = this.requireRecord(id);
+    const index = record.queue.findIndex((item) => item.id === queueId);
+    if (index === -1) {
+      throw new SessionError("pesan antrean tidak ditemukan", "tidak-ditemukan");
+    }
+    record.queue.splice(index, 1);
+    record.info.queued = record.queue.length;
+    this.persistSession(record);
+    this.notify(record);
+  }
+
+  /**
+   * Kirim satu pesan antrean sekarang: giliran yang sedang berjalan dihentikan
+   * lalu pesan itu jadi giliran berikutnya; pesan lain tetap antre di
+   * belakangnya dan jalan sesudahnya.
+   */
+  sendQueuedNow(id: string, queueId: string): void {
+    const record = this.requireRecord(id);
+    if (record.info.status !== "berjalan") {
+      throw new SessionError("Sesi sedang tidak berjalan.", "konflik");
+    }
+    const index = record.queue.findIndex((item) => item.id === queueId);
+    if (index === -1) {
+      throw new SessionError("pesan antrean tidak ditemukan", "tidak-ditemukan");
+    }
+    const [entry] = record.queue.splice(index, 1);
+    record.queue.unshift(entry!);
+    record.info.queued = record.queue.length;
+    // Penanda dibaca di akhir giliran: antrean tak dibersihkan dan pesan
+    // teratas dijalankan sebagai giliran berikutnya.
+    record.sendNowPending = true;
+    this.persistSession(record);
+    this.notify(record);
+    record.controller.abort();
   }
 
   /**
@@ -2291,12 +2389,14 @@ export class SessionManager {
   /**
    * Mulai satu giliran. `auto: "goal"` menandai giliran lanjutan otomatis
    * mode Goal (event pesannya ditandai, tidak bisa dimundurkan).
+   * `auto: "sistem"` menandai pesan sistem (mis. lanjutan ganti sandbox);
+   * pesan itu tampil sebagai catatan, bukan pesan pengguna.
    */
   private startTurn(
     record: SessionRecord,
     text: string,
     isFollowUp: boolean,
-    auto?: "goal",
+    auto?: "goal" | "sistem",
   ): void {
     record.controller = new AbortController();
     let settle: () => void = () => {};
@@ -2309,12 +2409,16 @@ export class SessionManager {
 
     this.setStatus(record, "berjalan");
     if (isFollowUp) {
-      this.append(
-        record,
-        auto === undefined
-          ? { type: "user_message", text }
-          : { type: "user_message", text, auto },
-      );
+      if (auto === "sistem") {
+        this.append(record, { type: "notice", text, level: "info" });
+      } else {
+        this.append(
+          record,
+          auto === undefined
+            ? { type: "user_message", text }
+            : { type: "user_message", text, auto },
+        );
+      }
     }
 
     const resolved = record.resolved;
@@ -2588,14 +2692,31 @@ export class SessionManager {
       this.notify(record);
       this.reportTurnEnd(record);
 
-      if (record.info.status === "dibatalkan" || record.info.status === "gagal") {
+      // "Kirim sekarang" atau ganti sandbox: giliran yang berjalan dihentikan
+      // lalu pesan teratas antrean jadi giliran berikutnya; antrean tak
+      // dibersihkan dan pesan lain tetap menunggu giliran sesudahnya.
+      const sendNow = record.sendNowPending === true;
+      record.sendNowPending = false;
+      const aborted = record.controller.signal.aborted === true;
+      const stopped =
+        record.info.status === "dibatalkan" || record.info.status === "gagal";
+      if (sendNow && aborted && record.queue.length > 0) {
+        const next = record.queue.shift()!;
+        record.info.queued = record.queue.length;
+        this.startTurn(
+          record,
+          next.text,
+          true,
+          next.hidden === true ? "sistem" : undefined,
+        );
+      } else if (stopped) {
         this.clearQueue(record);
         this.finishGoalOnFailure(record);
       } else if (record.queue.length > 0) {
         // Antrean pengguna selalu didahulukan dari kelanjutan otomatis.
         const next = record.queue.shift()!;
         record.info.queued = record.queue.length;
-        this.startTurn(record, next, true);
+        this.startTurn(record, next.text, true);
       } else {
         this.continueGoal(record);
       }

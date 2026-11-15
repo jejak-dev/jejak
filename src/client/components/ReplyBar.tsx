@@ -16,6 +16,7 @@ import { DictationButton } from "./DictationButton";
 import { Dropdown, type DropdownSection } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
+import { QueueList } from "./QueueList";
 import { useAttachments } from "./useAttachments";
 
 export interface ReplyBarProps {
@@ -400,6 +401,42 @@ export function ReplyBar({
     void submit();
   };
 
+  // Antrean pesan: "Kirim sekarang" (giliran berjalan dihentikan, pesan itu
+  // jadi giliran berikutnya) atau buang satu pesan dari antrean.
+  const [queueBusy, setQueueBusy] = useState(false);
+
+  const sendQueuedNow = async (queueId: string): Promise<void> => {
+    if (queueBusy) return;
+    setQueueBusy(true);
+    setError(undefined);
+    try {
+      await api.sendQueuedNow(sessionId, queueId);
+      void refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError ? caught.message : "gagal mengirim pesan antrean",
+      );
+    } finally {
+      setQueueBusy(false);
+    }
+  };
+
+  const removeQueued = async (queueId: string): Promise<void> => {
+    if (queueBusy) return;
+    setQueueBusy(true);
+    setError(undefined);
+    try {
+      await api.removeQueued(sessionId, queueId);
+      void refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError ? caught.message : "gagal menghapus pesan antrean",
+      );
+    } finally {
+      setQueueBusy(false);
+    }
+  };
+
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
     event.preventDefault();
@@ -436,6 +473,13 @@ export function ReplyBar({
             )}
           </div>
         )}
+        <QueueList
+          items={session.queuedMessages ?? []}
+          onSendNow={(queueId) => void sendQueuedNow(queueId)}
+          onRemove={(queueId) => void removeQueued(queueId)}
+          disabled={!running || queueBusy}
+          removeDisabled={queueBusy}
+        />
         <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
           {att.dragging && <DropHint />}
           <AttachmentTray items={att.items} pending={att.pending} error={att.error} onRemove={att.remove} />
@@ -471,9 +515,6 @@ export function ReplyBar({
         </div>
 
         <div class="jk-comp-meta jk-meta-end">
-          {session.queued > 0 && (
-            <span class="jk-reply-queue">{session.queued} pesan menunggu giliran</span>
-          )}
           {modelSections.length > 0 ? (
             <Dropdown
               label={modelLabel}
@@ -505,7 +546,11 @@ export function ReplyBar({
             <Dropdown
               label={sandboxMode === "mati" ? "Tanpa sandbox" : "Sandbox"}
               ariaLabel="Sandbox sesi"
-              title={running ? "Berlaku mulai balasan berikutnya" : "Sandbox sesi"}
+              title={
+                running
+                  ? "Giliran yang sedang berjalan dihentikan lalu dilanjutkan otomatis dengan mode baru"
+                  : "Sandbox sesi"
+              }
               sections={[
                 {
                   options: [

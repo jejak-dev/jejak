@@ -473,6 +473,25 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
       },
       { parse: "text" },
     )
+    .delete(
+      "/api/sessions/:id/queue/:queueId",
+      ({ params }) => {
+        try {
+          manager.removeQueued(params.id, params.queueId);
+          return jsonResponse(200, { ok: true });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+    )
+    .post("/api/sessions/:id/queue/:queueId/send-now", ({ params }) => {
+      try {
+        manager.sendQueuedNow(params.id, params.queueId);
+        return jsonResponse(200, { ok: true });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
     .post("/api/sessions/:id/interrupt", ({ params }) => {
       if (manager.get(params.id) === undefined) {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });

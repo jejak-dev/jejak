@@ -564,6 +564,10 @@ export interface ApiClient {
   /** Tujuan sesi; `null` bila sesi tidak punya tujuan. */
   getGoal(id: string): Promise<{ goal: GoalView | null }>;
   sendMessage(id: string, text: string): Promise<{ queued: boolean }>;
+  /** Buang satu pesan dari antrean sesi. */
+  removeQueued(id: string, queueId: string): Promise<{ ok: true }>;
+  /** Kirim satu pesan antrean sekarang: giliran berjalan dihentikan dulu. */
+  sendQueuedNow(id: string, queueId: string): Promise<{ ok: true }>;
   /** Pertanyaan sampingan dari salinan percakapan sesi (tidak masuk riwayat). */
   askSideQuestion(id: string, question: string): Promise<{ answer: string }>;
   /** Mundur percakapan ke pesan pengguna; mengembalikan teks pesan yang dibuang. */
@@ -1662,6 +1666,24 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         { text },
       );
       return { queued: field(data, "queued") === true };
+    },
+
+    async removeQueued(id, queueId) {
+      await request(
+        "DELETE",
+        `/api/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(queueId)}`,
+        {},
+      );
+      return { ok: true as const };
+    },
+
+    async sendQueuedNow(id, queueId) {
+      await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(queueId)}/send-now`,
+        {},
+      );
+      return { ok: true as const };
     },
 
     async askSideQuestion(id, question) {
