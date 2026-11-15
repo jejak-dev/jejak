@@ -93,7 +93,13 @@ interface ItemBody {
     decidedAt: string | null;
     replaces: string | null;
     revises: { id: string; title: string; body: string } | null;
-    origin: { kind: string; file?: string; fileSha256?: string };
+    origin: {
+      kind: string;
+      file?: string;
+      fileSha256?: string;
+      sessionId?: string;
+      sessionIds?: string[];
+    };
   };
 }
 
@@ -549,6 +555,7 @@ describe("memory dimatikan", () => {
       ["GET", "/api/memory"],
       ["POST", "/api/memory"],
       ["POST", "/api/memory/import"],
+      ["POST", "/api/memory/consolidate"],
       ["PATCH", "/api/memory/x"],
       ["POST", "/api/memory/x/accept"],
       ["POST", "/api/memory/x/reject"],
@@ -562,6 +569,108 @@ describe("memory dimatikan", () => {
     await expect(
       import("node:fs/promises").then((fs) => fs.stat(join(home, "memory"))),
     ).rejects.toThrow();
+  });
+});
+
+describe("gabungkan ringkasan sesi lewat API", () => {
+  async function appWithService(): Promise<{
+    app: App;
+    service: MemoryService;
+    close: () => void;
+  }> {
+    const store2 = new FileMemoryStore({ dir: join(home, "memory-gabung") });
+    const service = new MemoryService({ store: store2, cwd: dir });
+    return { app: makeApp({ memory: service }), service, close: () => store2.close() };
+  }
+
+  const isi = (berkas: string): string =>
+    `Permintaan: kerjakan\nBerkas diubah: ${berkas}\nJawaban akhir: Selesai.`;
+
+  test("dua ringkasan digabung menjadi satu usulan", async () => {
+    const { app, service, close } = await appWithService();
+    try {
+      await service.upsertSessionSummary({
+        sessionId: "s_1",
+        projectKey: dir,
+        title: "Ringkasan sesi: Satu",
+        body: isi("a.ts"),
+      });
+      await service.upsertSessionSummary({
+        sessionId: "s_2",
+        projectKey: dir,
+        title: "Ringkasan sesi: Dua",
+        body: isi("b.ts"),
+      });
+
+      const res = await req(app, "POST", "/api/memory/consolidate", { projectKey: dir });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { item: ItemBody["item"]; sources: number };
+      expect(body.sources).toBe(2);
+      expect(body.item.status).toBe("proposed");
+      expect(body.item.confidence).toBe("inferred");
+      expect(body.item.title.startsWith("Ringkasan proyek: ")).toBe(true);
+      expect(body.item.origin.sessionIds).toEqual(["s_1", "s_2"]);
+
+      // Memory gabungan harus utuh setelah ditulis dan dibaca ulang dari disk.
+      const listed = (await (await req(app, "GET", "/api/memory?status=proposed")).json()) as ListBody;
+      const found = listed.items.find((item) => item.title.startsWith("Ringkasan proyek: "));
+      expect(found).toBeDefined();
+      expect(found?.origin.sessionIds).toEqual(["s_1", "s_2"]);
+    } finally {
+      close();
+    }
+  });
+
+  test("kurang dari dua ringkasan dijawab 400", async () => {
+    const { app, service, close } = await appWithService();
+    try {
+      await service.upsertSessionSummary({
+        sessionId: "s_1",
+        projectKey: dir,
+        title: "Ringkasan sesi: Satu",
+        body: isi("a.ts"),
+      });
+
+      const res = await req(app, "POST", "/api/memory/consolidate", { projectKey: dir });
+      expect(res.status).toBe(400);
+      expect(await res.json()).toHaveProperty("error");
+    } finally {
+      close();
+    }
+  });
+
+  test("projectKey tidak sah dan body salah dijawab 400", async () => {
+    const { app, close } = await appWithService();
+    try {
+      for (const body of [{ projectKey: "relatif" }, { projectKey: 5 }, {}]) {
+        const res = await req(app, "POST", "/api/memory/consolidate", body);
+        expect(res.status).toBe(400);
+        expect(await res.json()).toHaveProperty("error");
+      }
+    } finally {
+      close();
+    }
+  });
+
+  test("guard tetap berlaku: 415 tanpa JSON dan 403 host lain", async () => {
+    const { app, close } = await appWithService();
+    try {
+      const noType = await app.handle(
+        new Request("http://127.0.0.1:3000/api/memory/consolidate", {
+          method: "POST",
+          headers: { host: "127.0.0.1:3000", "content-type": "text/plain" },
+          body: JSON.stringify({ projectKey: dir }),
+        }),
+      );
+      expect(noType.status).toBe(415);
+
+      const badHost = await req(app, "POST", "/api/memory/consolidate", { projectKey: dir }, {
+        host: "evil.test",
+      });
+      expect(badHost.status).toBe(403);
+    } finally {
+      close();
+    }
   });
 });
 

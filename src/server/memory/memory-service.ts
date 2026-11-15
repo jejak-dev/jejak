@@ -23,6 +23,7 @@ import {
   memorySimilarity,
 } from "./memory-similarity";
 import { SESSION_SUMMARY_PREFIX } from "./session-summary";
+import { buildConsolidatedSummary, parseSessionSummary } from "./session-consolidation";
 
 export { MEMORY_SIMILARITY_MIN, similarity } from "./memory-similarity";
 
@@ -36,6 +37,10 @@ const SIMILARITY_CANDIDATE_LIMIT = 20;
 /** Jumlah memory mirip yang dikembalikan ke pemanggil. */
 const SIMILARITY_RESULT_LIMIT = 3;
 const STALE_FILE_MAX_BYTES = 1024 * 1024;
+/** Batas jumlah memory yang dipindai untuk upkeep ringkasan sesi. */
+const MEMORY_SCAN_LIMIT = 5000;
+/** Umur default ringkasan sesi yang masih `proposed` sebelum ditolak. */
+export const STALE_SESSION_SUMMARY_DAYS = 14;
 
 const SECRET_MESSAGE = (kind: string): string =>
   `Teks tampak memuat rahasia (${kind}). Hapus dulu sebelum menyimpan.`;
@@ -89,6 +94,8 @@ export interface UpdateMemoryInput {
 export interface ProposeInput extends CreateMemoryInput {
   originFile?: unknown;
   sessionId?: unknown;
+  /** Daftar id sesi sumber; dipakai memory gabungan ringkasan sesi. */
+  sessionIds?: unknown;
   commit?: unknown;
   /** Id memory aktif yang direvisi oleh usulan ini. */
   replaces?: unknown;
@@ -362,6 +369,88 @@ export class MemoryService {
   }
 
   /**
+   * Menolak ringkasan sesi yang sudah lama dan masih `proposed`.
+   *
+   * Hanya usulan ringkasan sesi yang lebih tua dari ambang yang ditolak;
+   * memory `active` (sudah disetujui) dan memory lain tak tersentuh. Tak ada
+   * berkas yang dihapus. Mengembalikan jumlah ringkasan yang ditolak.
+   */
+  async pruneStaleSessionSummaries(
+    options: { olderThanDays?: number } = {},
+  ): Promise<number> {
+    const days = options.olderThanDays ?? STALE_SESSION_SUMMARY_DAYS;
+    if (typeof days !== "number" || !Number.isFinite(days) || days < 0) {
+      throw invalid("Umur ringkasan sesi harus angka tidak negatif.");
+    }
+    const cutoff = this.now().getTime() - days * 24 * 60 * 60 * 1000;
+    const all = await this.store.list({ layer: "project", limit: MEMORY_SCAN_LIMIT });
+    let pruned = 0;
+    for (const memory of all) {
+      if (memory.status !== "proposed") continue;
+      if (!memory.title.startsWith(SESSION_SUMMARY_PREFIX)) continue;
+      const updated = Date.parse(memory.updatedAt);
+      if (Number.isNaN(updated) || updated >= cutoff) continue;
+      try {
+        await this.reject(memory.id);
+        pruned += 1;
+      } catch {
+        // Satu ringkasan yang gagal ditolak tak boleh menghentikan sisanya.
+      }
+    }
+    return pruned;
+  }
+
+  /**
+   * Menggabungkan ringkasan sesi satu proyek menjadi satu usulan memory
+   * proyek: judul menyebut rentang tanggal, isi memuat satu butir per sesi.
+   *
+   * Sumber yang `proposed` ditolak dan yang `active` diarsipkan setelah memory
+   * gabungan tersimpan; tak ada berkas yang dihapus. Asal memory gabungan
+   * mencatat daftar id sesi sumber dan tanggal gabung.
+   */
+  async consolidateSessionSummaries(
+    projectKey: string,
+  ): Promise<{ merged: Memory; sources: number }> {
+    const key = this.normalizeProjectKey("project", projectKey);
+    if (key === null) {
+      throw invalid("Folder proyek tidak ditemukan.");
+    }
+    const all = await this.store.list({
+      layer: "project",
+      project: key,
+      limit: MEMORY_SCAN_LIMIT,
+    });
+    const summaries = all
+      .filter(
+        (memory) =>
+          (memory.status === "proposed" || memory.status === "active") &&
+          memory.title.startsWith(SESSION_SUMMARY_PREFIX),
+      )
+      // Urut lama ke baru supaya isi gabungan dan daftar sumber konsisten.
+      .sort((left, right) => {
+        const byDate = left.updatedAt.localeCompare(right.updatedAt);
+        return byDate === 0 ? left.id.localeCompare(right.id) : byDate;
+      });
+    if (summaries.length < 2) {
+      throw invalid("Butuh minimal dua ringkasan sesi untuk digabung.");
+    }
+    const sessions = summaries.map((memory) => parseSessionSummary(memory));
+    const consolidated = buildConsolidatedSummary(sessions);
+    const merged = await this.propose({
+      layer: "project",
+      projectKey: key,
+      title: consolidated.title,
+      body: consolidated.body,
+      sessionIds: summaries.map((memory) => memory.origin.sessionId ?? memory.id),
+    });
+    for (const memory of summaries) {
+      if (memory.status === "proposed") await this.reject(memory.id);
+      else await this.archive(memory.id);
+    }
+    return { merged, sources: summaries.length };
+  }
+
+  /**
    * Jawaban wawancara dari manusia: langsung `active` + `confirmed` dengan asal
    * `interview` (nama pengonfirmasi dan tanggal tercatat di origin).
    */
@@ -444,6 +533,20 @@ export class MemoryService {
     const origin: MemoryOrigin = { kind: "session", at };
     if (typeof input.sessionId === "string" && input.sessionId.trim() !== "") {
       origin.sessionId = input.sessionId.trim();
+    }
+    if (input.sessionIds !== undefined && input.sessionIds !== null) {
+      if (!Array.isArray(input.sessionIds)) {
+        throw invalid("Field sessionIds harus berupa daftar teks.");
+      }
+      const ids: string[] = [];
+      for (const value of input.sessionIds) {
+        if (typeof value !== "string" || value.trim() === "") {
+          throw invalid("Field sessionIds harus berupa daftar teks.");
+        }
+        const id = value.trim();
+        if (!ids.includes(id)) ids.push(id);
+      }
+      if (ids.length > 0) origin.sessionIds = ids;
     }
     if (typeof input.commit === "string" && input.commit.trim() !== "") {
       origin.commit = input.commit.trim();

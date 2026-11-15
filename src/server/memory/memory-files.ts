@@ -21,6 +21,10 @@ export type MemoryOriginKind = "manual" | "session" | "file" | "interview";
 export interface MemoryOrigin {
   kind: MemoryOriginKind;
   sessionId?: string;
+  /**
+   * Daftar id sesi sumber; dipakai memory gabungan ringkasan sesi proyek.
+   */
+  sessionIds?: string[];
   file?: string;
   fileSha256?: string;
   commit?: string;
@@ -225,6 +229,17 @@ function parseOrigin(raw: string): MemoryOrigin | null {
     return null;
   }
   if (kind === "interview" && (origin.by === undefined || origin.by.length > 60)) return null;
+  const sessionIds = record.sessionIds;
+  if (sessionIds !== undefined) {
+    if (!Array.isArray(sessionIds)) return null;
+    const ids: string[] = [];
+    for (const value of sessionIds) {
+      if (typeof value !== "string" || value.trim() === "") return null;
+      const id = value.trim();
+      if (!ids.includes(id)) ids.push(id);
+    }
+    origin.sessionIds = ids;
+  }
   if (origin.file !== undefined) {
     if (origin.file.includes("\0") || origin.file.length > MEMORY_PROJECT_KEY_MAX) return null;
   }

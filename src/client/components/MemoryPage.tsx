@@ -11,12 +11,14 @@ import {
 import {
   filterByLayer,
   importSummary,
+  sessionSummaryCounts,
   skippedReasonLabel,
   type MemoryDraft,
   type MemoryLayerFilter,
 } from "../lib/memory";
 import { MemoryForm } from "./MemoryForm";
 import { MemoryRow } from "./MemoryRow";
+import { MemoryConsolidate } from "./MemoryConsolidate";
 import { ClaudeMemorySection } from "./ClaudeMemorySection";
 import { ClaudeMemorySync } from "./ClaudeMemorySync";
 import { QuestionsPanel } from "./QuestionsPanel";
@@ -85,6 +87,13 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>(undefined);
   const [busyId, setBusyId] = useState<string | undefined>(undefined);
   const [failures, setFailures] = useState<Record<string, string | undefined>>({});
+  const [summaryCounts, setSummaryCounts] = useState<Record<string, number>>({});
+  const [consolidateBusy, setConsolidateBusy] = useState(false);
+  const [confirmConsolidateKey, setConfirmConsolidateKey] = useState<string | undefined>(
+    undefined,
+  );
+  const [consolidateError, setConsolidateError] = useState<string | undefined>(undefined);
+  const [consolidateNote, setConsolidateNote] = useState<string | undefined>(undefined);
 
   const requestRef = useRef(0);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -122,6 +131,23 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
     void load();
   }, [load]);
 
+  /**
+   * Hitungan ringkasan sesi per proyek. Semua status dihitung (usulan dan
+   * aktif) karena penggabungan memakai keduanya.
+   */
+  const loadSummaryCounts = useCallback(async (): Promise<void> => {
+    try {
+      const payload = await api.listMemory({ layer: "project", limit: 200 });
+      setSummaryCounts(sessionSummaryCounts(payload.items));
+    } catch {
+      // Hitungan tak wajib; panel disembunyikan bila tak diketahui.
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void loadSummaryCounts();
+  }, [loadSummaryCounts]);
+
   // Kembalikan fokus setelah daftar dimuat ulang karena aksi.
   useEffect(() => {
     if (!pendingFocusRef.current) return;
@@ -135,8 +161,9 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
     setConfirmRejectId(undefined);
     setConfirmDeleteId(undefined);
     await load();
+    await loadSummaryCounts();
     onChanged?.();
-  }, [load, onChanged]);
+  }, [load, loadSummaryCounts, onChanged]);
 
   const runAction = async (id: string, action: () => Promise<unknown>): Promise<void> => {
     if (busyId !== undefined) return;
@@ -205,6 +232,28 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
     }
   };
 
+  const submitConsolidate = async (projectKey: string): Promise<void> => {
+    if (consolidateBusy) return;
+    setConsolidateBusy(true);
+    setConsolidateError(undefined);
+    setConsolidateNote(undefined);
+    try {
+      const result = await api.consolidateMemory(projectKey);
+      setConfirmConsolidateKey(undefined);
+      setConsolidateNote(
+        `${result.sources} ringkasan sesi digabung menjadi satu usulan.`,
+      );
+      if (tab === "proposed") await load();
+      else setTab("proposed");
+      await loadSummaryCounts();
+      onChanged?.();
+    } catch (caught) {
+      setConsolidateError(errorMessage(caught));
+    } finally {
+      setConsolidateBusy(false);
+    }
+  };
+
   const onTabKeyDown = (event: KeyboardEvent, index: number): void => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -218,6 +267,20 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
   };
 
   const visible = useMemo(() => filterByLayer(items, layerFilter), [items, layerFilter]);
+
+  /** Proyek dengan ringkasan sesi yang bisa digabung; jumlah terbesar dulu. */
+  const consolidateProjects = useMemo(
+    () =>
+      Object.entries(summaryCounts)
+        .map(([projectKey, count]) => ({ projectKey, count }))
+        .filter((entry) => entry.count >= 2)
+        .sort((left, right) =>
+          right.count === left.count
+            ? left.projectKey.localeCompare(right.projectKey)
+            : right.count - left.count,
+        ),
+    [summaryCounts],
+  );
 
   const emptyMessage =
     tab === "proposed"
@@ -430,6 +493,31 @@ export function MemoryPage({ api, projects, onChanged }: MemoryPageProps) {
               setAddError(undefined);
             }}
           />
+        </div>
+      )}
+
+      {consolidateProjects.length > 0 && !disabled && (
+        <div class="jk-memory-consolidate-wrap">
+          <MemoryConsolidate
+            projects={consolidateProjects}
+            busy={consolidateBusy}
+            confirmingProjectKey={confirmConsolidateKey}
+            failure={consolidateError}
+            onAsk={(projectKey) => {
+              setConsolidateError(undefined);
+              setConfirmConsolidateKey(projectKey);
+            }}
+            onCancel={() => {
+              setConfirmConsolidateKey(undefined);
+              setConsolidateError(undefined);
+            }}
+            onConfirm={(projectKey) => void submitConsolidate(projectKey)}
+          />
+          {consolidateNote !== undefined && (
+            <p class="jk-note" role="status">
+              {consolidateNote}
+            </p>
+          )}
         </div>
       )}
 

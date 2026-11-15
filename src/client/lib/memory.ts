@@ -16,6 +16,11 @@ import { folderName } from "./format";
 export const MEMORY_TITLE_MAX = 120;
 export const MEMORY_BODY_MAX = 2000;
 
+/** Awalan judul ringkasan sesi; sama dengan bawaan server. */
+export const SESSION_SUMMARY_PREFIX = "Ringkasan sesi: ";
+/** Jumlah ringkasan sesi yang memunculkan saran penggabungan. */
+export const SESSION_SUMMARY_HINT_COUNT = 10;
+
 export type MemoryLayerFilter = MemoryLayer | "semua";
 
 export function layerLabel(layer: MemoryLayer): string {
@@ -152,6 +157,31 @@ export interface MemoryDraft {
   projectKey: string;
   title: string;
   body: string;
+}
+
+/** Jumlah ringkasan sesi per proyek; hanya yang masih usulan atau aktif. */
+export function sessionSummaryCounts(
+  items: readonly MemoryItem[],
+): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of items) {
+    if (item.status !== "proposed" && item.status !== "active") continue;
+    if (!item.title.startsWith(SESSION_SUMMARY_PREFIX)) continue;
+    const key = item.projectKey ?? "";
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** Penggabungan perlu minimal dua ringkasan sesi. */
+export function canConsolidate(count: number): boolean {
+  return count >= 2;
+}
+
+/** Saran halus saat ringkasan sesi menumpuk; `undefined` bila belum perlu. */
+export function consolidateHint(count: number): string | undefined {
+  if (count < SESSION_SUMMARY_HINT_COUNT) return undefined;
+  return `Ada ${count} ringkasan sesi; gabungkan agar daftar tetap ringkas.`;
 }
 
 export function validateDraft(draft: MemoryDraft): string | undefined {

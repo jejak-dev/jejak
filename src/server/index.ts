@@ -244,12 +244,14 @@ function autoSummary(memory: MemoryService): NonNullable<SessionManagerOptions["
     const summary = buildSessionSummary(title, events, cwd);
     if (summary === undefined) return;
     try {
-      await memory.upsertSessionSummary({
+      const saved = await memory.upsertSessionSummary({
         sessionId,
         projectKey: await projectKeyFor(cwd),
         title: summary.title,
         body: summary.body,
       });
+      // Pembersihan ringkasan basi sparing: paling sering sekali per 6 jam.
+      if (saved !== undefined) void pruneSessionSummaries(memory);
     } catch (error) {
       // Kegagalan tak boleh menggagalkan giliran; tapi tak boleh hilang tanpa
       // jejak juga. Isi ringkasan tak pernah ikut dicetak.
@@ -257,6 +259,31 @@ function autoSummary(memory: MemoryService): NonNullable<SessionManagerOptions["
       console.warn("Ringkasan sesi tidak disimpan:", alasan);
     }
   };
+}
+
+/** Selang minimum dua pemangkasan ringkasan sesi (6 jam). */
+const SESSION_SUMMARY_PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Waktu pemangkasan terakhir; penanda proses, bukan disk. */
+let lastSessionSummaryPrune = 0;
+
+/**
+ * Menolak ringkasan sesi lama yang masih berupa usulan. Tak pernah menggagalkan
+ * pemanggil: kegagalan hanya dicatat. paling sering dijalankan sekali per
+ * 6 jam; `force` melewati selang itu (dipakai saat server mulai).
+ */
+async function pruneSessionSummaries(memory: MemoryService, force = false): Promise<void> {
+  const now = Date.now();
+  if (!force && now - lastSessionSummaryPrune < SESSION_SUMMARY_PRUNE_INTERVAL_MS) return;
+  lastSessionSummaryPrune = now;
+  try {
+    const pruned = await memory.pruneStaleSessionSummaries();
+    if (pruned > 0) console.warn(`Ringkasan sesi basi ditolak: ${pruned}.`);
+  } catch (error) {
+    // Percobaan berikutnya boleh mengulang bila yang ini gagal.
+    lastSessionSummaryPrune = 0;
+    const alasan = error instanceof Error ? error.message : "alasan tak diketahui";
+    console.warn("Pembersihan ringkasan sesi gagal:", alasan);
+  }
 }
 
 export function createApp(options: CreateAppOptions = {}) {
@@ -753,6 +780,8 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     memoryStore === undefined
       ? undefined
       : new MemoryService({ store: memoryStore, cwd: process.cwd() });
+  // Sekali saat server mulai: ringkasan sesi lama yang masih usulan ditolak.
+  if (memory !== undefined) void pruneSessionSummaries(memory, true);
   const checkpointsDisabled = process.env.JEJAK_CHECKPOINTS?.trim() === "0";
   const checkpoints = checkpointsDisabled
     ? undefined

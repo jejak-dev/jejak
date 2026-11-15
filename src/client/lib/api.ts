@@ -152,6 +152,12 @@ export type MemoryItem = Omit<Memory, "replaces"> & {
 };
 export type MemoryImportResult = ImportResult;
 
+/** Hasil penggabungan ringkasan sesi: usulan baru dan jumlah sumber. */
+export interface MemoryConsolidateResult {
+  item: MemoryItem;
+  sources: number;
+}
+
 export type { ServiceKind, WorkspaceProblem } from "../../server/workspaces/workspace-files";
 
 export interface MemoryList {
@@ -669,6 +675,8 @@ export interface ApiClient {
   archiveMemory(id: string): Promise<MemoryItem>;
   deleteMemory(id: string): Promise<void>;
   importMemory(projectKey: string): Promise<MemoryImportResult>;
+  /** Gabungkan ringkasan sesi proyek menjadi satu usulan memory. */
+  consolidateMemory(projectKey: string): Promise<MemoryConsolidateResult>;
   listWorkspaces(): Promise<WorkspaceList>;
   createWorkspace(input: WorkspaceCreateInput): Promise<WorkspaceItem>;
   updateWorkspace(id: string, input: WorkspaceUpdateInput): Promise<WorkspaceItem>;
@@ -2245,6 +2253,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async importMemory(projectKey) {
       return memoryImportFrom(await request("POST", "/api/memory/import", { projectKey }));
+    },
+
+    async consolidateMemory(projectKey) {
+      const data = await request("POST", "/api/memory/consolidate", { projectKey });
+      const sources = field(data, "sources");
+      return {
+        item: memoryFrom(data),
+        sources: typeof sources === "number" ? sources : 0,
+      };
     },
 
     async listWorkspaces() {

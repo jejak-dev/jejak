@@ -4175,6 +4175,36 @@ h2.jk-md-heading {
   margin-top: 10px;
 }
 
+.jk-memory-consolidate-wrap {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.jk-memory-consolidate {
+  display: grid;
+  gap: 10px;
+}
+
+.jk-memory-consolidate-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.jk-memory-consolidate-project {
+  font-size: 13px;
+  color: var(--t1);
+}
+
+.jk-memory-consolidate-hint {
+  margin: 0;
+  flex: 1 1 220px;
+}
+
 .jk-memory-form-wrap {
   margin-top: 14px;
   padding: 14px;
