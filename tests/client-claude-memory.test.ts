@@ -3,8 +3,13 @@ import type { ComponentChild, VNode } from "preact";
 import {
   ClaudeMemoryRow,
   ClaudeMemorySectionView,
+  claudeProjectsKey,
+  defaultOpenProjects,
+  loadClaudeProjectStates,
+  mergeClaudeProjectStates,
   type ClaudeMemoryProjectState,
 } from "../src/client/components/ClaudeMemorySection";
+import type { ApiClient } from "../src/client/lib/api";
 import {
   claudeMemoryCount,
   claudeMemoryDescriptionLine,
@@ -54,6 +59,27 @@ function byClass(node: ComponentChild, className: string): VNode[] {
 
 function buttons(node: ComponentChild): VNode[] {
   return findNodes(node, (vnode) => vnode.type === "button");
+}
+
+function detailsByClass(node: ComponentChild, className: string): VNode[] {
+  return findNodes(node, (vnode) => {
+    if (vnode.type !== "details") return false;
+    const value = (vnode.props as Record<string, unknown>).class;
+    return typeof value === "string" && value.split(" ").includes(className);
+  });
+}
+
+/** Ringkasan (summary) milik sebuah lipatan proyek. */
+function projectSummary(details: VNode | undefined): VNode | undefined {
+  const children = details?.props.children as ComponentChild[] | undefined;
+  const list = Array.isArray(children) ? children : children === undefined ? [] : [children];
+  return list.find((child) => (child as VNode | undefined)?.type === "summary") as
+    | VNode
+    | undefined;
+}
+
+function toggleHandler(vnode: VNode | undefined): (event: { currentTarget: { open: boolean } }) => void {
+  return propsOf(vnode)["onToggle"] as (event: { currentTarget: { open: boolean } }) => void;
 }
 
 function makeItem(overrides: Partial<ClaudeMemoryItem> = {}): ClaudeMemoryItem {
@@ -334,5 +360,200 @@ describe("ClaudeMemoryRow", () => {
     expect(labels).not.toContain("Hapus");
     expect(labels).not.toContain("Terima");
     expect(labels).not.toContain("Tolak");
+  });
+});
+
+/* ---------- Lipatan per proyek dan pemuatan ---------- */
+
+describe("claudeProjectsKey", () => {
+  test("referensi baru dengan isi sama punya kunci sama", () => {
+    expect(claudeProjectsKey(["/a/satu", "/b/dua"])).toBe(
+      claudeProjectsKey(["/a/satu", "/b/dua"]),
+    );
+  });
+
+  test("isi berbeda punya kunci berbeda", () => {
+    expect(claudeProjectsKey(["/a/satu"])).not.toBe(claudeProjectsKey(["/a/dua"]));
+  });
+});
+
+describe("defaultOpenProjects", () => {
+  test("satu proyek dibuka bawaan", () => {
+    expect([...defaultOpenProjects(["/a/satu"])]).toEqual(["/a/satu"]);
+  });
+
+  test("banyak proyek semuanya tertutup", () => {
+    expect(defaultOpenProjects(["/a/satu", "/b/dua"]).size).toBe(0);
+  });
+});
+
+describe("mergeClaudeProjectStates", () => {
+  const response = makeResponse([makeItem()]);
+
+  test("muat ulang tak mengosongkan isi lama", () => {
+    const merged = mergeClaudeProjectStates(
+      [{ project: "/a/proyek", response, loading: false, error: undefined }],
+      [{ project: "/a/proyek", response: undefined, loading: true, error: undefined }],
+    );
+    expect(merged[0]?.response).toBe(response);
+    expect(merged[0]?.loading).toBe(true);
+    expect(merged[0]?.error).toBeUndefined();
+  });
+
+  test("proyek baru tampil sebagai sedang memuat", () => {
+    const merged = mergeClaudeProjectStates(
+      [],
+      [{ project: "/a/proyek", response: undefined, loading: true, error: undefined }],
+    );
+    expect(merged[0]?.response).toBeUndefined();
+    expect(merged[0]?.loading).toBe(true);
+  });
+
+  test("isi baru menggantikan isi lama", () => {
+    const newer = makeResponse([makeItem({ file: "baru.md" })]);
+    const merged = mergeClaudeProjectStates(
+      [{ project: "/a/proyek", response, loading: false, error: undefined }],
+      [{ project: "/a/proyek", response: newer, loading: false, error: undefined }],
+    );
+    expect(merged[0]?.response).toBe(newer);
+  });
+
+  test("galat saat muat ulang tetap menyimpan isi lama", () => {
+    const merged = mergeClaudeProjectStates(
+      [{ project: "/a/proyek", response, loading: false, error: undefined }],
+      [{ project: "/a/proyek", response: undefined, loading: false, error: "gagal" }],
+    );
+    expect(merged[0]?.response).toBe(response);
+    expect(merged[0]?.error).toBe("gagal");
+  });
+});
+
+describe("loadClaudeProjectStates", () => {
+  function fakeApi(
+    handler: (project: string) => Promise<ClaudeMemoryResponse>,
+  ): { api: ApiClient; calls: string[] } {
+    const calls: string[] = [];
+    const api = {
+      listClaudeMemory: (project: string) => {
+        calls.push(project);
+        return handler(project);
+      },
+    } as unknown as ApiClient;
+    return { api, calls };
+  }
+
+  test("tiap proyek diambil satu kali", async () => {
+    const { api, calls } = fakeApi(async () => makeResponse([makeItem()]));
+    const loaded = await loadClaudeProjectStates(api, ["/a/satu", "/b/dua"]);
+    expect(calls).toEqual(["/a/satu", "/b/dua"]);
+    expect(loaded.map((state) => state.project)).toEqual(["/a/satu", "/b/dua"]);
+    expect(loaded.every((state) => state.loading === false)).toBe(true);
+  });
+
+  test("galat satu proyek tak menggagalkan yang lain", async () => {
+    const { api } = fakeApi(async (project) => {
+      if (project === "/a/satu") throw new Error("rusak");
+      return makeResponse([makeItem()]);
+    });
+    const loaded = await loadClaudeProjectStates(api, ["/a/satu", "/b/dua"]);
+    expect(loaded[0]?.error).toBe("rusak");
+    expect(loaded[1]?.error).toBeUndefined();
+    expect(loaded[1]?.response).toBeDefined();
+  });
+});
+
+describe("ClaudeMemorySectionView lipatan proyek", () => {
+  const duaProyek: ClaudeMemoryProjectState[] = [
+    {
+      project: "/a/proyek-satu",
+      response: makeResponse([makeItem(), makeItem({ file: "dua.md" })]),
+      loading: false,
+      error: undefined,
+    },
+    {
+      project: "/b/proyek-dua",
+      response: makeResponse([]),
+      loading: false,
+      error: undefined,
+    },
+  ];
+
+  test("tiap proyek jadi lipatan tertutup bawaan", () => {
+    const node = renderView(duaProyek);
+    const details = detailsByClass(node, "jk-claude-project");
+    expect(details).toHaveLength(2);
+    for (const vnode of details) {
+      expect(propsOf(vnode)["open"]).toBeUndefined();
+    }
+  });
+
+  test("ringkasan memuat nama proyek dan jumlah memory", () => {
+    const node = renderView(duaProyek);
+    const details = detailsByClass(node, "jk-claude-project");
+    const teks = textOf(projectSummary(details[0])?.props.children as ComponentChild);
+    expect(teks).toContain("proyek-satu");
+    expect(teks).toContain("2");
+  });
+
+  test("proyek tanpa memory tetap tampil di ringkasan", () => {
+    const node = renderView(duaProyek);
+    const details = detailsByClass(node, "jk-claude-project");
+    const teks = textOf(projectSummary(details[1])?.props.children as ComponentChild);
+    expect(teks).toContain("proyek-dua");
+    expect(teks).toContain("kosong");
+  });
+
+  test("satu proyek terbuka bawaan", () => {
+    const node = renderView([duaProyek[0] as ClaudeMemoryProjectState]);
+    const details = detailsByClass(node, "jk-claude-project");
+    expect(details).toHaveLength(1);
+    expect(propsOf(details[0])["open"]).toBe(true);
+  });
+
+  test("isi lama tak dikosongkan saat muat ulang", () => {
+    const node = renderView([
+      {
+        project: "/a/proyek",
+        response: makeResponse([makeItem()]),
+        loading: true,
+        error: undefined,
+      },
+    ]);
+    expect(textOf(node)).toContain("Judul");
+    expect(textOf(node)).not.toContain("Memuat…");
+  });
+
+  test("keadaan terbuka proyek dikendalikan pemanggil", () => {
+    const node = ClaudeMemorySectionView({
+      states: duaProyek,
+      openProjects: new Set<string>(["/a/proyek-satu"]),
+    }) as unknown as ComponentChild;
+    const details = detailsByClass(node, "jk-claude-project");
+    expect(propsOf(details[0])["open"]).toBe(true);
+    expect(propsOf(details[1])["open"]).toBeUndefined();
+  });
+
+  test("toggle lipatan diteruskan ke pemanggil", () => {
+    const calls: Array<[string, boolean]> = [];
+    const node = ClaudeMemorySectionView({
+      states: duaProyek,
+      onToggleProject: (project, open) => {
+        calls.push([project, open]);
+      },
+    }) as unknown as ComponentChild;
+    const details = detailsByClass(node, "jk-claude-project");
+    toggleHandler(details[0])({ currentTarget: { open: true } });
+    expect(calls).toEqual([["/a/proyek-satu", true]]);
+  });
+
+  test("baris yang dibuka dikendalikan lewat kunci baris", () => {
+    const node = ClaudeMemorySectionView({
+      states: [duaProyek[0] as ClaudeMemoryProjectState],
+      openItems: new Set<string>(["proyek/satu.md"]),
+    }) as unknown as ComponentChild;
+    const rows = detailsByClass(node, "jk-claude-row");
+    expect(rows).toHaveLength(2);
+    expect(propsOf(rows[0])["open"]).toBe(true);
+    expect(propsOf(rows[1])["open"]).toBeUndefined();
   });
 });

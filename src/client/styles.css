@@ -7957,3 +7957,55 @@ h2.jk-md-heading {
   outline: 2px solid var(--t2);
   outline-offset: 1px;
 }
+
+/* Lipatan proyek memory Claude Code */
+
+.jk-claude-project {
+  border: 0;
+  padding: 0;
+  margin: 6px 0 0;
+}
+
+.jk-claude-project > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 4px;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.jk-claude-project > summary:hover {
+  background: var(--hover);
+}
+
+.jk-claude-project > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jk-claude-project[open] > summary .jk-chev {
+  transform: rotate(90deg);
+}
+
+.jk-claude-project-name {
+  font-weight: 600;
+  color: var(--t1);
+}
+
+.jk-claude-project-count {
+  flex: none;
+  color: var(--t3);
+  font-size: 11.5px;
+}
+
+.jk-claude-project-state {
+  flex: none;
+  color: var(--t2);
+  font-size: 11.5px;
+}
+
+.jk-claude-project-body {
+  margin: 0 0 10px 22px;
+}
