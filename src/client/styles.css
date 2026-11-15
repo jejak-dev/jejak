@@ -6348,6 +6348,74 @@ h2.jk-md-heading {
   margin: 0;
 }
 
+/* Ringkasan rencana di chat: judul dan kutipan, dokumennya di tab Rencana. */
+.jk-plan-summary {
+  margin: 10px 14px 0;
+}
+
+.jk-plan-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--t1);
+}
+
+.jk-plan-excerpt {
+  margin: 4px 0 0;
+  color: var(--t2);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.jk-plan-done {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jk-plan-done .jk-perm-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* Tab Rencana di panel kanan. */
+.jk-plan-tab {
+  padding: 12px 14px;
+}
+
+.jk-plan-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.jk-plan-head .jk-plan-title {
+  font-size: 15px;
+}
+
+.jk-plan-picker {
+  margin-bottom: 10px;
+}
+
+.jk-plan-picker select {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--code);
+  color: var(--t1);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.jk-plan-doc {
+  margin: 10px 0 0;
+  max-height: 60vh;
+}
+
 .jk-ask-answer { color: var(--t1); }
 
 .jk-advanced { margin-top: 10px; }

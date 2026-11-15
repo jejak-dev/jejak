@@ -1,0 +1,358 @@
+import { describe, expect, test } from "bun:test";
+import type { ComponentChild, VNode } from "preact";
+import {
+  extractPlans,
+  planExcerpt,
+  planTitle,
+  PLAN_EXCERPT_MAX,
+  PLAN_TITLE_FALLBACK,
+  type PlanEntry,
+} from "../src/client/lib/plans";
+import type { PermissionStatus, TimelineItem } from "../src/client/lib/timeline";
+import {
+  PlanCardView,
+  PlanDoneRow,
+  type PlanDecisionState,
+} from "../src/client/components/PlanCard";
+import { PlanTabView } from "../src/client/components/PlanTab";
+
+/* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
+
+function textOf(node: ComponentChild): string {
+  if (node === null || node === undefined || typeof node === "boolean") return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(textOf).join("");
+  const vnode = node as VNode;
+  if (typeof vnode.type === "function") {
+    return textOf((vnode.type as (props: unknown) => ComponentChild)(vnode.props));
+  }
+  return textOf(vnode.props.children as ComponentChild);
+}
+
+function findNodes(node: ComponentChild, predicate: (vnode: VNode) => boolean): VNode[] {
+  if (node === null || node === undefined || typeof node === "boolean") return [];
+  if (typeof node === "string" || typeof node === "number") return [];
+  if (Array.isArray(node)) return node.flatMap((child) => findNodes(child, predicate));
+  const vnode = node as VNode;
+  if (typeof vnode.type === "function") {
+    const rendered = (vnode.type as (props: unknown) => ComponentChild)(vnode.props);
+    return findNodes(rendered, predicate);
+  }
+  const self = predicate(vnode) ? [vnode] : [];
+  return self.concat(findNodes(vnode.props.children as ComponentChild, predicate));
+}
+
+function propsOf(vnode: VNode | undefined): Record<string, unknown> {
+  return (vnode?.props ?? {}) as Record<string, unknown>;
+}
+
+function byClass(node: ComponentChild, className: string): VNode[] {
+  return findNodes(node, (vnode) => {
+    const value = propsOf(vnode)["class"];
+    return typeof value === "string" && value.split(" ").includes(className);
+  });
+}
+
+function buttons(node: ComponentChild): VNode[] {
+  return findNodes(node, (vnode) => vnode.type === "button");
+}
+
+function buttonTexts(node: ComponentChild): string[] {
+  return buttons(node).map((vnode) => textOf(vnode.props.children as ComponentChild));
+}
+
+function oneByType(node: ComponentChild, type: string): VNode | undefined {
+  return findNodes(node, (vnode) => vnode.type === type)[0];
+}
+
+/* ---------- Data uji ---------- */
+
+const DOKUMEN = [
+  "# Rencana Rilis",
+  "",
+  "Ringkasan satu.",
+  "",
+  "Ringkasan dua.",
+  "",
+  "Ringkasan tiga.",
+  "",
+  "Paragraf penutup yang tidak boleh tampil di kartu chat.",
+].join("\n");
+
+const DECISION: PlanDecisionState = {
+  busy: false,
+  reviseOpen: false,
+  feedback: "",
+  onFeedbackChange: (): void => undefined,
+  onToggleRevise: (): void => undefined,
+  onCancelRevise: (): void => undefined,
+  onApprove: (): void => undefined,
+  onSubmitRevise: (): void => undefined,
+};
+
+function permission(
+  id: string,
+  plan: string,
+  status: PermissionStatus = "menunggu",
+): TimelineItem {
+  return { kind: "permission", id, name: "ExitPlanMode", input: { plan }, status };
+}
+
+function plan(
+  id: string,
+  markdown: string,
+  status: PermissionStatus = "menunggu",
+): PlanEntry {
+  return { id, title: planTitle(markdown), plan: markdown, status };
+}
+
+/* ---------- Logika murni ---------- */
+
+describe("planTitle", () => {
+  test("mengambil heading pertama", () => {
+    expect(planTitle("# Rencana Rilis\nisi")).toBe("Rencana Rilis");
+    expect(planTitle("paragraf\n\n## Sub judul\nisi")).toBe("Sub judul");
+    expect(planTitle("###   ")).toBe(PLAN_TITLE_FALLBACK);
+  });
+
+  test("tanpa judul memakai nama cadangan", () => {
+    expect(planTitle("")).toBe(PLAN_TITLE_FALLBACK);
+    expect(planTitle("cuma paragraf")).toBe(PLAN_TITLE_FALLBACK);
+  });
+
+  test("membersihkan penanda markdown di judul", () => {
+    expect(planTitle("# **Rencana** `rilis`")).toBe("Rencana rilis");
+  });
+});
+
+describe("planExcerpt", () => {
+  test("membuang penanda markdown dan baris heading", () => {
+    const kutipan = planExcerpt("# Judul\n\n**Tebal** dan `kode` serta [tautan](https://x.test)");
+    expect(kutipan).toBe("Tebal dan kode serta tautan");
+    expect(kutipan).not.toContain("#");
+    expect(kutipan).not.toContain("**");
+    expect(kutipan).not.toContain("`");
+  });
+
+  test("membuang penanda daftar dan kutipan blok", () => {
+    expect(planExcerpt("- satu\n> dua")).toBe("satu\ndua");
+  });
+
+  test("maksimal tiga baris dan tidak melebihi batas panjang", () => {
+    const kutipan = planExcerpt("satu\n\ndua\n\ntiga\n\nempat");
+    expect(kutipan.split("\n")).toHaveLength(3);
+    expect(kutipan).toBe("satu\ndua\ntiga");
+    const panjang = planExcerpt("a".repeat(500), 40);
+    expect(panjang.length).toBeLessThanOrEqual(40);
+    expect(panjang.endsWith("…")).toBe(true);
+  });
+
+  test("batas bawaan 160 karakter", () => {
+    expect(PLAN_EXCERPT_MAX).toBe(160);
+    expect(planExcerpt("b".repeat(500)).length).toBeLessThanOrEqual(PLAN_EXCERPT_MAX);
+  });
+
+  test("dokumen kosong menghasilkan kutipan kosong", () => {
+    expect(planExcerpt("")).toBe("");
+    expect(planExcerpt("# Hanya judul")).toBe("");
+  });
+});
+
+describe("extractPlans", () => {
+  test("mengambil rencana dari izin ExitPlanMode", () => {
+    const plans = extractPlans([
+      { kind: "user", text: "mulai" },
+      permission("p1", "# Rencana A\nisi"),
+      permission("p2", "# Rencana B\nisi", "diizinkan"),
+    ]);
+    expect(plans).toHaveLength(2);
+    expect(plans[0]).toEqual({
+      id: "p1",
+      title: "Rencana A",
+      plan: "# Rencana A\nisi",
+      status: "menunggu",
+    });
+    expect(plans[1]?.status).toBe("diizinkan");
+  });
+
+  test("abaikan izin lain dan rencana tanpa isi", () => {
+    const plans = extractPlans([
+      { kind: "permission", id: "x", name: "Bash", input: { command: "ls" }, status: "menunggu" },
+      permission("p3", "   "),
+    ]);
+    expect(plans).toEqual([]);
+  });
+
+  test("menyimpan alasan penolakan dan batas waktu", () => {
+    const item: TimelineItem = {
+      kind: "permission",
+      id: "p4",
+      name: "ExitPlanMode",
+      input: { plan: "# Rencana D" },
+      status: "ditolak",
+      expiresAt: "2026-11-15T10:00:00.000Z",
+      message: "perlu detail",
+    };
+    const plans = extractPlans([item]);
+    expect(plans[0]?.expiresAt).toBe("2026-11-15T10:00:00.000Z");
+    expect(plans[0]?.message).toBe("perlu detail");
+  });
+});
+
+/* ---------- Tampilan ---------- */
+
+describe("kartu ringkas rencana di chat", () => {
+  test("tak memuat isi dokumen, hanya judul dan kutipan", () => {
+    const kartu = PlanCardView({
+      id: "p1",
+      title: "Rencana Rilis",
+      excerpt: planExcerpt(DOKUMEN),
+      remaining: 90,
+      ...DECISION,
+    });
+    const teks = textOf(kartu);
+    expect(teks).toContain("Rencana Rilis");
+    expect(teks).toContain("Ringkasan satu.");
+    expect(teks).not.toContain("Paragraf penutup");
+  });
+
+  test("tombol Buka rencana tersedia dan memanggil callback", () => {
+    let dipanggil = "";
+    const kartu = PlanCardView({
+      id: "p1",
+      title: "Rencana Rilis",
+      excerpt: "Ringkasan.",
+      remaining: null,
+      ...DECISION,
+      onOpenPlan: (): void => {
+        dipanggil = "p1";
+      },
+    });
+    expect(buttonTexts(kartu)).toContain("Buka rencana");
+    const tombol = buttons(kartu).find(
+      (vnode) => textOf(vnode.props.children as ComponentChild) === "Buka rencana",
+    );
+    (propsOf(tombol)["onClick"] as () => void)();
+    expect(dipanggil).toBe("p1");
+  });
+
+  test("kartu menunggu punya Approve plan dan Revisi", () => {
+    const kartu = PlanCardView({
+      id: "p1",
+      title: "Rencana Rilis",
+      excerpt: "Ringkasan.",
+      remaining: 90,
+      ...DECISION,
+      onOpenPlan: (): void => undefined,
+    });
+    const label = buttonTexts(kartu);
+    expect(label).toContain("Approve plan");
+    expect(label).toContain("Revisi");
+    expect(label).toContain("Buka rencana");
+  });
+
+  test("ringkasan selesai tak memuat isi dokumen", () => {
+    const baris = PlanDoneRow({
+      id: "p1",
+      title: "Rencana Rilis",
+      status: "diizinkan",
+      onOpenPlan: (): void => undefined,
+    });
+    const teks = textOf(baris);
+    expect(teks).toContain("Rencana: Rencana Rilis");
+    expect(teks).toContain("Diizinkan");
+    expect(teks).not.toContain("Paragraf penutup");
+    expect(buttonTexts(baris)).toContain("Buka rencana");
+    expect(byClass(baris, "jk-step")).toHaveLength(1);
+  });
+
+  test("ringkasan ditolak memuat alasan pengguna", () => {
+    const baris = PlanDoneRow({
+      id: "p1",
+      title: "Rencana Rilis",
+      status: "ditolak",
+      message: "perlu detail",
+    });
+    const teks = textOf(baris);
+    expect(teks).toContain("Ditolak");
+    expect(teks).toContain("perlu detail");
+  });
+});
+
+describe("tab Rencana", () => {
+  test("kosong memuat pesan belum ada rencana", () => {
+    const tab = PlanTabView({ plans: [], selectedId: undefined, remaining: null, ...DECISION });
+    expect(textOf(tab)).toContain("Belum ada rencana di sesi ini.");
+  });
+
+  test("menampilkan dokumen lengkap dan judul", () => {
+    const tab = PlanTabView({
+      plans: [plan("p1", DOKUMEN)],
+      selectedId: "p1",
+      remaining: 90,
+      ...DECISION,
+    });
+    const teks = textOf(tab);
+    expect(teks).toContain("Rencana Rilis");
+    expect(teks).toContain("Paragraf penutup");
+  });
+
+  test("rencana menunggu punya tombol keputusan dan hitung mundur", () => {
+    const tab = PlanTabView({
+      plans: [plan("p1", DOKUMEN)],
+      selectedId: "p1",
+      remaining: 90,
+      ...DECISION,
+    });
+    const label = buttonTexts(tab);
+    expect(label).toContain("Approve plan");
+    expect(label).toContain("Revisi");
+    expect(textOf(tab)).toContain("ditolak otomatis dalam 1:30");
+  });
+
+  test("rencana yang sudah diputuskan menampilkan lencana status", () => {
+    const tab = PlanTabView({
+      plans: [plan("p1", DOKUMEN, "diizinkan")],
+      selectedId: "p1",
+      remaining: null,
+      ...DECISION,
+    });
+    expect(textOf(tab)).toContain("Diizinkan");
+    expect(buttonTexts(tab)).not.toContain("Approve plan");
+  });
+
+  test("lebih dari satu rencana memunculkan pemilih", () => {
+    const plans = [plan("p1", "# Rencana Lama\nisi lama"), plan("p2", "# Rencana Baru\nisi baru")];
+    const dipilih: string[] = [];
+    const tab = PlanTabView({
+      plans,
+      selectedId: "p2",
+      remaining: null,
+      onSelect: (id): void => {
+        dipilih.push(id);
+      },
+      ...DECISION,
+    });
+    const pemilih = oneByType(tab, "select");
+    expect(pemilih).toBeDefined();
+    const opsi = findNodes(tab, (vnode) => vnode.type === "option");
+    expect(opsi.map((vnode) => textOf(vnode.props.children as ComponentChild))).toEqual([
+      "Rencana Lama",
+      "Rencana Baru",
+    ]);
+    (propsOf(pemilih)["onChange"] as (event: unknown) => void)({
+      currentTarget: { value: "p1" },
+    });
+    expect(dipilih).toEqual(["p1"]);
+  });
+
+  test("tanpa pemilih bila hanya satu rencana", () => {
+    const tab = PlanTabView({
+      plans: [plan("p1", DOKUMEN)],
+      selectedId: "p1",
+      remaining: null,
+      ...DECISION,
+    });
+    expect(oneByType(tab, "select")).toBeUndefined();
+  });
+});

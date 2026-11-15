@@ -30,6 +30,8 @@ export interface TimelineProps {
   rewindableSeqs?: number[];
   /** Jalankan mundur percakapan; galat ditampilkan di timeline. */
   onRewind?: (seq: number) => Promise<void>;
+  /** Buka tab Rencana pada rencana ini (dokumennya tak tampil di chat). */
+  onOpenPlan?: (permissionId: string) => void;
 }
 
 const MAX_INPUT_CHARS = 2000;
@@ -248,6 +250,7 @@ export function Timeline({
   onDecide,
   rewindableSeqs,
   onRewind,
+  onOpenPlan,
 }: TimelineProps) {
   // Sesi sudah berhenti (gagal, selesai, server restart): izin yang masih "menunggu"
   // tidak bisa diputuskan lagi, jadi tampilkan sebagai dihentikan.
@@ -494,7 +497,15 @@ export function Timeline({
 
 
               case "permission":
-                return <PermissionCard key={item.id} item={item} cwd={cwd} onDecide={onDecide} />;
+                return (
+                  <PermissionCard
+                    key={item.id}
+                    item={item}
+                    cwd={cwd}
+                    onDecide={onDecide}
+                    onOpenPlan={onOpenPlan}
+                  />
+                );
 
               case "error":
                 return (

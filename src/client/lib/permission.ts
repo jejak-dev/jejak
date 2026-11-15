@@ -1,5 +1,7 @@
+import { useEffect, useState } from "preact/hooks";
 import { splitLines } from "./files";
 import { canonicalPath } from "./format";
+import type { PermissionStatus } from "./timeline";
 
 export type PermissionIcon = "file" | "edit" | "terminal" | "eye" | "cube";
 
@@ -365,3 +367,30 @@ export function secondsUntil(expiresAt: string | undefined, now: Date): number |
 export function formatCountdown(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
+
+/**
+ * Hitung mundur menuju batas waktu izin.
+ *
+ * `active`false membuat hitungan berhenti; nilai terakhir dikembalikan.
+ */
+export function useCountdown(expiresAt: string | undefined, active: boolean): number | null {
+  const [seconds, setSeconds] = useState(() => secondsUntil(expiresAt, new Date()));
+  useEffect(() => {
+    if (!active) return;
+    setSeconds(secondsUntil(expiresAt, new Date()));
+    const timer = window.setInterval(() => setSeconds(secondsUntil(expiresAt, new Date())), 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt, active]);
+  return seconds;
+}
+
+/** Lencana status izin yang sudah diputuskan; dipakai kartu izin dan tab Rencana. */
+export const DONE_LABELS: Record<
+  Exclude<PermissionStatus, "menunggu">,
+  { text: string; tone: string }
+> = {
+  diizinkan: { text: "Diizinkan", tone: "jk-step-selesai" },
+  ditolak: { text: "Ditolak", tone: "jk-step-gagal" },
+  kedaluwarsa: { text: "Kedaluwarsa", tone: "" },
+  dihentikan: { text: "Sesi dihentikan", tone: "" },
+};

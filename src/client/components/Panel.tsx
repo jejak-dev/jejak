@@ -32,6 +32,7 @@ import {
   nextPanelTabIndex,
 } from "../lib/panel-rail";
 import type { TimelineItem } from "../lib/timeline";
+import { extractPlans, pendingPlans, type PlanEntry } from "../lib/plans";
 import { latestTodos, todoProgress, type TodoItem } from "../lib/todos";
 import {
   effectivePanelRepo,
@@ -48,6 +49,7 @@ import { GitTab } from "./GitTab";
 import { PanelRail } from "./PanelRail";
 import { PaneDivider } from "./PaneDivider";
 import { PaneWindow } from "./PaneWindow";
+import { PlanTab } from "./PlanTab";
 import { RunnerTab } from "./RunnerTab";
 import { SecretsTab } from "./SecretsTab";
 import { TerminalTab } from "./TerminalTab";
@@ -67,6 +69,14 @@ export interface PanelProps {
   onOpenChange: (open: boolean) => void;
   /** Item timeline berjalan; sumber daftar langkah agent (tool TodoWrite). */
   timelineItems?: readonly TimelineItem[];
+  /** Rencana yang difokuskan di tab Rencana; undefined = yang terbaru. */
+  focusedPlanId?: string;
+  /** Kirim keputusan rencana dari tab Rencana. */
+  onDecide?: (
+    requestId: string,
+    decision: "allow" | "deny",
+    message?: string,
+  ) => Promise<void>;
   /** Permintaan pindah tab dari luar (palette); `nonce` memaksa ulang. */
   tabRequest?: { tab: PanelTab; nonce: number };
   /** Dipanggil setelah aksi yang mengubah sesi (mis. hapus/pulihkan worktree). */
@@ -76,7 +86,7 @@ export interface PanelProps {
 }
 
 const PANEL_LABEL =
-  "Perubahan, langkah, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, dan browser";
+  "Perubahan, langkah, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, browser, dan rencana";
 
 /** Kunci navigasi keyboard pada rel ikon. */
 const RAIL_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End"]);
@@ -93,6 +103,13 @@ interface PanelTabBodyProps {
   refreshToken: number;
   repo?: string;
   todos: readonly TodoItem[];
+  plans: readonly PlanEntry[];
+  focusedPlanId?: string;
+  onDecide?: (
+    requestId: string,
+    decision: "allow" | "deny",
+    message?: string,
+  ) => Promise<void>;
   checkpointNote?: string;
   commitDraft: string;
   terminalToAttach?: string;
@@ -124,6 +141,9 @@ function PanelTabBody(props: PanelTabBodyProps) {
     refreshToken,
     repo,
     todos,
+    plans,
+    focusedPlanId,
+    onDecide,
     checkpointNote,
     commitDraft,
     terminalToAttach,
@@ -155,6 +175,11 @@ function PanelTabBody(props: PanelTabBodyProps) {
     );
   }
   if (tab === "todos") return <TodosTab todos={todos} />;
+  if (tab === "plan") {
+    return (
+      <PlanTab plans={plans} focusedPlanId={focusedPlanId} onDecide={onDecide} />
+    );
+  }
   if (tab === "checkpoints") {
     return (
       <CheckpointsTab
@@ -227,6 +252,8 @@ export function Panel({
   open,
   onOpenChange,
   timelineItems,
+  focusedPlanId,
+  onDecide,
   tabRequest,
   onSessionChanged,
   onQuote,
@@ -271,6 +298,10 @@ export function Panel({
   const todos = useMemo(() => latestTodos(timelineItems ?? []), [timelineItems]);
   const todoProgressValue = todoProgress(todos);
   const todoPending = todoProgressValue.total - todoProgressValue.done;
+
+  // Dokumen rencana (ExitPlanMode) tak pernah tampil di chat; hidup di tab Rencana.
+  const plans = useMemo(() => extractPlans(timelineItems ?? []), [timelineItems]);
+  const planPending = pendingPlans(plans).length;
 
   // Jendela yang sedang difokuskan; jatuh ke jendela terakhir bila hilang.
   const paneTerfokus = useMemo(
@@ -425,6 +456,8 @@ export function Panel({
         return gitCount;
       case "checkpoints":
         return checkpointCount;
+      case "plan":
+        return planPending > 0 ? planPending : undefined;
       default:
         return undefined;
     }
@@ -505,6 +538,9 @@ export function Panel({
                   refreshToken={refreshToken}
                   repo={repo}
                   todos={todos}
+                  plans={plans}
+                  focusedPlanId={focusedPlanId}
+                  onDecide={onDecide}
                   checkpointNote={checkpointNote}
                   commitDraft={commitDraft}
                   terminalToAttach={terminalToAttach}

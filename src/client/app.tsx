@@ -36,6 +36,7 @@ import { contextUsage } from "./lib/context";
 import { groupSessions } from "./lib/format";
 import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notify";
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
+import { extractPlans } from "./lib/plans";
 import { panelWidth } from "./lib/panel-width";
 import {
   SIDEBAR_DEFAULT,
@@ -209,6 +210,10 @@ export function App() {
   const [panelTabRequest, setPanelTabRequest] = useState<
     { tab: PanelTab; nonce: number } | undefined
   >(undefined);
+  // Rencana yang dibuka di tab Rencana; dokumennya tak pernah tampil di chat.
+  const [planFocus, setPlanFocus] = useState<string | undefined>(undefined);
+  // Id rencana yang panelnya sudah dibuka otomatis; tak dibuka lagi dua kali.
+  const planOpenedRef = useRef<Set<string>>(new Set());
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [worktreeNotice, setWorktreeNotice] = useState<
@@ -317,6 +322,44 @@ export function App() {
     writePanelPrefs({ open: true, tab: "rahasia" });
     setPanelTabRequest((current) => ({ tab: "rahasia", nonce: (current?.nonce ?? 0) + 1 }));
   }, []);
+
+  // Buka tab Rencana pada sebuah rencana (dari kartu ringkas di chat).
+  const openPlanTab = useCallback((id: string): void => {
+    setPlanFocus(id);
+    setPanelOpen(true);
+    writePanelPrefs({ open: true, tab: "plan" });
+    setPanelTabRequest((current) => ({ tab: "plan", nonce: (current?.nonce ?? 0) + 1 }));
+  }, []);
+
+  // Pindah sesi: rencana yang difokuskan tak berlaku untuk sesi lain.
+  useEffect(() => {
+    setPlanFocus(undefined);
+  }, [selectedId]);
+
+  // Rencana baru yang menunggu keputusan membuka panel Rencana; sekali per id
+  // saja, jadi panel tak reopened setelah pengguna menutupnya.
+  const pendingPlanIds = useMemo(
+    () =>
+      extractPlans(timeline.items ?? [])
+        .filter((entry) => entry.status === "menunggu")
+        .map((entry) => entry.id),
+    [timeline.items],
+  );
+  const pendingPlanKey = pendingPlanIds.join(",");
+  useEffect(() => {
+    if (pendingPlanKey === "") return;
+    const baru = pendingPlanKey
+      .split(",")
+      .filter((id) => !planOpenedRef.current.has(id));
+    if (baru.length === 0) return;
+    let terakhir: string | undefined;
+    for (const id of baru) {
+      planOpenedRef.current.add(id);
+      terakhir = id;
+    }
+    if (terakhir === undefined) return;
+    openPlanTab(terakhir);
+  }, [pendingPlanKey, openPlanTab]);
 
   const onSaved = useCallback((): void => {
     void reload();
@@ -831,6 +874,7 @@ export function App() {
                   onDecide={onDecide}
                   rewindableSeqs={rewindable}
                   onRewind={onRewind}
+                  onOpenPlan={openPlanTab}
                 />
                 {goalVisible && sessionGoal !== undefined && sessionGoal !== null && (
                   <div class="jk-goal-slot">
@@ -878,6 +922,8 @@ export function App() {
                   timelineItems={timeline.items}
                   open={panelOpen}
                   onOpenChange={onPanelOpenChange}
+                  focusedPlanId={planFocus}
+                  onDecide={onDecide}
                   tabRequest={panelTabRequest}
                   onSessionChanged={() => void refresh()}
                   onQuote={onQuote}

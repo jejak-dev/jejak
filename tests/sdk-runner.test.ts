@@ -6,6 +6,7 @@ import {
   withMaxRetries,
   createSdkRunner,
   modelIdentityNote,
+  PLAN_MODE_APPEND_NOTE,
   SANDBOX_APPEND_NOTE,
   type SdkModule,
   type SdkQuery,
@@ -1322,4 +1323,16 @@ test("hanya dua tool baca browser yang diizinkan otomatis; tool aksi lewat izin"
   for (const aksi of ["browser_navigate", "browser_click", "browser_type", "browser_press"]) {
     expect(daftar).not.toContain(aksi);
   }
+});
+
+test("catatan mode plan hanya ditambahkan ke append bila permissionMode plan", async () => {
+  const appendPlan = await appendFor(PROVIDER, { permissionMode: "plan" });
+  expect(appendPlan).toContain(PLAN_MODE_APPEND_NOTE);
+  expect(appendPlan).toContain("ExitPlanMode");
+
+  const appendBiasa = await appendFor(PROVIDER);
+  expect(appendBiasa).not.toContain(PLAN_MODE_APPEND_NOTE);
+
+  const appendLain = await appendFor(PROVIDER, { permissionMode: "acceptEdits" });
+  expect(appendLain).not.toContain(PLAN_MODE_APPEND_NOTE);
 });

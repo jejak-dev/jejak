@@ -161,6 +161,15 @@ export const ASIDE_APPEND_NOTE =
   "Pertanyaan ini adalah pertanyaan sampingan: jawab singkat berdasarkan percakapan yang ada, tanpa memakai tool.";
 
 /**
+ * Catatan system prompt untuk mode plan.
+ *
+ * Dokumen rencana/PRD ditulis penuh di parameter plan ExitPlanMode; chat
+ * hanya menampilkan ringkasan singkat supaya riwayat tetap ringkas.
+ */
+export const PLAN_MODE_APPEND_NOTE =
+  "Mode plan: fokus menyusun rancangan dan PRD, bukan menulis kode. Tuliskan seluruh dokumen rancangan/PRD lengkap (markdown, berjudul) di berkas plan yang ditentukan sistem, lalu ajukan lewat ExitPlanMode. Jangan menempelkan dokumen panjang di chat; di chat cukup ringkasan singkat (maks 3 kalimat) tentang apa yang sudah disusun dan keputusan yang perlu ditinjau.";
+
+/**
  * Catatan identitas model untuk provider non-Claude lewat baseUrl kustom.
  *
  * Preset `claude_code` menyisipkan daftar model Claude terbaru ke system
@@ -338,6 +347,10 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       const identityModel = modelIdentityModel(input.provider);
       if (identityModel !== undefined) {
         append = `${append} ${modelIdentityNote(identityModel)}`;
+      }
+      // Mode plan: dokumen rencana ditulis penuh di ExitPlanMode, chat ringkas.
+      if (input.permissionMode === "plan") {
+        append = `${append} ${PLAN_MODE_APPEND_NOTE}`;
       }
 
       const sdkOptions: Record<string, unknown> = {

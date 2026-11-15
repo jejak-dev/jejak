@@ -1,14 +1,15 @@
-import { useEffect, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import {
   describePermission,
+  DONE_LABELS,
   formatCountdown,
-  secondsUntil,
+  useCountdown,
   type PermissionPreview,
 } from "../lib/permission";
-import type { PermissionStatus, TimelineItem } from "../lib/timeline";
+import type { TimelineItem } from "../lib/timeline";
 import { parseAskQuestions, parsePlan } from "../lib/ask-question";
-import { Markdown } from "./Markdown";
-import { PlanCard } from "./PlanCard";
+import { planTitle } from "../lib/plans";
+import { PlanCard, PlanDoneRow } from "./PlanCard";
 import { AskQuestionCard, AskQuestionSummary } from "./AskQuestionCard";
 import { Icon } from "./Icon";
 
@@ -23,16 +24,11 @@ export interface PermissionCardProps {
     message?: string,
     answers?: Record<string, string>,
   ) => Promise<void>;
+  /** Buka tab Rencana pada rencana ini; undefined = tombol tak tampil. */
+  onOpenPlan?: (permissionId: string) => void;
 }
 
 const PREVIEW_LINES = 7;
-
-const DONE_LABELS: Record<Exclude<PermissionStatus, "menunggu">, { text: string; tone: string }> = {
-  diizinkan: { text: "Diizinkan", tone: "jk-step-selesai" },
-  ditolak: { text: "Ditolak", tone: "jk-step-gagal" },
-  kedaluwarsa: { text: "Kedaluwarsa", tone: "" },
-  dihentikan: { text: "Sesi dihentikan", tone: "" },
-};
 
 function Preview({ preview, cwd }: { preview: PermissionPreview; cwd: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -143,18 +139,7 @@ function Preview({ preview, cwd }: { preview: PermissionPreview; cwd: string }) 
   }
 }
 
-function useCountdown(expiresAt: string | undefined, active: boolean): number | null {
-  const [seconds, setSeconds] = useState(() => secondsUntil(expiresAt, new Date()));
-  useEffect(() => {
-    if (!active) return;
-    setSeconds(secondsUntil(expiresAt, new Date()));
-    const timer = window.setInterval(() => setSeconds(secondsUntil(expiresAt, new Date())), 1000);
-    return () => window.clearInterval(timer);
-  }, [expiresAt, active]);
-  return seconds;
-}
-
-export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
+export function PermissionCard({ item, cwd, onDecide, onOpenPlan }: PermissionCardProps) {
   const view = describePermission(item.name, item.input, cwd);
   const asks = item.name === "AskUserQuestion" ? parseAskQuestions(item.input) : undefined;
   const plan = item.name === "ExitPlanMode" ? parsePlan(item.input) : undefined;
@@ -183,18 +168,31 @@ export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
   };
 
   if (item.status !== "menunggu") {
+    // Rencana yang sudah diputuskan: hanya baris ringkasan, dokumennya
+    // dibuka lewat tab Rencana di panel kanan.
+    if (plan !== undefined) {
+      return (
+        <PlanDoneRow
+          id={item.id}
+          title={planTitle(plan)}
+          status={item.status}
+          message={item.message}
+          onOpenPlan={onOpenPlan === undefined ? undefined : () => onOpenPlan(item.id)}
+        />
+      );
+    }
     const label = DONE_LABELS[item.status];
     const arg = view.target !== "" ? view.target : view.preview.kind === "command" ? view.preview.command : "";
     return (
-      <details class="jk-step" data-permission-id={item.id} open={asks !== undefined || plan !== undefined}>
+      <details class="jk-step" data-permission-id={item.id} open={asks !== undefined}>
         <summary>
           <span class="jk-chev">
             <Icon name="chevron" />
           </span>
           <span class="jk-step-name">
-            {asks !== undefined ? "Pertanyaan agent" : plan !== undefined ? "Rencana" : view.tool}
+            {asks !== undefined ? "Pertanyaan agent" : view.tool}
           </span>
-          {arg !== "" && asks === undefined && plan === undefined && <span class="jk-step-arg">{arg}</span>}
+          {arg !== "" && asks === undefined && <span class="jk-step-arg">{arg}</span>}
           <span class={`jk-step-status ${label.tone}`}>{label.text}</span>
         </summary>
         <div class="jk-step-body">
@@ -208,10 +206,6 @@ export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
           )}
           {asks !== undefined ? (
             <AskQuestionSummary questions={asks} answers={item.answers} />
-          ) : plan !== undefined ? (
-            <div class="jk-plan-body">
-              <Markdown text={plan} />
-            </div>
           ) : (
             <Preview preview={view.preview} cwd={cwd} />
           )}
@@ -228,6 +222,7 @@ export function PermissionCard({ item, cwd, onDecide }: PermissionCardProps) {
         remaining={remaining}
         onApprove={() => onDecide(item.id, "allow")}
         onRevise={(feedback) => onDecide(item.id, "deny", feedback)}
+        onOpenPlan={onOpenPlan === undefined ? undefined : () => onOpenPlan(item.id)}
       />
     );
   }
