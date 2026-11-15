@@ -31,6 +31,9 @@ pub const ENDPOINT_BETA: &str =
 /// Nama berkas pengaturan di dalam folder konfigurasi aplikasi.
 pub const NAMA_BERKAS: &str = "desktop.json";
 
+/// Pesan ramah saat kanal stabil belum punya berkas rilis.
+pub const PESAN_BELUM_ADA_RILIS_STABIL: &str = "Belum ada rilis stabil. Pilih kanal Beta di Pengaturan.";
+
 /// Jeda sebelum pemeriksaan otomatis pertama (detik).
 const JEDA_AWAL: Duration = Duration::from_secs(15);
 
@@ -55,8 +58,23 @@ fn bawaan_auto_check() -> bool {
 }
 
 /// Bawaan untuk `channel`.
+///
+/// Versi pra-rilis (memuat `-`, misalnya `0.1.0-beta.4`) memakai kanal beta;
+/// versi rilis penuh memakai kanal stabil.
 fn bawaan_kanal() -> String {
-  KANAL_STABIL.to_string()
+  kanal_bawaan_untuk(env!("CARGO_PKG_VERSION"))
+}
+
+/// Kanal bawaan menurut nomor versi aplikasi.
+///
+/// Versi pra-rilis memakai kanal beta karena semua rilis Jejak sementara ini
+/// berupa pra-rilis; kanal stabil baru diisi saat rilis penuh terbit.
+pub fn kanal_bawaan_untuk(versi: &str) -> String {
+  if versi.contains('-') {
+    KANAL_BETA.to_string()
+  } else {
+    KANAL_STABIL.to_string()
+  }
 }
 
 impl Default for Pengaturan {
@@ -280,6 +298,23 @@ pub fn terapkan(status: &mut Status, peristiwa: &Peristiwa) -> bool {
 /// Apakah kanal pembaruan didukung.
 pub fn kanal_sah(kanal: &str) -> bool {
   kanal == KANAL_STABIL || kanal == KANAL_BETA
+}
+
+/// Petakan galat pemeriksaan menjadi pesan yang enak dibaca.
+///
+/// Galat kanal stabil yang menandakan berkas rilis belum ada diganti pesan
+/// ramah; galat lain tetap memakai bentuk bawaan.
+pub fn pesan_galat_pemeriksaan(kanal: &str, galat: &str) -> String {
+  if kanal == KANAL_STABIL && menandakan_rilis_belum_ada(galat) {
+    return PESAN_BELUM_ADA_RILIS_STABIL.to_string();
+  }
+  format!("pemeriksaan pembaruan gagal: {galat}")
+}
+
+/// Apakah pesan galat menandakan endpoint kanal belum punya berkas rilis.
+fn menandakan_rilis_belum_ada(galat: &str) -> bool {
+  let huruf_kecil = galat.to_lowercase();
+  huruf_kecil.contains("404") || huruf_kecil.contains("valid release json")
 }
 
 /// Baca pengaturan dari teks JSON; kanal tak dikenal ditolak.
@@ -558,7 +593,7 @@ async fn jalankan_pemeriksaan(app: &AppHandle) -> Result<Option<Update>, String>
   pemeriksa
     .check()
     .await
-    .map_err(|galat| format!("pemeriksaan pembaruan gagal: {galat}"))
+    .map_err(|galat| pesan_galat_pemeriksaan(&kanal, &galat.to_string()))
 }
 
 /// Unduh dan pasang pembaruan yang tertahan; hanya sah bila ada pembaruan.
@@ -698,10 +733,31 @@ mod tests {
   }
 
   #[test]
-  fn bawaan_pengaturan_adalah_stabil_dan_otomatis() {
+  fn bawaan_pengaturan_memakai_kanal_sesuai_versi_dan_otomatis() {
     let bawaan = pengaturan_bawaan();
     assert!(bawaan.auto_check);
-    assert_eq!(bawaan.channel, KANAL_STABIL);
+    assert_eq!(
+      bawaan.channel,
+      kanal_bawaan_untuk(env!("CARGO_PKG_VERSION"))
+    );
+  }
+
+  #[test]
+  fn kanal_bawaan_versi_pra_rilis_memakai_beta() {
+    assert_eq!(kanal_bawaan_untuk("0.1.0-beta.4"), KANAL_BETA);
+    assert_eq!(kanal_bawaan_untuk("1.0.0-rc.1"), KANAL_BETA);
+  }
+
+  #[test]
+  fn kanal_bawaan_versi_rilis_penuh_memakai_stabil() {
+    assert_eq!(kanal_bawaan_untuk("1.0.0"), KANAL_STABIL);
+    assert_eq!(kanal_bawaan_untuk("0.1.0"), KANAL_STABIL);
+  }
+
+  #[test]
+  fn bawaan_versi_sekarang_memakai_kanal_beta() {
+    // Rilis Jejak sekarang berupa pra-rilis, jadi bawaannya kanal beta.
+    assert_eq!(kanal_bawaan_untuk(env!("CARGO_PKG_VERSION")), KANAL_BETA);
   }
 
   #[test]
@@ -731,7 +787,7 @@ mod tests {
   fn parse_pengaturan_memakai_bawaan_bila_field_hilang() {
     let hasil = parse_pengaturan("{}").unwrap();
     assert!(hasil.auto_check);
-    assert_eq!(hasil.channel, KANAL_STABIL);
+    assert_eq!(hasil.channel, kanal_bawaan_untuk(env!("CARGO_PKG_VERSION")));
   }
 
   #[test]
@@ -942,5 +998,38 @@ mod tests {
     assert!(kanal_sah(KANAL_BETA));
     assert!(!kanal_sah("nightly"));
     assert!(!kanal_sah(""));
+  }
+
+  #[test]
+  fn galat_kanal_stabil_tanpa_manifest_jadi_pesan_ramah() {
+    let pesan = pesan_galat_pemeriksaan(
+      KANAL_STABIL,
+      "Could not fetch a valid release JSON from the remote",
+    );
+    assert_eq!(pesan, PESAN_BELUM_ADA_RILIS_STABIL);
+  }
+
+  #[test]
+  fn galat_404_di_kanal_stabil_jadi_pesan_ramah() {
+    let pesan = pesan_galat_pemeriksaan(KANAL_STABIL, "Permintaan gagal: 404 Not Found");
+    assert_eq!(pesan, PESAN_BELUM_ADA_RILIS_STABIL);
+  }
+
+  #[test]
+  fn galat_lain_di_kanal_stabil_tetap_bawaan() {
+    let pesan = pesan_galat_pemeriksaan(KANAL_STABIL, "error sending request for url");
+    assert_eq!(pesan, "pemeriksaan pembaruan gagal: error sending request for url");
+  }
+
+  #[test]
+  fn galat_kanal_beta_tetap_bawaan() {
+    let pesan = pesan_galat_pemeriksaan(
+      KANAL_BETA,
+      "Could not fetch a valid release JSON from the remote",
+    );
+    assert_eq!(
+      pesan,
+      "pemeriksaan pembaruan gagal: Could not fetch a valid release JSON from the remote"
+    );
   }
 }

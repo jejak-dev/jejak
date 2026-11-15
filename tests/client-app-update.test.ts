@@ -184,6 +184,14 @@ describe("AppUpdateView", () => {
     expect(teks).toContain("Coba lagi");
   });
 
+  test("pesan belum ada rilis stabil tampil apa adanya", () => {
+    const pesan = "Belum ada rilis stabil. Pilih kanal Beta di Pengaturan.";
+    const status: UpdaterStatus = { state: "error", error: pesan };
+    const teks = textOf(AppUpdateView(props({ status })) as ComponentChild);
+    expect(teks).toContain(pesan);
+    expect(teks).toContain("Coba lagi");
+  });
+
   test("pengaturan punya kotak periksa otomatis dan pilihan kanal", () => {
     const vnode = AppUpdateView(props()) as ComponentChild;
     const checkbox = byTag(vnode, "input").filter(
