@@ -100,6 +100,25 @@ export function buildAnswers(
   return answers;
 }
 
+/**
+ * Ringkasan satu baris untuk pertanyaan yang sudah dijawab:
+ * jumlah pertanyaan dan jawaban singkatnya, mis. "2 pertanyaan: Push, A".
+ * Tanpa jawaban cukup "2 pertanyaan".
+ */
+export function askSummaryLine(
+  questions: AskQuestion[],
+  answers?: Record<string, string>,
+): string {
+  const jumlah = questions.length;
+  const bagian: string[] = [];
+  for (const question of questions) {
+    const jawaban = (answers?.[question.question] ?? "").trim();
+    if (jawaban !== "") bagian.push(jawaban);
+  }
+  const kepala = `${jumlah} pertanyaan`;
+  return bagian.length === 0 ? kepala : `${kepala}: ${bagian.join(", ")}`;
+}
+
 /** Rencana (markdown) dari input tool ExitPlanMode; undefined bila kosong/tak dikenal. */
 export function parsePlan(input: unknown): string | undefined {
   if (!isRecord(input)) return undefined;

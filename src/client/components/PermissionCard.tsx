@@ -7,7 +7,7 @@ import {
   type PermissionPreview,
 } from "../lib/permission";
 import type { TimelineItem } from "../lib/timeline";
-import { parseAskQuestions, parsePlan } from "../lib/ask-question";
+import { askSummaryLine, parseAskQuestions, parsePlan } from "../lib/ask-question";
 import { planTitle } from "../lib/plans";
 import { PlanCard, PlanDoneRow } from "./PlanCard";
 import { AskQuestionCard, AskQuestionSummary } from "./AskQuestionCard";
@@ -225,9 +225,15 @@ export function PermissionCard({
       );
     }
     const label = DONE_LABELS[item.status];
+    // Pertanyaan agent yang sudah diizinkan tampil sebagai "Dijawab".
+    const tampilLabel =
+      asks !== undefined && item.status === "diizinkan"
+        ? { text: "Dijawab", tone: DONE_LABELS.diizinkan.tone }
+        : label;
     const arg = view.target !== "" ? view.target : view.preview.kind === "command" ? view.preview.command : "";
+    const ringkas = asks !== undefined ? askSummaryLine(asks, item.answers) : arg;
     return (
-      <details class="jk-step" data-permission-id={item.id} open={asks !== undefined}>
+      <details class="jk-step" data-permission-id={item.id}>
         <summary>
           <span class="jk-chev">
             <Icon name="chevron" />
@@ -235,8 +241,8 @@ export function PermissionCard({
           <span class="jk-step-name">
             {asks !== undefined ? "Pertanyaan agent" : view.tool}
           </span>
-          {arg !== "" && asks === undefined && <span class="jk-step-arg">{arg}</span>}
-          <span class={`jk-step-status ${label.tone}`}>{label.text}</span>
+          {ringkas !== "" && <span class="jk-step-arg">{ringkas}</span>}
+          <span class={`jk-step-status ${tampilLabel.tone}`}>{tampilLabel.text}</span>
         </summary>
         <div class="jk-step-body">
           {item.status === "ditolak" && item.message !== undefined && (
