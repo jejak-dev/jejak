@@ -4,6 +4,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Composer } from "./components/Composer";
 import { AuditPage } from "./components/AuditPage";
 import { InstruksiPage } from "./components/InstruksiPage";
+import { SchedulesPage } from "./components/SchedulesPage";
 import { UsagePage } from "./components/UsagePage";
 import { LoginScreen } from "./components/LoginScreen";
 import { MemoryPage } from "./components/MemoryPage";
@@ -173,6 +174,7 @@ export function App() {
     navigateToMcp,
     navigateToAudit,
     navigateToInstruksi,
+    navigateToSchedules,
     navigateToUsage,
     navigateToProviders,
     navigateToWorkspaces,
@@ -318,6 +320,7 @@ export function App() {
   const showingMcp = routeView === "mcp";
   const showingAudit = routeView === "audit";
   const showingInstruksi = routeView === "instruksi";
+  const showingSchedules = routeView === "schedules";
   const showingUsage = routeView === "usage";
 
   const waiting = sessions.reduce((total, session) => total + session.pendingPermissions, 0);
@@ -335,13 +338,15 @@ export function App() {
               ? "Audit log · Jejak"
               : showingInstruksi
                 ? "Instructions · Jejak"
-                : showingUsage
-                  ? "Usage · Jejak"
-                  : selected !== undefined
-                    ? `${selected.title} · Jejak`
-                    : "Jejak";
+                : showingSchedules
+                  ? "Schedules · Jejak"
+                  : showingUsage
+                    ? "Usage · Jejak"
+                    : selected !== undefined
+                      ? `${selected.title} · Jejak`
+                      : "Jejak";
     document.title = waiting > 0 ? `(${waiting}) ${base}` : base;
-  }, [selected, showingProviders, showingMemory, showingWorkspaces, showingMcp, showingAudit, showingInstruksi, showingUsage, waiting]);
+  }, [selected, showingProviders, showingMemory, showingWorkspaces, showingMcp, showingAudit, showingInstruksi, showingSchedules, showingUsage, waiting]);
 
   // Pindah halaman menutup laci sidebar (tampilan sempit).
   useEffect(() => {
@@ -562,6 +567,9 @@ export function App() {
         case "open-instruksi":
           navigateToInstruksi();
           return;
+        case "open-schedules":
+          navigateToSchedules();
+          return;
         case "open-usage":
           navigateToUsage();
           return;
@@ -593,7 +601,7 @@ export function App() {
           return;
       }
     },
-    [api, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToUsage, openGitPanel, openSecretsTab, togglePanel],
+    [api, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToSchedules, navigateToUsage, openGitPanel, openSecretsTab, togglePanel],
   );
 
   const commands = useMemo(
@@ -867,7 +875,7 @@ export function App() {
         info={info}
         sessions={sessions}
         selectedId={
-          showingProviders || showingMemory || showingWorkspaces || showingMcp || showingAudit || showingInstruksi || showingUsage
+          showingProviders || showingMemory || showingWorkspaces || showingMcp || showingAudit || showingInstruksi || showingSchedules || showingUsage
             ? undefined
             : selectedId
         }
@@ -881,6 +889,7 @@ export function App() {
         mcpActive={showingMcp}
         auditActive={showingAudit}
         instruksiActive={showingInstruksi}
+        schedulesActive={showingSchedules}
         usageActive={showingUsage}
         memoryProposed={memoryProposed}
         held={held}
@@ -982,6 +991,17 @@ export function App() {
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
               <InstruksiPage api={api} sessions={sessions} defaultCwd={info?.cwd} />
+            </div>
+          </>
+        ) : showingSchedules ? (
+          <>
+            <Topbar onMenu={openDrawer} />
+            <div class="jk-page">
+              <SchedulesPage
+                api={api}
+                defaultCwd={info?.cwd}
+                recentCwds={recentCwds}
+              />
             </div>
           </>
         ) : showingUsage ? (

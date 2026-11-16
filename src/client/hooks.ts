@@ -8,6 +8,7 @@ import {
   memoryHash,
   parseHashRoute,
   providersHash,
+  schedulesHash,
   sessionHash,
   usageHash,
   workspacesHash,
@@ -57,6 +58,7 @@ export interface HashRouteState {
   navigateToMcp: () => void;
   navigateToAudit: () => void;
   navigateToInstruksi: () => void;
+  navigateToSchedules: () => void;
   navigateToUsage: () => void;
 }
 
@@ -113,6 +115,10 @@ export function useHashRoute(): HashRouteState {
     applyHash(instruksiHash());
   }, [applyHash]);
 
+  const navigateToSchedules = useCallback(() => {
+    applyHash(schedulesHash());
+  }, [applyHash]);
+
   const navigateToUsage = useCallback(() => {
     applyHash(usageHash());
   }, [applyHash]);
@@ -129,6 +135,7 @@ export function useHashRoute(): HashRouteState {
       navigateToMcp,
       navigateToAudit,
       navigateToInstruksi,
+      navigateToSchedules,
       navigateToUsage,
     }),
     [
@@ -140,6 +147,7 @@ export function useHashRoute(): HashRouteState {
       navigateToMcp,
       navigateToAudit,
       navigateToInstruksi,
+      navigateToSchedules,
       navigateToUsage,
     ],
   );

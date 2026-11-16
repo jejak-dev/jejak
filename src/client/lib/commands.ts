@@ -55,6 +55,7 @@ export type CommandId =
   | "open-mcp"
   | "open-audit"
   | "open-instruksi"
+  | "open-schedules"
   | "open-usage"
   | "open-memory"
   | "open-providers"
@@ -97,6 +98,7 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
     { id: "open-mcp", label: "Buka Server MCP", group: "aksi", run: "open-mcp" },
     { id: "open-audit", label: "Buka log audit", group: "aksi", run: "open-audit" },
     { id: "open-instruksi", label: "Buka instruksi dan skills", group: "aksi", run: "open-instruksi" },
+    { id: "open-schedules", label: "Buka tugas terjadwal", group: "aksi", run: "open-schedules" },
     { id: "open-usage", label: "Buka Usage", group: "aksi", run: "open-usage" },
     { id: "open-memory", label: "Buka Memory", group: "aksi", run: "open-memory" },
     { id: "open-providers", label: "Buka Provider", group: "aksi", run: "open-providers" },

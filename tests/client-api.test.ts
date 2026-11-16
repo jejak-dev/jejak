@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { ApiError, createApiClient } from "../src/client/lib/api";
 import type { SessionInfo } from "../src/server/sessions/session-manager";
+import type { ScheduledTask } from "../src/server/sessions/scheduled-tasks";
 
 interface Call {
   url: string;
@@ -1950,4 +1951,148 @@ describe("server MCP", () => {
       }
     });
   });
+
+/* ---------- Tugas terjadwal ---------- */
+
+const TUGAS: ScheduledTask = {
+  id: "t_abc123",
+  name: "Ringkasan harian",
+  input: { prompt: "Ringkas repo" },
+  spec: { kind: "daily", time: "09:00" },
+  enabled: true,
+  nextRunAt: "2026-11-17T09:00:00.000Z",
+  lastRunAt: "2026-11-16T09:00:00.000Z",
+  lastStatus: "ok",
+  lastSessionId: "s1",
+  runCount: 3,
+  createdAt: "2026-11-01T00:00:00.000Z",
+  updatedAt: "2026-11-16T09:00:00.000Z",
+};
+
+describe("tugas terjadwal", () => {
+  test("listSchedules GET /api/schedules dan mengurai daftar", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ tasks: [TUGAS] }));
+    const api = createApiClient({ fetch });
+
+    const tasks = await api.listSchedules();
+
+    expect(tasks).toEqual([TUGAS]);
+    expect(calls[0]?.url).toBe("/api/schedules");
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("listSchedules menolak respons tanpa array tasks", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ tasks: "bukan array" }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.listSchedules()).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("createSchedule POST /api/schedules dengan body datar", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ task: TUGAS }, 201));
+    const api = createApiClient({ fetch });
+
+    const task = await api.createSchedule({
+      name: "Ringkasan harian",
+      spec: { kind: "daily", time: "09:00" },
+      prompt: "Ringkas repo",
+      cwd: "/tmp/proyek",
+      permissionMode: "plan",
+    });
+
+    expect(task).toEqual(TUGAS);
+    expect(calls[0]?.url).toBe("/api/schedules");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      name: "Ringkasan harian",
+      spec: { kind: "daily", time: "09:00" },
+      prompt: "Ringkas repo",
+      cwd: "/tmp/proyek",
+      permissionMode: "plan",
+    });
+  });
+
+  test("createSchedule tak pernah mengirim confirmBypass", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ task: TUGAS }, 201));
+    const api = createApiClient({ fetch });
+
+    await api.createSchedule({
+      name: "Ringkasan harian",
+      spec: { kind: "once", at: "2026-12-01T09:00:00.000Z" },
+      prompt: "Ringkas repo",
+    });
+
+    const body = JSON.parse(String(calls[0]?.init.body)) as Record<string, unknown>;
+    expect(body["confirmBypass"]).toBeUndefined();
+    expect(body["permissionMode"]).toBeUndefined();
+  });
+
+  test("updateSchedule PATCH path id ter-encode dengan body patch", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ task: TUGAS }));
+    const api = createApiClient({ fetch });
+
+    const task = await api.updateSchedule("a/b c", { enabled: false });
+
+    expect(task).toEqual(TUGAS);
+    expect(calls[0]?.url).toBe("/api/schedules/a%2Fb%20c");
+    expect(calls[0]?.init.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ enabled: false });
+  });
+
+  test("deleteSchedule DELETE dengan body kosong dan memeriksa ok", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await api.deleteSchedule("t_abc123");
+
+    expect(calls[0]?.url).toBe("/api/schedules/t_abc123");
+    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("deleteSchedule menolak respons tanpa ok", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ ok: false }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.deleteSchedule("t_abc123")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("runSchedule POST /api/schedules/:id/run dan mengurai task", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ task: TUGAS }));
+    const api = createApiClient({ fetch });
+
+    const task = await api.runSchedule("t_abc123");
+
+    expect(task).toEqual(TUGAS);
+    expect(calls[0]?.url).toBe("/api/schedules/t_abc123/run");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
+  test("respons tanpa task ditolak", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ task: { id: "t1" } }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.runSchedule("t1")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("galat 409 memakai pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Tugas sedang berjalan." }, 409));
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.runSchedule("t1");
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
+    expect((caught as ApiError).message).toBe("Tugas sedang berjalan.");
+  });
+});
 });

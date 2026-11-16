@@ -24,6 +24,7 @@ export interface SidebarProps {
   mcpActive?: boolean;
   auditActive?: boolean;
   instruksiActive?: boolean;
+  schedulesActive?: boolean;
   usageActive?: boolean;
   /** Jumlah usulan memory terbuka; angka kecil ditampilkan bila > 0. */
   memoryProposed?: number;
@@ -87,6 +88,7 @@ export function Sidebar({
   mcpActive = false,
   auditActive = false,
   instruksiActive = false,
+  schedulesActive = false,
   usageActive = false,
   memoryProposed,
   held = [],
@@ -649,6 +651,14 @@ export function Sidebar({
             >
               <Icon name="doc" />
               <span class="jk-foot-text">Instructions</span>
+            </a>
+            <a
+              class={`jk-foot-link${schedulesActive ? " jk-foot-link-active" : ""}`}
+              href="#/schedules"
+              aria-current={schedulesActive ? "page" : undefined}
+            >
+              <Icon name="clock" />
+              <span class="jk-foot-text">Schedules</span>
             </a>
           </div>
           <div class="jk-foot-group" role="group">

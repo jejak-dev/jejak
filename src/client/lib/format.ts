@@ -125,7 +125,15 @@ export function shortPath(path: string, max = 36): string {
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
-export type AppView = "providers" | "memory" | "workspaces" | "mcp" | "audit" | "instruksi" | "usage";
+export type AppView =
+  | "providers"
+  | "memory"
+  | "workspaces"
+  | "mcp"
+  | "audit"
+  | "instruksi"
+  | "schedules"
+  | "usage";
 
 /** Bagian halaman Pengaturan yang dipilih lewat hash. */
 export type SettingsSection = "provider" | "keamanan" | "biaya" | "fitur" | "sistem";
@@ -187,6 +195,9 @@ export function parseHashRoute(hash: string): HashRoute {
   if (hash === "#/instruksi") {
     return { view: "instruksi" };
   }
+  if (hash === "#/schedules") {
+    return { view: "schedules" };
+  }
   if (hash === "#/usage") {
     return { view: "usage" };
   }
@@ -239,6 +250,10 @@ export function auditHash(): string {
 
 export function instruksiHash(): string {
   return "#/instruksi";
+}
+
+export function schedulesHash(): string {
+  return "#/schedules";
 }
 
 export function usageHash(): string {

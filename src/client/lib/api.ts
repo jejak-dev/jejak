@@ -47,6 +47,8 @@ import type { Question } from "../../server/questions/question-store";
 import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
 import type { CreateSessionInput, SessionInfo } from "../../server/sessions/session-manager";
+import type { ScheduleSpec } from "../../server/sessions/schedule-time";
+import type { ScheduledTask } from "../../server/sessions/scheduled-tasks";
 import type { GoalView } from "../../server/goals/goal";
 import type {
   UsageDayBucket,
@@ -575,6 +577,42 @@ export interface HeldPrompt {
   error?: string;
 }
 
+/* ---------- Tugas terjadwal ---------- */
+
+export type { ScheduleSpec, ScheduledTask };
+
+/** Mode izin yang boleh dipakai tugas terjadwal; bypass tak pernah diizinkan. */
+export type SchedulePermissionMode = "default" | "acceptEdits" | "plan";
+
+/** Masukan pembuatan tugas terjadwal. */
+export interface ScheduleCreateInput {
+  /** Nama tugas (dipakai juga sebagai judul sesi). */
+  name: string;
+  /** Jadwal: sekali, berulang, atau harian. */
+  spec: ScheduleSpec;
+  /** Aktif saat dibuat; bawaan aktif. */
+  enabled?: boolean;
+  /** Prompt yang dijalankan sebagai sesi baru. */
+  prompt: string;
+  /** Folder kerja sesi; kosong berarti folder bawaan server. */
+  cwd?: string;
+  /** Judul sesi; kosong berarti memakai nama tugas. */
+  title?: string;
+  /** Mode izin sesi; bypass tak pernah dikirim. */
+  permissionMode?: SchedulePermissionMode;
+}
+
+/** Bagian tugas yang boleh diubah. */
+export interface SchedulePatch {
+  name?: string;
+  spec?: ScheduleSpec;
+  enabled?: boolean;
+  prompt?: string;
+  cwd?: string;
+  title?: string;
+  permissionMode?: SchedulePermissionMode;
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   /** Status autentikasi server (apakah login diperlukan). */
@@ -617,6 +655,16 @@ export interface ApiClient {
   cancelHeld(id: string): Promise<HeldPrompt>;
   /** Tutup kartu tahanan yang tak menunggu apa pun. */
   dismissHeld(id: string): Promise<void>;
+  /** Semua tugas terjadwal yang tersimpan di server. */
+  listSchedules(): Promise<ScheduledTask[]>;
+  /** Buat tugas terjadwal baru. */
+  createSchedule(input: ScheduleCreateInput): Promise<ScheduledTask>;
+  /** Ubah nama, jadwal, status aktif, atau input sesinya. */
+  updateSchedule(id: string, patch: SchedulePatch): Promise<ScheduledTask>;
+  /** Hapus tugas terjadwal. */
+  deleteSchedule(id: string): Promise<void>;
+  /** Jalankan tugas sekarang; jadwal tak digeser. */
+  runSchedule(id: string): Promise<ScheduledTask>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   /** Lanjutkan sesi yang terputus karena aplikasi berhenti. */
   continueSession(id: string): Promise<{ ok: true; queued: boolean }>;
@@ -1364,6 +1412,46 @@ function heldPayloadFrom(payload: unknown): HeldPrompt {
   return heldFrom(field(payload, "held"));
 }
 
+/** Bentuk tugas terjadwal dari server; bentuk rusak ditolak. */
+function scheduleFrom(value: unknown): ScheduledTask {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.name !== "string" ||
+    !isRecord(value.input) ||
+    !isRecord(value.spec) ||
+    typeof value.enabled !== "boolean" ||
+    typeof value.runCount !== "number" ||
+    typeof value.createdAt !== "string" ||
+    typeof value.updatedAt !== "string"
+  ) {
+    throw invalidResponse();
+  }
+  return value as unknown as ScheduledTask;
+}
+
+/** Ambil tugas dari payload `{ task }`. */
+function schedulePayloadFrom(payload: unknown): ScheduledTask {
+  return scheduleFrom(field(payload, "task"));
+}
+
+/**
+ * Bentuk body pembuatan tugas: field sesi disusun datar, `confirmBypass`
+ * tak pernah ikut karena tugas terjadwal tak boleh berjalan tanpa izin.
+ */
+function createScheduleBody(input: ScheduleCreateInput): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    name: input.name,
+    spec: input.spec,
+    prompt: input.prompt,
+  };
+  if (input.enabled !== undefined) body.enabled = input.enabled;
+  if (input.cwd !== undefined) body.cwd = input.cwd;
+  if (input.title !== undefined) body.title = input.title;
+  if (input.permissionMode !== undefined) body.permissionMode = input.permissionMode;
+  return body;
+}
+
 /**
  * Bentuk body pembuatan sesi: field yang tak berarti tak pernah ikut
  * (`confirmBypass`, `worktree`, `sandbox`).
@@ -1774,6 +1862,41 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async dismissHeld(id) {
       await request("DELETE", `/api/held-prompts/${encodeURIComponent(id)}`, {});
+    },
+
+    async listSchedules() {
+      const data = await request("GET", "/api/schedules");
+      const list = field(data, "tasks");
+      if (!Array.isArray(list)) throw invalidResponse();
+      return list.map(scheduleFrom);
+    },
+
+    async createSchedule(input) {
+      const data = await request("POST", "/api/schedules", createScheduleBody(input));
+      return schedulePayloadFrom(data);
+    },
+
+    async updateSchedule(id, patch) {
+      const data = await request(
+        "PATCH",
+        `/api/schedules/${encodeURIComponent(id)}`,
+        { ...patch },
+      );
+      return schedulePayloadFrom(data);
+    },
+
+    async deleteSchedule(id) {
+      const data = await request("DELETE", `/api/schedules/${encodeURIComponent(id)}`, {});
+      if (field(data, "ok") !== true) throw invalidResponse();
+    },
+
+    async runSchedule(id) {
+      const data = await request(
+        "POST",
+        `/api/schedules/${encodeURIComponent(id)}/run`,
+        {},
+      );
+      return schedulePayloadFrom(data);
     },
 
     async interruptSession(id) {

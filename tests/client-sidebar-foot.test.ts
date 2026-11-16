@@ -52,9 +52,15 @@ describe("kelompok footer sidebar", () => {
     expect(groups[1]?.[0]).toBe("Workspace");
   });
 
-  test("Workspace, Memory, Server MCP, dan Instructions satu kelompok berurutan", () => {
+  test("Workspace, Memory, Server MCP, Instructions, dan Schedules satu kelompok berurutan", () => {
     const groups = kelompok(isiFooter(sidebar));
-    expect(groups[1]).toEqual(["Workspace", "Memory", "Server MCP", "Instructions"]);
+    expect(groups[1]).toEqual([
+      "Workspace",
+      "Memory",
+      "Server MCP",
+      "Instructions",
+      "Schedules",
+    ]);
   });
 
   test("Usage dan Audit log satu kelompok", () => {

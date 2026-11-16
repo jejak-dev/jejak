@@ -6651,6 +6651,139 @@ h2.jk-md-heading {
   margin-top: 4px;
 }
 
+/* Halaman Tugas terjadwal */
+
+.jk-schedules {
+  width: min(860px, 100%);
+  margin: 0 auto;
+  padding: 18px 20px 80px;
+}
+
+.jk-schedules .jk-settings-head {
+  margin-bottom: 18px;
+}
+
+.jk-schedules-form {
+  display: grid;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin-bottom: 18px;
+}
+
+.jk-schedules-form-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jk-schedules-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.jk-schedules-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jk-schedules-day {
+  min-width: 34px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t2);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.jk-schedules-day-on {
+  border-color: var(--line-2);
+  background: var(--line);
+  color: var(--t1);
+}
+
+.jk-schedules-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jk-schedules-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--line);
+}
+
+.jk-schedules-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-width: 0;
+}
+
+.jk-schedules-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t1);
+}
+
+.jk-schedules-next {
+  flex: 1;
+  min-width: 0;
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-schedules-switch {
+  flex: none;
+}
+
+.jk-schedules-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.jk-schedules-status,
+.jk-schedules-count {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12px;
+}
+
+.jk-schedules-time {
+  color: var(--t3);
+}
+
+.jk-schedules-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.jk-schedules-danger {
+  color: var(--t3);
+}
+
+.jk-schedules-danger:hover:not(:disabled) {
+  color: var(--bad);
+}
+
 /* Pertanyaan wawancara */
 .jk-memory-sections { margin-bottom: 12px; }
 .jk-questions-name { display: flex; align-items: center; gap: 8px; margin-left: auto; }
