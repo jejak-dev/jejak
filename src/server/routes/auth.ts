@@ -5,6 +5,11 @@ import { MAX_PASSWORD_LENGTH, type PasswordStore } from "../auth/password-store"
 import { MIN_PASSWORD_LENGTH, type PasswordVerifier } from "../auth/password";
 import { parseCookies, type SessionCodec } from "../auth/session-cookie";
 import type { Throttle } from "../auth/throttle";
+import { PEER_HEADER } from "../network/network-fetch";
+import {
+  recordNetworkAudit,
+  type NetworkManager,
+} from "../network/network-manager";
 
 export interface AuthRoutesOptions {
   /** Verifier kata sandi; `undefined` berarti autentikasi tidak aktif. */
@@ -21,6 +26,8 @@ export interface AuthRoutesOptions {
   secureCookie?: boolean;
   /** Mode desktop: sandi internal acak yang tak diketahui pengguna. */
   desktop?: boolean;
+  /** Manajer akses jaringan; sandi dihapus berarti akses jaringan dimatikan. */
+  network?: NetworkManager;
 }
 
 export interface AuthStatus {
@@ -60,8 +67,14 @@ function parseBody(body: unknown): Record<string, unknown> {
   }
 }
 
-/** Alamat socket klien; header `x-forwarded-for` tidak dipercaya. */
+/**
+ * Alamat socket klien; header `x-forwarded-for` tidak dipercaya.
+ * Listener Jejak menulis `x-jejak-peer` dari socket sendiri, jadi throttle
+ * berlaku per klien jaringan juga.
+ */
 export function socketAddress(server: { requestIP(request: Request): { address: string } | null } | null, request: Request): string {
+  const header = request.headers.get(PEER_HEADER)?.trim();
+  if (header !== undefined && header !== "") return header;
   try {
     const info = server?.requestIP(request);
     return info?.address ?? "tidak-diketahui";
@@ -236,7 +249,7 @@ export function authRoutes(options: AuthRoutesOptions): Elysia {
     )
     .delete(
       "/api/auth/password",
-      ({ request, body, server }) => {
+      async ({ request, body, server }) => {
         if (!active || codec === undefined || store === undefined) {
           return jsonResponse(404, { error: "autentikasi tidak aktif" });
         }
@@ -270,6 +283,11 @@ export function authRoutes(options: AuthRoutesOptions): Elysia {
           return jsonResponse(500, { error: "gagal menghapus sandi" });
         }
         auditAuth("sandi-dihapus", address);
+        // Tanpa sandi, akses dari jaringan harus ikut dimatikan.
+        if (options.network !== undefined) {
+          await options.network.onPasswordCleared();
+          recordNetworkAudit(audit, "jaringan-dimatikan", options.network.status().port);
+        }
         return jsonResponse(200, { ok: true });
       },
       { parse: "text" },

@@ -1,4 +1,5 @@
 import { Elysia } from "elysia";
+import { networkInterfaces as osNetworkInterfaces } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
@@ -6,6 +7,7 @@ import { defaultAuditStore, type AuditStore } from "./audit/audit-store";
 import { authGuard } from "./auth/auth-guard";
 import { createVerifier, type PasswordVerifier } from "./auth/password";
 import {
+  createStoreVerifier,
   defaultPasswordStore,
   isStoreVerifier,
   type PasswordStore,
@@ -27,6 +29,13 @@ import {
 } from "./desktop";
 import { removeSessionUndo } from "./files/revert";
 import { localGuard, DEFAULT_ALLOWED_HOSTS } from "./guard";
+import { isAllowedNetworkHost, isLoopbackHostname } from "./network/network-host";
+import { mainFetch } from "./network/network-fetch";
+import {
+  NetworkManager,
+  type NetworkInterfaceEntry,
+} from "./network/network-manager";
+import { defaultNetworkStore } from "./network/network-store";
 import { GoalReporterHolder } from "./goals/goal-reporter";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
@@ -58,6 +67,7 @@ import { usageRoutes } from "./routes/usage";
 import { claudeConfigRoutes } from "./routes/claude-config";
 import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
+import { networkRoutes } from "./routes/network";
 import { mcpServerRoutes, defaultMcpServerService } from "./routes/mcp-servers";
 import { memoryRoutes } from "./routes/memory";
 import { claudeMemoryRoutes } from "./routes/claude-memory";
@@ -227,6 +237,8 @@ export interface CreateAppOptions {
   auth?: AuthOptions;
   /** Penyimpanan sandi milik pengguna; default berkas `auth.json` di JEJAK_HOME. */
   passwordStore?: PasswordStore;
+  /** Manajer akses dari jaringan; tanpa ini rute jaringan menjawab 404. */
+  network?: NetworkManager;
   /** Mode desktop: rute masuk sekali pakai dan cookie sesi 30 hari. */
   desktop?: DesktopOptions;
 }
@@ -609,6 +621,7 @@ export function createApp(options: CreateAppOptions = {}) {
       throttle,
       audit: options.audit,
       ...(desktop === undefined ? {} : { desktop: true }),
+      ...(options.network === undefined ? {} : { network: options.network }),
       ...(authOptions?.secureCookie === undefined
         ? {}
         : { secureCookie: authOptions.secureCookie }),
@@ -637,6 +650,10 @@ export function createApp(options: CreateAppOptions = {}) {
             { allowedHosts: [...DEFAULT_ALLOWED_HOSTS, ...options.allowedHosts] }),
         // Rute masuk desktop juga wajib lolos penjaga Host/Origin.
         ...(desktop === undefined ? {} : { guardedPrefixes: ["/api/", "/__desktop/"] }),
+        // Listener jaringan hanya boleh melayani host privat, dan hanya lewat
+        // jalur yang ditandai server sendiri (header tak bisa dipalsukan klien).
+        extraHostAllowed:
+          options.network === undefined ? undefined : isAllowedNetworkHost,
       }),
     )
     .use(authPlugins)
@@ -735,6 +752,7 @@ export function createApp(options: CreateAppOptions = {}) {
     )
     .use(mcpServerRoutes({ service: options.mcpServers, fetch: options.fetch, audit: options.audit }))
     .use(auditRoutes({ store: options.audit }))
+    .use(networkRoutes({ network: options.network, audit: options.audit }))
     .use(
       budgetRoutes({
         store: options.budget,
@@ -795,6 +813,21 @@ function mcpUrlFor(host: string, port: number, secure: boolean): string {
   return `${secure ? "https" : "http"}://${safeHost}:${port}/mcp`;
 }
 
+/** Daftar antarmuka jaringan lokal; dipakai menyusun URL akses jaringan. */
+function localNetworkInterfaces(): NetworkInterfaceEntry[] {
+  const entries: NetworkInterfaceEntry[] = [];
+  for (const list of Object.values(osNetworkInterfaces())) {
+    for (const item of list ?? []) {
+      entries.push({
+        address: item.address,
+        family: item.family,
+        internal: item.internal,
+      });
+    }
+  }
+  return entries;
+}
+
 export function startServer(options: ServeOptions = {}): ServeHandle {
   const host = options.host ?? process.env.HOST ?? "127.0.0.1";
   const requestedPort = options.port ?? Number(process.env.PORT ?? 3000);
@@ -829,19 +862,63 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   // port acak dari OS). Aplikasi dirakit sesudah port diketahui, sehingga nama
   // cookie sesi, URL MCP, dan pesan log memakai port yang benar.
   const holder: { app?: ReturnType<typeof createApp> } = {};
-  const server = Bun.serve({
-    hostname: host,
-    port: requestedPort,
-    // Sama dengan bawaan `.listen` Elysia (30 dtk); bawaan Bun (10 dtk) lebih pendek
-    // dari jeda ping SSE (15 dtk) sehingga aliran sesi bisa terputus.
-    idleTimeout: 30,
-    fetch: (request) => {
+  // Penyimpanan sandi dan jaringan dipakai bersama oleh aplikasi dan manajer.
+  const passwordStore = defaultPasswordStore(process.env);
+  const networkStore = defaultNetworkStore(process.env);
+  // Tanpa sandi dari flag: pakai sandi tersimpan milik pengguna sebagai sumber
+  // autentikasi. Ini juga menjamin listener jaringan selalu di belakang
+  // penjaga autentikasi (cookie).
+  const storedPassword =
+    options.password === undefined && passwordStore.has()
+      ? createStoreVerifier(passwordStore)
+      : undefined;
+  // Autentikasi aktif bila aplikasi memakai penjaga cookie. Listener jaringan
+  // hanya boleh hidup kalau penjaga ini aktif.
+  const authActive = options.password !== undefined || storedPassword !== undefined;
+  // Manajer akses dari jaringan hanya dibuat bila listener utama loopback:
+  // server yang sudah terbuka ke jaringan tak boleh menambah listener kedua.
+  const network = isLoopbackHostname(host)
+    ? new NetworkManager({
+        serve: (opts) =>
+          Bun.serve({
+            hostname: opts.hostname,
+            port: opts.port,
+            idleTimeout: 30,
+            fetch: (request, srv) => opts.fetch(request, srv),
+          }),
+        networkInterfaces: localNetworkInterfaces,
+        passwordStore,
+        store: networkStore,
+        authActive: () => authActive,
+        handle: (request) => {
+          const pending = holder.app;
+          if (pending === undefined) {
+            return new Response("Jejak belum siap", { status: 503 });
+          }
+          return pending.handle(request);
+        },
+        ...(audit === undefined ? {} : { audit }),
+      })
+    : undefined;
+  // Pembungkus listener utama: header penanda dari klien dibuang dan
+  // `x-jejak-peer` diisi dari socket sendiri.
+  const mainHandler = mainFetch(
+    (request) => {
       const pending = holder.app;
       if (pending === undefined) {
         return new Response("Jejak belum siap", { status: 503 });
       }
       return pending.handle(request);
     },
+    (request, srv) => srv?.requestIP?.(request)?.address,
+  );
+  const server = Bun.serve({
+    hostname: host,
+    port: requestedPort,
+    // Sama dengan bawaan `.listen` Elysia (30 dtk); bawaan Bun (10 dtk) lebih pendek
+    // dari jeda ping SSE (15 dtk) sehingga aliran sesi bisa terputus.
+    idleTimeout: 30,
+    fetch: (request, srv) => mainHandler(request, srv),
     ...(options.tls === undefined ? {} : { tls: options.tls }),
   });
   const port = server.port ?? requestedPort;
@@ -853,12 +930,14 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     mcpUrl,
     checkpoints,
     workspaces,
+    passwordStore,
+    ...(network === undefined ? {} : { network }),
     ...(options.allowHosts === undefined ? {} : { allowHosts: options.allowHosts }),
-    ...(options.password === undefined
+    ...(options.password === undefined && storedPassword === undefined
       ? {}
       : {
           auth: {
-            password: options.password,
+            password: options.password ?? storedPassword!,
             port,
             ...(options.secureCookie === undefined ? {} : { secureCookie: options.secureCookie }),
           },
@@ -885,11 +964,14 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   // Supaya konteks permintaan punya `server` (alamat socket untuk throttle).
   app.server = server;
   const gates = (app as unknown as { featureGates?: FeatureGates }).featureGates;
+  // Listener jaringan (bila diizinkan sebelumnya) dinyalakan lagi.
+  if (network !== undefined) void network.start();
 
   console.log(
     `Jejak ${VERSION} siap di ${options.tls === undefined ? "http" : "https"}://${host}:${port}`,
   );
   const closers: Array<() => void> = [];
+  if (network !== undefined) closers.push(() => void network.stop());
   if (store !== undefined) closers.push(() => store.close());
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
   if (audit !== undefined) closers.push(() => audit.close());
@@ -908,6 +990,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   }
   // Penutup yang boleh menunggu (dipakai `stop()`).
   const asyncClosers: Array<() => Promise<void>> = [];
+  if (network !== undefined) asyncClosers.push(async () => network.stop());
   if (gates !== undefined) {
     asyncClosers.push(async () => {
       await gates.terminal.shutdown();

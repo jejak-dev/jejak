@@ -5,6 +5,11 @@ export interface GuardOptions {
   allowedHosts?: string[];
   /** Awalan path yang dijaga Host/Origin. Default: hanya `/api/`. */
   guardedPrefixes?: string[];
+  /**
+   * Host tambahan yang boleh dilayani, selain daftar bawaan. Dipakai listener
+   * jaringan: host privat hanya boleh lewat jalur yang ditandai server.
+   */
+  extraHostAllowed?: (hostname: string, request: Request) => boolean;
 }
 
 export const DEFAULT_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "[::1]"];
@@ -41,8 +46,12 @@ export function localGuard(options: GuardOptions = {}): Elysia {
       }
 
       const rawHost = request.headers.get("host")?.trim() || url.host;
-      if (!allowedHosts.has(hostnameOf(rawHost))) {
-        return deny(403, "host tidak diizinkan");
+      const hostname = hostnameOf(rawHost);
+      if (!allowedHosts.has(hostname)) {
+        const extra = options.extraHostAllowed?.(hostname, request) === true;
+        if (!extra) {
+          return deny(403, "host tidak diizinkan");
+        }
       }
 
       const origin = request.headers.get("origin");

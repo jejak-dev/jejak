@@ -111,6 +111,25 @@ Useful flags and environment variables:
 - `JEJAK_PROMPT_SUGGESTION=0` — turn off the prompt suggestion shown after each
   turn (on by default).
 
+## Access from other devices
+
+Jejak can listen on your local network so a phone or another laptop can open it.
+
+1. Set a password first: Settings → *Access & password* → create a password.
+2. In the same card, turn on *Allow access from other devices*. The network
+   listener uses port `4747` by default; you can change the port while it is off.
+3. Open one of the URLs shown in the list (for example `http://192.168.1.5:4747`)
+   on the other device and sign in with the same password.
+
+Warnings:
+
+- Any device on the same network that knows the password can open Jejak and run
+  agents on your computer. Use it only on a trusted network, or reach it through
+  Tailscale.
+- This connection is plain HTTP: the password and the session cookie are **not**
+  encrypted on the local network.
+- macOS may show an "accept incoming connection" dialog the first time.
+
 ## Security
 
 - The server listens on `127.0.0.1` by default and refuses a non-loopback bind

@@ -1,3 +1,4 @@
+import { h, type ComponentChild } from "preact";
 import { useCallback, useEffect, useState } from "preact/hooks";
 import type { ApiClient } from "../lib/api";
 import {
@@ -10,6 +11,7 @@ import {
   useConfirmDialogBindings,
   type ConfirmDialogBindings,
 } from "./ConfirmDialog";
+import { NetworkSettings } from "./NetworkSettings";
 
 export interface AccessSettingsViewProps {
   /** Status sandi terakhir dari server. */
@@ -52,6 +54,8 @@ export interface AccessSettingsViewProps {
   onCancelDelete: () => void;
   /** Binding fokus dan keyboard untuk modal konfirmasi. */
   dialog?: ConfirmDialogBindings;
+  /** Isi bagian akses jaringan (disisipkan di dalam kartu). */
+  network?: ComponentChild;
 }
 
 /** Tampilan kartu Akses & sandi tanpa hook; dipakai uji render tanpa DOM. */
@@ -67,7 +71,7 @@ export function AccessSettingsView(props: AccessSettingsViewProps) {
         Sandi dipakai untuk masuk dari peramban atau perangkat lain. Aplikasi desktop ini tetap
         masuk otomatis.
       </p>
-      <p class="jk-note">Akses dari jaringan belum diaktifkan.</p>
+      {props.network}
 
       <p class="jk-access-status">{passwordStatusText(props.status)}</p>
 
@@ -192,6 +196,17 @@ export interface AccessSettingsProps {
   onAuthChanged?: () => void;
 }
 
+/**
+ * Slot bagian jaringan di kartu Akses & sandi.
+ *
+ * Kunci pemicu ikut disertakan: begitu status sandi berubah (sandi dibuat,
+ * diganti, atau dihapus) kunci berubah dan kartu jaringan langsung memuat
+ * status terbaru dari server.
+ */
+export function accessNetworkSlot(api: ApiClient, refreshKey: number): ComponentChild {
+  return h(NetworkSettings, { api, refreshKey });
+}
+
 /** Pesan galat singkat dari galat API atau galat biasa. */
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message !== "") return error.message;
@@ -211,6 +226,8 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dialogError, setDialogError] = useState<string | undefined>(undefined);
   const [deletePassword, setDeletePassword] = useState("");
+  // Kunci pemicu status jaringan; naik setiap kali sandi berubah.
+  const [networkRefreshKey, setNetworkRefreshKey] = useState(0);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -251,6 +268,7 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
         setRepeat("");
         setNotice(replacing ? "Sandi diganti." : "Sandi dibuat.");
         await load();
+        setNetworkRefreshKey((value) => value + 1);
         onAuthChanged?.();
       } catch (caught) {
         setError(messageOf(caught));
@@ -277,6 +295,7 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
       setRepeat("");
       setNotice("Sandi dihapus.");
       await load();
+      setNetworkRefreshKey((value) => value + 1);
       onAuthChanged?.();
     } catch (caught) {
       setDialogError(messageOf(caught));
@@ -326,6 +345,7 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
       onConfirmDelete={() => void onConfirmDelete()}
       onCancelDelete={onCancelDelete}
       dialog={dialog}
+      network={accessNetworkSlot(api, networkRefreshKey)}
     />
   );
 }

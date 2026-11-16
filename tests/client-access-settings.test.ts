@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import type { ComponentChild, VNode } from "preact";
-import { AccessSettingsView } from "../src/client/components/AccessSettings";
+import { h, type ComponentChild, type VNode } from "preact";
+import {
+  AccessSettingsView,
+  accessNetworkSlot,
+} from "../src/client/components/AccessSettings";
+import { NetworkSettings } from "../src/client/components/NetworkSettings";
+import type { ApiClient } from "../src/client/lib/api";
 
 /* ---------- Bantuan: telusuri pohon VNode tanpa DOM ---------- */
 
@@ -83,8 +88,15 @@ describe("kartu Akses & sandi", () => {
     expect(teks).toContain(
       "Sandi dipakai untuk masuk dari peramban atau perangkat lain. Aplikasi desktop ini tetap masuk otomatis.",
     );
-    expect(teks).toContain("Akses dari jaringan belum diaktifkan.");
     expect(teks).toContain("Belum ada sandi");
+  });
+
+  test("catatan jaringan digantikan bagian akses jaringan", () => {
+    const tanpaSlot = textOf(render());
+    expect(tanpaSlot).not.toContain("Akses dari jaringan belum diaktifkan.");
+    const denganSlot = textOf(render({ network: h("p", null, "Bagian jaringan") }));
+    expect(denganSlot).toContain("Bagian jaringan");
+    expect(denganSlot).not.toContain("Akses dari jaringan belum diaktifkan.");
   });
 
   test("status menyandi tanggal saat sandi sudah ada", () => {
@@ -142,5 +154,15 @@ describe("kartu Akses & sandi", () => {
     expect(buttonTexts(render())).toEqual(["Buat sandi"]);
     const aktif = buttonTexts(render({ status: { configured: true, updatedAt: "2026-11-16" } }));
     expect(aktif).toEqual(["Ganti sandi", "Hapus sandi"]);
+  });
+
+  test("bagian jaringan menerima kunci pemicu muat ulang status", () => {
+    const api = {} as ApiClient;
+    const slot = accessNetworkSlot(api, 4) as VNode;
+    expect(slot.type === NetworkSettings).toBe(true);
+    expect(propsOf(slot)["refreshKey"]).toBe(4);
+    // Kunci berubah setiap kali status sandi berubah.
+    const lain = accessNetworkSlot(api, 5) as VNode;
+    expect(propsOf(lain)["refreshKey"]).toBe(5);
   });
 });

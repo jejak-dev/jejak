@@ -1,6 +1,7 @@
 import type { AuditEntry, AuditSummary } from "../../server/audit/audit-store";
 import type { AuthStatus } from "./auth";
 import type { PasswordStatus } from "./password-form";
+import { parseNetworkStatus, type NetworkStatus } from "./network-form";
 import type {
   ChangeAction,
   CheckpointChange,
@@ -538,6 +539,10 @@ export interface ApiClient {
   }): Promise<{ ok: boolean; updatedAt?: string }>;
   /** Hapus sandi; `current` (sandi lama) wajib dan harus benar. */
   clearPassword(current: string): Promise<{ ok: boolean }>;
+  /** Status akses dari jaringan (listener kedua). */
+  getNetworkStatus(): Promise<NetworkStatus>;
+  /** Nyalakan atau matikan akses dari jaringan. */
+  setNetwork(input: { enabled: boolean; port?: number }): Promise<NetworkStatus>;
   listSessions(): Promise<SessionInfo[]>;
   getSession(id: string): Promise<SessionInfo>;
   renameSession(id: string, title: string): Promise<SessionInfo>;
@@ -1594,6 +1599,19 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         { skipUnauthorized: true },
       );
       return { ok: field(data, "ok") === true };
+    },
+
+    async getNetworkStatus() {
+      const data = await request("GET", "/api/network");
+      return parseNetworkStatus(data);
+    },
+
+    async setNetwork(input) {
+      const data = await request("PUT", "/api/network", {
+        enabled: input.enabled,
+        ...(input.port === undefined ? {} : { port: input.port }),
+      });
+      return parseNetworkStatus(data);
     },
 
     async listSessions() {

@@ -112,6 +112,27 @@ Flag dan variabel lingkungan yang berguna:
 - `HOST`, `PORT` — alamat binding dan port (default `127.0.0.1:3000`).
 - `JEJAK_HOME` — folder data (default `~/.jejak`).
 
+## Akses dari perangkat lain
+
+Jejak bisa mendengarkan di jaringan lokal supaya HP atau laptop lain bisa
+membukanya.
+
+1. Buat sandi dulu: Pengaturan → *Akses & sandi* → buat sandi.
+2. Di kartu yang sama, nyalakan *Izinkan akses dari perangkat lain*. Listener
+   jaringan memakai port `4747` secara bawaan; port bisa diubah saat listener
+   masih mati.
+3. Buka salah satu URL yang tampil di daftar (mis. `http://192.168.1.5:4747`)
+   di perangkat lain lalu masuk dengan sandi yang sama.
+
+Peringatan:
+
+- Perangkat mana pun di jaringan yang sama yang tahu sandinya bisa membuka
+  Jejak dan menjalankan agen di komputermu. Pakai hanya di jaringan tepercaya,
+  atau dijangkau lewat Tailscale.
+- Koneksi ini HTTP biasa: sandi dan cookie sesi **tidak** dienkripsi di jaringan
+  lokal.
+- macOS mungkin menampilkan dialog "terima koneksi masuk" saat pertama kali.
+
 ## Keamanan
 
 - Server mendengarkan `127.0.0.1` secara default dan menolak bind non-loopback bila
