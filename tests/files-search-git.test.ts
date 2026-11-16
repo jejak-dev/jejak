@@ -129,9 +129,8 @@ describe("pencarian dengan git grep", () => {
     expect(result.files).toBe(new Set(paths).size);
   });
 
-  test("regex POSIX didukung", async () => {
-    // Git memakai ERE POSIX: kelas karakter ditulis [0-9], bukan \d.
-    const result = await searchText(dir, "foo[0-9]+", { regex: true });
+  test("regex PCRE didukung (\\d)", async () => {
+    const result = await searchText(dir, "foo\\d+", { regex: true });
     expect(result.engine).toBe("git");
     expect(result.matches.map((match) => match.path)).toEqual(["a.txt"]);
     expect(result.matches[0]?.text).toBe("foo123 bar");
@@ -202,6 +201,16 @@ describe("pencarian dengan git grep", () => {
     expect(multibyte?.ranges).toEqual([
       { start: 2, end: 6 },
       { start: 7, end: 11 },
+    ]);
+  });
+
+  test("rentang regex PCRE dengan \\d dan multibyte", async () => {
+    await writeFile(join(dir, "pc.txt"), "é foo1 foo22\n");
+    const result = await searchText(dir, "foo\\d+", { regex: true });
+    const pc = result.matches.find((match) => match.path === "pc.txt");
+    expect(pc?.ranges).toEqual([
+      { start: 2, end: 6 },
+      { start: 7, end: 12 },
     ]);
   });
 

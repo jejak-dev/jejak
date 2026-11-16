@@ -443,13 +443,16 @@ function parseGitHits(stdout: string): GitHit[] {
   return hits;
 }
 
+/** Git yang dibangun tanpa PCRE menolak `-P` dengan pesan ini. */
+const NO_PCRE = /not compiled|perl-compatible|pcre/i;
+
 function isNotARepo(stderr: string): boolean {
   return stderr.includes("not a git repository");
 }
 
 /** Git melaporkan pola regex yang rusak lewat pesan galat; pesan ini dikenali di sini. */
 function isInvalidPattern(stderr: string): boolean {
-  return /not balanced|unbalanced|unmatched|unterminated|no terminating|invalid|malformed|bad regex|regular expression|pattern|fatal: command-line/i.test(
+  return /not balanced|unbalanced|unmatched|unterminated|no terminating|invalid|malformed|bad regex|regular expression|pattern|missing|parenthes|fatal: (command-line|-e option)/i.test(
     stderr,
   );
 }
@@ -464,7 +467,11 @@ interface GitSearchOptions {
   deadlineMs: number;
 }
 
-function gitGrepArgs(options: GitSearchOptions, query: string): { main: string[]; only: string[] } {
+function gitGrepArgs(
+  options: GitSearchOptions,
+  query: string,
+  regexFlag: "-P" | "-E",
+): { main: string[]; only: string[] } {
   const flags = [
     "grep",
     "-n",
@@ -475,7 +482,7 @@ function gitGrepArgs(options: GitSearchOptions, query: string): { main: string[]
     "--untracked",
     "--exclude-standard",
   ];
-  flags.push(options.regex ? "-E" : "-F");
+  flags.push(options.regex ? regexFlag : "-F");
   if (!options.caseSensitive) flags.push("-i");
   if (options.wholeWord) flags.push("-w");
   const pattern = ["-e", query, "--"];
@@ -499,16 +506,24 @@ async function searchWithGit(
   query: string,
   options: GitSearchOptions,
 ): Promise<SearchResult | null> {
-  const args = gitGrepArgs(options, query);
   const timeoutMs = Math.max(1, options.deadlineMs);
-  const [main, only] = await Promise.all([
-    runGit(args.main, realRoot, { timeoutMs }, GIT_OUTPUT_MAX_BYTES),
-    // Untuk pola literal, kemunculannya bisa dihitung sendiri; `-o` hanya perlu
-    // kalau polanya regex (pola tak boleh dijalankan di proses server).
-    options.regex
-      ? runGit(args.only, realRoot, { timeoutMs }, GIT_OUTPUT_MAX_BYTES)
-      : Promise.resolve(null),
-  ]);
+  const run = async (regexFlag: "-P" | "-E") => {
+    const args = gitGrepArgs(options, query, regexFlag);
+    const [mainRun, onlyRun] = await Promise.all([
+      runGit(args.main, realRoot, { timeoutMs }, GIT_OUTPUT_MAX_BYTES),
+      // Untuk pola literal, kemunculannya bisa dihitung sendiri; `-o` hanya perlu
+      // kalau polanya regex (pola tak boleh dijalankan di proses server).
+      options.regex
+        ? runGit(args.only, realRoot, { timeoutMs }, GIT_OUTPUT_MAX_BYTES)
+        : Promise.resolve(null),
+    ]);
+    return { main: mainRun, only: onlyRun };
+  };
+  // Regex memakai PCRE (`\d`, `\w`, lookahead); git tanpa PCRE jatuh ke POSIX ERE.
+  let { main, only } = await run("-P");
+  if (options.regex && main.code !== 0 && main.code !== 1 && NO_PCRE.test(main.stderr)) {
+    ({ main, only } = await run("-E"));
+  }
 
   if (isNotARepo(main.stderr)) return null;
   if (options.regex && isInvalidPattern(main.stderr)) {
@@ -555,43 +570,25 @@ async function searchWithGit(
 
 /**
  * Menentukan rentang karakter tiap kemunculan dalam satu baris dari keluaran
- * `git grep -o`. Kolom yang/git laporkan untuk kemunculan setelah pertama
- * dihitung relatif terhadap kemunculan sebelumnya, jadi posisinya dihitung
- * ulang dari kolom-kolom itu; kemunculan terakhir dicari dari teks baris.
+ * `git grep -o`. Kolom `-o` untuk kemunculan kedua dan seterusnya tidak bisa
+ * dipercaya (relatif ke kemunculan sebelumnya), jadi hanya teks kecocokannya
+ * yang dipakai: dicari berurutan di baris mulai dari akhir kemunculan lalu.
  */
 function placeOccurrences(
   text: string,
   records: GitHit[] | undefined,
   limit: number,
 ): { start: number; end: number }[] {
-  if (records === undefined || records.length === 0) return [];
-  const bytes = Buffer.from(text, "utf8");
-  const total = records.length;
-  // Byte sebelum kecocokan pertama pada baris ini.
-  const before = records[0]!.column - 1;
-  const starts: number[] = [];
-  if (total === 1) {
-    starts.push(records[0]!.column - 1);
-  } else {
-    for (let index = 1; index < total; index += 1) {
-      const end = records[index]!.column - 1 - before;
-      starts.push(end - Buffer.byteLength(records[index - 1]!.text, "utf8"));
-    }
-    const previous = starts[total - 2]! + Buffer.byteLength(records[total - 2]!.text, "utf8");
-    const needle = Buffer.from(records[total - 1]!.text, "utf8");
-    const found = bytes.subarray(previous).indexOf(needle);
-    starts.push(found === -1 ? -1 : previous + found);
-  }
-
+  if (records === undefined) return [];
   const ranges: { start: number; end: number }[] = [];
-  for (let index = 0; index < total; index += 1) {
-    const offset = starts[index]!;
-    if (offset < 0) break;
-    // Offset byte -> indeks karakter UTF-16.
-    const start = bytes.subarray(0, offset).toString("utf8").length;
-    const end = start + records[index]!.text.length;
-    if (start >= limit) break;
+  let cursor = 0;
+  for (const record of records) {
+    if (record.text.length === 0) continue;
+    const start = text.indexOf(record.text, cursor);
+    if (start === -1 || start >= limit) break;
+    const end = start + record.text.length;
     ranges.push({ start, end: Math.min(end, limit) });
+    cursor = end;
     if (ranges.length >= MAX_RANGES_PER_LINE) break;
   }
   return ranges;
