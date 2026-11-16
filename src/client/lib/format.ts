@@ -127,14 +127,50 @@ const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 export type AppView = "providers" | "memory" | "workspaces" | "mcp" | "audit" | "instruksi" | "usage";
 
+/** Bagian halaman Pengaturan yang dipilih lewat hash. */
+export type SettingsSection = "provider" | "keamanan" | "biaya" | "fitur" | "sistem";
+
+export interface SettingsSectionItem {
+  id: SettingsSection;
+  label: string;
+}
+
+/** Urutan bagian Pengaturan; "provider" adalah bawaan di hash "#/providers". */
+export const SETTINGS_SECTIONS: readonly SettingsSectionItem[] = [
+  { id: "provider", label: "Provider" },
+  { id: "keamanan", label: "Keamanan" },
+  { id: "biaya", label: "Biaya" },
+  { id: "fitur", label: "Fitur" },
+  { id: "sistem", label: "Sistem" },
+];
+
+export function settingsHash(section: SettingsSection): string {
+  if (section === "provider") {
+    return "#/providers";
+  }
+  return `#/providers/${section}`;
+}
+
 export interface HashRoute {
   sessionId?: string;
   view?: AppView;
+  /** Bagian Pengaturan yang aktif; tidak ada pada "#/providers" (bawaan). */
+  section?: SettingsSection;
 }
 
 export function parseHashRoute(hash: string): HashRoute {
   if (hash === "#/providers") {
     return { view: "providers" };
+  }
+  if (hash.startsWith("#/providers/")) {
+    const id = hash.slice("#/providers/".length);
+    const known = SETTINGS_SECTIONS.some(
+      (item) => item.id === id && item.id !== "provider",
+    );
+    if (!known) {
+      return {};
+    }
+    return { view: "providers", section: id as SettingsSection };
   }
   if (hash === "#/memory") {
     return { view: "memory" };

@@ -2436,6 +2436,54 @@ h2.jk-md-heading {
   padding: 18px 20px 80px;
 }
 
+/* Navigasi bagian Pengaturan; strip horizontal yang meluber digulir mendatar. */
+.jk-settings-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.jk-settings-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.jk-settings-nav-link {
+  flex: none;
+  padding: 8px 12px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--t2);
+  font-size: 13.5px;
+  line-height: 1.5;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.jk-settings-nav-link:hover {
+  color: var(--t1);
+}
+
+.jk-settings-nav-link:focus-visible {
+  outline: 2px solid var(--t2);
+  outline-offset: 1px;
+}
+
+.jk-settings-nav-link-active {
+  color: var(--t1);
+  border-bottom-color: var(--ink);
+  font-weight: 600;
+}
+
+@media (pointer: coarse) {
+  .jk-settings-nav-link {
+    min-height: 40px;
+  }
+}
+
 .jk-settings-head {
   margin-bottom: 22px;
 }

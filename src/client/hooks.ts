@@ -12,6 +12,7 @@ import {
   usageHash,
   workspacesHash,
   type AppView,
+  type SettingsSection,
 } from "./lib/format";
 import { parseRegistryView, type RegistryView } from "./lib/registry-view";
 import {
@@ -37,6 +38,7 @@ function messageOf(error: unknown): string {
 interface Route {
   sessionId?: string;
   view?: AppView;
+  section?: SettingsSection;
 }
 
 function currentRoute(): Route {
@@ -46,6 +48,8 @@ function currentRoute(): Route {
 export interface HashRouteState {
   sessionId?: string;
   view?: AppView;
+  /** Bagian Pengaturan yang aktif; tidak ada pada "#/providers". */
+  section?: SettingsSection;
   navigateToSession: (id?: string) => void;
   navigateToProviders: () => void;
   navigateToMemory: () => void;
@@ -117,6 +121,7 @@ export function useHashRoute(): HashRouteState {
     () => ({
       sessionId: route.sessionId,
       view: route.view,
+      section: route.section,
       navigateToSession,
       navigateToProviders,
       navigateToMemory,

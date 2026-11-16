@@ -12,6 +12,11 @@ import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { FeatureSettings } from "./components/FeatureSettings";
 import { AccessSettings } from "./components/AccessSettings";
+import { AppUpdateSettings } from "./components/AppUpdateSettings";
+import { BudgetSettings } from "./components/BudgetSettings";
+import { SandboxSettings } from "./components/SandboxSettings";
+import { SdkSettings } from "./components/SdkSettings";
+import { SettingsNav } from "./components/SettingsNav";
 import { ReplyBar } from "./components/ReplyBar";
 import { GoalBar } from "./components/GoalBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
@@ -161,6 +166,7 @@ export function App() {
   const {
     sessionId: selectedId,
     view: routeView,
+    section: routeSection,
     navigateToSession: navigate,
     navigateToMemory,
     navigateToMcp,
@@ -295,6 +301,7 @@ export function App() {
   const activeProfileLabel = activeProfile?.name ?? view?.activeProfileId;
 
   const showingProviders = routeView === "providers";
+  const settingsSection = routeSection ?? "provider";
   const showingMemory = routeView === "memory";
   const showingWorkspaces = routeView === "workspaces";
   const showingMcp = routeView === "mcp";
@@ -860,9 +867,24 @@ export function App() {
             <Topbar onMenu={openDrawer} />
             <div class="jk-page">
               <div class="jk-settings">
-                <ProviderSettings api={api} onSaved={onSaved} sessions={sessions} />
-                <FeatureSettings api={api} />
-                <AccessSettings api={api} onAuthChanged={refreshAuth} />
+                <SettingsNav section={settingsSection} />
+                {settingsSection === "provider" ? (
+                  <ProviderSettings api={api} onSaved={onSaved} />
+                ) : settingsSection === "keamanan" ? (
+                  <>
+                    <SandboxSettings api={api} />
+                    <AccessSettings api={api} onAuthChanged={refreshAuth} />
+                  </>
+                ) : settingsSection === "biaya" ? (
+                  <BudgetSettings api={api} />
+                ) : settingsSection === "fitur" ? (
+                  <FeatureSettings api={api} />
+                ) : (
+                  <>
+                    <AppUpdateSettings sessions={sessions} />
+                    <SdkSettings api={api} />
+                  </>
+                )}
               </div>
             </div>
           </>

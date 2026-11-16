@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
-import type { SessionInfo } from "../../server/sessions/session-manager";
 import { ApiError, type ApiClient, type ConnectionTestView } from "../lib/api";
 import { parseRegistryView, type RegistryView } from "../lib/registry-view";
 import {
@@ -18,17 +17,12 @@ import {
   type ProfileDraft,
   type RegistryDraft,
 } from "../lib/registry-edit";
-import { AppUpdateSettings } from "./AppUpdateSettings";
-import { BudgetSettings } from "./BudgetSettings";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ProfileForm } from "./ProfileForm";
-import { SandboxSettings } from "./SandboxSettings";
-import { SdkSettings } from "./SdkSettings";
 
 export interface ProviderSettingsProps {
   api: ApiClient;
   onSaved: () => void | Promise<void>;
-  sessions: SessionInfo[];
 }
 
 function messageOf(error: unknown): string {
@@ -50,7 +44,7 @@ function providerName(profile: ProfileDraft): string {
   return profile.name.trim() === "" ? profile.id : profile.name;
 }
 
-export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsProps) {
+export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
   const [view, setView] = useState<RegistryView | undefined>(undefined);
   const [original, setOriginal] = useState<RegistryDraft | undefined>(undefined);
   const [draft, setDraft] = useState<RegistryDraft | undefined>(undefined);
@@ -422,11 +416,6 @@ export function ProviderSettings({ api, onSaved, sessions }: ProviderSettingsPro
           </div>
         </div>
       )}
-
-      <BudgetSettings api={api} />
-      <SandboxSettings api={api} />
-      <AppUpdateSettings sessions={sessions} />
-      <SdkSettings api={api} />
 
       <ConfirmDialog
         open={pendingRemove !== undefined}
