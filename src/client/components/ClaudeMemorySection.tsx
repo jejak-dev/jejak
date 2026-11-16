@@ -169,7 +169,7 @@ export function ClaudeMemorySectionView(props: ClaudeMemorySectionViewProps): VN
   return (
     <section class="jk-claude-memory" aria-labelledby="jk-claude-memory-title">
       <header class="jk-claude-head">
-        <h3 class="jk-settings-title" id="jk-claude-memory-title">
+        <h3 class="jk-subsection-title" id="jk-claude-memory-title">
           Dari Claude Code
         </h3>
         <p class="jk-privacy-note">Hanya baca; dikelola Claude Code.</p>

@@ -54,7 +54,7 @@ export function ClaudeMemorySyncView(props: ClaudeMemorySyncViewProps): VNode {
   return (
     <section class="jk-claude-sync" aria-labelledby="jk-claude-sync-title">
       <header class="jk-claude-head">
-        <h3 class="jk-settings-title" id="jk-claude-sync-title">
+        <h3 class="jk-subsection-title" id="jk-claude-sync-title">
           Sinkronkan ke Claude Code
         </h3>
       </header>
