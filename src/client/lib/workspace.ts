@@ -222,6 +222,22 @@ export function checkpointRepoNote(
     : `Titik hanya untuk repo utama sesi (${primary.name}).`;
 }
 
+/**
+ * Subjudul header sesi: nama folder terakhir cwd bila tanpa workspace, dan
+ * "<nama workspace> · <folder terakhir cwd>" bila ada workspace.
+ */
+export function sessionSubtitle(input: {
+  workspaceName?: string;
+  cwd?: string;
+}): string {
+  if (input.workspaceName !== undefined && input.workspaceName !== "") {
+    return sessionContextLabel(input);
+  }
+  const cwd = input.cwd ?? "";
+  if (cwd === "") return "";
+  return folderName(cwd);
+}
+
 /** "<nama workspace> · <folder terakhir cwd>", atau path cwd seperti biasa tanpa workspace. */
 export function sessionContextLabel(input: {
   workspaceName?: string;

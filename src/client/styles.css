@@ -922,6 +922,8 @@ code {
 
 .jk-top-title .jk-mono {
   min-width: 0;
+  flex: 0 0 auto;
+  max-width: 40%;
   color: var(--t3);
   font-size: 12px;
   overflow: hidden;
@@ -5604,7 +5606,7 @@ h2.jk-md-heading {
   align-items: center;
   gap: 4px;
   flex: none;
-  padding: 1px 7px;
+  padding: 2px 5px;
   border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
   border-radius: 999px;
   color: var(--warn);

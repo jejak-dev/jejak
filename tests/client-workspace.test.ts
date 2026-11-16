@@ -15,6 +15,7 @@ import {
   listToLines,
   repoNameFromPath,
   sessionContextLabel,
+  sessionSubtitle,
   validateCardDraft,
   validateWorkspaceDraft,
   workspaceRepoOptions,
@@ -265,6 +266,26 @@ describe("sessionContextLabel", () => {
 
   test("workspace tanpa cwd hanya nama workspace", () => {
     expect(sessionContextLabel({ workspaceName: "Kantor" })).toBe("Kantor");
+  });
+});
+
+describe("sessionSubtitle", () => {
+  test("dengan workspace tetap nama workspace dan folder terakhir cwd", () => {
+    expect(sessionSubtitle({ workspaceName: "Kantor", cwd: "/x/api-service" })).toBe(
+      "Kantor · api-service",
+    );
+    expect(sessionSubtitle({ workspaceName: "Kantor" })).toBe("Kantor");
+  });
+
+  test("tanpa workspace hanya nama folder terakhir cwd", () => {
+    expect(sessionSubtitle({ cwd: "/x/api" })).toBe("api");
+    expect(sessionSubtitle({ cwd: "/x/" })).toBe("x");
+    expect(sessionSubtitle({ cwd: "/Users/Developer/jejak" })).toBe("jejak");
+  });
+
+  test("cwd kosong menghasilkan subjudul kosong", () => {
+    expect(sessionSubtitle({})).toBe("");
+    expect(sessionSubtitle({ cwd: "" })).toBe("");
   });
 });
 

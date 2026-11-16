@@ -72,7 +72,7 @@ const LENCANA = [
 /* ---------- A. Header sesi ---------- */
 
 describe("header sesi", () => {
-  test("lencana rahasia berlabel pendek tapi aria-label menyebut keadaan utuh", () => {
+  test("lencana rahasia hanya ikon tapi aria-label menyebut keadaan utuh", () => {
     const badge = secretBadge({ redactedEvents: 2 });
     expect(badge?.label).toBe("Disamarkan");
     expect(badge?.ariaLabel).toBe("Rahasia disamarkan");
@@ -88,7 +88,8 @@ describe("header sesi", () => {
     const lencana = cariVNode(vnode, (n) => propVNode(n).class === "jk-secret-badge");
     expect(lencana).toHaveLength(1);
     expect(propVNode(lencana[0])["aria-label"]).toBe("Rahasia disamarkan");
-    expect(teksVNode(lencana[0]?.props.children as ComponentChild)).toContain(
+    // Label jadi ikon saja; teks "Disamarkan" tidak lagi dirender di header.
+    expect(teksVNode(lencana[0]?.props.children as ComponentChild)).not.toContain(
       "Disamarkan",
     );
   });

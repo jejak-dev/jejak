@@ -3,7 +3,7 @@ import { budgetBadge } from "../lib/budget";
 import { showsBypassMarker } from "../lib/permission-mode";
 import { sandboxBadge } from "../lib/sandbox";
 import { secretBadge } from "../lib/secret-badge";
-import { sessionContextLabel } from "../lib/workspace";
+import { sessionSubtitle } from "../lib/workspace";
 import { worktreeBadge } from "../lib/worktree";
 import { Icon } from "./Icon";
 
@@ -52,7 +52,6 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
             aria-label={secretBadge.ariaLabel ?? secretBadge.label}
           >
             <Icon name="shield" />
-            <span>{secretBadge.label}</span>
           </span>
         )}
         {budgetBadge !== undefined && (
@@ -144,7 +143,7 @@ export function SessionHeader({
   const props: TopbarProps = {
     onMenu,
     title: session.title,
-    subtitle: sessionContextLabel({ workspaceName: session.workspaceName, cwd: session.cwd }),
+    subtitle: sessionSubtitle({ workspaceName: session.workspaceName, cwd: session.cwd }),
     subtitleTitle: session.cwd,
     state: sessionState(status, session.pendingPermissions),
     panel: { open: panelOpen, onToggle: onTogglePanel },
