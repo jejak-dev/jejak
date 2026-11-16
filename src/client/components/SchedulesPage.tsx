@@ -508,7 +508,18 @@ export function SchedulesPage({ api, defaultCwd, recentCwds = [] }: SchedulesPag
       )}
 
       {!loading && loadError === undefined && tasks.length === 0 && (
-        <p class="jk-note">Belum ada tugas terjadwal.</p>
+        <div class="jk-empty-state jk-schedules-empty">
+          <p class="jk-note">Belum ada tugas terjadwal.</p>
+          <p class="jk-note">
+            Buat tugas untuk menjalankan prompt otomatis, misalnya ringkasan harian atau pemeriksaan
+            mingguan.
+          </p>
+          {form === undefined && (
+            <button type="button" class="jk-button" onClick={openCreate}>
+              Buat tugas pertama
+            </button>
+          )}
+        </div>
       )}
 
       {tasks.length > 0 && (

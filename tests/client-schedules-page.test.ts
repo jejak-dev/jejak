@@ -146,6 +146,20 @@ describe("SchedulesPage", () => {
     expect(cariTeks(root, TUGAS.name)).toBeUndefined();
   });
 
+  test("keadaan kosong punya tombol Buat tugas pertama yang membuka form", async () => {
+    const daftar: Panggilan[] = [];
+    const root = await renderHalaman(apiPalsu(daftar));
+
+    const tombolBuat = tombol(root, "Buat tugas pertama");
+    expect(tombolBuat).toBeDefined();
+    fire(tombolBuat!, "click");
+    await flushEffects();
+
+    const form = find(root, (node) => node.localName === "form");
+    expect(form).toBeDefined();
+    expect(findByAttr(root, "id", "jk-schedule-name")).toBeDefined();
+  });
+
   test("baris menampilkan jadwal, status, dan tautan sesi terakhir", async () => {
     const daftar: Panggilan[] = [];
     const root = await renderHalaman(apiPalsu(daftar, [TUGAS]));

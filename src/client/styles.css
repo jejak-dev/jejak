@@ -7058,6 +7058,13 @@ h2.jk-md-heading {
   color: var(--t1);
 }
 
+.jk-schedules-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
 .jk-schedules-list {
   list-style: none;
   margin: 0;
