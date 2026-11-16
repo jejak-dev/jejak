@@ -24,7 +24,7 @@ test("prompt yang ditahan tampil di sidebar sebagai Tertahan", async ({ page }) 
   await page.getByRole("option", { name: new RegExp("Uji e2e sesi berjalan") }).click();
 
   // Prompt kedua ditahan sampai sesi yang dipilih selesai.
-  await page.getByLabel("Working directory", { exact: true }).fill(CWD_UJI);
+  await page.getByLabel("Folder kerja", { exact: true }).fill(CWD_UJI);
   await page.getByLabel("Tugas", { exact: true }).fill(PROMPT_TERTAHAN);
   await page.getByRole("button", { name: "Tahan prompt" }).click();
 

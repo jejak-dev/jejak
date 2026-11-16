@@ -10,6 +10,7 @@ import { LoginScreen } from "./components/LoginScreen";
 import { MemoryPage } from "./components/MemoryPage";
 import { McpPage } from "./components/McpPage";
 import { Panel } from "./components/Panel";
+import { RecentSessions } from "./components/RecentSessions";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { FeatureSettings } from "./components/FeatureSettings";
 import { AccessSettings } from "./components/AccessSettings";
@@ -1152,6 +1153,7 @@ export function App() {
                   restoreDraft={restoreDraft}
                 />
               </div>
+              <RecentSessions sessions={sessions} />
             </section>
           </>
         )}

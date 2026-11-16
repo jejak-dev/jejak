@@ -46,14 +46,16 @@ export interface SidebarProps {
   onLogout?: () => void;
 }
 
-function dotClass(session: SessionInfo): string {
+/** Penanda status sesi; dipakai sidebar dan daftar "Lanjutkan sesi". */
+export function dotClass(session: SessionInfo): string {
   if (session.pendingPermissions > 0) return "jk-dot jk-dot-warn";
   if (session.status === "berjalan") return "jk-dot jk-dot-run";
   if (session.status === "gagal") return "jk-dot jk-dot-bad";
   return "jk-dot";
 }
 
-function dotLabel(session: SessionInfo): string | undefined {
+/** Label teks penanda status; `undefined` bila tak ada penanda. */
+export function dotLabel(session: SessionInfo): string | undefined {
   if (session.pendingPermissions > 0) return "Menunggu izin";
   if (session.status === "berjalan") return "Berjalan";
   if (session.status === "gagal") return "Gagal";

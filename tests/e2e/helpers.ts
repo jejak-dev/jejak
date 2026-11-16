@@ -29,7 +29,7 @@ export async function bukaBeranda(page: Page): Promise<void> {
  * nilainya bisa tiba setelah prompt diketik.
  */
 export async function kirimPrompt(page: Page, prompt: string): Promise<void> {
-  await page.getByLabel("Working directory", { exact: true }).fill(CWD_UJI);
+  await page.getByLabel("Folder kerja", { exact: true }).fill(CWD_UJI);
   await page.getByLabel("Tugas", { exact: true }).fill(prompt);
   await page.getByRole("button", { name: "Mulai sesi" }).click();
 }

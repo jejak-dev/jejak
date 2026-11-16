@@ -567,16 +567,17 @@ export function Composer({
             </label>
           ) : (
             <>
-              <label class="jk-chip jk-chip-cwd" title="Working directory">
+              <label class="jk-chip jk-chip-cwd" title="Folder kerja">
                 <Icon name="folder" />
-                <span class="jk-visually-hidden">Working directory</span>
+                <span class="jk-visually-hidden">Folder kerja</span>
                 <input
                   id="jk-cwd"
                   ref={cwdRef}
                   type="text"
                   class="jk-chip-input"
                   value={cwd}
-                  size={Math.min(Math.max(cwd.length, 12), 26)}
+                  size={Math.min(Math.max(cwd.length, 12), 34)}
+                  title={cwd}
                   spellcheck={false}
                   onInput={(event) => setCwd((event.currentTarget as HTMLInputElement).value)}
                   disabled={busy}
@@ -587,7 +588,7 @@ export function Composer({
               <button
                 type="button"
                 class="jk-chip jk-chip-btn"
-                aria-label="Browse folder"
+                aria-label="Pilih folder"
                 title={nativePicker ? "Pilih folder (Finder)" : "Browse…"}
                 data-folder-opener
                 disabled={busy || picking}
@@ -596,7 +597,7 @@ export function Composer({
                   else setPickerOpen((open) => !open);
                 }}
               >
-                Pilih…
+                Pilih folder
               </button>
               {pickerOpen && (
                 <FolderPicker

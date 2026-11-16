@@ -976,6 +976,65 @@ code {
   width: min(680px, 100%);
 }
 
+/* Daftar "Lanjutkan sesi" di beranda: tanpa kartu, hanya garis pemisah. */
+
+.jk-home-recent {
+  width: min(680px, 100%);
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.jk-home-recent-title {
+  margin: 0 0 6px;
+  font-size: var(--fs-small);
+  color: var(--t2);
+  font-weight: 500;
+}
+
+.jk-home-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-home-recent-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--t1);
+  text-decoration: none;
+}
+
+.jk-home-recent-row:hover {
+  background: var(--hover-2);
+}
+
+.jk-home-recent-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-home-recent-folder {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--t3);
+  font-size: var(--fs-micro);
+}
+
+.jk-home-recent-time {
+  flex: none;
+  font-size: var(--fs-micro);
+  color: var(--t3);
+}
+
 /* Komposer */
 
 .jk-comp-card {
@@ -1082,6 +1141,7 @@ code {
 
 .jk-chip-cwd {
   cursor: text;
+  max-width: 100%;
 }
 
 .jk-send {
@@ -7469,10 +7529,15 @@ h2.jk-md-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 6px;
+  gap: 6px;
   margin-top: 8px;
   padding: 0 8px;
   font-size: 12.5px;
+}
+
+/* Chip tak dipencet: baris boleh membungkus, bukan memotong chip. */
+.jk-comp-meta .jk-chip {
+  flex: none;
 }
 
 .jk-meta-end {
