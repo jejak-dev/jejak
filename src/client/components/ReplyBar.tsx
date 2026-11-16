@@ -10,6 +10,8 @@ import { parseGoalCommand, validateGoalOptions, type GoalView } from "../lib/goa
 import { formatTokens, type ContextUsage } from "../lib/context";
 import { appendAttachments } from "../lib/attachments";
 import { showsSuggestion, fillSuggestion, replyKeyAction, type Suggestion } from "../lib/suggestion";
+import { caretOf } from "../lib/slash";
+import { useSlashMenu } from "../hooks";
 import { useDictation } from "../lib/use-dictation";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -18,6 +20,7 @@ import { Dropdown, type DropdownSection } from "./Dropdown";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { QueueList } from "./QueueList";
+import { SlashMenu } from "./SlashMenu";
 import { useAttachments } from "./useAttachments";
 
 export interface ReplyBarProps {
@@ -153,10 +156,34 @@ export function ReplyBar({
   /** Saran yang sudah dipakai atau ditutup; nomornya jadi penanda chip mati. */
   const [dismissedSeq, setDismissedSeq] = useState<number | undefined>(undefined);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Kursor yang mau dipasang setelah render berikutnya. */
+  const caretRef = useRef<number | undefined>(undefined);
   const att = useAttachments(api);
   const ctxRef = useRef<HTMLDetailsElement | null>(null);
 
   const sessionId = session.id;
+
+  // Menu perintah slash: daftar perintah dari folder kerja sesi.
+  const slash = useSlashMenu({
+    api,
+    cwd: session.cwd,
+    onApply: (next) => {
+      setText(next.text);
+      caretRef.current = next.caret;
+    },
+  });
+
+  // Kursor baru (mis. setelah memilih perintah) dipasang setelah teks dirender.
+  useEffect(() => {
+    const element = textareaRef.current;
+    if (element === null) return;
+    const caret = caretRef.current;
+    if (caret === undefined) return;
+    caretRef.current = undefined;
+    if (typeof element.setSelectionRange === "function") {
+      element.setSelectionRange(caret, caret);
+    }
+  });
 
   // Kartu pertanyaan sampingan; hilang saat ganti sesi.
   const [aside, setAside] = useState<AsideState | undefined>(undefined);
@@ -567,6 +594,8 @@ export function ReplyBar({
   };
 
   const onKeyDown = (event: KeyboardEvent): void => {
+    // Menu perintah slash lebih dulu: Enter saat menu terbuka memilih perintah.
+    if (slash.onKeyDown(event)) return;
     const action = replyKeyAction({
       key: event.key,
       shiftKey: event.shiftKey,
@@ -588,6 +617,7 @@ export function ReplyBar({
     const element = event.currentTarget as HTMLTextAreaElement;
     setText(element.value);
     autosize(element);
+    slash.sync(element.value, caretOf(element));
   };
 
   return (
@@ -635,6 +665,16 @@ export function ReplyBar({
           <label class="jk-visually-hidden" for="jk-reply">
             Pesan lanjutan
           </label>
+          {slash.open && (
+            <SlashMenu
+              id={slash.listboxId}
+              commands={slash.options}
+              status={slash.status}
+              source={slash.source}
+              activeIndex={slash.activeIndex}
+              onPick={slash.pick}
+            />
+          )}
           <div class="jk-pill-row">
             <AttachButton onFiles={(files) => void att.add(files)} disabled={!usable.allowed || busy} />
             <textarea
@@ -648,6 +688,11 @@ export function ReplyBar({
               onKeyDown={onKeyDown}
               onPaste={att.onPaste}
               disabled={!usable.allowed || busy}
+              role="combobox"
+              aria-expanded={slash.open}
+              aria-controls={slash.open ? slash.listboxId : undefined}
+              aria-activedescendant={slash.activeId}
+              aria-autocomplete="list"
               aria-describedby={describedBy === "" ? undefined : describedBy}
             />
             {running && (
@@ -718,7 +763,7 @@ export function ReplyBar({
                       value: "mati",
                       label: "Mati",
                       danger: true,
-                      hint: "Bash tanpa batas; dicatat di Audit log",
+                      hint: "Bash tanpa batas; dicatat di Log audit",
                     },
                   ],
                   value: sandboxMode,

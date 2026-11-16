@@ -46,6 +46,8 @@ import type { IndexedRepo } from "../../server/indexer/repo-indexer";
 import type { Question } from "../../server/questions/question-store";
 import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
+import type { CommandInfo } from "../../server/agent/events";
+import type { CommandSource } from "../../server/sessions/command-catalog";
 import type { CreateSessionInput, SessionInfo } from "../../server/sessions/session-manager";
 import type { ScheduleSpec } from "../../server/sessions/schedule-time";
 import type { ScheduledTask } from "../../server/sessions/scheduled-tasks";
@@ -71,6 +73,16 @@ export type AuditEntryItem = AuditEntry;
 export type AuditSummaryResult = AuditSummary;
 
 export type { GoalView };
+
+export type { CommandInfo, CommandSource };
+
+/** Hasil daftar perintah slash dari server. */
+export interface CommandListResult {
+  /** Daftar perintah; namanya tanpa garis miring. */
+  commands: CommandInfo[];
+  /** Asal daftar: dari SDK atau daftar bawaan Jejak. */
+  source: CommandSource;
+}
 
 /** Masukan memulai tujuan (mode Goal). */
 export interface GoalStartInput {
@@ -868,6 +880,8 @@ export interface ApiClient {
     cwd?: string,
   ): Promise<ClaudeAgentFile>;
   listHooks(cwd?: string): Promise<ClaudeHookItem[]>;
+  /** Daftar perintah slash yang tersedia di folder kerja tertentu. */
+  listCommands(cwd: string): Promise<CommandListResult>;
 }
 
 export interface ApiClientOptions {
@@ -1577,6 +1591,28 @@ function runnerCommandFrom(payload: unknown): RunnerCommand {
 /** `cwd` hanya dikirim bila terisi; kunci kosong tidak ikut. */
 function claudeQuery(cwd?: string): string {
   return queryString([["cwd", cwd === undefined || cwd === "" ? undefined : cwd]]);
+}
+
+/** Satu perintah slash dari server. */
+function commandInfoFrom(value: unknown): CommandInfo {
+  if (!isRecord(value)) throw invalidResponse();
+  const { name, description, argumentHint } = value;
+  if (typeof name !== "string" || typeof description !== "string" || typeof argumentHint !== "string") {
+    throw invalidResponse();
+  }
+  const result: CommandInfo = { name, description, argumentHint };
+  if (Array.isArray(value.aliases)) {
+    result.aliases = value.aliases.filter((alias): alias is string => typeof alias === "string");
+  }
+  return result;
+}
+
+/** Daftar perintah slash beserta asalnya. */
+function commandListFrom(payload: unknown): CommandListResult {
+  if (!isRecord(payload) || !Array.isArray(payload.commands)) throw invalidResponse();
+  const source = payload.source;
+  if (source !== "sdk" && source !== "bawaan") throw invalidResponse();
+  return { commands: payload.commands.map(commandInfoFrom), source };
 }
 
 /** Rujukan halaman wiki dari server. */
@@ -2869,6 +2905,12 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async listHooks(cwd) {
       return hookListFrom(await request("GET", `/api/claude/hooks${claudeQuery(cwd)}`));
+    },
+
+    async listCommands(cwd) {
+      return commandListFrom(
+        await request("GET", `/api/commands${queryString([["cwd", cwd]])}`),
+      );
     },
   };
 }

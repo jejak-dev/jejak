@@ -2096,3 +2096,55 @@ describe("tugas terjadwal", () => {
   });
 });
 });
+
+describe("perintah slash", () => {
+  const COMMAND = {
+    name: "compact",
+    description: "Padatkan percakapan jadi ringkas.",
+    argumentHint: "",
+    aliases: ["comp"],
+  };
+
+  test("listCommands GET /api/commands dengan cwd", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ commands: [COMMAND], source: "sdk" }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.listCommands("/tmp/proyek");
+
+    expect(hasil.source).toBe("sdk");
+    expect(hasil.commands).toHaveLength(1);
+    expect(hasil.commands[0]?.name).toBe("compact");
+    expect(hasil.commands[0]?.aliases).toEqual(["comp"]);
+    expect(calls[0]?.url).toBe("/api/commands?cwd=%2Ftmp%2Fproyek");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("sumber bawaan diterima", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ commands: [COMMAND], source: "bawaan" }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.listCommands("/tmp/proyek");
+
+    expect(hasil.source).toBe("bawaan");
+  });
+
+  test("respons tanpa daftar perintah ditolak", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ commands: "bukan array" }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.listCommands("/tmp/proyek")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("sumber tak dikenal ditolak", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ commands: [], source: "lain" }),
+    );
+    const api = createApiClient({ fetch });
+
+    await expect(api.listCommands("/tmp/proyek")).rejects.toBeInstanceOf(ApiError);
+  });
+});

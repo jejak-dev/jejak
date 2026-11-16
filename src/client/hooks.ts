@@ -1,6 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
-import { ApiError, type ApiClient, type HeldPrompt, type WorkspaceItem } from "./lib/api";
+import {
+  ApiError,
+  type ApiClient,
+  type CommandInfo,
+  type CommandListResult,
+  type CommandSource,
+  type HeldPrompt,
+  type WorkspaceItem,
+} from "./lib/api";
 import {
   auditHash,
   instruksiHash,
@@ -24,6 +32,7 @@ import {
   type NotifyPrefs,
 } from "./lib/notify";
 import { followSession } from "./lib/sse";
+import { applyCommand, filterCommands, slashContext } from "./lib/slash";
 import type { ContextState } from "./lib/context";
 import { applyEventBatch, type BatchEvent } from "./lib/timeline-batch";
 import { startTimeline, type TimelineItem } from "./lib/timeline";
@@ -728,4 +737,261 @@ export function useNotifications(
       if (prefs.sound) playBeep();
     }
   }, [sessions, prefs, onOpenSession]);
+}
+
+/* ---------- Perintah slash ---------- */
+
+/** Status pemuatan daftar perintah slash. */
+export type CommandsStatus = "memuat" | "siap" | "gagal";
+
+export interface CommandsState {
+  /** Daftar perintah yang tersedia. */
+  commands: CommandInfo[];
+  /** Asal daftar: dari SDK atau daftar bawaan Jejak. */
+  source: CommandSource;
+  /** Status pemuatan; galat tak pernah melempar keluar. */
+  status: CommandsStatus;
+}
+
+/** Cache daftar perintah: per klien API, per folder kerja. */
+const commandCache = new WeakMap<ApiClient, Map<string, CommandListResult>>();
+/** Permintaan yang sedang berjalan; satu per folder kerja. */
+const commandPending = new WeakMap<ApiClient, Map<string, Promise<CommandListResult>>>();
+
+function cacheOf(api: ApiClient): Map<string, CommandListResult> {
+  let cache = commandCache.get(api);
+  if (cache === undefined) {
+    cache = new Map<string, CommandListResult>();
+    commandCache.set(api, cache);
+  }
+  return cache;
+}
+
+function pendingOf(api: ApiClient): Map<string, Promise<CommandListResult>> {
+  let pending = commandPending.get(api);
+  if (pending === undefined) {
+    pending = new Map<string, Promise<CommandListResult>>();
+    commandPending.set(api, pending);
+  }
+  return pending;
+}
+
+/**
+ * Daftar perintah slash untuk satu folder kerja.
+ *
+ * Dimuat malas: baru diambil setelah `enabled` menjadi true (mis. pengguna
+ * baru mengetik "/"). Hasil disimpan di memori per folder kerja, jadi satu
+ * permintaan per folder; ganti folder memuat ulang. Galat ditelan: status
+ * jadi "gagal" tanpa mengganggu pengetikan.
+ */
+export function useCommands(
+  api: ApiClient,
+  cwd: string | undefined,
+  enabled = false,
+): CommandsState {
+  const [state, setState] = useState<CommandsState>({
+    commands: [],
+    source: "bawaan",
+    status: "siap",
+  });
+
+  useEffect(() => {
+    if (!enabled) return;
+    if (cwd === undefined || cwd.trim() === "") return;
+
+    const cache = cacheOf(api);
+    const tersimpan = cache.get(cwd);
+    if (tersimpan !== undefined) {
+      setState({ commands: tersimpan.commands, source: tersimpan.source, status: "siap" });
+      return;
+    }
+
+    let aktif = true;
+    setState((current) => ({ ...current, status: "memuat" }));
+
+    const pending = pendingOf(api);
+    let kerja = pending.get(cwd);
+    if (kerja === undefined) {
+      kerja = api
+        .listCommands(cwd)
+        .then((hasil) => {
+          cache.set(cwd, hasil);
+          return hasil;
+        })
+        .finally(() => {
+          pending.delete(cwd);
+        });
+      pending.set(cwd, kerja);
+    }
+
+    void kerja.then(
+      (hasil) => {
+        if (!aktif) return;
+        setState({ commands: hasil.commands, source: hasil.source, status: "siap" });
+      },
+      () => {
+        if (!aktif) return;
+        setState({ commands: [], source: "bawaan", status: "gagal" });
+      },
+    );
+
+    return () => {
+      aktif = false;
+    };
+  }, [api, cwd, enabled]);
+
+  return state;
+}
+
+/** Opsi menu perintah slash yang dikendalikan hook. */
+export interface SlashMenuOptions {
+  api: ApiClient;
+  /** Folder kerja; tanpa folder menu tak dibuka. */
+  cwd: string | undefined;
+  /** Isi kolom input saat perintah dipilih: teks dan posisi kursor baru. */
+  onApply: (next: { text: string; caret: number }) => void;
+}
+
+export interface SlashMenuController {
+  /** Menu sedang tampil? */
+  open: boolean;
+  /** Status pemuatan daftar perintah. */
+  status: CommandsStatus;
+  /** Asal daftar perintah. */
+  source: CommandSource;
+  /** Perintah yang cocok dengan query (maksimal 8). */
+  options: CommandInfo[];
+  /** Indeks opsi aktif. */
+  activeIndex: number;
+  /** Id opsi aktif untuk `aria-activedescendant`. */
+  activeId: string | undefined;
+  /** Id listbox untuk `aria-controls`. */
+  listboxId: string;
+  /** Catat teks dan kursor terbaru; menu mengikuti pola slash. */
+  sync: (text: string, caret: number) => void;
+  /** Tangani tombol keyboard; true bila peristiwa sudah dimakan. */
+  onKeyDown: (event: KeyboardEvent) => boolean;
+  /** Pilih satu perintah; isi kolom dengan `/nama `. */
+  pick: (command: CommandInfo) => void;
+}
+
+interface SlashState {
+  /** Query slash terakhir; undefined berarti menu tertutup. */
+  query?: string;
+  /** Teks saat menu ditutup Escape; menu muncul lagi saat teks berubah. */
+  dismissedText?: string;
+  /** Indeks opsi aktif. */
+  activeIndex: number;
+}
+
+const KOSONG: SlashState = { activeIndex: 0 };
+
+/**
+ * Kendali menu perintah slash untuk satu kolom input.
+ *
+ * Logika tombol, keadaan buka/tutup, dan pemilihan perintah diletakkan di
+ * sini supaya komposer dan baris balasan memakai perilaku yang sama.
+ */
+export function useSlashMenu(options: SlashMenuOptions): SlashMenuController {
+  const { api, cwd, onApply } = options;
+  const [state, setState] = useState<SlashState>(KOSONG);
+  const textRef = useRef("");
+  const caretRef = useRef(0);
+  const baseId = useId();
+  const listboxId = `${baseId}-slash`;
+
+  const adaFolder = cwd !== undefined && cwd.trim() !== "";
+  const commands = useCommands(api, cwd, state.query !== undefined && adaFolder);
+
+  const dismissed = state.dismissedText !== undefined && state.dismissedText === textRef.current;
+  const open = state.query !== undefined && !dismissed && adaFolder;
+
+  const daftar = useMemo(
+    () => (state.query === undefined ? [] : filterCommands(commands.commands, state.query)),
+    [commands.commands, state.query],
+  );
+
+  const sync = useCallback((text: string, caret: number): void => {
+    textRef.current = text;
+    caretRef.current = caret;
+    setState((current) => {
+      const ctx = slashContext(text, caret);
+      if (ctx === undefined) return KOSONG;
+      if (current.dismissedText !== undefined) {
+        // Ditutup Escape: tetap tertutup sampai teksnya berubah.
+        if (current.dismissedText === text) return { ...current, query: ctx.query };
+        return { query: ctx.query, activeIndex: 0 };
+      }
+      return { query: ctx.query, activeIndex: 0 };
+    });
+  }, []);
+
+  const pick = useCallback(
+    (command: CommandInfo): void => {
+      const next = applyCommand(textRef.current, caretRef.current, command.name);
+      textRef.current = next.text;
+      caretRef.current = next.caret;
+      setState(KOSONG);
+      onApply(next);
+    },
+    [onApply],
+  );
+
+  const geser = useCallback(
+    (arah: 1 | -1): void => {
+      setState((current) => {
+        if (daftar.length === 0) return current;
+        const total = daftar.length;
+        const berikut = (current.activeIndex + arah + total) % total;
+        return { ...current, activeIndex: berikut };
+      });
+    },
+    [daftar.length],
+  );
+
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent): boolean => {
+      if (!open) return false;
+      // Pintasan dengan tombol khusus tetap jalan (mis. Cmd+Enter).
+      if (event.metaKey === true || event.ctrlKey === true) return false;
+      const key = event.key;
+      if (key === "Escape") {
+        event.preventDefault();
+        setState((current) => ({ ...current, dismissedText: textRef.current }));
+        return true;
+      }
+      if (key === "ArrowDown" || key === "ArrowUp") {
+        event.preventDefault();
+        geser(key === "ArrowDown" ? 1 : -1);
+        return true;
+      }
+      if (key === "Enter" || key === "Tab") {
+        // Tanpa pilihan, Enter berperilaku seperti biasa (kirim pesan).
+        if (daftar.length === 0) return false;
+        const command = daftar[state.activeIndex] ?? daftar[0];
+        if (command === undefined) return false;
+        event.preventDefault();
+        pick(command);
+        return true;
+      }
+      return false;
+    },
+    [open, daftar, state.activeIndex, geser, pick],
+  );
+
+  const activeId =
+    open && daftar.length > 0 ? `${listboxId}-opsi-${state.activeIndex}` : undefined;
+
+  return {
+    open,
+    status: commands.status,
+    source: commands.source,
+    options: open ? daftar : [],
+    activeIndex: state.activeIndex,
+    activeId,
+    listboxId,
+    sync,
+    onKeyDown,
+    pick,
+  };
 }

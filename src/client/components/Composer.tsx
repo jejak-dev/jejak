@@ -14,6 +14,7 @@ import {
 } from "../lib/permission-mode";
 import { defaultRepoPath, workspaceRepoOptions } from "../lib/workspace";
 import { secretWarning } from "../lib/secret-warning";
+import { caretOf } from "../lib/slash";
 import { FolderPicker } from "./FolderPicker";
 import { appendAttachments } from "../lib/attachments";
 import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
@@ -22,7 +23,9 @@ import { Dropdown } from "./Dropdown";
 import { Icon } from "./Icon";
 import { useAttachments } from "./useAttachments";
 import { useDictation } from "../lib/use-dictation";
+import { useSlashMenu } from "../hooks";
 import { Select } from "./Select";
+import { SlashMenu } from "./SlashMenu";
 
 export interface ComposerProps {
   api: ApiClient;
@@ -58,7 +61,7 @@ const WORKTREE_NOTE =
   "Sesi bekerja di cabang baru jejak/… dalam folder terpisah; repo asli tidak tersentuh. " +
   "Perubahan yang belum di-commit tidak ikut.";
 
-const SANDBOX_OFF_NOTE = "Bash agent berjalan tanpa batas berkas dan jaringan. Tercatat di Audit log.";
+const SANDBOX_OFF_NOTE = "Bash agent berjalan tanpa batas berkas dan jaringan. Tercatat di Log audit.";
 
 const MAX_TEXTAREA_PX = 8 * 24;
 
@@ -121,6 +124,8 @@ export function Composer({
   const [waitFor, setWaitFor] = useState("");
 
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Kursor yang mau dipasang setelah render berikutnya. */
+  const caretRef = useRef<number | undefined>(undefined);
   /** Id tahanan terakhir yang dipulihkan; draf tak diisi ulang dua kali. */
   const restoredIdRef = useRef<string | undefined>(undefined);
   const att = useAttachments(api);
@@ -253,6 +258,29 @@ export function Composer({
   }, [selectedWorkspace, repoOptions]);
 
   const repoLabel = repoOptions.find((option) => option.value === repoPath)?.label ?? "Repo";
+
+  // Menu perintah slash: hanya aktif bila folder kerja sudah ada.
+  const slashCwd = selectedWorkspace === undefined ? cwd.trim() : repoPath.trim();
+  const slash = useSlashMenu({
+    api,
+    cwd: slashCwd === "" ? undefined : slashCwd,
+    onApply: (next) => {
+      setPrompt(next.text);
+      caretRef.current = next.caret;
+    },
+  });
+
+  // Kursor baru (mis. setelah memilih perintah) dipasang setelah teks dirender.
+  useEffect(() => {
+    const element = promptRef.current;
+    if (element === null) return;
+    const caret = caretRef.current;
+    if (caret === undefined) return;
+    caretRef.current = undefined;
+    if (typeof element.setSelectionRange === "function") {
+      element.setSelectionRange(caret, caret);
+    }
+  });
 
   const selectedProfile = profiles.find((profile) => profile.id === profileId);
   const models = useMemo(() => selectedProfile?.models ?? [], [selectedProfile]);
@@ -394,6 +422,8 @@ export function Composer({
   };
 
   const onPromptKeyDown = (event: KeyboardEvent): void => {
+    // Menu perintah slash lebih dulu: Enter saat menu terbuka memilih perintah.
+    if (slash.onKeyDown(event)) return;
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
       event.preventDefault();
       void submit();
@@ -404,6 +434,7 @@ export function Composer({
     const element = event.currentTarget as HTMLTextAreaElement;
     setPrompt(element.value);
     autosize(element);
+    slash.sync(element.value, caretOf(element));
   };
 
   const providerLabel = selectedProfile?.name ?? "Belum ada profil";
@@ -443,6 +474,16 @@ export function Composer({
         <label class="jk-visually-hidden" for="jk-prompt">
           Tugas
         </label>
+        {slash.open && (
+          <SlashMenu
+            id={slash.listboxId}
+            commands={slash.options}
+            status={slash.status}
+            source={slash.source}
+            activeIndex={slash.activeIndex}
+            onPick={slash.pick}
+          />
+        )}
         <div class="jk-pill-row">
           <AttachButton onFiles={(files) => void att.add(files)} disabled={busy} />
         <textarea
@@ -456,6 +497,11 @@ export function Composer({
           onKeyDown={onPromptKeyDown}
           onPaste={att.onPaste}
           disabled={busy}
+          role="combobox"
+          aria-expanded={slash.open}
+          aria-controls={slash.open ? slash.listboxId : undefined}
+          aria-activedescendant={slash.activeId}
+          aria-autocomplete="list"
           aria-invalid={promptError !== undefined}
           aria-describedby={promptDescribedBy === "" ? undefined : promptDescribedBy}
         />
