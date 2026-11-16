@@ -232,8 +232,18 @@ test("batal menutup input prompt", async () => {
   const controller = new AbortController();
   const runner = createSdkRunner({ load: async () => fake.module, baseEnv: {} });
 
+  // `registerSteer` membuat prompt berupa aliran: tiruan SDK menunggu input
+  // ditutup runner, jadi hasilnya tak bergantung pada kecepatan mesin. Tanpa
+  // itu prompt berupa string dan tiruan selesai sebelum abort (galat acak di CI).
   const mengumpulkan = collect(
-    runner.run(baseInput({ signal: controller.signal })),
+    runner.run(
+      baseInput({
+        signal: controller.signal,
+        registerSteer: (steer) => {
+          fake.holder.steer = steer;
+        },
+      }),
+    ),
   );
   await new Promise((resolve) => setTimeout(resolve, 10));
   controller.abort();
