@@ -988,6 +988,7 @@ code {
 
 .jk-home-recent-title {
   margin: 0 0 6px;
+  padding: 0 10px;
   font-size: var(--fs-small);
   color: var(--t2);
   font-weight: 500;
@@ -1168,9 +1169,9 @@ code {
 .jk-recent {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px 14px;
-  margin-top: 18px;
+  margin-top: 12px;
   font-size: 12px;
   color: var(--t3);
 }
