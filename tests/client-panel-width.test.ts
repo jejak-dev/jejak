@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   PANEL_CHAT_MIN,
   PANEL_DEFAULT,
@@ -8,6 +10,11 @@ import {
   effectiveMaxNarrow,
   panelWidth,
 } from "../src/client/lib/panel-width";
+
+const appSrc = readFileSync(
+  join(import.meta.dir, "..", "src", "client", "app.tsx"),
+  "utf8",
+);
 
 /** Penyimpanan sederhana untuk menguji muat/simpan lebar panel. */
 function storageFake(values: Record<string, string>) {
@@ -96,6 +103,27 @@ describe("lebar panel: batas efektif jendela", () => {
     expect(effectiveMaxNarrow(900)).toBe(868);
     expect(effectiveMaxNarrow(100)).toBe(PANEL_MIN);
     expect(effectiveMaxNarrow(4000)).toBe(PANEL_MAX);
+  });
+});
+
+describe("lebar panel: preferensi pengguna tak ditimpa jendela", () => {
+  test("tidak ada efek yang menjepit panelW ke panelMax", () => {
+    // Jejak lama: setPanelW((current) => (current > panelMax ? panelMax : current))
+    // menimpa preferensi pengguna saat jendela mengecil.
+    expect(appSrc).not.toMatch(/current\s*>\s*panelMax/);
+    expect(appSrc).not.toMatch(/setPanelW\s*\(\s*\(current\)/);
+  });
+
+  test("lebar yang tampil dihitung dari jepitan preferensi dan batas", () => {
+    expect(appSrc).toMatch(/Math\.min\(panelW,\s*panelMax\)/);
+  });
+
+  test("batas efektif kembali melebar saat jendela membesar", () => {
+    const sempit = effectiveMax(900, 264);
+    const lebar = effectiveMax(1800, 264);
+    expect(sempit).toBeLessThan(lebar);
+    expect(sempit).toBeGreaterThanOrEqual(PANEL_MIN);
+    expect(lebar).toBeGreaterThan(PANEL_DEFAULT);
   });
 });
 

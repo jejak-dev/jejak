@@ -258,12 +258,9 @@ export function App() {
   const sempit = useNarrowViewport();
   const panelMax = sempit ? effectiveMaxNarrow(viewportW) : effectiveMax(viewportW, sideWidth);
 
-  // Panel menyusut bila jendela mengecil; nilai tersimpan pengguna tak
-  // ditimpa (hanya geseran pengguna yang menyimpannya).
-  useEffect(() => {
-    setPanelW((current) => (current > panelMax ? panelMax : current));
-  }, [panelMax]);
-
+  // Panel menyusut bila jendela mengecil, tapi nilai tersimpan pengguna tak
+  // ditimpa: panelW adalah preferensi, lebar yang tampil dihitung dari
+  // jepitan panelNow di bawah.
   const clampPanel = useMemo(
     () => (value: number): number => {
       if (!Number.isFinite(value)) return panelWidth.spec.def;
