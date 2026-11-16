@@ -65,6 +65,11 @@ import { secretAllowRoutes } from "./routes/secret-allow";
 import { budgetRoutes } from "./routes/budget";
 import { usageRoutes } from "./routes/usage";
 import { claudeConfigRoutes } from "./routes/claude-config";
+import { pluginMarketRoutes } from "./routes/plugin-market";
+import {
+  createPluginInstaller,
+  type PluginInstaller,
+} from "./claude-config/plugin-installer";
 import { sandboxRoutes } from "./routes/sandbox";
 import { infoRoutes } from "./routes/info";
 import { networkRoutes } from "./routes/network";
@@ -129,6 +134,7 @@ import {
 } from "./sessions/scheduled-tasks";
 import { sdkRoutes } from "./routes/sdk";
 import type { LocateOptions } from "./sdk/claude-locator";
+import { locateClaude } from "./sdk/claude-locator";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import {
   SessionManager,
@@ -218,6 +224,13 @@ export interface CreateAppOptions {
   usageLedger?: UsageLedger;
   /** Pengaturan sumber Claude (CLAUDE.md/skills/hooks); tanpa store rute 503. */
   claudeConfig?: ClaudeConfigStore;
+  /**
+   * Pemasang plugin; tanpa ini rute install/uninstall menjawab 503.
+   *
+   * Bawaan memakai CLI `claude` milik pengguna; dimatikan bila
+   * `JEJAK_CLAUDE_CONFIG=0`.
+   */
+  pluginInstaller?: PluginInstaller;
   /** Sandbox Bash; tanpa store rute 503 dan `input.sandbox` tidak diisi. */
   sandbox?: SandboxStore;
   /** Antrean pertanyaan wawancara; tanpa store rute 503 dan tool question_ask tidak ada. */
@@ -329,9 +342,34 @@ async function pruneSessionSummaries(memory: MemoryService, force = false): Prom
   }
 }
 
+/**
+ * Pemasang plugin bawaan: memakai CLI `claude` milik pengguna.
+ *
+ * `undefined` bila pengaturan Claude dimatikan lewat `JEJAK_CLAUDE_CONFIG=0`.
+ * CLI tak pernah dijalankan sampai ada permintaan pemasangan.
+ */
+function defaultPluginInstaller(
+  env: Record<string, string | undefined>,
+  home: string | undefined,
+): PluginInstaller | undefined {
+  if (env.JEJAK_CLAUDE_CONFIG?.trim() === "0") return undefined;
+  return createPluginInstaller({
+    env,
+    ...(home === undefined ? {} : { home }),
+    locate: async () => {
+      const ditemukan = await locateClaude({ env, home });
+      return ditemukan === null ? null : { path: ditemukan.path };
+    },
+  });
+}
+
 export function createApp(options: CreateAppOptions = {}) {
   const env = options.env ?? process.env;
   const path = options.providersPath ?? providersPath(env);
+  // Pemasang plugin: CLI `claude` milik pengguna, tak pernah dijalankan
+  // sebelum ada permintaan pemasangan.
+  const pluginInstaller =
+    options.pluginInstaller ?? defaultPluginInstaller(env, options.home);
 
   // Fitur (terminal, browser) mati secara default. Saklar ada di Pengaturan;
   // env `JEJAK_TERMINAL`/`JEJAK_BROWSER` tetap menang atas berkas.
@@ -850,6 +888,15 @@ export function createApp(options: CreateAppOptions = {}) {
   // Rute perintah slash dipasang di luar rantai demi alasan yang sama.
   (app as unknown as Elysia).use(
     commandRoutes({ catalog: commandCatalog, manager }),
+  );
+  // Rute marketplace dan pemasangan plugin juga di luar rantai.
+  (app as unknown as Elysia).use(
+    pluginMarketRoutes({
+      store: options.claudeConfig,
+      ...(options.home === undefined ? {} : { home: options.home }),
+      audit: options.audit,
+      ...(pluginInstaller === undefined ? {} : { installer: pluginInstaller }),
+    }),
   );
   const result = app.use(clientRoutes(options.client));
   if (memoryBridge !== undefined) {
