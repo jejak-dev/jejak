@@ -181,6 +181,36 @@ describe("katalog perintah", () => {
     expect(panggilan.jumlah).toBe(1);
   });
 
+  test("kunci berbeda untuk plugin berbeda", async () => {
+    const { runner, panggilan } = runnerTiruan([perintah("compact")]);
+    const katalog = new CommandCatalog({ runner });
+
+    await katalog.get({
+      cwd: "/tmp/kerja",
+      claude: { userSettings: true, hooksEnabled: true, plugins: ["/tmp/plugin/alpha"] },
+    });
+    await katalog.get({
+      cwd: "/tmp/kerja",
+      claude: { userSettings: true, hooksEnabled: true, plugins: ["/tmp/plugin/beta"] },
+    });
+    expect(panggilan.jumlah).toBe(2);
+  });
+
+  test("urutan plugin tak memengaruhi kunci", async () => {
+    const { runner, panggilan } = runnerTiruan([perintah("compact")]);
+    const katalog = new CommandCatalog({ runner });
+
+    await katalog.get({
+      cwd: "/tmp/kerja",
+      claude: { userSettings: true, hooksEnabled: true, plugins: ["/tmp/b", "/tmp/a"] },
+    });
+    await katalog.get({
+      cwd: "/tmp/kerja",
+      claude: { userSettings: true, hooksEnabled: true, plugins: ["/tmp/a", "/tmp/b"] },
+    });
+    expect(panggilan.jumlah).toBe(1);
+  });
+
   test("entri tertua dipangkas bila melebihi batas", async () => {
     const { runner, panggilan } = runnerTiruan([perintah("compact")]);
     const katalog = new CommandCatalog({ runner, maxEntries: 2 });

@@ -108,6 +108,8 @@ export interface RunClaudeConfig {
   hooksEnabled: boolean;
   /** Bila terdefinisi, hanya skill ini yang diaktifkan (filter konteks SDK). */
   skills?: string[];
+  /** Path absolut plugin Claude Code yang aktif; diteruskan ke SDK. */
+  plugins?: string[];
 }
 
 /** Server MCP eksternal yang aktif, diselesaikan per giliran dari layanan. */

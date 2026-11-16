@@ -38,6 +38,7 @@ describe("FileClaudeConfigStore", () => {
       userSettings: false,
       hooksEnabled: true,
       disabledSkills: { user: [], projects: {} },
+      enabledPlugins: [],
     });
     expect(s.disabledFor(project)).toEqual([]);
   });
@@ -92,6 +93,7 @@ describe("FileClaudeConfigStore", () => {
       userSettings: false,
       hooksEnabled: true,
       disabledSkills: { user: [], projects: {} },
+      enabledPlugins: [],
     });
     expect(await readFile(storePath, "utf8")).toBe("{ bukan json");
 
@@ -179,5 +181,68 @@ describe("FileClaudeConfigStore", () => {
       JEJAK_USER_SETTINGS: "1",
     });
     expect(s?.get().userSettings).toBe(false);
+  });
+
+  test("plugin: nyalakan dan matikan", () => {
+    const s = store();
+    expect(s.get().enabledPlugins).toEqual([]);
+    expect(s.setPluginEnabled("alpha@pasar", true).enabledPlugins).toEqual(["alpha@pasar"]);
+    expect(s.setPluginEnabled("beta@pasar", true).enabledPlugins).toEqual([
+      "alpha@pasar",
+      "beta@pasar",
+    ]);
+    // Nyalakan dua kali tak menggandakan.
+    expect(s.setPluginEnabled("beta@pasar", true).enabledPlugins).toEqual([
+      "alpha@pasar",
+      "beta@pasar",
+    ]);
+    expect(s.setPluginEnabled("alpha@pasar", false).enabledPlugins).toEqual(["beta@pasar"]);
+    expect(s.setPluginEnabled("beta@pasar", false).enabledPlugins).toEqual([]);
+  });
+
+  test("plugin: id buruk ditolak", () => {
+    const s = store();
+    for (const id of ["", "tanpa-pasar", "@pasar", "alpha@", "a b@pasar", "x".repeat(65) + "@pasar"]) {
+      expect(() => s.setPluginEnabled(id, true)).toThrow(ClaudeConfigError);
+    }
+    expect(() => s.setPluginEnabled("alpha@pasar", "ya" as unknown as boolean)).toThrow(
+      ClaudeConfigError,
+    );
+    expect(s.get().enabledPlugins).toEqual([]);
+  });
+
+  test("plugin: berkas lama tanpa field memakai daftar kosong", async () => {
+    await mkdir(join(root, "home"), { recursive: true });
+    await writeFile(
+      storePath,
+      JSON.stringify({ version: 1, userSettings: true, hooksEnabled: true, disabledSkills: {} }),
+      "utf8",
+    );
+    const s = store();
+    expect(s.get().enabledPlugins).toEqual([]);
+  });
+
+  test("plugin: entri tak valid disaring dan daftar terurut", async () => {
+    await mkdir(join(root, "home"), { recursive: true });
+    await writeFile(
+      storePath,
+      JSON.stringify({
+        version: 1,
+        enabledPlugins: ["beta@pasar", "alpha@pasar", "alpha@pasar", "BURUK", 7, "gamma@"],
+      }),
+      "utf8",
+    );
+    const s = store();
+    expect(s.get().enabledPlugins).toEqual(["alpha@pasar", "beta@pasar"]);
+  });
+
+  test("plugin: persist ke berkas dan terbaca ulang", async () => {
+    const s = store();
+    s.setPluginEnabled("alpha@pasar", true);
+    const parsed = JSON.parse(await readFile(storePath, "utf8")) as {
+      enabledPlugins: string[];
+    };
+    expect(parsed.enabledPlugins).toEqual(["alpha@pasar"]);
+    expect(store().get().enabledPlugins).toEqual(["alpha@pasar"]);
   });
 });

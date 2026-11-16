@@ -301,3 +301,111 @@ describe("rute pengaturan Claude", () => {
     expect(entries(audit)).toEqual([]);
   });
 });
+
+describe("rute plugin Claude", () => {
+  async function pasangPlugin(nama: string): Promise<string> {
+    const installPath = join(home, ".claude", "plugins", "pasang", nama);
+    await mkdir(join(installPath, ".claude-plugin"), { recursive: true });
+    await writeFile(
+      join(installPath, ".claude-plugin", "plugin.json"),
+      JSON.stringify({ name: nama, description: `Plugin ${nama}` }),
+      "utf8",
+    );
+    return installPath;
+  }
+
+  async function daftarPasang(
+    plugins: Record<string, Array<{ scope: string; installPath: string }>>,
+  ): Promise<void> {
+    const dir = join(home, ".claude", "plugins");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, "installed_plugins.json"),
+      JSON.stringify({ version: 2, plugins }),
+      "utf8",
+    );
+  }
+
+  test("GET daftar plugin beserta status aktif", async () => {
+    const installPath = await pasangPlugin("alpha");
+    await daftarPasang({ "alpha@pasar": [{ scope: "user", installPath }] });
+    const app = setup();
+
+    const body = await json(await req(app, "GET", "/api/claude/plugins"));
+    const plugins = body.plugins as Array<Record<string, unknown>>;
+    expect(plugins).toHaveLength(1);
+    expect(plugins[0]).toMatchObject({
+      id: "alpha@pasar",
+      name: "alpha",
+      marketplace: "pasar",
+      path: installPath,
+      enabled: false,
+    });
+  });
+
+  test("PUT nyalakan dan matikan plugin", async () => {
+    const installPath = await pasangPlugin("alpha");
+    await daftarPasang({ "alpha@pasar": [{ scope: "user", installPath }] });
+    const app = setup();
+
+    const on = await req(app, "PUT", "/api/claude/plugins/alpha@pasar", { enabled: true });
+    expect(on.status).toBe(200);
+    expect(await json(on)).toEqual({ id: "alpha@pasar", enabled: true });
+
+    const after = await json(await req(app, "GET", "/api/claude/plugins"));
+    const plugins = after.plugins as Array<{ id: string; enabled: boolean }>;
+    expect(plugins[0]?.enabled).toBe(true);
+
+    const off = await req(app, "PUT", "/api/claude/plugins/alpha@pasar", { enabled: false });
+    expect(off.status).toBe(200);
+    expect(await json(off)).toEqual({ id: "alpha@pasar", enabled: false });
+  });
+
+  test("PUT 400 untuk id buruk atau body asing", async () => {
+    const app = setup();
+    for (const id of ["tanpa-pasar", "@pasar", "alpha@", "a b@pasar"]) {
+      const res = await req(app, "PUT", `/api/claude/plugins/${encodeURIComponent(id)}`, {
+        enabled: true,
+      });
+      expect(res.status).toBe(400);
+    }
+    for (const body of [{ lain: true }, {}, { enabled: "ya" }, "bukan json"]) {
+      const res = await req(app, "PUT", "/api/claude/plugins/alpha@pasar", body);
+      expect(res.status).toBe(400);
+    }
+  });
+
+  test("PUT 404 bila plugin tak terpasang", async () => {
+    const app = setup();
+    const res = await req(app, "PUT", "/api/claude/plugins/hantu@pasar", { enabled: true });
+    expect(res.status).toBe(404);
+    // Mematikan plugin yang tak terpasang tetap boleh.
+    const off = await req(app, "PUT", "/api/claude/plugins/hantu@pasar", { enabled: false });
+    expect(off.status).toBe(200);
+  });
+
+  test("503 tanpa store", async () => {
+    const app = setup({ store: false });
+    const list = await req(app, "GET", "/api/claude/plugins");
+    expect(list.status).toBe(503);
+    expect(await json(list)).toEqual({ error: "Pengaturan Claude dimatikan." });
+    const put = await req(app, "PUT", "/api/claude/plugins/alpha@pasar", { enabled: true });
+    expect(put.status).toBe(503);
+  });
+
+  test("audit mencatat perubahan plugin", async () => {
+    const installPath = await pasangPlugin("alpha");
+    await daftarPasang({ "alpha@pasar": [{ scope: "user", installPath }] });
+    const audit = auditStore();
+    const app = setup({ audit });
+
+    await req(app, "PUT", "/api/claude/plugins/alpha@pasar", { enabled: true });
+    await req(app, "PUT", "/api/claude/plugins/alpha@pasar", { enabled: false });
+
+    const summaries = entries(audit).map((entry) => entry.summary);
+    expect(summaries).toContain("Plugin diaktifkan");
+    expect(summaries).toContain("Plugin dinonaktifkan");
+    const aktif = entries(audit).find((entry) => entry.summary === "Plugin diaktifkan");
+    expect(aktif?.meta).toMatchObject({ aksi: "mengaktifkan-plugin", plugin: "alpha@pasar" });
+  });
+});

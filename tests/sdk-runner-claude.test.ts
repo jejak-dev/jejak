@@ -82,3 +82,19 @@ test("skills diteruskan hanya bila terdefinisi", async () => {
   });
   expect(options?.skills).toEqual(["pdf", "docx"]);
 });
+
+test("plugin aktif diteruskan sebagai plugin lokal SDK", async () => {
+  const options = await runWith({
+    claude: { ...CLAUDE_BASE, plugins: ["/tmp/plugin/alpha", "/tmp/plugin/beta"] },
+  });
+  expect(options?.plugins).toEqual([
+    { type: "local", path: "/tmp/plugin/alpha" },
+    { type: "local", path: "/tmp/plugin/beta" },
+  ]);
+});
+
+test("tanpa plugin aktif opsi plugins tak dibuat", async () => {
+  expect((await runWith({ claude: CLAUDE_BASE }))?.plugins).toBeUndefined();
+  const kosong = await runWith({ claude: { ...CLAUDE_BASE, plugins: [] } });
+  expect(kosong?.plugins).toBeUndefined();
+});

@@ -22,6 +22,7 @@ import {
 } from "../agent/provider-error";
 import type { AuditKind, AuditMeta, AuditStore } from "../audit/audit-store";
 import type { ClaudeConfigStore } from "../claude-config/config-store";
+import { enabledPluginPaths } from "../claude-config/plugins";
 import { listSkills } from "../claude-config/skills";
 import {
   evaluateBudget,
@@ -839,6 +840,10 @@ export class SessionManager {
         userSettings: config.userSettings,
         hooksEnabled: config.hooksEnabled,
       };
+      const pluginPaths = enabledPluginPaths(this.home, config.enabledPlugins).map(
+        (plugin) => plugin.path,
+      );
+      if (pluginPaths.length > 0) result.plugins = pluginPaths;
       if (disabled.length > 0) {
         const found = listSkills(cwd, this.home, disabled);
         const names = new Set<string>();

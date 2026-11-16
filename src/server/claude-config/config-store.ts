@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { jejakHome } from "../provider-store";
+import { PLUGIN_ID_PATTERN } from "./plugins";
 
 /** Pengaturan sumber Claude per instalasi Jejak. */
 export interface ClaudeConfig {
@@ -19,6 +20,8 @@ export interface ClaudeConfig {
   hooksEnabled: boolean;
   /** Skill yang dinonaktifkan; proyek dikunci per akar absolut. */
   disabledSkills: { user: string[]; projects: Record<string, string[]> };
+  /** Plugin Claude Code yang diaktifkan; bentuk "nama@marketplace". */
+  enabledPlugins: string[];
 }
 
 export interface ClaudeConfigStore {
@@ -30,6 +33,8 @@ export interface ClaudeConfigStore {
     name: string,
     enabled: boolean,
   ): ClaudeConfig;
+  /** Nyalakan atau matikan satu plugin terpasang. */
+  setPluginEnabled(id: string, enabled: boolean): ClaudeConfig;
   /** Nama nonaktif gabungan pengguna + proyek, unik. */
   disabledFor(projectRoot: string): string[];
 }
@@ -46,6 +51,7 @@ export class ClaudeConfigError extends Error {
 export const CLAUDE_CONFIG_VERSION = 1;
 export const MAX_PROJECTS = 200;
 export const MAX_SKILLS_PER_LIST = 200;
+export const MAX_ENABLED_PLUGINS = 100;
 export const SKILL_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -80,6 +86,27 @@ function sanitizeNames(value: unknown): string[] {
   return names.sort();
 }
 
+/** Id plugin yang valid; bentuk "nama@marketplace". */
+export function validatePluginId(id: unknown): string {
+  if (typeof id !== "string" || !PLUGIN_ID_PATTERN.test(id)) {
+    throw new ClaudeConfigError("Id plugin tidak valid.");
+  }
+  return id;
+}
+
+/** Saring id plugin dari berkas: pola valid, unik, terurut, terbatas. */
+function sanitizePluginIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string" || !PLUGIN_ID_PATTERN.test(item)) continue;
+    if (ids.includes(item)) continue;
+    ids.push(item);
+    if (ids.length >= MAX_ENABLED_PLUGINS) break;
+  }
+  return ids.sort();
+}
+
 function copyConfig(config: ClaudeConfig): ClaudeConfig {
   const projects: Record<string, string[]> = {};
   for (const [root, names] of Object.entries(config.disabledSkills.projects)) {
@@ -89,6 +116,7 @@ function copyConfig(config: ClaudeConfig): ClaudeConfig {
     userSettings: config.userSettings,
     hooksEnabled: config.hooksEnabled,
     disabledSkills: { user: [...config.disabledSkills.user], projects },
+    enabledPlugins: [...config.enabledPlugins],
   };
 }
 
@@ -124,6 +152,7 @@ export class FileClaudeConfigStore implements ClaudeConfigStore {
       userSettings: defaults.userSettings === true,
       hooksEnabled: true,
       disabledSkills: { user: [], projects: {} },
+      enabledPlugins: [],
     };
   }
 
@@ -150,6 +179,7 @@ export class FileClaudeConfigStore implements ClaudeConfigStore {
         userSettings: parsed.userSettings === true,
         hooksEnabled: parsed.hooksEnabled !== false,
         disabledSkills: { user: [], projects: {} },
+        enabledPlugins: sanitizePluginIds(parsed.enabledPlugins),
       };
       if (isRecord(parsed.disabledSkills)) {
         next.disabledSkills.user = sanitizeNames(parsed.disabledSkills.user);
@@ -192,6 +222,7 @@ export class FileClaudeConfigStore implements ClaudeConfigStore {
         userSettings: config.userSettings,
         hooksEnabled: config.hooksEnabled,
         disabledSkills: { user: [...config.disabledSkills.user].sort(), projects },
+        enabledPlugins: [...config.enabledPlugins].sort(),
       },
       null,
       2,
@@ -284,6 +315,31 @@ export class FileClaudeConfigStore implements ClaudeConfigStore {
       }
     }
 
+    this.config = next;
+    this.persist();
+    return copyConfig(next);
+  }
+
+  /** Nyalakan atau matikan satu plugin (bentuk "nama@marketplace"). */
+  setPluginEnabled(id: string, enabled: boolean): ClaudeConfig {
+    const plugin = validatePluginId(id);
+    if (typeof enabled !== "boolean") {
+      throw new ClaudeConfigError("Field enabled harus berupa boolean.");
+    }
+    this.load();
+    const next = copyConfig(this.config ?? this.defaults);
+    if (enabled) {
+      if (!next.enabledPlugins.includes(plugin)) {
+        if (next.enabledPlugins.length >= MAX_ENABLED_PLUGINS) {
+          throw new ClaudeConfigError(
+            `Batas ${MAX_ENABLED_PLUGINS} plugin aktif terlampaui.`,
+          );
+        }
+        next.enabledPlugins = [...next.enabledPlugins, plugin].sort();
+      }
+    } else {
+      next.enabledPlugins = next.enabledPlugins.filter((item) => item !== plugin);
+    }
     this.config = next;
     this.persist();
     return copyConfig(next);

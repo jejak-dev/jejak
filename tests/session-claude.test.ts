@@ -118,11 +118,65 @@ describe("SessionManager dan pengaturan Claude", () => {
       setSkillEnabled() {
         throw new Error("rusak");
       },
+      setPluginEnabled() {
+        throw new Error("rusak");
+      },
       disabledFor() {
         throw new Error("rusak");
       },
     };
     const input = await runTurn({ claude: broken });
     expect(input.claude).toBeUndefined();
+  });
+
+  test("plugin aktif diteruskan lewat claude.plugins", async () => {
+    const pluginsDir = join(home, ".claude", "plugins");
+    const installPath = join(pluginsDir, "alpha", "install");
+    await mkdir(installPath, { recursive: true });
+    await writeFile(
+      join(pluginsDir, "installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: {
+          "alpha@pasar": [{ scope: "user", installPath, version: "1.0.0" }],
+        },
+      }),
+      "utf8",
+    );
+
+    const store = new FileClaudeConfigStore(":memory:");
+    store.setPluginEnabled("alpha@pasar", true);
+    const input = await runTurn({ claude: store });
+    expect(input.claude?.plugins).toEqual([installPath]);
+
+    // Plugin yang tak terpasang tak diteruskan.
+    store.setPluginEnabled("alpha@pasar", false);
+    store.setPluginEnabled("hantu@pasar", true);
+    const tanpa = await runTurn({ claude: store });
+    expect(tanpa.claude?.plugins).toBeUndefined();
+  });
+
+  test("commandContext memakai plugin aktif yang sama", async () => {
+    const pluginsDir = join(home, ".claude", "plugins");
+    const installPath = join(pluginsDir, "alpha", "install");
+    await mkdir(installPath, { recursive: true });
+    await writeFile(
+      join(pluginsDir, "installed_plugins.json"),
+      JSON.stringify({
+        version: 2,
+        plugins: { "alpha@pasar": [{ scope: "user", installPath }] },
+      }),
+      "utf8",
+    );
+
+    const store = new FileClaudeConfigStore(":memory:");
+    store.setPluginEnabled("alpha@pasar", true);
+    const manager = new SessionManager({
+      runner: { async *run() {} },
+      resolveProvider: async () => PROVIDER,
+      home,
+      claude: store,
+    });
+    expect(manager.commandContext(project).claude?.plugins).toEqual([installPath]);
   });
 });

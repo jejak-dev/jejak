@@ -345,6 +345,9 @@ function applyClaudeOptions(
   if (claude.skills !== undefined) {
     sdkOptions.skills = [...claude.skills];
   }
+  if (claude.plugins !== undefined && claude.plugins.length > 0) {
+    sdkOptions.plugins = claude.plugins.map((path) => ({ type: "local", path }));
+  }
 }
 
 /**

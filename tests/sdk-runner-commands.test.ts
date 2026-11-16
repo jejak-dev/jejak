@@ -209,3 +209,20 @@ test("sumber pengguna tak aktif memakai settingSources proyek saja", async () =>
 
   expect(sdk.opsi()?.settingSources).toEqual(["project"]);
 });
+
+test("plugin aktif ikut diteruskan saat membaca daftar perintah", async () => {
+  const sdk = sdkTiruan({ perintah: [] });
+  const runner = createSdkRunner({ load: async () => sdk.module, baseEnv: {} });
+
+  await runner.listCommands?.({
+    cwd: "/tmp/kerja",
+    claude: { userSettings: false, hooksEnabled: true, plugins: ["/tmp/plugin/alpha"] },
+  });
+  expect(sdk.opsi()?.plugins).toEqual([{ type: "local", path: "/tmp/plugin/alpha" }]);
+
+  await runner.listCommands?.({
+    cwd: "/tmp/kerja",
+    claude: { userSettings: false, hooksEnabled: true },
+  });
+  expect(sdk.opsi()?.plugins).toBeUndefined();
+});

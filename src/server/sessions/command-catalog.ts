@@ -101,11 +101,12 @@ export function filterCommands(list: readonly CommandInfo[]): CommandInfo[] {
   return result;
 }
 
-/** Kunci cache: folder kerja + sumber pengguna + skill aktif (terurut). */
+/** Kunci cache: folder kerja + sumber pengguna + skill aktif + plugin (terurut). */
 function cacheKeyOf(input: ListCommandsInput): string {
   const skills = [...(input.claude?.skills ?? [])].sort();
+  const plugins = [...(input.claude?.plugins ?? [])].sort();
   const userSettings = input.claude?.userSettings === true ? "1" : "0";
-  return JSON.stringify([input.cwd, userSettings, skills]);
+  return JSON.stringify([input.cwd, userSettings, skills, plugins]);
 }
 
 interface CacheEntry {

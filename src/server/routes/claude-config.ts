@@ -16,6 +16,7 @@ import {
 import { SkillError, listSkills, readSkill, writeSkill, type SkillScope } from "../claude-config/skills";
 import { AgentError, listAgents, readAgent, writeAgent } from "../claude-config/agents";
 import { listHooks } from "../claude-config/hooks";
+import { PLUGIN_ID_PATTERN, listInstalledPlugins } from "../claude-config/plugins";
 
 export interface ClaudeConfigRoutesOptions {
   /** Tanpa store semua rute menjawab 503. */
@@ -147,6 +148,23 @@ function parseInstructionScope(value: unknown): InstructionScope {
   return value;
 }
 
+/** Id plugin dari jalur URL: didekode lalu divalidasi dengan pola plugin. */
+function parsePluginId(value: unknown): string {
+  if (typeof value !== "string" || value === "") {
+    throw new RequestError("Id plugin tidak valid.");
+  }
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(value);
+  } catch {
+    throw new RequestError("Id plugin tidak valid.");
+  }
+  if (!PLUGIN_ID_PATTERN.test(decoded)) {
+    throw new RequestError("Id plugin tidak valid.");
+  }
+  return decoded;
+}
+
 function audit(
   store: AuditStore | undefined,
   summary: string,
@@ -197,7 +215,9 @@ export function claudeConfigRoutes(options: ClaudeConfigRoutesOptions = {}): Ely
       .get("/api/claude/agents", () => disabledResponse())
       .get("/api/claude/agents/:scope/:name", () => disabledResponse())
       .put("/api/claude/agents/:scope/:name", () => disabledResponse())
-      .get("/api/claude/hooks", () => disabledResponse()) as unknown as Elysia;
+      .get("/api/claude/hooks", () => disabledResponse())
+      .get("/api/claude/plugins", () => disabledResponse())
+      .put("/api/claude/plugins/:id", () => disabledResponse()) as unknown as Elysia;
   }
 
   const enabledFlags = (): { userSettings: boolean; hooksEnabled: boolean } => {
@@ -418,5 +438,42 @@ export function claudeConfigRoutes(options: ClaudeConfigRoutesOptions = {}): Ely
       } catch (error) {
         return errorResponse(error);
       }
-    }) as unknown as Elysia;
+    })
+    .get("/api/claude/plugins", () => {
+      try {
+        const aktif = new Set(store.get().enabledPlugins);
+        return {
+          plugins: listInstalledPlugins(home).map((plugin) => ({
+            ...plugin,
+            enabled: aktif.has(plugin.id),
+          })),
+        };
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .put(
+      "/api/claude/plugins/:id",
+      ({ params, body }) => {
+        try {
+          const id = parsePluginId(params.id);
+          const record = parseObjectBody(body, ENABLED_BODY_KEYS);
+          if (typeof record.enabled !== "boolean") {
+            throw new RequestError('Field "enabled" harus berupa boolean.');
+          }
+          if (record.enabled && !listInstalledPlugins(home).some((item) => item.id === id)) {
+            throw new RequestError(`Plugin "${id}" tidak terpasang.`, 404);
+          }
+          store.setPluginEnabled(id, record.enabled);
+          audit(auditStore, record.enabled ? "Plugin diaktifkan" : "Plugin dinonaktifkan", {
+            aksi: record.enabled ? "mengaktifkan-plugin" : "menonaktifkan-plugin",
+            plugin: id,
+          });
+          return { id, enabled: record.enabled };
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    ) as unknown as Elysia;
 }
