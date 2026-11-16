@@ -28,6 +28,7 @@
     "start": "bun run src/cli/index.ts serve",
     "doctor": "bun run src/cli/index.ts doctor",
     "test": "bun test",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "typecheck": "tsc --noEmit",
     "build:binary": "bun run scripts/build-binary.ts",
     "stage:sidecar": "bun run scripts/stage-sidecar.ts",
@@ -42,6 +43,7 @@
     "preact": "^10.29.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tauri-apps/cli": "^2",
     "@types/bun": "latest",
     "typescript": "~5.8.2"

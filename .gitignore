@@ -12,5 +12,9 @@ build/
 coverage/
 *.tgz
 
+# Hasil uji e2e (Playwright)
+test-results/
+playwright-report/
+
 # Dokumen internal (desain, roadmap): tidak ikut repo
 docs/

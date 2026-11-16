@@ -34,6 +34,22 @@ CI runs the same two commands on macOS and Windows, plus `bun run check:version`
 the Rust checks for `src-tauri` (`cargo test`, `cargo clippy --all-targets -- -D
 warnings`). See [.github/README-CI.md](.github/README-CI.md) for the details.
 
+## Browser tests (end-to-end)
+
+The unit suite above runs in-process; a few flows can only be checked in a real
+browser (the composer, the right-hand panel, scheduled tasks, held prompts).
+Those specs live in `tests/e2e/specs/` and run under Playwright:
+
+```bash
+bunx playwright install chromium   # once per machine, downloads the browser
+bun run test:e2e                   # starts a mock server on 127.0.0.1:3931
+```
+
+The e2e server uses the mock agent and a temporary `JEJAK_HOME`, so it never
+calls a real model and never touches `~/.jejak`. Spec files use the `.e2e.ts`
+suffix on purpose: `bun test` globs `*.spec.ts` as well, and the two runners
+must not pick up each other's files.
+
 ## Conventions
 
 The rules live in [AGENTS.md](AGENTS.md); the short version:
