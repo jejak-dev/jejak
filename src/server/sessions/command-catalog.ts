@@ -170,7 +170,10 @@ export class CommandCatalog {
       };
       this.store(key, result, this.ttlMs);
       return result;
-    } catch {
+    } catch (error) {
+      // Jangan diam-diam: tanpa jejak, daftar bawaan sulit dibedakan dari SDK.
+      const alasan = error instanceof Error ? error.message : String(error);
+      console.warn(`[commands] daftar SDK gagal, pakai bawaan: ${alasan}`);
       const result: CommandCatalogResult = {
         commands: BUILTIN_COMMANDS.map((command) => ({ ...command })),
         source: "bawaan",
