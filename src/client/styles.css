@@ -26,6 +26,11 @@
   --serif: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Skala tipe: teks antarmuka, isi jawaban agen, label kecil, dan mikro. */
+  --fs-ui: 14px;
+  --fs-body: 15.5px;
+  --fs-small: 12.5px;
+  --fs-micro: 12px;
   color-scheme: light;
 }
 
@@ -102,7 +107,7 @@ body {
   background: var(--bg);
   color: var(--t1);
   font-family: var(--sans);
-  font-size: 13.5px;
+  font-size: var(--fs-ui);
   -webkit-font-smoothing: antialiased;
   /* Tarik halaman (rubber band) dinonaktifkan di bodi. */
   overscroll-behavior-y: none;
@@ -371,7 +376,7 @@ code {
 .jk-help {
   margin: 0;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.5;
 }
 
@@ -470,7 +475,7 @@ code {
   padding: 0 7px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--t3);
 }
 
@@ -549,13 +554,13 @@ code {
 }
 
 .jk-session-time {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--t3);
 }
 
 .jk-session-bypass {
   flex: none;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--warn);
 }
 
@@ -604,7 +609,7 @@ code {
   flex: none;
   gap: 10px;
   padding: 0 4px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-session-line:hover .jk-session-more,
@@ -770,7 +775,7 @@ code {
 .jk-foot-count {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1073,7 +1078,7 @@ code {
   white-space: nowrap;
   color: var(--t3);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-picker-nav {
@@ -1123,7 +1128,7 @@ code {
 .jk-picker-git {
   flex: none;
   color: var(--t3);
-  font-size: 10.5px;
+  font-size: 12px;
   letter-spacing: 0.02em;
 }
 
@@ -1189,7 +1194,7 @@ code {
   flex: none;
   height: 24px;
   padding: 0 10px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-queue-remove {
@@ -1441,6 +1446,7 @@ code {
   padding: 9px 14px;
   border-radius: 18px;
   background: var(--hover-2);
+  font-size: 14.5px;
   line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1448,10 +1454,19 @@ code {
 
 .jk-text {
   margin: 0;
-  font-size: 14.5px;
+  font-family: var(--serif);
+  font-size: var(--fs-body);
   line-height: 1.7;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+/* Di dalam teks agen, kode tetap monospasi dan berukuran tetap supaya baris
+   program tak ikut membesar mengikuti ukuran teks serif. */
+.jk-text code,
+.jk-text pre {
+  font-family: var(--mono);
+  font-size: 12.5px;
 }
 
 .jk-pre-wrap {
@@ -1651,7 +1666,7 @@ h2.jk-md-heading {
 .jk-md-lang {
   display: block;
   margin-bottom: 4px;
-  font: 11px var(--mono);
+  font: 12px var(--mono);
   color: var(--t3);
   user-select: none;
 }
@@ -1674,6 +1689,7 @@ h2.jk-md-heading {
   height: 0;
   margin: 0;
   position: relative;
+  font-family: var(--sans);
 }
 
 /* Tombol yang tak terlihat tak boleh menelan klik blok di bawahnya. */
@@ -1708,6 +1724,7 @@ h2.jk-md-heading {
 
 .jk-md table {
   border-collapse: collapse;
+  font-family: var(--sans);
   font-size: 0.95em;
 }
 
@@ -1950,7 +1967,7 @@ h2.jk-md-heading {
 
 .jk-step-label {
   margin: 0 0 4px;
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--t3);
 }
@@ -1980,7 +1997,7 @@ h2.jk-md-heading {
   border: 1px solid var(--line);
   border-radius: 7px;
   background: var(--surface);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--t3);
 }
 
@@ -2015,7 +2032,7 @@ h2.jk-md-heading {
 
 .jk-tool-count {
   margin-left: auto;
-  font: 11px var(--mono);
+  font: 12px var(--mono);
   color: var(--t3);
 }
 
@@ -2031,7 +2048,7 @@ h2.jk-md-heading {
 
 .jk-tool-note {
   margin: 4px 0 0;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--t3);
 }
 
@@ -2072,7 +2089,7 @@ h2.jk-md-heading {
 
 .jk-tool-dmore {
   padding: 2px 10px;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--t3);
 }
 
@@ -2234,7 +2251,7 @@ h2.jk-md-heading {
   justify-content: space-between;
   gap: 12px;
   padding: 7px 12px;
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   color: var(--t3);
 }
 
@@ -2568,7 +2585,7 @@ h2.jk-md-heading {
 .jk-profile-item-id {
   grid-column: 1 / -1;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-profile-item-fallback {
@@ -3014,7 +3031,7 @@ h2.jk-md-heading {
 
 .jk-pane-count {
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3139,7 +3156,7 @@ h2.jk-md-heading {
 
 .jk-panel-count {
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3330,7 +3347,7 @@ h2.jk-md-heading {
   flex: none;
   width: 12px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--t2);
   text-align: center;
 }
@@ -3363,7 +3380,7 @@ h2.jk-md-heading {
 .jk-panel-stats,
 .jk-panel-size {
   flex: none;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--t3);
   font-variant-numeric: tabular-nums;
 }
@@ -3385,7 +3402,7 @@ h2.jk-md-heading {
   justify-content: space-between;
   gap: 8px;
   margin: 0 0 2px;
-  font: 11px var(--mono);
+  font: 12px var(--mono);
   color: var(--t3);
 }
 
@@ -3398,7 +3415,7 @@ h2.jk-md-heading {
 
 .jk-panel-reject {
   flex: none;
-  font: 11px var(--sans);
+  font: 12px var(--sans);
   color: var(--t3);
 }
 
@@ -3452,7 +3469,7 @@ h2.jk-md-heading {
 .jk-panel-diff {
   border-radius: 8px;
   background: var(--code);
-  font: 11.5px/1.55 var(--mono);
+  font: 12px/1.55 var(--mono);
   max-height: 260px;
   overflow: auto;
 }
@@ -3561,7 +3578,7 @@ h2.jk-md-heading {
 .jk-dirty-mark,
 .jk-saved-mark {
   flex: none;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--warn);
 }
 
@@ -3620,7 +3637,7 @@ h2.jk-md-heading {
   height: 28px;
   min-height: 28px;
   padding: 0 8px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-search-input {
@@ -3669,14 +3686,14 @@ h2.jk-md-heading {
 
 .jk-search-count {
   flex: none;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--t3);
 }
 
 .jk-search-line {
   flex: none;
   min-width: 2.5ch;
-  font: 11.5px/1.5 var(--mono);
+  font: 12px/1.5 var(--mono);
   color: var(--t3);
   text-align: right;
 }
@@ -3699,7 +3716,7 @@ h2.jk-md-heading {
 }
 
 .jk-search-path {
-  font: 11.5px/1.4 var(--mono);
+  font: 12px/1.4 var(--mono);
   color: var(--t2);
   overflow-wrap: anywhere;
 }
@@ -3848,7 +3865,7 @@ h2.jk-md-heading {
 .jk-panel-cp-files {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -3873,7 +3890,7 @@ h2.jk-md-heading {
   align-items: baseline;
   gap: 8px;
   min-width: 0;
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   color: var(--t2);
 }
 
@@ -3924,12 +3941,12 @@ h2.jk-md-heading {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   color: var(--t1);
 }
 
 .jk-git-ab {
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   color: var(--t3);
   font-variant-numeric: tabular-nums;
 }
@@ -3938,7 +3955,7 @@ h2.jk-md-heading {
   padding: 0 6px;
   border-radius: 5px;
   background: var(--hover);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--bad);
 }
 
@@ -3998,7 +4015,7 @@ h2.jk-md-heading {
   flex: none;
   width: 12px;
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--t2);
   text-align: center;
 }
@@ -4037,7 +4054,7 @@ h2.jk-md-heading {
 }
 
 .jk-git-counter {
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--t3);
   font-variant-numeric: tabular-nums;
 }
@@ -4074,7 +4091,7 @@ h2.jk-md-heading {
 }
 
 .jk-git-hash {
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   color: var(--t3);
 }
 
@@ -4092,7 +4109,7 @@ h2.jk-md-heading {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--t3);
 }
 
@@ -4115,7 +4132,7 @@ h2.jk-md-heading {
   padding: 8px 10px;
   border-radius: 8px;
   background: var(--code);
-  font: 11.5px/1.55 var(--mono);
+  font: 12px/1.55 var(--mono);
   white-space: pre;
 }
 
@@ -4390,7 +4407,7 @@ h2.jk-md-heading {
 .jk-memory-flag {
   flex: none;
   color: var(--warn);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-memory-flag-revisi {
@@ -4398,13 +4415,13 @@ h2.jk-md-heading {
   border: 1px solid var(--line-2);
   border-radius: 999px;
   color: var(--t2);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .jk-memory-scope {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-memory-row-body {
@@ -4417,7 +4434,7 @@ h2.jk-md-heading {
 .jk-memory-stale {
   margin: 0;
   color: var(--warn);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-memory-body {
@@ -4501,7 +4518,7 @@ h2.jk-md-heading {
 .jk-memory-revision-mark {
   margin-left: 6px;
   color: var(--warn);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 400;
 }
 
@@ -4516,7 +4533,7 @@ h2.jk-md-heading {
 .jk-memory-meta {
   margin: 0;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-memory-actions {
@@ -4558,7 +4575,7 @@ h2.jk-md-heading {
   margin: 6px 0 0;
   padding-left: 18px;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
 }
 
@@ -4621,7 +4638,7 @@ h2.jk-md-heading {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-claude-type {
@@ -4630,19 +4647,19 @@ h2.jk-md-heading {
   border: 1px solid var(--line-2);
   border-radius: 999px;
   color: var(--t2);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .jk-claude-time {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-claude-origin {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-claude-body {
@@ -4703,7 +4720,7 @@ h2.jk-md-heading {
   border: 1px solid var(--line-2);
   border-radius: 999px;
   color: var(--t2);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 @media (max-width: 760px) {
@@ -4824,7 +4841,7 @@ h2.jk-md-heading {
 .jk-workspace-meta {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-workspace-row-body {
@@ -4859,13 +4876,13 @@ h2.jk-md-heading {
 .jk-workspace-primary {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-workspace-missing {
   flex: none;
   color: var(--warn);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-workspace-repo-summary {
@@ -4876,7 +4893,7 @@ h2.jk-md-heading {
   white-space: nowrap;
   text-align: right;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-workspace-repo-body {
@@ -4890,14 +4907,14 @@ h2.jk-md-heading {
   margin: 0;
   color: var(--t3);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
 .jk-workspace-card-meta {
   margin: 0;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-workspace-description {
@@ -4961,7 +4978,7 @@ h2.jk-md-heading {
   margin: 6px 0 0;
   padding-left: 18px;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
 }
 
@@ -5045,7 +5062,7 @@ h2.jk-md-heading {
   flex: none;
   color: var(--t3);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .jk-mcp-summary {
@@ -5056,7 +5073,7 @@ h2.jk-md-heading {
   white-space: nowrap;
   color: var(--t3);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-mcp-switch {
@@ -5078,7 +5095,7 @@ h2.jk-md-heading {
   margin: 0;
   color: var(--t2);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -5106,7 +5123,7 @@ h2.jk-md-heading {
   list-style: none;
   color: var(--t3);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-mcp-actions {
@@ -5138,7 +5155,7 @@ h2.jk-md-heading {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-mcp-key-state {
@@ -5168,7 +5185,7 @@ h2.jk-md-heading {
   margin: 6px 0 0;
   padding-left: 18px;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
 }
 
@@ -5307,7 +5324,7 @@ h2.jk-md-heading {
   margin: 0 0 0 8px;
   color: var(--t3);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-palette-input {
@@ -5381,7 +5398,7 @@ h2.jk-md-heading {
 .jk-palette-status {
   flex: none;
   color: var(--t2);
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 0 8px;
   border-radius: 999px;
 }
@@ -5389,7 +5406,7 @@ h2.jk-md-heading {
 .jk-palette-hint {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 2px 8px;
   border: 1px solid var(--line-2);
   border-radius: 7px;
@@ -5409,7 +5426,7 @@ h2.jk-md-heading {
   border: 1px solid var(--line-2);
   border-radius: 999px;
   color: var(--t2);
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   white-space: nowrap;
 }
 
@@ -5443,7 +5460,7 @@ h2.jk-md-heading {
   border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
   border-radius: 999px;
   color: var(--warn);
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   white-space: nowrap;
 }
 
@@ -5466,7 +5483,7 @@ h2.jk-md-heading {
   padding: 1px 7px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   white-space: nowrap;
 }
 
@@ -5509,7 +5526,7 @@ h2.jk-md-heading {
   padding: 1px 7px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   white-space: nowrap;
 }
 
@@ -5609,7 +5626,7 @@ h2.jk-md-heading {
   margin: 0;
   padding-left: 18px;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -5792,7 +5809,7 @@ h2.jk-md-heading {
   margin: 0;
   padding-left: 18px;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
   overflow-wrap: anywhere;
 }
 
@@ -5915,14 +5932,14 @@ h2.jk-md-heading {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: 11.5px var(--mono);
+  font: 12px var(--mono);
   color: var(--t1);
 }
 
 .jk-worktree-status {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-worktree-warn {
@@ -6110,7 +6127,7 @@ h2.jk-md-heading {
   display: block;
   color: var(--t3);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -6300,7 +6317,7 @@ h2.jk-md-heading {
   gap: 10px;
   padding-top: 4px;
   color: var(--t3);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .jk-usage-grid {
@@ -6381,7 +6398,7 @@ h2.jk-md-heading {
 .jk-usage-foot {
   margin: 16px 0 0;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -6594,7 +6611,7 @@ h2.jk-md-heading {
   white-space: nowrap;
   color: var(--t2);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-instruksi-note {
@@ -6639,7 +6656,7 @@ h2.jk-md-heading {
 .jk-browser-canvas:focus { outline: 2px solid var(--line-2); outline-offset: 2px; }
 
 /* Hamparan kecil di tepi area layar; tak memakan ruang halaman. */
-.jk-browser-overlay { position: absolute; margin: 0; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--t2); font-size: 11.5px; line-height: 1.5; pointer-events: none; }
+.jk-browser-overlay { position: absolute; margin: 0; padding: 2px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--t2); font-size: 12px; line-height: 1.5; pointer-events: none; }
 .jk-browser-hint { left: 50%; bottom: 8px; transform: translateX(-50%); }
 .jk-browser-busy { top: 8px; right: 8px; }
 
@@ -7000,7 +7017,7 @@ h2.jk-md-heading {
   border: 1px solid var(--line-2);
   border-radius: 6px;
   color: var(--t3);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 16px;
 }
 
@@ -7305,7 +7322,7 @@ h2.jk-md-heading {
 
 .jk-ctx-card .jk-note {
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* Menu pilihan (model, provider, mode) ala Claude */
@@ -7363,7 +7380,7 @@ h2.jk-md-heading {
 .jk-dd-title {
   padding: 4px 10px 2px;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-dd-item {
@@ -7397,7 +7414,7 @@ h2.jk-md-heading {
 
 .jk-dd-hint {
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-dd-check {
@@ -7752,7 +7769,7 @@ h2.jk-md-heading {
 .jk-dictation .jk-dd-btn {
   height: 30px;
   padding: 0 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--t3);
 }
 
@@ -8286,13 +8303,13 @@ h2.jk-md-heading {
 .jk-claude-project-count {
   flex: none;
   color: var(--t3);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-claude-project-state {
   flex: none;
   color: var(--t2);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 .jk-claude-project-body {
