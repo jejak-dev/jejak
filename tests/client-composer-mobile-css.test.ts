@@ -7,24 +7,34 @@ const css = readFileSync(join(import.meta.dir, "..", "src", "client", "styles.cs
   "",
 );
 
-/** Isi blok `@media (kondisi)` pertama yang memuat `penyebut`. */
+/** Kondisi media yang dipakai untuk layar sentuh atau sempit. */
+const SENTUH_SEMPIT = "pointer: coarse), (max-width: 760px";
+
+/**
+ * Isi blok `@media` dengan kondisi persis yang memuat penyebut.
+ *
+ * Kondisi boleh berisi beberapa kueri, mis. `pointer: coarse), (max-width: 760px`.
+ */
 function blokMedia(kondisi: string, penyebut: string): string {
-  const pola = new RegExp(`@media\\s*\\(${kondisi}\\)\\s*\\{`, "g");
-  let cocok = pola.exec(css);
-  while (cocok !== null) {
-    const mulai = cocok.index + cocok[0].length;
-    let kedalaman = 1;
-    let i = mulai;
-    while (i < css.length && kedalaman > 0) {
+  const penanda = `@media (${kondisi})`;
+  let dari = 0;
+  for (;;) {
+    const mulai = css.indexOf(penanda, dari);
+    if (mulai === -1) return "";
+    const buka = css.indexOf("{", mulai);
+    let kedalaman = 0;
+    let i = buka;
+    for (; i < css.length; i++) {
       if (css[i] === "{") kedalaman += 1;
-      else if (css[i] === "}") kedalaman -= 1;
-      i += 1;
+      else if (css[i] === "}") {
+        kedalaman -= 1;
+        if (kedalaman === 0) break;
+      }
     }
-    const isi = css.slice(mulai, i - 1);
+    const isi = css.slice(buka + 1, i);
     if (isi.includes(penyebut)) return isi;
-    cocok = pola.exec(css);
+    dari = i + 1;
   }
-  return "";
 }
 
 /** Isi aturan sederhana (selektor persis) di dalam potongan CSS. */
@@ -46,35 +56,66 @@ describe("komposer di layar HP", () => {
     expect(isiAturan(blok, ".jk-dictation .jk-dd-btn")).toMatch(/display:\s*none/);
   });
 
-  test("mikrofon dikte tetap ada di layar kecil", () => {
-    const blok = blokMedia("max-width: 640px", ".jk-dictation-btn");
+  test("kontrol baris input seragam 40x40 di layar sentuh atau sempit", () => {
+    const blok = blokMedia(SENTUH_SEMPIT, ".jk-pill-row .jk-attach-btn");
     expect(blok).not.toBe("");
-    const isi = isiAturan(blok, ".jk-dictation-btn") ?? "";
-    expect(isi).toMatch(/width:\s*36px/);
-    expect(isi).toMatch(/height:\s*36px/);
-    expect(isi).toMatch(/min-width:\s*36px/);
-    expect(isi).toMatch(/min-height:\s*36px/);
+    for (const selektor of [
+      ".jk-pill-row .jk-attach-btn",
+      ".jk-pill-row .jk-send",
+      ".jk-dictation-btn",
+    ]) {
+      const isi = isiAturan(blok, selektor) ?? "";
+      expect(isi).toMatch(/width:\s*40px/);
+      expect(isi).toMatch(/height:\s*40px/);
+      expect(isi).toMatch(/min-width:\s*40px/);
+      expect(isi).toMatch(/min-height:\s*40px/);
+    }
   });
 
-  test("jarak komposer dirapatkan di layar kecil", () => {
-    const blok = blokMedia("max-width: 640px", ".jk-pill-row");
+  test("satu baris teks setinggi tombol di layar sentuh atau sempit", () => {
+    const blok = blokMedia(SENTUH_SEMPIT, ".jk-pill-row .jk-comp-input");
     expect(blok).not.toBe("");
-    expect(isiAturan(blok, ".jk-pill-row")).toMatch(/gap:\s*4px/);
-    expect(isiAturan(blok, ".jk-comp-card")).toMatch(/padding:\s*8px/);
-    expect(isiAturan(blok, ".jk-pill-row .jk-comp-input")).toMatch(/min-height:\s*40px/);
-    expect(isiAturan(blok, ".jk-pill-row .jk-comp-input")).toMatch(/line-height:\s*1\.4/);
+    const isi = isiAturan(blok, ".jk-pill-row .jk-comp-input") ?? "";
+    expect(isi).toMatch(/min-height:\s*40px/);
+    expect(isi).toMatch(/padding:\s*8px 4px/);
+    expect(isi).toMatch(/line-height:\s*1\.4/);
   });
 
-  test("chip di bawah komposer tak berdesakan di layar kecil", () => {
-    const blok = blokMedia("max-width: 640px", ".jk-comp-meta");
+  test("baris input tetap menempel di bawah saat teks bertambah", () => {
+    const dasar = isiAturan(css, ".jk-pill-row") ?? "";
+    expect(dasar).toMatch(/align-items:\s*flex-end/);
+  });
+
+  test("chip meta dirapatkan di layar sentuh atau sempit", () => {
+    const blok = blokMedia(SENTUH_SEMPIT, ".jk-comp-meta .jk-chip");
     expect(blok).not.toBe("");
-    expect(isiAturan(blok, ".jk-comp-meta")).toMatch(/gap:\s*4px 4px/);
-    expect(isiAturan(blok, ".jk-comp-meta")).toMatch(/padding:\s*0 4px/);
-    expect(isiAturan(blok, ".jk-comp-meta .jk-chip")).toMatch(/padding:\s*0 7px/);
-    expect(isiAturan(blok, ".jk-select.jk-chip-select .jk-select-label")).toMatch(
-      /max-width:\s*110px/,
-    );
-    expect(isiAturan(blok, ".jk-chip-input")).toMatch(/min-width:\s*0/);
+    const meta = isiAturan(blok, ".jk-comp-meta") ?? "";
+    expect(meta).toMatch(/gap:\s*6px/);
+    const chip = isiAturan(blok, ".jk-comp-meta .jk-chip") ?? "";
+    expect(chip).toMatch(/height:\s*34px/);
+    expect(chip).toMatch(/min-height:\s*34px/);
+  });
+
+  test("chip folder kerja memakai satu baris penuh", () => {
+    const blok = blokMedia(SENTUH_SEMPIT, ".jk-comp-meta .jk-chip-cwd");
+    expect(blok).not.toBe("");
+    expect(isiAturan(blok, ".jk-comp-meta .jk-chip-cwd")).toMatch(/flex:\s*1 1 100%/);
+  });
+
+  test("opsi lanjutan sejajar dengan chip meta", () => {
+    const blok = blokMedia(SENTUH_SEMPIT, ".jk-advanced > summary");
+    expect(blok).not.toBe("");
+    expect(isiAturan(blok, ".jk-advanced > summary")).toMatch(/padding-left:\s*8px/);
+  });
+
+  test("menu slash muat di layar sempit dan tak menutupi tombol", () => {
+    const blok = blokMedia(SENTUH_SEMPIT, ".jk-slash-menu");
+    expect(blok).not.toBe("");
+    expect(isiAturan(blok, ".jk-slash-menu")).toMatch(/max-height:\s*200px/);
+    const dasar = isiAturan(css, ".jk-slash-menu") ?? "";
+    expect(dasar).toMatch(/left:\s*0/);
+    expect(dasar).toMatch(/right:\s*0/);
+    expect(dasar).toMatch(/min-width:\s*0/);
   });
 
   test("popover dikte tak dipindahkan oleh aturan layar kecil", () => {

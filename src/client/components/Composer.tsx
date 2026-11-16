@@ -5,6 +5,8 @@ import { ApiError, type ApiClient, type HeldPrompt, type SandboxState, type Work
 import type { RegistryView } from "../lib/registry-view";
 import { folderName } from "../lib/format";
 import { parseGoalCommand } from "../lib/goal";
+import { placeholderTugas } from "../lib/composer-placeholder";
+import { useNarrowViewport } from "../lib/pane-narrow";
 import {
   BYPASS_WARNING,
   canSubmitMode,
@@ -124,6 +126,8 @@ export function Composer({
   const [waitFor, setWaitFor] = useState("");
 
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Layar sempit: placeholder komposer dibuat pendek. */
+  const sempit = useNarrowViewport();
   /** Kursor yang mau dipasang setelah render berikutnya. */
   const caretRef = useRef<number | undefined>(undefined);
   /** Id tahanan terakhir yang dipulihkan; draf tak diisi ulang dua kali. */
@@ -491,7 +495,7 @@ export function Composer({
           ref={promptRef}
           class="jk-comp-input"
           rows={1}
-          placeholder="Tulis tugas, mis. “jelaskan struktur proyek ini”"
+          placeholder={placeholderTugas(sempit)}
           value={prompt}
           onInput={onPromptInput}
           onKeyDown={onPromptKeyDown}

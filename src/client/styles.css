@@ -8292,9 +8292,10 @@ h2.jk-md-heading {
     min-height: 40px;
   }
 
+  /* Baris input: kontrol seragam 40x40 (lihat blok "sentuh atau sempit"). */
   .jk-send {
-    min-width: 44px;
-    min-height: 44px;
+    min-width: 40px;
+    min-height: 40px;
   }
 
   .jk-stop {
@@ -8461,19 +8462,22 @@ h2.jk-md-heading {
   }
 }
 
-/* Layar kecil: komposer diremehkan agar textarea dapat lebar penuh. */
+/* Layar kecil: tombol bahasa dikte disembunyikan; tombol mikrofon tetap ada. */
 
 @media (max-width: 640px) {
-  /* Tombol bahasa dikte disembunyikan; tombol mikrofon tetap ada. */
   .jk-dictation .jk-dd-btn {
     display: none;
   }
+}
 
+/* Layar sentuh atau sempit: komposer dirapatkan dan kontrolnya seragam. */
+
+@media (pointer: coarse), (max-width: 760px) {
   .jk-dictation-btn {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    min-height: 36px;
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
   }
 
   .jk-pill-row {
@@ -8484,18 +8488,43 @@ h2.jk-md-heading {
     padding: 8px;
   }
 
+  /* Satu baris teks setinggi tombol, jadi kontrolnya sejajar vertikal. */
   .jk-pill-row .jk-comp-input {
     min-height: 40px;
+    padding: 8px 4px;
     line-height: 1.4;
   }
 
+  /* Lampir, mikrofon, dan kirim semuanya 40x40. */
+  .jk-pill-row .jk-attach-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .jk-pill-row .jk-send {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  /* Chip meta dirapatkan: tinggi visual kecil, jarak rapat. */
   .jk-comp-meta {
-    gap: 4px 4px;
-    padding: 0 4px;
+    gap: 6px;
+    padding: 0 8px;
   }
 
   .jk-comp-meta .jk-chip {
+    height: 34px;
+    min-height: 34px;
     padding: 0 7px;
+  }
+
+  /* Chip folder kerja memakai satu baris penuh; sisanya mengalir di bawahnya. */
+  .jk-comp-meta .jk-chip-cwd {
+    flex: 1 1 100%;
   }
 
   .jk-select.jk-chip-select .jk-select-label {
@@ -8504,6 +8533,16 @@ h2.jk-md-heading {
 
   .jk-chip-input {
     min-width: 0;
+  }
+
+  /* "Opsi lanjutan" sejajar dengan chip meta. */
+  .jk-advanced > summary {
+    padding-left: 8px;
+  }
+
+  /* Menu slash dibatasi agar tak menutupi layar sempit. */
+  .jk-slash-menu {
+    max-height: 200px;
   }
 }
 
