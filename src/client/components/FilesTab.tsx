@@ -9,7 +9,7 @@ import {
 import { breadcrumbs, formatSize, joinPath, parentPath, splitLines } from "../lib/files";
 import {
   describeSaveError,
-  highlightMatch,
+  segmentByRanges,
   isDirty,
   isEditable,
 } from "../lib/editor";
@@ -40,6 +40,25 @@ function errorMessage(caught: unknown): string {
   return caught instanceof ApiError ? caught.message : "isi folder tidak dapat dimuat";
 }
 
+/** "a, b" -> ["a", "b"]; item kosong dibuang. */
+function splitGlobs(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item !== "");
+}
+
+/** Mengelompokkan hasil per berkas, mempertahankan urutan server. */
+function groupByFile<T extends { path: string }>(matches: T[]): Array<{ path: string; items: T[] }> {
+  const groups: Array<{ path: string; items: T[] }> = [];
+  for (const match of matches) {
+    const last = groups[groups.length - 1];
+    if (last !== undefined && last.path === match.path) last.items.push(match);
+    else groups.push({ path: match.path, items: [match] });
+  }
+  return groups;
+}
+
 function searchErrorMessage(caught: unknown): string {
   return caught instanceof ApiError ? caught.message : "pencarian tidak dapat dijalankan";
 }
@@ -60,6 +79,10 @@ export function FilesTab({
 
   const [searchInput, setSearchInput] = useState("");
   const [searchCase, setSearchCase] = useState(false);
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchWord, setSearchWord] = useState(false);
+  const [searchInclude, setSearchInclude] = useState("");
+  const [searchExclude, setSearchExclude] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResult | undefined>(undefined);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | undefined>(undefined);
@@ -234,7 +257,7 @@ export function FilesTab({
       if (searchTimerRef.current === timer) searchTimerRef.current = undefined;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, searchInput, searchCase, repo, sessionId]);
+  }, [open, searchInput, searchCase, searchRegex, searchWord, searchInclude, searchExclude, repo, sessionId]);
 
   const runSearch = async (query: string): Promise<void> => {
     searchRef.current += 1;
@@ -245,6 +268,10 @@ export function FilesTab({
       const payload = await api.searchFiles(sessionId, query, {
         repo,
         caseSensitive: searchCase,
+        regex: searchRegex,
+        wholeWord: searchWord,
+        include: splitGlobs(searchInclude),
+        exclude: splitGlobs(searchExclude),
       });
       if (ticket !== searchRef.current) return;
       setSearchResult(payload);
@@ -598,6 +625,44 @@ export function FilesTab({
             >
               Aa
             </button>
+            <button
+              type="button"
+              class={`jk-search-case${searchWord ? " jk-search-case-on" : ""}`}
+              aria-pressed={searchWord}
+              aria-label="Kata utuh"
+              title="Kata utuh"
+              onClick={() => setSearchWord((value) => !value)}
+            >
+              ab
+            </button>
+            <button
+              type="button"
+              class={`jk-search-case${searchRegex ? " jk-search-case-on" : ""}`}
+              aria-pressed={searchRegex}
+              aria-label="Regex"
+              title="Regex (PCRE)"
+              onClick={() => setSearchRegex((value) => !value)}
+            >
+              .*
+            </button>
+          </div>
+          <div class="jk-search-globs">
+            <input
+              type="text"
+              class="jk-input"
+              placeholder="Sertakan: *.ts, src/**"
+              aria-label="Sertakan berkas (glob, pisah koma)"
+              value={searchInclude}
+              onInput={(event) => setSearchInclude((event.currentTarget as HTMLInputElement).value)}
+            />
+            <input
+              type="text"
+              class="jk-input"
+              placeholder="Kecualikan: tests/**"
+              aria-label="Kecualikan berkas (glob, pisah koma)"
+              value={searchExclude}
+              onInput={(event) => setSearchExclude((event.currentTarget as HTMLInputElement).value)}
+            />
           </div>
 
           {searchError !== undefined && (
@@ -614,32 +679,43 @@ export function FilesTab({
                   {searchResult.matches.length === 0 ? (
                     <p class="jk-panel-note">Tidak ada hasil.</p>
                   ) : (
-                    searchResult.matches.map((match, index) => {
-                      const parts = highlightMatch(match.text, query, searchCase);
-                      return (
-                        <button
-                          type="button"
-                          class="jk-search-hit"
-                          key={`${match.path}\0${match.line}\0${index}`}
-                          onClick={() => openFile(match.path, match.line)}
-                        >
-                          <span class="jk-search-path">
-                            {match.path}:{match.line}
-                          </span>
-                          <span class="jk-search-text">
-                            {parts === undefined ? (
-                              match.text
-                            ) : (
-                              <>
-                                {parts.before}
-                                <mark class="jk-search-match">{parts.hit}</mark>
-                                {parts.after}
-                              </>
-                            )}
-                          </span>
-                        </button>
-                      );
-                    })
+                    groupByFile(searchResult.matches).map((group) => (
+                      <div class="jk-search-group" key={group.path}>
+                        <div class="jk-search-file">
+                          <span class="jk-search-path">{group.path}</span>
+                          <span class="jk-search-count">{group.items.length}</span>
+                        </div>
+                        {group.items.map((match, index) => {
+                          const segments =
+                            match.ranges !== undefined
+                              ? segmentByRanges(match.text, match.ranges)
+                              : undefined;
+                          return (
+                            <button
+                              type="button"
+                              class="jk-search-hit"
+                              key={`${match.line}\0${index}`}
+                              onClick={() => openFile(match.path, match.line)}
+                            >
+                              <span class="jk-search-line">{match.line}</span>
+                              <span class="jk-search-text">
+                                {segments === undefined
+                                  ? match.text
+                                  : segments.map((segment, at) =>
+                                      segment.hit ? (
+                                        <mark class="jk-search-match" key={at}>
+                                          {segment.text}
+                                        </mark>
+                                      ) : (
+                                        segment.text
+                                      ),
+                                    )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ))
                   )}
                   {searchResult.truncated && <p class="jk-panel-note">Hasil dipotong.</p>}
                   <p class="jk-panel-note">

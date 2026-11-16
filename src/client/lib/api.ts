@@ -124,6 +124,16 @@ export type { BrowseEntry, BrowseResult } from "../../server/files/browse";
 export type { DirEntry, DirectoryListing } from "../../server/files/list";
 export type { FileContent } from "../../server/files/read";
 export type { SearchMatch, SearchResult } from "../../server/files/search";
+
+/** Opsi pencarian teks di tab Files; daftar glob sudah dipisah per item. */
+export interface SearchFilesOptions {
+  repo?: string;
+  caseSensitive?: boolean;
+  regex?: boolean;
+  wholeWord?: boolean;
+  include?: string[];
+  exclude?: string[];
+}
 export type {
   Memory,
   MemoryConfidence,
@@ -604,7 +614,7 @@ export interface ApiClient {
   searchFiles(
     id: string,
     query: string,
-    options?: { repo?: string; caseSensitive?: boolean },
+    options?: SearchFilesOptions,
   ): Promise<SearchResult>;
   saveFile(id: string, input: SaveFileInput): Promise<SaveFileResult>;
   getChanges(id: string, repo?: string): Promise<Changes>;
@@ -1820,6 +1830,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         ["q", query],
         ["repo", options?.repo],
         ["case", options?.caseSensitive === true ? "1" : undefined],
+        ["regex", options?.regex === true ? "1" : undefined],
+        ["word", options?.wholeWord === true ? "1" : undefined],
+        ["include", options?.include && options.include.length > 0 ? options.include.join(",") : undefined],
+        ["exclude", options?.exclude && options.exclude.length > 0 ? options.exclude.join(",") : undefined],
       ]);
       return (await request(
         "GET",

@@ -1571,6 +1571,24 @@ describe("searchFiles", () => {
     expect(calls[0]?.url).toBe("/api/sessions/s1/search?q=kata&repo=web&case=1");
   });
 
+  test("regex, kata utuh, include, dan exclude diteruskan", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse(RESULT));
+    const api = createApiClient({ fetch });
+
+    await api.searchFiles("s1", "kata", {
+      regex: true,
+      wholeWord: true,
+      include: ["*.ts", "src/**"],
+      exclude: ["tests/**"],
+    });
+
+    const url = new URL(calls[0]?.url ?? "", "http://x");
+    expect(url.searchParams.get("regex")).toBe("1");
+    expect(url.searchParams.get("word")).toBe("1");
+    expect(url.searchParams.get("include")).toBe("*.ts,src/**");
+    expect(url.searchParams.get("exclude")).toBe("tests/**");
+  });
+
   test("tanpa opsi tidak mengirim repo maupun case", async () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse(RESULT));
     const api = createApiClient({ fetch });

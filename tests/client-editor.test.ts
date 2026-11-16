@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ApiError, type FileContent } from "../src/client/lib/api";
 import {
   describeSaveError,
-  highlightMatch,
+  segmentByRanges,
   isDirty,
   isEditable,
   lineStartOffset,
@@ -102,35 +102,40 @@ describe("describeSaveError", () => {
   });
 });
 
-describe("highlightMatch", () => {
-  test("peka huruf membedakan besar-kecil", () => {
-    expect(highlightMatch("Halo dunia", "Dunia", true)).toBeUndefined();
-    expect(highlightMatch("Halo dunia", "dunia", true)).toEqual({
-      before: "Halo ",
-      hit: "dunia",
-      after: "",
-    });
+describe("segmentByRanges", () => {
+  test("tanpa rentang seluruh teks tanpa sorotan", () => {
+    expect(segmentByRanges("abc", undefined)).toEqual([{ text: "abc", hit: false }]);
+    expect(segmentByRanges("abc", [])).toEqual([{ text: "abc", hit: false }]);
   });
 
-  test("tidak peka huruf menemukan kecocokan berbeda kapitalisasi", () => {
-    expect(highlightMatch("Halo Dunia", "dunia", false)).toEqual({
-      before: "Halo ",
-      hit: "Dunia",
-      after: "",
-    });
+  test("beberapa rentang dipecah berurutan", () => {
+    expect(
+      segmentByRanges("foo1 dan foo2", [
+        { start: 0, end: 4 },
+        { start: 9, end: 13 },
+      ]),
+    ).toEqual([
+      { text: "foo1", hit: true },
+      { text: " dan ", hit: false },
+      { text: "foo2", hit: true },
+    ]);
   });
 
-  test("tidak ketemu menjadi undefined", () => {
-    expect(highlightMatch("abc", "z", false)).toBeUndefined();
-    expect(highlightMatch("abc", "", false)).toBeUndefined();
-  });
-
-  test("kecocokan di awal dan akhir dipisah benar", () => {
-    expect(highlightMatch("abc abc", "abc", false)).toEqual({
-      before: "",
-      hit: "abc",
-      after: " abc",
-    });
-    expect(highlightMatch("xabc", "abc", false)).toEqual({ before: "x", hit: "abc", after: "" });
+  test("rentang di luar teks dijepit, tumpang tindih dan kosong dibuang", () => {
+    expect(segmentByRanges("abc", [{ start: 1, end: 99 }])).toEqual([
+      { text: "a", hit: false },
+      { text: "bc", hit: true },
+    ]);
+    expect(
+      segmentByRanges("abcd", [
+        { start: 0, end: 3 },
+        { start: 1, end: 2 },
+        { start: 3, end: 3 },
+      ]),
+    ).toEqual([
+      { text: "abc", hit: true },
+      { text: "d", hit: false },
+    ]);
+    expect(segmentByRanges("abc", [{ start: 5, end: 9 }])).toEqual([{ text: "abc", hit: false }]);
   });
 });

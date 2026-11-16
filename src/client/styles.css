@@ -3543,7 +3543,22 @@ h2.jk-md-heading {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 6px;
+}
+
+.jk-search-globs {
+  display: flex;
+  gap: 6px;
   margin-bottom: 10px;
+}
+
+.jk-search-globs .jk-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 8px;
+  font-size: 11.5px;
 }
 
 .jk-search-input {
@@ -3578,10 +3593,37 @@ h2.jk-md-heading {
   gap: 2px;
 }
 
+.jk-search-group {
+  margin-bottom: 6px;
+}
+
+.jk-search-file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 2px;
+}
+
+.jk-search-count {
+  flex: none;
+  font-size: 11px;
+  color: var(--t3);
+}
+
+.jk-search-line {
+  flex: none;
+  min-width: 2.5ch;
+  font: 11.5px/1.5 var(--mono);
+  color: var(--t3);
+  text-align: right;
+}
+
 .jk-search-hit {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 8px;
   width: 100%;
   padding: 5px 6px;
   border: 0;
@@ -3601,6 +3643,7 @@ h2.jk-md-heading {
 }
 
 .jk-search-text {
+  min-width: 0;
   font: 12px/1.5 var(--mono);
   color: var(--t1);
   white-space: pre-wrap;

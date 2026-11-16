@@ -34,26 +34,31 @@ export function describeSaveError(error: unknown): { message: string; conflict: 
   return { message: GENERIC_SAVE_ERROR, conflict: false };
 }
 
-export interface MatchParts {
-  before: string;
-  hit: string;
-  after: string;
+/** Potongan teks hasil pencarian; `hit` menandai bagian yang cocok. */
+export interface MatchSegment {
+  text: string;
+  hit: boolean;
 }
 
-/** Pecah baris menjadi sebelum/kecocokan/sesudah untuk kecocokan pertama. */
-export function highlightMatch(
+/**
+ * Memecah `text` menurut rentang kecocokan dari server. Rentang di luar teks
+ * dijepit, yang tumpang tindih atau kosong dibuang.
+ */
+export function segmentByRanges(
   text: string,
-  query: string,
-  caseSensitive: boolean,
-): MatchParts | undefined {
-  if (query === "") return undefined;
-  const haystack = caseSensitive ? text : text.toLowerCase();
-  const needle = caseSensitive ? query : query.toLowerCase();
-  const index = haystack.indexOf(needle);
-  if (index < 0) return undefined;
-  return {
-    before: text.slice(0, index),
-    hit: text.slice(index, index + query.length),
-    after: text.slice(index + query.length),
-  };
+  ranges: readonly { start: number; end: number }[] | undefined,
+): MatchSegment[] {
+  if (ranges === undefined || ranges.length === 0) return [{ text, hit: false }];
+  const segments: MatchSegment[] = [];
+  let cursor = 0;
+  for (const range of ranges) {
+    const start = Math.max(cursor, Math.min(range.start, text.length));
+    const end = Math.min(range.end, text.length);
+    if (end <= start) continue;
+    if (start > cursor) segments.push({ text: text.slice(cursor, start), hit: false });
+    segments.push({ text: text.slice(start, end), hit: true });
+    cursor = end;
+  }
+  if (cursor < text.length) segments.push({ text: text.slice(cursor), hit: false });
+  return segments.length === 0 ? [{ text, hit: false }] : segments;
 }
