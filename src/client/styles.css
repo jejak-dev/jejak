@@ -10,11 +10,11 @@
   --line-2: rgba(40, 30, 10, 0.17);
   --t1: #1f1e1b;
   --t2: #5c5a54;
-  --t3: #8d8a82;
+  --t3: #6f6c65;
   --ink: #1f1e1b;
   --on-ink: #faf9f6;
-  --ok: #2f7d4f;
-  --warn: #b4690e;
+  --ok: #2e7a4d;
+  --warn: #9e5c0c;
   --bad: #b3402f;
   --code: #f4f2ed;
   --add: rgba(47, 125, 79, 0.12);
@@ -40,7 +40,7 @@
     --line-2: rgba(255, 250, 240, 0.16);
     --t1: #ece9e2;
     --t2: #b2afa6;
-    --t3: #86837b;
+    --t3: #908d85;
     --ink: #ece9e2;
     --on-ink: #1d1c1a;
     --ok: #6cc08b;
@@ -67,7 +67,7 @@
   --line-2: rgba(255, 250, 240, 0.16);
   --t1: #ece9e2;
   --t2: #b2afa6;
-  --t3: #86837b;
+  --t3: #908d85;
   --ink: #ece9e2;
   --on-ink: #1d1c1a;
   --ok: #6cc08b;

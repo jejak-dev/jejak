@@ -491,7 +491,7 @@ describe("aktivitas agent di panel browser", () => {
       /@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.jk-browser-agent-dot \{[\s\S]*?animation: none;/,
     );
     // Token warn ada di terang dan gelap.
-    expect(css).toContain("--warn: #b4690e;");
+    expect(css).toContain("--warn: #9e5c0c;");
     const gelap = css.slice(css.indexOf(':root[data-theme="dark"]'));
     expect(gelap).toContain("--warn: #e0a24a;");
   });
