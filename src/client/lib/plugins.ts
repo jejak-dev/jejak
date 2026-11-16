@@ -1,4 +1,8 @@
-import type { ClaudePluginItem } from "./api";
+import type {
+  ClaudePluginItem,
+  MarketplacePluginItem,
+  MarketplaceSourceKind,
+} from "./api";
 
 /**
  * Ringkasan komponen plugin satu baris: skill, perintah, agent, dan hooks.
@@ -26,4 +30,59 @@ export function sortPlugins(
     if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
     return a.name.localeCompare(b.name);
   });
+}
+
+/** Nama sumber plugin dalam bahasa manusia. */
+function sourceKindLabel(kind: MarketplaceSourceKind): string {
+  switch (kind) {
+    case "command":
+      return "perintah marketplace";
+    case "url":
+      return "alamat URL";
+    case "git":
+      return "repositori git";
+    case "marketplace":
+      return "marketplace";
+    default:
+      return "sumber yang tak dikenal";
+  }
+}
+
+/**
+ * Peringatan singkat tentang asal kode plugin.
+ *
+ * Plugin `command` dipasang lewat perintah yang dideklarasikan marketplace,
+ * jadi sumbernya perlu diperiksa pengguna sebelum dijalankan.
+ */
+export function marketplaceSourceNote(kind: MarketplaceSourceKind): string {
+  switch (kind) {
+    case "command":
+      return "Plugin ini memasang lewat perintah yang dideklarasikan marketplace; periksa sumbernya sebelum memasang.";
+    case "url":
+    case "git":
+      return "Kode diunduh dari repositori pihak ketiga.";
+    case "marketplace":
+      return "Berasal dari repositori marketplace.";
+    default:
+      return "Asal kode plugin tidak dikenal; periksa sumbernya sebelum memasang.";
+  }
+}
+
+/**
+ * Kalimat konfirmasi sebelum memasang plugin.
+ *
+ * Menyebut nama, marketplace, jenis sumber, dan akibatnya: kode pihak ketiga
+ * diunduh dan plugin tidak dinyalakan otomatis.
+ */
+export function installConfirmText(plugin: MarketplacePluginItem): string {
+  const nama = plugin.displayName !== "" ? plugin.displayName : plugin.name;
+  return `Pasang ${nama} (${plugin.marketplace}) dari ${sourceKindLabel(plugin.sourceKind)}? Kode pihak ketiga akan diunduh. Plugin tidak dinyalakan otomatis setelah dipasang.`;
+}
+
+/** Label halaman hasil: mis. "1–50 dari 317". */
+export function searchPageLabel(offset: number, limit: number, total: number): string {
+  if (total <= 0) return "0 dari 0";
+  const mulai = Math.min(Math.max(offset, 0) + 1, total);
+  const selesai = Math.min(Math.max(offset, 0) + Math.max(limit, 0), total);
+  return `${mulai}–${selesai} dari ${total}`;
 }

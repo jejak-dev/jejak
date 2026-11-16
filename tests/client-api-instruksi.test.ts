@@ -5,6 +5,7 @@ import {
   type ClaudeHookItem,
   type ClaudePluginItem,
   type ClaudeSkillItem,
+  type MarketplacePluginItem,
 } from "../src/client/lib/api";
 
 interface Call {
@@ -249,6 +250,132 @@ describe("plugin", () => {
     const { fetch } = fakeFetch(() => jsonResponse({ id: "alpha@pasar" }));
     await expect(
       createApiClient({ fetch }).setPluginEnabled("alpha@pasar", true),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+/* ---------- Marketplace ---------- */
+
+const MARKETPLACE = {
+  name: "pasar",
+  description: "Marketplace contoh",
+  pluginCount: 2,
+  lastUpdated: "2026-01-01",
+};
+
+const MARKETPLACE_PLUGIN: MarketplacePluginItem = {
+  id: "alpha@pasar",
+  name: "alpha",
+  displayName: "Alpa",
+  marketplace: "pasar",
+  description: "Plugin contoh",
+  author: "Penulis",
+  category: "Alat",
+  homepage: "https://contoh.example",
+  version: "1.0.0",
+  tags: ["demo"],
+  sourceKind: "marketplace",
+  installed: false,
+};
+
+describe("marketplace", () => {
+  test("listMarketplaces membuka bungkus marketplaces", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ marketplaces: [MARKETPLACE] }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.listMarketplaces()).toEqual([MARKETPLACE]);
+    expect(calls[0]?.url).toBe("/api/claude/marketplaces");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("searchMarketplace menyusun query dan membuka bungkus hasil", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ items: [MARKETPLACE_PLUGIN], total: 1, categories: ["Alat"] }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.searchMarketplace({
+      query: "ala",
+      marketplace: "pasar",
+      category: "Alat",
+      limit: 50,
+      offset: 100,
+    });
+
+    expect(hasil.items).toEqual([MARKETPLACE_PLUGIN]);
+    expect(hasil.total).toBe(1);
+    expect(hasil.categories).toEqual(["Alat"]);
+    expect(calls[0]?.url).toBe(
+      "/api/claude/marketplace/plugins?query=ala&marketplace=pasar&category=Alat&limit=50&offset=100",
+    );
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("searchMarketplace tanpa opsi tak mengirim query", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ items: [], total: 0, categories: [] }),
+    );
+    const api = createApiClient({ fetch });
+
+    await api.searchMarketplace();
+    expect(calls[0]?.url).toBe("/api/claude/marketplace/plugins");
+  });
+
+  test("respons searchMarketplace salah bentuk ditolak", async () => {
+    const salah = fakeFetch(() => jsonResponse({ items: [{ id: "alpha" }], total: 1 }));
+    await expect(
+      createApiClient({ fetch: salah.fetch }).searchMarketplace(),
+    ).rejects.toBeInstanceOf(ApiError);
+
+    const bukanArray = fakeFetch(() => jsonResponse({ items: null, total: 0 }));
+    await expect(
+      createApiClient({ fetch: bukanArray.fetch }).searchMarketplace(),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("installPlugin mengirim id di body", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ ok: true, message: "Plugin terpasang." }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.installPlugin("alpha@pasar");
+
+    expect(hasil).toEqual({ ok: true, message: "Plugin terpasang." });
+    expect(calls[0]?.url).toBe("/api/claude/plugins/install");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ id: "alpha@pasar" }));
+  });
+
+  test("installPlugin melaporkan kegagalan CLI tanpa melempar galat", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ ok: false, message: "Sumber plugin tak bisa dijangkau." }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.installPlugin("alpha@pasar");
+    expect(hasil.ok).toBe(false);
+    expect(hasil.message).toBe("Sumber plugin tak bisa dijangkau.");
+  });
+
+  test("uninstallPlugin mengirim id di body", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ ok: true, message: "Plugin dicopot." }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.uninstallPlugin("alpha@pasar");
+
+    expect(hasil).toEqual({ ok: true, message: "Plugin dicopot." });
+    expect(calls[0]?.url).toBe("/api/claude/plugins/uninstall");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ id: "alpha@pasar" }));
+  });
+
+  test("respons install salah bentuk ditolak", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ ok: "ya" }));
+    await expect(
+      createApiClient({ fetch }).installPlugin("alpha@pasar"),
     ).rejects.toBeInstanceOf(ApiError);
   });
 });

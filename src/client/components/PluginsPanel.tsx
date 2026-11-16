@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ApiClient, type ClaudePluginItem } from "../lib/api";
 import { pluginLabel, pluginSummary, sortPlugins } from "../lib/plugins";
-
-/** Pesan yang sama dengan halaman Instruksi saat pengaturan Claude dimatikan. */
-const DISABLED_NOTE = "Pengaturan Claude dimatikan (JEJAK_CLAUDE_CONFIG=0).";
+import { DISABLED_NOTE, PluginBrowser } from "./PluginBrowser";
 
 const PLUGINS_NOTE =
-  'Plugin dibaca dari instalasi Claude Code (~/.claude/plugins). Pasang lewat perintah "claude plugin install" di terminal. Plugin yang dinyalakan dimuat pada sesi berikutnya dan membawa skills, perintah slash /plugin:nama, subagent, serta hooks-nya; hooks plugin mengikuti saklar "Jalankan hooks Claude".';
+  'Plugin dibaca dari instalasi Claude Code (~/.claude/plugins). Plugin baru bisa dipasang dari tab Jelajahi atau lewat perintah "claude plugin install" di terminal. Plugin yang dinyalakan dimuat pada sesi berikutnya dan membawa skills, perintah slash /plugin:nama, subagent, serta hooks-nya; hooks plugin mengikuti saklar "Jalankan hooks Claude".';
 
 const PLUGINS_EMPTY_NOTE = "claude plugin install <nama>@<marketplace>";
 
@@ -31,6 +29,8 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
   const [disabled, setDisabled] = useState(false);
   /** Id plugin yang permintaannya sedang berjalan. */
   const [busy, setBusy] = useState<string | undefined>();
+  /** Sub-tab panel: daftar terpasang atau penjelajahan marketplace. */
+  const [tab, setTab] = useState<"terpasang" | "jelajahi">("terpasang");
   const reqRef = useRef(0);
 
   const load = useCallback(async (): Promise<void> => {
@@ -96,8 +96,31 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
       id="jk-instruksi-panel-plugins"
       aria-labelledby="jk-instruksi-tab-plugins"
     >
+      <div class="jk-panel-tabs jk-plugin-tabs" role="tablist" aria-label="Bagian plugin">
+        <button
+          type="button"
+          role="tab"
+          class={`jk-panel-tab${tab === "terpasang" ? " jk-panel-tab-active" : ""}`}
+          aria-selected={tab === "terpasang"}
+          onClick={() => setTab("terpasang")}
+        >
+          Terpasang
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class={`jk-panel-tab${tab === "jelajahi" ? " jk-panel-tab-active" : ""}`}
+          aria-selected={tab === "jelajahi"}
+          onClick={() => setTab("jelajahi")}
+        >
+          Jelajahi
+        </button>
+      </div>
+
       {disabled ? (
         <p class="jk-note">{DISABLED_NOTE}</p>
+      ) : tab === "jelajahi" ? (
+        <PluginBrowser api={api} onChanged={() => void load()} />
       ) : (
         <>
           {loading && (
@@ -121,7 +144,8 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
             <div class="jk-plugin-empty">
               <p class="jk-note">Belum ada plugin terpasang.</p>
               <p class="jk-note jk-plugin-empty-note">
-                Pasang plugin dari terminal: <code>{PLUGINS_EMPTY_NOTE}</code>
+                Pasang dari tab Jelajahi, atau lewat terminal:{" "}
+                <code>{PLUGINS_EMPTY_NOTE}</code>
               </p>
             </div>
           )}

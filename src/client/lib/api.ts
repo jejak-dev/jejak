@@ -39,6 +39,13 @@ import {
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
 import type { PluginInfo } from "../../server/claude-config/plugins";
+import type {
+  MarketplaceInfo,
+  MarketplacePlugin,
+  MarketplaceSearchOptions,
+  MarketplaceSearchResult as ServerMarketplaceSearchResult,
+  PluginSourceKind,
+} from "../../server/claude-config/marketplace";
 import type { TerminalInfo } from "../../server/terminal/terminal-manager";
 import type { RunnerCommand } from "../../server/runner/runner-service";
 import type { RemoteRepo } from "../../server/gitprovider/adapters";
@@ -274,6 +281,27 @@ export type ClaudeScope = "user" | "project";
 
 /** Plugin Claude Code yang terpasang; `enabled` berasal dari pengaturan Jejak. */
 export type ClaudePluginItem = PluginInfo & { enabled: boolean };
+
+/** Ringkasan marketplace yang sudah dikonfigurasi di Claude Code. */
+export type MarketplaceInfoItem = MarketplaceInfo;
+
+/** Plugin di katalog marketplace. */
+export type MarketplacePluginItem = MarketplacePlugin;
+
+/** Asal sumber plugin; menentukan cara CLI memasang plugin. */
+export type MarketplaceSourceKind = PluginSourceKind;
+
+/** Opsi pencarian katalog marketplace. */
+export type MarketplaceSearchInput = MarketplaceSearchOptions;
+
+/** Hasil pencarian katalog marketplace. */
+export type MarketplaceSearchResult = ServerMarketplaceSearchResult;
+
+/** Hasil perintah pemasangan atau pencabutan plugin. */
+export interface PluginCommandOutcome {
+  ok: boolean;
+  message: string;
+}
 
 export interface ClaudeConfigPatch {
   userSettings?: boolean;
@@ -888,6 +916,14 @@ export interface ApiClient {
   listPlugins(): Promise<ClaudePluginItem[]>;
   /** Nyalakan atau matikan plugin; berlaku untuk sesi berikutnya. */
   setPluginEnabled(id: string, enabled: boolean): Promise<void>;
+  /** Daftar marketplace yang sudah dikonfigurasi di Claude Code. */
+  listMarketplaces(): Promise<MarketplaceInfoItem[]>;
+  /** Cari plugin di katalog marketplace. */
+  searchMarketplace(options?: MarketplaceSearchInput): Promise<MarketplaceSearchResult>;
+  /** Pasang plugin dari katalog marketplace; boleh berjalan beberapa menit. */
+  installPlugin(id: string): Promise<PluginCommandOutcome>;
+  /** Copot plugin yang terpasang. */
+  uninstallPlugin(id: string): Promise<PluginCommandOutcome>;
   /** Daftar perintah slash yang tersedia di folder kerja tertentu. */
   listCommands(cwd: string): Promise<CommandListResult>;
 }
@@ -1624,6 +1660,106 @@ function pluginItemFrom(value: unknown): ClaudePluginItem {
 function pluginListFrom(payload: unknown): ClaudePluginItem[] {
   if (!isRecord(payload) || !Array.isArray(payload.plugins)) throw invalidResponse();
   return payload.plugins.map(pluginItemFrom);
+}
+
+/** Ringkasan marketplace dari server; field yang salah jenis ditolak. */
+function marketplaceInfoFrom(value: unknown): MarketplaceInfoItem {
+  if (!isRecord(value)) throw invalidResponse();
+  const { name, description, pluginCount, lastUpdated } = value;
+  if (
+    typeof name !== "string" ||
+    typeof description !== "string" ||
+    typeof pluginCount !== "number" ||
+    !Number.isFinite(pluginCount) ||
+    typeof lastUpdated !== "string"
+  ) {
+    throw invalidResponse();
+  }
+  return value as unknown as MarketplaceInfoItem;
+}
+
+/** Daftar marketplace dari server; bentuk salah ditolak. */
+function marketplaceListFrom(payload: unknown): MarketplaceInfoItem[] {
+  if (!isRecord(payload) || !Array.isArray(payload.marketplaces)) throw invalidResponse();
+  return payload.marketplaces.map(marketplaceInfoFrom);
+}
+
+/** Asal sumber plugin yang dikenal server. */
+const PLUGIN_SOURCE_KINDS = new Set([
+  "marketplace",
+  "url",
+  "git",
+  "command",
+  "lainnya",
+]);
+
+/** Plugin katalog dari server; field yang salah jenis ditolak. */
+function marketplacePluginFrom(value: unknown): MarketplacePluginItem {
+  if (!isRecord(value)) throw invalidResponse();
+  const {
+    id,
+    name,
+    displayName,
+    marketplace,
+    description,
+    author,
+    category,
+    homepage,
+    version,
+    tags,
+    sourceKind,
+    installed,
+  } = value;
+  if (
+    typeof id !== "string" ||
+    typeof name !== "string" ||
+    typeof displayName !== "string" ||
+    typeof marketplace !== "string" ||
+    typeof description !== "string" ||
+    typeof author !== "string" ||
+    typeof category !== "string" ||
+    typeof homepage !== "string" ||
+    typeof version !== "string" ||
+    !Array.isArray(tags) ||
+    typeof sourceKind !== "string" ||
+    !PLUGIN_SOURCE_KINDS.has(sourceKind) ||
+    typeof installed !== "boolean"
+  ) {
+    throw invalidResponse();
+  }
+  return value as unknown as MarketplacePluginItem;
+}
+
+/** Hasil pencarian katalog dari server; bentuk salah ditolak. */
+function marketplaceSearchFrom(payload: unknown): MarketplaceSearchResult {
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.items) ||
+    typeof payload.total !== "number" ||
+    !Number.isFinite(payload.total)
+  ) {
+    throw invalidResponse();
+  }
+  const categories = Array.isArray(payload.categories)
+    ? payload.categories.filter((entry): entry is string => typeof entry === "string")
+    : [];
+  return {
+    items: payload.items.map(marketplacePluginFrom),
+    total: payload.total,
+    categories,
+  };
+}
+
+/** Hasil perintah pasang/copot plugin dari server. */
+function pluginCommandOutcomeFrom(payload: unknown): PluginCommandOutcome {
+  if (
+    !isRecord(payload) ||
+    typeof payload.ok !== "boolean" ||
+    typeof payload.message !== "string"
+  ) {
+    throw invalidResponse();
+  }
+  return { ok: payload.ok, message: payload.message };
 }
 
 /** Perintah runner dari server; `group` dan `detail` boleh absen. */
@@ -2973,6 +3109,35 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       if (!isRecord(data) || typeof data.id !== "string" || typeof data.enabled !== "boolean") {
         throw invalidResponse();
       }
+    },
+
+    async listMarketplaces() {
+      return marketplaceListFrom(await request("GET", "/api/claude/marketplaces"));
+    },
+
+    async searchMarketplace(options) {
+      const search = queryString([
+        ["query", options?.query],
+        ["marketplace", options?.marketplace],
+        ["category", options?.category],
+        ["limit", options?.limit === undefined ? undefined : String(options.limit)],
+        ["offset", options?.offset === undefined ? undefined : String(options.offset)],
+      ]);
+      return marketplaceSearchFrom(
+        await request("GET", `/api/claude/marketplace/plugins${search}`),
+      );
+    },
+
+    async installPlugin(id) {
+      return pluginCommandOutcomeFrom(
+        await request("POST", "/api/claude/plugins/install", { id }),
+      );
+    },
+
+    async uninstallPlugin(id) {
+      return pluginCommandOutcomeFrom(
+        await request("POST", "/api/claude/plugins/uninstall", { id }),
+      );
     },
 
     async listCommands(cwd) {

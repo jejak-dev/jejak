@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import type { ClaudePluginItem } from "../src/client/lib/api";
-import { pluginLabel, pluginSummary, sortPlugins } from "../src/client/lib/plugins";
+import type { ClaudePluginItem, MarketplacePluginItem } from "../src/client/lib/api";
+import {
+  installConfirmText,
+  marketplaceSourceNote,
+  pluginLabel,
+  pluginSummary,
+  searchPageLabel,
+  sortPlugins,
+} from "../src/client/lib/plugins";
 
 function plugin(overrides: Partial<ClaudePluginItem> = {}): ClaudePluginItem {
   return {
@@ -64,5 +71,84 @@ describe("urutan plugin", () => {
     ];
     sortPlugins(daftar);
     expect(daftar.map((item) => item.name)).toEqual(["b", "a"]);
+  });
+});
+
+/* ---------- Marketplace ---------- */
+
+function marketplace(
+  overrides: Partial<MarketplacePluginItem> = {},
+): MarketplacePluginItem {
+  return {
+    id: "alpha@pasar",
+    name: "alpha",
+    displayName: "Alpa",
+    marketplace: "pasar",
+    description: "Plugin contoh",
+    author: "Penulis",
+    category: "Alat",
+    homepage: "https://contoh.example",
+    version: "1.0.0",
+    tags: ["demo"],
+    sourceKind: "marketplace",
+    installed: false,
+    ...overrides,
+  };
+}
+
+describe("catatan asal plugin", () => {
+  test("perintah marketplace diberi peringatan khusus", () => {
+    expect(marketplaceSourceNote("command")).toBe(
+      "Plugin ini memasang lewat perintah yang dideklarasikan marketplace; periksa sumbernya sebelum memasang.",
+    );
+  });
+
+  test("url dan git menyebut repositori pihak ketiga", () => {
+    expect(marketplaceSourceNote("url")).toBe("Kode diunduh dari repositori pihak ketiga.");
+    expect(marketplaceSourceNote("git")).toBe("Kode diunduh dari repositori pihak ketiga.");
+  });
+
+  test("marketplace disebut berasal dari repositori marketplace", () => {
+    expect(marketplaceSourceNote("marketplace")).toBe("Berasal dari repositori marketplace.");
+  });
+
+  test("asal tak dikenal tetap memberi peringatan", () => {
+    expect(marketplaceSourceNote("lainnya")).toContain("tidak dikenal");
+  });
+});
+
+describe("konfirmasi pemasangan", () => {
+  test("menyebut nama, marketplace, sumber, dan akibat pemasangan", () => {
+    const teks = installConfirmText(
+      marketplace({ sourceKind: "command" }),
+    );
+    expect(teks).toContain("Alpa");
+    expect(teks).toContain("pasar");
+    expect(teks).toContain("perintah marketplace");
+    expect(teks).toContain("Kode pihak ketiga akan diunduh.");
+    expect(teks).toContain("Plugin tidak dinyalakan otomatis setelah dipasang.");
+  });
+
+  test("nama cadangan dipakai bila displayName kosong", () => {
+    const teks = installConfirmText(marketplace({ displayName: "" }));
+    expect(teks).toContain("Pasang alpha (pasar)");
+  });
+});
+
+describe("label halaman pencarian", () => {
+  test("rentang awal dan total", () => {
+    expect(searchPageLabel(0, 50, 317)).toBe("1–50 dari 317");
+  });
+
+  test("halaman kedua", () => {
+    expect(searchPageLabel(50, 50, 317)).toBe("51–100 dari 317");
+  });
+
+  test("halaman terakhir dipotong sesuai total", () => {
+    expect(searchPageLabel(300, 50, 317)).toBe("301–317 dari 317");
+  });
+
+  test("katalog kosong", () => {
+    expect(searchPageLabel(0, 50, 0)).toBe("0 dari 0");
   });
 });

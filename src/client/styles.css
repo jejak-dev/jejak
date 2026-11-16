@@ -6854,6 +6854,113 @@ h2.jk-md-heading {
   font-size: 12px;
 }
 
+/* Panel plugin: jelajahi marketplace */
+
+.jk-plugin-tabs {
+  margin-bottom: 10px;
+}
+
+.jk-plugin-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jk-plugin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.jk-plugin-search {
+  flex: 1;
+  min-width: 160px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+
+.jk-plugin-filter {
+  min-width: 140px;
+}
+
+.jk-plugin-category {
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-plugin-link {
+  color: var(--t2);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.jk-plugin-source {
+  margin: 0;
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-plugin-warn {
+  margin: 0;
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.jk-plugin-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jk-plugin-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+}
+
+.jk-plugin-confirm-text {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
+.jk-plugin-confirm-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.jk-plugin-ok {
+  margin: 0;
+  color: var(--ok);
+  font-size: 12.5px;
+}
+
+.jk-plugin-info {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
+.jk-plugin-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.jk-plugin-pager-label {
+  color: var(--t3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Halaman Tugas terjadwal */
 
 .jk-schedules {
