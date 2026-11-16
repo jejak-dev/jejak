@@ -865,6 +865,7 @@ code {
 
 .jk-top-title h2 {
   margin: 0;
+  min-width: 0;
   font-size: 13.5px;
   font-weight: 600;
   overflow: hidden;
@@ -873,6 +874,7 @@ code {
 }
 
 .jk-top-title .jk-mono {
+  min-width: 0;
   color: var(--t3);
   font-size: 12px;
   overflow: hidden;
@@ -5453,24 +5455,18 @@ h2.jk-md-heading {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
-  max-width: 180px;
+  flex: none;
   padding: 1px 7px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
   color: var(--t2);
   font: 12px var(--mono);
   white-space: nowrap;
+  overflow: visible;
 }
 
 .jk-worktree-badge .jk-icon {
   flex: none;
-}
-
-.jk-worktree-badge span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .jk-worktree-badge-warn {
@@ -5487,47 +5483,35 @@ h2.jk-md-heading {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
-  max-width: 180px;
+  flex: none;
   padding: 1px 7px;
   border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
   border-radius: 999px;
   color: var(--warn);
   font: 12px var(--mono);
   white-space: nowrap;
+  overflow: visible;
 }
 
 .jk-secret-badge .jk-icon {
   flex: none;
 }
 
-.jk-secret-badge span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .jk-budget-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
-  max-width: 180px;
+  flex: none;
   padding: 1px 7px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
   font: 12px var(--mono);
   white-space: nowrap;
+  overflow: visible;
 }
 
 .jk-budget-badge .jk-icon {
   flex: none;
-}
-
-.jk-budget-badge span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .jk-budget-badge-warn {
@@ -5554,23 +5538,17 @@ h2.jk-md-heading {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  min-width: 0;
-  max-width: 180px;
+  flex: none;
   padding: 1px 7px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
   font: 12px var(--mono);
   white-space: nowrap;
+  overflow: visible;
 }
 
 .jk-sandbox-badge .jk-icon {
   flex: none;
-}
-
-.jk-sandbox-badge span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .jk-sandbox-badge-warn {
@@ -5597,6 +5575,15 @@ h2.jk-md-heading {
   .jk-sandbox-badge {
     flex: none;
     max-width: 100%;
+  }
+
+  .jk-worktree-badge span,
+  .jk-secret-badge span,
+  .jk-budget-badge span,
+  .jk-sandbox-badge span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -7429,10 +7416,13 @@ h2.jk-md-heading {
 }
 
 .jk-ctx-ring {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 28px;
   height: 28px;
+  padding: 0 4px;
   border-radius: 8px;
   list-style: none;
   cursor: pointer;
@@ -7461,6 +7451,12 @@ h2.jk-md-heading {
 
 .jk-ctx-warn .jk-ring-fg {
   stroke: var(--warn, #c98a1b);
+}
+
+/* Persentase di samping cincin konteks */
+.jk-ctx-pct {
+  font-size: var(--fs-micro);
+  color: var(--t3);
 }
 
 .jk-ctx-high .jk-ring-fg {
@@ -7590,6 +7586,19 @@ h2.jk-md-heading {
 
 .jk-dd-detail {
   color: var(--t3);
+}
+
+/* Chevron kecil pada pemicu dropdown: menandakan bisa diklik */
+.jk-dd-chevron {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  color: var(--t3);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .jk-dd-menu {

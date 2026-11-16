@@ -350,7 +350,12 @@ export function Sidebar({
               {session.goal?.status === "active" && <GoalMark status="active" />}
               {session.goal?.status === "paused" && <GoalMark status="paused" />}
               {showsBypassMarker(session.permissionMode) && (
-                <span class="jk-session-bypass">Bypass</span>
+                <span
+                  class="jk-session-bypass"
+                  title="Izin dilewati: agen menjalankan tool tanpa bertanya"
+                >
+                  Bypass
+                </span>
               )}
               <time class="jk-session-time" dateTime={session.updatedAt}>
                 {formatAgo(session.updatedAt, now)}

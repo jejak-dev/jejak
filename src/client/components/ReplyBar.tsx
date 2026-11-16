@@ -674,6 +674,7 @@ export function ReplyBar({
               ariaLabel="Model dan provider sesi"
               title="Model dan provider sesi; berlaku mulai balasan berikutnya"
               sections={modelSections}
+              chevron
             />
           ) : (
             modelId !== "" && <span class="jk-chip jk-chip-plain">{modelLabel}</span>
@@ -682,6 +683,7 @@ export function ReplyBar({
             label={modeLabel}
             ariaLabel="Mode izin sesi"
             title={running ? "Berlaku mulai balasan berikutnya" : "Mode izin sesi"}
+            chevron
             sections={[
               {
                 options: MODE_OPTIONS.map((option) => ({
@@ -698,6 +700,7 @@ export function ReplyBar({
             <Dropdown
               label={sandboxMode === "mati" ? "Tanpa sandbox" : "Sandbox"}
               ariaLabel="Sandbox sesi"
+              chevron
               title={
                 running
                   ? "Giliran yang sedang berjalan dihentikan lalu dilanjutkan otomatis dengan mode baru"
@@ -739,6 +742,9 @@ export function ReplyBar({
                     transform="rotate(-90 10 10)"
                   />
                 </svg>
+                {context.percent !== undefined && (
+                  <span class="jk-ctx-pct">{context.percent}%</span>
+                )}
               </summary>
               <div class="jk-ctx-card">
                 <strong>Konteks</strong>

@@ -33,6 +33,8 @@ export interface DropdownProps {
   placement?: "up" | "down";
   /** Sisi tempat menu menempel pada chip; bawaan kanan. */
   align?: "start" | "end";
+  /** Tampilkan chevron kecil di pemicu sebagai tanda bisa diklik. */
+  chevron?: boolean;
 }
 
 /** Menu pilihan ala Claude: chip yang membuka daftar dengan centang; tutup saat klik di luar atau Esc. */
@@ -46,6 +48,7 @@ export function Dropdown({
   icon,
   placement = "up",
   align = "end",
+  chevron = false,
 }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -81,6 +84,18 @@ export function Dropdown({
         {icon}
         <span>{label}</span>
         {detail !== undefined && detail !== "" && <span class="jk-dd-detail">{detail}</span>}
+        {chevron === true && (
+          <svg
+            class="jk-dd-chevron"
+            viewBox="0 0 16 16"
+            width="10"
+            height="10"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path d="M4 6.5 8 10.5l4-4" />
+          </svg>
+        )}
       </button>
       {open && (
         <div class={`jk-dd-menu jk-dd-${placement} jk-dd-${align}`} role="menu" aria-label={ariaLabel}>

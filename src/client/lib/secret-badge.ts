@@ -1,6 +1,9 @@
 export interface SecretBadge {
+  /** Teks pendek pada lencana header. */
   label: string;
   title: string;
+  /** Label untuk pembaca layar; menyebut keadaan utuh. */
+  ariaLabel: string;
 }
 
 /**
@@ -11,7 +14,8 @@ export function secretBadge(session: { redactedEvents?: number }): SecretBadge |
   const count = session.redactedEvents;
   if (count === undefined || !Number.isFinite(count) || count <= 0) return undefined;
   return {
-    label: "Rahasia disamarkan",
+    label: "Disamarkan",
+    ariaLabel: "Rahasia disamarkan",
     title: `${count} event disamarkan di sesi ini. Lihat Audit log untuk rinciannya.`,
   };
 }

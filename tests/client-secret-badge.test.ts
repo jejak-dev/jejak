@@ -12,7 +12,8 @@ describe("secretBadge", () => {
 
   test("label dan title saat ada event tersamarkan", () => {
     const badge = secretBadge({ redactedEvents: 3 });
-    expect(badge?.label).toBe("Rahasia disamarkan");
+    expect(badge?.label).toBe("Disamarkan");
+    expect(badge?.ariaLabel).toBe("Rahasia disamarkan");
     expect(badge?.title).toBe(
       "3 event disamarkan di sesi ini. Lihat Audit log untuk rinciannya.",
     );

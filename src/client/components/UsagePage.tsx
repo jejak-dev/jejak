@@ -18,7 +18,7 @@ const RANGES = [7, 30, 90] as const;
 type UsageRange = (typeof RANGES)[number];
 
 const NOTE =
-  "Biaya dihitung dari data SDK; untuk penyedia non-Anthropic angkanya perkiraan.";
+  "Biaya dihitung dari tarif model yang dikenal. Model tanpa tarif (mis. DeepSeek, MiniMax) tidak dicatat di sini, jadi angka \"SDK $\" di sesi bisa berbeda; angka itu hanya perkiraan SDK.";
 
 const CHART_MAX_PX = 120;
 
@@ -124,7 +124,9 @@ export function UsageBody({ data, sessions }: UsageBodyProps) {
       </div>
 
       {empty ? (
-        <p class="jk-note">Belum ada pemakaian dalam rentang ini.</p>
+        <p class="jk-note">
+          Belum ada pemakaian yang tercatat dalam rentang ini. Sesi dengan model tanpa tarif tidak ikut dicatat.
+        </p>
       ) : (
         <>
           <div class="jk-usage-chart-wrap">

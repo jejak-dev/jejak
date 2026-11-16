@@ -15,7 +15,7 @@ export interface TopbarProps {
   state?: { label: string; dot: "" | "run" | "warn" | "bad" };
   bypass?: boolean;
   badge?: { label: string; title: string; tone: "" | "warn" | "bad" };
-  secretBadge?: { label: string; title: string };
+  secretBadge?: { label: string; title: string; ariaLabel?: string };
   budgetBadge?: { label: string; title: string; tone: "warn" | "bad" };
   sandboxBadge?: { label: string; title: string; tone: "warn" };
   panel?: { open: boolean; onToggle: () => void };
@@ -46,7 +46,11 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
           </span>
         )}
         {secretBadge !== undefined && (
-          <span class="jk-secret-badge" title={secretBadge.title} aria-label={secretBadge.label}>
+          <span
+            class="jk-secret-badge"
+            title={secretBadge.title}
+            aria-label={secretBadge.ariaLabel ?? secretBadge.label}
+          >
             <Icon name="shield" />
             <span>{secretBadge.label}</span>
           </span>
@@ -72,7 +76,14 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
           </span>
         )}
       </div>
-      {bypass === true && <span class="jk-bypass-marker">Bypass</span>}
+      {bypass === true && (
+        <span
+          class="jk-bypass-marker"
+          title="Izin dilewati: agen menjalankan tool tanpa bertanya"
+        >
+          Bypass
+        </span>
+      )}
       {state !== undefined && (
         <span class="jk-state" role="status">
           <span class={`jk-dot${state.dot === "" ? "" : ` jk-dot-${state.dot}`}`} aria-hidden="true" />

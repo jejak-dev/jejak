@@ -233,8 +233,9 @@ describe("UsageBody", () => {
     expect(textOf(vnode)).toContain("Per model");
     expect(textOf(vnode)).toContain("Sesi teratas");
     expect(textOf(vnode)).toContain(
-      "Biaya dihitung dari data SDK; untuk penyedia non-Anthropic angkanya perkiraan.",
+      "Biaya dihitung dari tarif model yang dikenal. Model tanpa tarif (mis. DeepSeek, MiniMax) tidak dicatat di sini",
     );
+    expect(textOf(vnode)).toContain("angka itu hanya perkiraan SDK.");
   });
 
   test("kondisi kosong menyuruh pengguna", () => {
@@ -254,7 +255,9 @@ describe("UsageBody", () => {
 
     const vnode = UsageBody({ data: kosong, sessions: [] }) as VNode;
 
-    expect(textOf(vnode)).toContain("Belum ada pemakaian dalam rentang ini.");
+    expect(textOf(vnode)).toContain(
+      "Belum ada pemakaian yang tercatat dalam rentang ini. Sesi dengan model tanpa tarif tidak ikut dicatat.",
+    );
     expect(byTag(vnode, "table")).toHaveLength(0);
   });
 });
