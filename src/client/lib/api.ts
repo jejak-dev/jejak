@@ -589,6 +589,8 @@ export interface ApiClient {
   removeQueued(id: string, queueId: string): Promise<{ ok: true }>;
   /** Kirim satu pesan antrean sekarang: giliran berjalan dihentikan dulu. */
   sendQueuedNow(id: string, queueId: string): Promise<{ ok: true }>;
+  /** Arahkan satu pesan antrean ke giliran yang berjalan tanpa menghentikannya. */
+  steerQueued(id: string, queueId: string): Promise<{ ok: true }>;
   /** Pertanyaan sampingan dari salinan percakapan sesi (tidak masuk riwayat). */
   askSideQuestion(id: string, question: string): Promise<{ answer: string }>;
   /** Mundur percakapan ke pesan pengguna; mengembalikan teks pesan yang dibuang. */
@@ -1759,6 +1761,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       await request(
         "POST",
         `/api/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(queueId)}/send-now`,
+        {},
+      );
+      return { ok: true as const };
+    },
+
+    async steerQueued(id, queueId) {
+      await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(queueId)}/steer`,
         {},
       );
       return { ok: true as const };

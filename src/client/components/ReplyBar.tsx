@@ -534,6 +534,22 @@ export function ReplyBar({
     }
   };
 
+  const steerQueued = async (queueId: string): Promise<void> => {
+    if (queueBusy) return;
+    setQueueBusy(true);
+    setError(undefined);
+    try {
+      await api.steerQueued(sessionId, queueId);
+      void refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof ApiError ? caught.message : "gagal mengarahkan pesan antrean",
+      );
+    } finally {
+      setQueueBusy(false);
+    }
+  };
+
   const removeQueued = async (queueId: string): Promise<void> => {
     if (queueBusy) return;
     setQueueBusy(true);
@@ -601,6 +617,7 @@ export function ReplyBar({
         <QueueList
           items={session.queuedMessages ?? []}
           onSendNow={(queueId) => void sendQueuedNow(queueId)}
+          onSteer={(queueId) => void steerQueued(queueId)}
           onRemove={(queueId) => void removeQueued(queueId)}
           disabled={!running || queueBusy}
           removeDisabled={queueBusy}

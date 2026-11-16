@@ -107,6 +107,32 @@ describe("QueueList", () => {
     expect(dihapus).toEqual(["a"]);
   });
 
+  test("tombol Arahkan hanya tampil bila onSteer ada dan memanggil penangan", () => {
+    const tanpa = mount(
+      h(QueueList, { items: [{ id: "a", text: "halo" }], onSendNow: () => {}, onRemove: () => {} }),
+    );
+    expect(
+      find(tanpa, (node) => node.localName === "button" && node.textContent.includes("Arahkan")),
+    ).toBeUndefined();
+
+    const diarahkan: string[] = [];
+    const root = mount(
+      h(QueueList, {
+        items: [{ id: "a", text: "halo" }],
+        onSendNow: () => {},
+        onSteer: (id: string) => diarahkan.push(id),
+        onRemove: () => {},
+      }),
+    );
+    const arahkan = find(
+      root,
+      (node) => node.localName === "button" && node.textContent.includes("Arahkan"),
+    );
+    expect(arahkan).toBeDefined();
+    fire(arahkan!, "click");
+    expect(diarahkan).toEqual(["a"]);
+  });
+
   test("tombol Kirim sekarang mati saat sesi tak berjalan", () => {
     const root = mount(
       h(QueueList, {
@@ -191,6 +217,15 @@ describe("antrean di klien API", () => {
 
     expect(await api.sendQueuedNow("s1", "q1")).toEqual({ ok: true });
     expect(calls[0]?.url).toBe("/api/sessions/s1/queue/q1/send-now");
+    expect(calls[0]?.init.method).toBe("POST");
+  });
+
+  test("steerQueued memanggil POST pada rute steer", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.steerQueued("s1", "q1")).toEqual({ ok: true });
+    expect(calls[0]?.url).toBe("/api/sessions/s1/queue/q1/steer");
     expect(calls[0]?.init.method).toBe("POST");
   });
 
