@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.5] - 2026-11-16
+
 ### Ditambah
 
 - Atur sandi akses dari Pengaturan (Akses & sandi); Keluar tampil setelah sandi dibuat.
