@@ -233,7 +233,10 @@ export function PermissionCard({
     const arg = view.target !== "" ? view.target : view.preview.kind === "command" ? view.preview.command : "";
     const ringkas = asks !== undefined ? askSummaryLine(asks, item.answers) : arg;
     return (
-      <details class="jk-step" data-permission-id={item.id}>
+      <details
+        class={`jk-step${asks !== undefined ? " jk-step-ask" : ""}`}
+        data-permission-id={item.id}
+      >
         <summary>
           <span class="jk-chev">
             <Icon name="chevron" />
@@ -241,7 +244,13 @@ export function PermissionCard({
           <span class="jk-step-name">
             {asks !== undefined ? "Pertanyaan agent" : view.tool}
           </span>
-          {ringkas !== "" && <span class="jk-step-arg">{ringkas}</span>}
+          {ringkas !== "" && (
+            <span
+              class={`jk-step-arg${asks !== undefined ? " jk-step-arg-text" : ""}`}
+            >
+              {ringkas}
+            </span>
+          )}
           <span class={`jk-step-status ${tampilLabel.tone}`}>{tampilLabel.text}</span>
         </summary>
         <div class="jk-step-body">

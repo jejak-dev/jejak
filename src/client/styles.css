@@ -1942,6 +1942,8 @@ h2.jk-md-heading {
 .jk-step-name {
   font-weight: 600;
   color: var(--t1);
+  white-space: nowrap;
+  flex: none;
 }
 
 .jk-step-arg {
@@ -1952,6 +1954,12 @@ h2.jk-md-heading {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--t3);
+}
+
+/* Ringkasan pertanyaan agent: teks biasa, bukan monospace. */
+.jk-step-arg-text {
+  font-family: inherit;
+  font-size: var(--fs-small);
 }
 
 .jk-step-desc {
@@ -5710,6 +5718,61 @@ h2.jk-md-heading {
   }
 }
 
+/* Layar sempit: header sesi dua baris (menu/status di baris pertama, blok
+   judul penuh lebar di baris kedua) dan ringkasan pertanyaan turun ke baris
+   kedua. Hanya berlaku di HP, desktop (> 760px) tak berubah. */
+@media (max-width: 760px) {
+  /* Baris 1: tombol menu di kiri, penanda/status/tombol panel di kanan. */
+  .jk-top {
+    flex-wrap: wrap;
+  }
+
+  .jk-menu-btn {
+    margin-right: auto;
+  }
+
+  /* Baris 2: blok judul penuh lebar. */
+  .jk-top-title {
+    order: 10;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: 6px;
+    row-gap: 4px;
+  }
+
+  .jk-top-title .jk-mono {
+    max-width: none;
+    flex: 0 1 auto;
+  }
+
+  .jk-top-error {
+    order: 20;
+  }
+
+  /* Lencana lebih ringkas supaya muat satu baris. */
+  .jk-worktree-badge,
+  .jk-secret-badge,
+  .jk-budget-badge,
+  .jk-sandbox-badge {
+    padding: 1px 6px;
+  }
+
+  /* Baris "Pertanyaan agent": ringkasan turun ke baris kedua, status tetap
+     di baris pertama di kanan. */
+  details.jk-step-ask > summary {
+    flex-wrap: wrap;
+  }
+
+  details.jk-step-ask > summary .jk-step-status {
+    margin-left: auto;
+  }
+
+  details.jk-step-ask > summary .jk-step-arg-text {
+    flex: 1 1 100%;
+    order: 3;
+  }
+}
+
 .jk-sandbox-settings {
   display: grid;
   gap: 10px;
@@ -7453,6 +7516,13 @@ h2.jk-md-heading {
 .jk-plan-done .jk-perm-note {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* Judul rencana boleh membungkus; nama langkah lain tidak. */
+.jk-plan-done .jk-step-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: normal;
 }
 
 /* Tab Rencana di panel kanan. */
