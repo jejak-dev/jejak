@@ -1,7 +1,7 @@
 import { buildImpactBriefPrompt, impactBriefTitle } from "../../shared/impact-brief";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
-import { ApiError, type ApiClient, type SandboxState, type WorkspaceItem } from "../lib/api";
+import { ApiError, type ApiClient, type HeldPrompt, type SandboxState, type WorkspaceItem } from "../lib/api";
 import type { RegistryView } from "../lib/registry-view";
 import { folderName } from "../lib/format";
 import { parseGoalCommand } from "../lib/goal";
@@ -31,6 +31,12 @@ export interface ComposerProps {
   recentCwds?: string[];
   workspaces?: WorkspaceItem[];
   onCreated: (session: SessionInfo) => void;
+  /** Sesi yang sedang berjalan; dipakai untuk memilih sesi yang ditunggu. */
+  runningSessions?: { id: string; title: string }[];
+  /** Dipanggil setelah prompt berhasil ditahan di server. */
+  onHeld?: () => void;
+  /** Draf yang dipulihkan (mis. tahanan yang dibatalkan); diisi ulang saat id berubah. */
+  restoreDraft?: { id: string; input: HeldPrompt["input"] };
 }
 
 type PermissionMode = ComposerPermissionMode;
@@ -88,6 +94,9 @@ export function Composer({
   recentCwds = [],
   workspaces = [],
   onCreated,
+  runningSessions = [],
+  onHeld,
+  restoreDraft,
 }: ComposerProps) {
   const [prompt, setPrompt] = useState("");
   const [cwd, setCwd] = useState(() => readStorage(STORAGE_CWD) ?? defaultCwd ?? "");
@@ -108,8 +117,12 @@ export function Composer({
   const [promptError, setPromptError] = useState<string | undefined>(undefined);
   const [cwdError, setCwdError] = useState<string | undefined>(undefined);
   const [apiError, setApiError] = useState<string | undefined>(undefined);
+  /** Id sesi yang ditunggu; "" berarti prompt langsung dibuat. */
+  const [waitFor, setWaitFor] = useState("");
 
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  /** Id tahanan terakhir yang dipulihkan; draf tak diisi ulang dua kali. */
+  const restoredIdRef = useRef<string | undefined>(undefined);
   const att = useAttachments(api);
   const cwdRef = useRef<HTMLInputElement | null>(null);
   const dict = useDictation({ draft: prompt, setDraft: setPrompt, disabled: busy });
@@ -251,8 +264,33 @@ export function Composer({
     );
   }, [profileId, models]);
 
+  // Sesi yang ditunggu sudah selesai: pilihan kembali ke "Langsung mulai".
+  useEffect(() => {
+    setWaitFor((current) => {
+      if (current === "") return current;
+      return runningSessions.some((session) => session.id === current) ? current : "";
+    });
+  }, [runningSessions]);
+
+  // Draf dipulihkan dari tahanan yang dibatalkan: isi prompt dan folder kerja.
+  useEffect(() => {
+    if (restoreDraft === undefined) return;
+    if (restoredIdRef.current === restoreDraft.id) return;
+    restoredIdRef.current = restoreDraft.id;
+    const teks = restoreDraft.input.prompt;
+    setPrompt(typeof teks === "string" ? teks : "");
+    const folder = restoreDraft.input.cwd;
+    if (folder !== undefined && folder !== "" && restoreDraft.input.workspaceId === undefined) {
+      setCwd(folder);
+    }
+    promptRef.current?.focus();
+  }, [restoreDraft]);
+
   const submit = async (): Promise<void> => {
     if (busy) return;
+
+    // Sesi yang ditunggu; string kosong berarti prompt langsung dibuat.
+    const waitForId = waitFor;
 
     // Kirim pesan menghentikan dikte lebih dulu.
     dict.stop();
@@ -314,7 +352,10 @@ export function Composer({
       if (!usingWorkspace && useWorktree) input.worktree = true;
       if (noSandbox && sandboxState?.config.mode === "standar") input.sandbox = "mati";
 
-      const session = await api.createSession(input);
+      // Prompt ditahan di server sampai sesi yang dipilih benar-benar selesai.
+      const ditahan = waitForId !== "";
+      const session = ditahan ? undefined : await api.createSession(input);
+      if (ditahan) await api.holdPrompt(input, waitForId);
 
       if (!usingWorkspace) writeStorage(STORAGE_CWD, trimmedCwd);
       writeStorage(STORAGE_WORKSPACE, usingWorkspace ? selectedWorkspace.id : "");
@@ -328,9 +369,20 @@ export function Composer({
       att.clear();
       setBriefMode(false);
       if (promptRef.current !== null) autosize(promptRef.current);
-      onCreated(session);
+      if (ditahan) {
+        setWaitFor("");
+        onHeld?.();
+      } else if (session !== undefined) {
+        onCreated(session);
+      }
     } catch (caught) {
-      setApiError(caught instanceof ApiError ? caught.message : "gagal memulai sesi");
+      setApiError(
+        caught instanceof ApiError
+          ? caught.message
+          : waitForId !== ""
+            ? "gagal menahan prompt"
+            : "gagal memulai sesi",
+      );
     } finally {
       setBusy(false);
     }
@@ -408,7 +460,20 @@ export function Composer({
           aria-describedby={promptDescribedBy === "" ? undefined : promptDescribedBy}
         />
           <DictationButton dict={dict} />
-          <button type="submit" class="jk-send" disabled={!canSend} aria-label={busy ? "Memulai…" : "Mulai sesi"}>
+          <button
+            type="submit"
+            class="jk-send"
+            disabled={!canSend}
+            aria-label={
+              busy
+                ? waitFor !== ""
+                  ? "Menahan…"
+                  : "Memulai…"
+                : waitFor !== ""
+                  ? "Tahan prompt"
+                  : "Mulai sesi"
+            }
+          >
             <Icon name="send" />
           </button>
         </div>
@@ -573,6 +638,31 @@ export function Composer({
               },
             ]}
           />
+
+          {runningSessions.length > 0 && (
+            <label class="jk-chip" title="Tunggu sesi">
+              <Icon name="clock" />
+              <span>Tunggu sesi</span>
+              <Select
+                id="jk-wait-for"
+                class="jk-chip-select"
+                ariaLabel="Tunggu sesi"
+                value={waitFor}
+                options={[
+                  { value: "", label: "Langsung mulai" },
+                  ...runningSessions.map((session) => ({
+                    value: session.id,
+                    label:
+                      session.title.length > 40
+                        ? `${session.title.slice(0, 39)}…`
+                        : session.title,
+                  })),
+                ]}
+                onChange={(value) => setWaitFor(value)}
+                disabled={busy}
+              />
+            </label>
+          )}
 
       </div>
 

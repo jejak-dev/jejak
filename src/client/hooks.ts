@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../server/sessions/session-manager";
-import { ApiError, type ApiClient, type WorkspaceItem } from "./lib/api";
+import { ApiError, type ApiClient, type HeldPrompt, type WorkspaceItem } from "./lib/api";
 import {
   auditHash,
   instruksiHash,
@@ -241,6 +241,105 @@ export function useSessions(
   }, [refresh, intervalMs, keepPolling]);
 
   return useMemo(() => ({ sessions, error, refresh }), [sessions, error, refresh]);
+}
+
+export interface HeldPromptsState {
+  held: HeldPrompt[];
+  refresh: () => Promise<void>;
+}
+
+/** Selang polling saat ada tahanan yang menunggu (ms). */
+const HELD_POLL_ACTIVE_MS = 3000;
+/** Selang polling saat tak ada tahanan yang menunggu (ms). */
+const HELD_POLL_IDLE_MS = 15000;
+
+/**
+ * Daftar prompt tertahan yang tersimpan di server.
+ *
+ * Tahanan dibuat server; klien hanya_memantau. Saat sebuah tahanan berubah
+ * dari "menunggu" menjadi "terkirim", `onDispatched` dipanggil supaya daftar
+ * sesi dimuat ulang. Galat jaringan ditelan: daftar tak berubah.
+ */
+export function useHeldPrompts(
+  api: ApiClient,
+  onDispatched?: () => void,
+): HeldPromptsState {
+  const [held, setHeld] = useState<HeldPrompt[]>([]);
+  const requestRef = useRef(0);
+  /** Status terakhir tiap tahanan; dipakai mendeteksi perubahan ke "terkirim". */
+  const statusRef = useRef(new Map<string, string>());
+  const dispatchedRef = useRef(onDispatched);
+  dispatchedRef.current = onDispatched;
+
+  const refresh = useCallback(async (): Promise<void> => {
+    const ticket = requestRef.current + 1;
+    requestRef.current = ticket;
+    try {
+      const list = await api.listHeld();
+      if (ticket !== requestRef.current) return;
+      const status = statusRef.current;
+      let terkirim = false;
+      for (const item of list) {
+        if (status.get(item.id) === "menunggu" && item.status === "terkirim") {
+          terkirim = true;
+        }
+        status.set(item.id, item.status);
+      }
+      for (const id of [...status.keys()]) {
+        if (!list.some((item) => item.id === id)) status.delete(id);
+      }
+      setHeld(list);
+      if (terkirim) dispatchedRef.current?.();
+    } catch {
+      // Galat jaringan ditelan; daftar lama tetap ditampilkan.
+    }
+  }, [api]);
+
+  const adaMenunggu = held.some((item) => item.status === "menunggu");
+  const intervalMs = adaMenunggu ? HELD_POLL_ACTIVE_MS : HELD_POLL_IDLE_MS;
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined;
+
+    const start = (): void => {
+      if (timer !== undefined) return;
+      timer = setInterval(() => {
+        void refresh();
+      }, intervalMs);
+    };
+
+    const stop = (): void => {
+      if (timer === undefined) return;
+      clearInterval(timer);
+      timer = undefined;
+    };
+
+    const onVisibility = (): void => {
+      if (document.visibilityState === "visible") {
+        void refresh();
+        start();
+      } else {
+        stop();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    if (document.visibilityState === "visible") {
+      start();
+    }
+
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [refresh, intervalMs]);
+
+  // Muat daftar sekali saat komponen dipasang.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  return useMemo(() => ({ held, refresh }), [held, refresh]);
 }
 
 export type TimelineConnection = "idle" | "terhubung" | "menyambung" | "selesai" | "galat";

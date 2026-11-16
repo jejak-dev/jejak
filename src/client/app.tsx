@@ -27,6 +27,7 @@ import { Timeline } from "./components/Timeline";
 import { WorkspacePage } from "./components/WorkspacePage";
 import {
   useHashRoute,
+  useHeldPrompts,
   useInfo,
   useMemoryCounts,
   useNotifications,
@@ -35,7 +36,7 @@ import {
   useTimeline,
   useWorkspaces,
 } from "./hooks";
-import { createApiClient, ApiError } from "./lib/api";
+import { createApiClient, ApiError, type HeldPrompt } from "./lib/api";
 import { canShowLogout, needsTlsWarning, type AuthStatus } from "./lib/auth";
 import { buildCommands, type CommandId } from "./lib/commands";
 import { contextUsage } from "./lib/context";
@@ -179,6 +180,8 @@ export function App() {
   const { info } = useInfo(api);
   const [notifyPrefs, setNotifyPrefs] = useState<NotifyPrefs>(() => readNotifyPrefs());
   const { sessions, refresh } = useSessions(api, undefined, notifyPrefs.enabled);
+  // Prompt tertahan: server yang menyimpan dan mengirimnya; klien hanya memantau.
+  const { held, refresh: refreshHeld } = useHeldPrompts(api, refresh);
   const { view, reload } = useRegistry(api);
   const { proposed: memoryProposed, refresh: refreshMemory } = useMemoryCounts(api, routeView);
   const { items: workspaces } = useWorkspaces(api);
@@ -263,6 +266,10 @@ export function App() {
     { sessionId: string; text: string; nonce: number; append?: boolean } | undefined
   >(undefined);
   const draftNonceRef = useRef(0);
+  // Draf yang dipulihkan dari tahanan prompt yang dibatalkan.
+  const [restoreDraft, setRestoreDraft] = useState<
+    { id: string; input: HeldPrompt["input"] } | undefined
+  >(undefined);
 
   // Batas lebar panel mengikuti ruang jendela yang tersisa.
   const sempit = useNarrowViewport();
@@ -616,12 +623,59 @@ export function App() {
       setWorktreeNotice(
         warning === undefined ? undefined : { sessionId: session.id, text: warning },
       );
+      // Draf yang dipulihkan sudah dipakai; jangan restoration lagi.
+      setRestoreDraft(undefined);
       void (async () => {
         await refresh();
         navigate(session.id);
       })();
     },
     [navigate, refresh],
+  );
+
+  // Batalkan tahanan: isinya dipulihkan jadi draf di komposer.
+  const onCancelHeld = useCallback(
+    async (id: string): Promise<void> => {
+      try {
+        const cancelled = await api.cancelHeld(id);
+        setRestoreDraft({ id: cancelled.id, input: cancelled.input });
+        // Komposer hanya tampil di beranda; ke sana supaya draf kelihatan.
+        navigate();
+      } catch {
+        // Gagal membatalkan; daftar tahanan dimuat ulang oleh polling.
+      }
+      void refreshHeld();
+    },
+    [api, navigate, refreshHeld],
+  );
+
+  // Tutup kartu tahanan yang tak menunggu apa pun.
+  const onDismissHeld = useCallback(
+    (id: string): void => {
+      void (async () => {
+        try {
+          await api.dismissHeld(id);
+        } catch {
+          // Kartu tetap ada sampai polling berikutnya.
+        }
+        void refreshHeld();
+      })();
+    },
+    [api, refreshHeld],
+  );
+
+  // Prompt berhasil ditahan: muat ulang daftar tahanan.
+  const onHeld = useCallback((): void => {
+    void refreshHeld();
+  }, [refreshHeld]);
+
+  /** Sesi yang sedang berjalan; bisa dipilih sebagai sesi yang ditunggu. */
+  const runningSessions = useMemo(
+    () =>
+      sessions
+        .filter((session) => session.status === "berjalan")
+        .map((session) => ({ id: session.id, title: session.title })),
+    [sessions],
   );
 
   const onRenameSession = useCallback(
@@ -829,6 +883,9 @@ export function App() {
         instruksiActive={showingInstruksi}
         usageActive={showingUsage}
         memoryProposed={memoryProposed}
+        held={held}
+        onCancelHeld={(id) => void onCancelHeld(id)}
+        onDismissHeld={onDismissHeld}
         onRename={onRenameSession}
         onArchive={onArchiveSession}
         onDelete={onDeleteSession}
@@ -1069,6 +1126,9 @@ export function App() {
                   recentCwds={recentCwds}
                   workspaces={workspaces}
                   onCreated={onCreated}
+                  runningSessions={runningSessions}
+                  onHeld={onHeld}
+                  restoreDraft={restoreDraft}
                 />
               </div>
             </section>

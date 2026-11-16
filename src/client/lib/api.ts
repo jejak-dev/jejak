@@ -46,7 +46,7 @@ import type { IndexedRepo } from "../../server/indexer/repo-indexer";
 import type { Question } from "../../server/questions/question-store";
 import type { AgentInfo } from "../../server/claude-config/agents";
 import type { SkillInfo } from "../../server/claude-config/skills";
-import type { SessionInfo } from "../../server/sessions/session-manager";
+import type { CreateSessionInput, SessionInfo } from "../../server/sessions/session-manager";
 import type { GoalView } from "../../server/goals/goal";
 import type {
   UsageDayBucket,
@@ -532,6 +532,49 @@ export interface SdkInstallResult {
   note?: string;
 }
 
+/** Masukan pembuatan sesi (bentuk klien). */
+export interface SessionCreateInput {
+  prompt: string;
+  cwd?: string;
+  title?: string;
+  profileId?: string;
+  model?: string;
+  lightModel?: string;
+  permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions";
+  /** Dikirim hanya bersama mode bypass; UI mengirim `true` setelah pengguna menyetujui. */
+  confirmBypass?: boolean;
+  workspaceId?: string;
+  /** Sesi bekerja di worktree terpisah pada cabang baru. */
+  worktree?: boolean;
+  /** Hanya dikirim saat pengguna memilih sesi tanpa sandbox. */
+  sandbox?: SandboxMode;
+}
+
+/** Status prompt tertahan. */
+export type HeldPromptStatus = "menunggu" | "terkirim" | "gagal" | "dibatalkan";
+
+/**
+ * Masukan tahanan di sisi klien: sama seperti masukan pembuatan sesi, tapi
+ * `confirmBypass` tak pernah dikirim ke klien (nilainya urusan server).
+ */
+export type HeldPromptInput = Omit<CreateSessionInput, "confirmBypass">;
+
+/** Prompt tertahan: prompt yang menunggu sesi lain selesai. */
+export interface HeldPrompt {
+  id: string;
+  /** Isi prompt yang ditahan; sama persis dengan yang diketik pengguna. */
+  input: HeldPromptInput;
+  /** Id sesi yang harus selesai sebelum prompt dikirim. */
+  waitForSessionId: string;
+  /** Waktu tahanan dibuat (ISO). */
+  createdAt: string;
+  status: HeldPromptStatus;
+  /** Terisi saat status "terkirim": sesi yang dibuat dari prompt ini. */
+  sessionId?: string;
+  /** Terisi saat status "gagal": pesan galat pengiriman. */
+  error?: string;
+}
+
 export interface ApiClient {
   getInfo(): Promise<{ name: string; version: string; cwd: string; mock: boolean }>;
   /** Status autentikasi server (apakah login diperlukan). */
@@ -565,22 +608,15 @@ export interface ApiClient {
   setSessionProvider(id: string, selection: { profileId?: string; model?: string }): Promise<SessionInfo>;
   setSessionSandbox(id: string, mode: SandboxMode): Promise<SessionInfo>;
   deleteSession(id: string): Promise<void>;
-  createSession(input: {
-    prompt: string;
-    cwd?: string;
-    title?: string;
-    profileId?: string;
-    model?: string;
-    lightModel?: string;
-    permissionMode?: "default" | "acceptEdits" | "plan" | "bypassPermissions";
-    /** Dikirim hanya bersama mode bypass; UI mengirim `true` setelah pengguna menyetujui. */
-    confirmBypass?: boolean;
-    workspaceId?: string;
-    /** Sesi bekerja di worktree terpisah pada cabang baru. */
-    worktree?: boolean;
-    /** Hanya dikirim saat pengguna memilih sesi tanpa sandbox. */
-    sandbox?: SandboxMode;
-  }): Promise<SessionInfo>;
+  createSession(input: SessionCreateInput): Promise<SessionInfo>;
+  /** Semua prompt tertahan yang tersimpan di server. */
+  listHeld(): Promise<HeldPrompt[]>;
+  /** Tahan prompt sampai sesi `waitForSessionId` selesai. */
+  holdPrompt(input: SessionCreateInput, waitForSessionId: string): Promise<HeldPrompt>;
+  /** Batalkan tahanan yang masih menunggu; isinya dikembalikan sebagai draf. */
+  cancelHeld(id: string): Promise<HeldPrompt>;
+  /** Tutup kartu tahanan yang tak menunggu apa pun. */
+  dismissHeld(id: string): Promise<void>;
   interruptSession(id: string): Promise<{ interrupted: boolean }>;
   /** Lanjutkan sesi yang terputus karena aplikasi berhenti. */
   continueSession(id: string): Promise<{ ok: true; queued: boolean }>;
@@ -1306,6 +1342,40 @@ function stageBody(input: GitStageInput): Record<string, unknown> {
   return body;
 }
 
+const HELD_STATUSES = new Set<string>(["menunggu", "terkirim", "gagal", "dibatalkan"]);
+
+/** Bentuk tahanan dari server; bentuk rusak ditolak. */
+function heldFrom(value: unknown): HeldPrompt {
+  if (
+    !isRecord(value) ||
+    typeof value.id !== "string" ||
+    typeof value.waitForSessionId !== "string" ||
+    typeof value.createdAt !== "string" ||
+    !HELD_STATUSES.has(String(value.status)) ||
+    !isRecord(value.input)
+  ) {
+    throw invalidResponse();
+  }
+  return value as unknown as HeldPrompt;
+}
+
+/** Ambil tahanan dari payload `{ held }`. */
+function heldPayloadFrom(payload: unknown): HeldPrompt {
+  return heldFrom(field(payload, "held"));
+}
+
+/**
+ * Bentuk body pembuatan sesi: field yang tak berarti tak pernah ikut
+ * (`confirmBypass`, `worktree`, `sandbox`).
+ */
+function createSessionBody(input: SessionCreateInput): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...input };
+  if (body["confirmBypass"] !== true) delete body["confirmBypass"];
+  if (body["worktree"] !== true) delete body["worktree"];
+  if (body["sandbox"] !== "mati" && body["sandbox"] !== "standar") delete body["sandbox"];
+  return body;
+}
+
 function connectionTestFrom(payload: unknown): ConnectionTestView {
   const result = field(payload, "result");
   if (!isRecord(result)) {
@@ -1677,11 +1747,33 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     },
 
     async createSession(input) {
-      const body: Parameters<ApiClient["createSession"]>[0] = { ...input };
-      if (body.confirmBypass !== true) delete body.confirmBypass;
-      if (body.worktree !== true) delete body.worktree;
-      if (body.sandbox !== "mati" && body.sandbox !== "standar") delete body.sandbox;
-      return sessionFrom(await request("POST", "/api/sessions", body));
+      return sessionFrom(await request("POST", "/api/sessions", createSessionBody(input)));
+    },
+
+    async listHeld() {
+      const data = await request("GET", "/api/held-prompts");
+      const list = field(data, "held");
+      if (!Array.isArray(list)) throw invalidResponse();
+      return list.map(heldFrom);
+    },
+
+    async holdPrompt(input, waitForSessionId) {
+      const body = { ...createSessionBody(input), waitForSessionId };
+      const data = await request("POST", "/api/held-prompts", body);
+      return heldPayloadFrom(data);
+    },
+
+    async cancelHeld(id) {
+      const data = await request(
+        "DELETE",
+        `/api/held-prompts/${encodeURIComponent(id)}`,
+        {},
+      );
+      return heldPayloadFrom(data);
+    },
+
+    async dismissHeld(id) {
+      await request("DELETE", `/api/held-prompts/${encodeURIComponent(id)}`, {});
     },
 
     async interruptSession(id) {

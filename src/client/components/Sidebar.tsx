@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
+import type { HeldPrompt } from "../lib/api";
 import { formatAgo, groupSessions } from "../lib/format";
 import { showsBypassMarker } from "../lib/permission-mode";
 import { canMutate, filterSessions, splitArchived, validateTitle } from "../lib/sessions";
@@ -26,6 +27,12 @@ export interface SidebarProps {
   usageActive?: boolean;
   /** Jumlah usulan memory terbuka; angka kecil ditampilkan bila > 0. */
   memoryProposed?: number;
+  /** Prompt tertahan yang tersimpan di server. */
+  held?: HeldPrompt[];
+  /** Batalkan tahanan yang menunggu; isinya dipulihkan jadi draf. */
+  onCancelHeld?: (id: string) => void;
+  /** Tutup kartu tahanan yang tak menunggu apa pun. */
+  onDismissHeld?: (id: string) => void;
   onRename: (id: string, title: string) => Promise<void>;
   onArchive: (id: string, archived: boolean) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -57,6 +64,13 @@ function errorMessage(caught: unknown): string {
   return "terjadi kesalahan";
 }
 
+/** Potong teks jadi satu baris dengan elipsis. */
+function potong(teks: string, maks: number): string {
+  const bersih = teks.replace(/\s+/g, " ").trim();
+  if (bersih.length <= maks) return bersih;
+  return `${bersih.slice(0, maks - 1)}…`;
+}
+
 type RowMode = "menu" | "rename" | "delete";
 
 export function Sidebar({
@@ -75,6 +89,9 @@ export function Sidebar({
   instruksiActive = false,
   usageActive = false,
   memoryProposed,
+  held = [],
+  onCancelHeld,
+  onDismissHeld,
   onRename,
   onArchive,
   onDelete,
@@ -415,6 +432,59 @@ export function Sidebar({
     );
   };
 
+  const renderHeld = (item: HeldPrompt) => {
+    const prompt = potong(item.input.prompt, 48);
+    const judulDitunggu = sessions.find((session) => session.id === item.waitForSessionId)?.title;
+    return (
+      <li class="jk-held-item" key={item.id}>
+        <div class="jk-held-line">
+          <span class="jk-held-prompt" title={item.input.prompt}>
+            {prompt}
+          </span>
+          {item.status === "menunggu" && (
+            <button
+              type="button"
+              class="jk-link-btn"
+              aria-label={`Batal prompt tertahan: ${prompt}`}
+              onClick={() => onCancelHeld?.(item.id)}
+            >
+              Batal
+            </button>
+          )}
+          {(item.status === "terkirim" || item.status === "gagal") && (
+            <button
+              type="button"
+              class="jk-link-btn"
+              aria-label={`Tutup prompt tertahan: ${prompt}`}
+              onClick={() => onDismissHeld?.(item.id)}
+            >
+              Tutup
+            </button>
+          )}
+        </div>
+        <p class="jk-held-status">
+          {item.status === "menunggu" &&
+            (judulDitunggu === undefined
+              ? "Menunggu sesi lain"
+              : `Menunggu ${judulDitunggu}`)}
+          {item.status === "terkirim" && (
+            <button
+              type="button"
+              class="jk-link-btn"
+              aria-label={`Buka sesi dari prompt tertahan: ${prompt}`}
+              onClick={() => {
+                if (item.sessionId !== undefined) onSelect(item.sessionId);
+              }}
+            >
+              Sesi dibuat
+            </button>
+          )}
+          {item.status === "gagal" && potong(item.error ?? "Gagal mengirim prompt.", 60)}
+        </p>
+      </li>
+    );
+  };
+
   const toggleNotify = async (): Promise<void> => {
     setNotifyError(undefined);
     if (notifyPrefs.enabled) {
@@ -478,6 +548,16 @@ export function Sidebar({
         </button>
 
         <nav class="jk-groups" aria-label="Daftar sesi">
+          {held.length > 0 && (
+            <section class="jk-held">
+              <h2 class="jk-group-label" title="Prompt tertahan">
+                <Icon name="clock" />
+                <span>Tertahan</span>
+              </h2>
+              <ul class="jk-session-items">{held.map(renderHeld)}</ul>
+            </section>
+          )}
+
           {sessions.length >= 1 && (
             <div class="jk-session-search">
               <input
