@@ -87,6 +87,47 @@ function quickRunner(): { runner: AgentRunner; inputs: RunInput[] } {
   };
 }
 
+/**
+ * Runner yang mendaftarkan fungsi "Arahkan" lalu menahan giliran sampai
+ * dibatalkan.
+ */
+function steerRunner(): {
+  runner: AgentRunner;
+  steered: string[];
+  /** Diubah `false` supaya steer ditolak seperti giliran yang sudah selesai. */
+  setSteerOk: (ok: boolean) => void;
+  /** Resolve saat runner sudah berjalan dan fungsi steer terdaftar. */
+  started: Promise<void>;
+} {
+  const steered: string[] = [];
+  let steerOk = true;
+  let markStarted: () => void = () => {};
+  const started = new Promise<void>((resolve) => {
+    markStarted = resolve;
+  });
+  return {
+    steered,
+    started,
+    setSteerOk: (ok: boolean) => {
+      steerOk = ok;
+    },
+    runner: {
+      async *run(input) {
+        input.registerSteer?.((text) => {
+          if (!steerOk) return false;
+          steered.push(text);
+          return true;
+        });
+        markStarted();
+        yield { type: "session", sessionId: "sdk-0" };
+        await waitAbort(input.signal);
+        yield { type: "error", message: "dibatalkan" };
+        yield { type: "result", ok: false, error: "dibatalkan" };
+      },
+    },
+  };
+}
+
 function manager(
   runner: AgentRunner,
   extra: Partial<SessionManagerOptions> = {},
@@ -230,8 +271,96 @@ describe("antrean pesan", () => {
   });
 });
 
-describe("ganti sandbox saat sesi berjalan", () => {
-  test("giliran berjalan dibatalkan lalu dilanjutkan dengan mode baru", async () => {
+describe("arahkan pesan antrean", () => {
+  test("steerQueued mengeluarkan pesan dari antrean dan mencatat event", async () => {
+    const { runner, steered, started } = steerRunner();
+    const mgr = manager(runner);
+    const info = await mgr.create({ prompt: "mulai", cwd: project });
+    await started;
+    await mgr.send(info.id, "satu");
+
+    const antrean = mgr.get(info.id)?.queuedMessages ?? [];
+    mgr.steerQueued(info.id, antrean[0]!.id);
+
+    expect(steered).toEqual(["satu"]);
+    expect(mgr.get(info.id)?.queued).toBe(0);
+    expect(mgr.get(info.id)?.queuedMessages ?? []).toHaveLength(0);
+
+    mgr.interrupt(info.id);
+    await tungguSelesai(mgr, info.id);
+
+    const events = await eventsOf(mgr, info.id);
+    const pesan = events.find(
+      (event) =>
+        typeof event === "object" &&
+        event !== null &&
+        (event as { type?: string }).type === "user_message" &&
+        (event as { text?: string }).text === "satu",
+    );
+    expect(pesan).toBeDefined();
+  });
+
+  test("steer yang ditolak memberi konflik dan pesan tetap antre", async () => {
+    const { runner, steered, started, setSteerOk } = steerRunner();
+    const mgr = manager(runner);
+    const info = await mgr.create({ prompt: "mulai", cwd: project });
+    await started;
+    await mgr.send(info.id, "satu");
+
+    setSteerOk(false);
+    const antrean = mgr.get(info.id)?.queuedMessages ?? [];
+    let galat: unknown;
+    try {
+      mgr.steerQueued(info.id, antrean[0]!.id);
+    } catch (caught) {
+      galat = caught;
+    }
+    expect(galat).toBeInstanceOf(SessionError);
+    expect((galat as SessionError).code).toBe("konflik");
+    expect(steered).toEqual([]);
+    expect(mgr.get(info.id)?.queuedMessages ?? []).toHaveLength(1);
+
+    mgr.interrupt(info.id);
+    await tungguSelesai(mgr, info.id);
+  });
+
+  test("steerQueued ditolak saat sesi tak berjalan", async () => {
+    const { runner } = quickRunner();
+    const mgr = manager(runner);
+    const info = await mgr.create({ prompt: "mulai", cwd: project });
+    await tungguSelesai(mgr, info.id);
+
+    let galat: unknown;
+    try {
+      mgr.steerQueued(info.id, "apa-saja");
+    } catch (caught) {
+      galat = caught;
+    }
+    expect(galat).toBeInstanceOf(SessionError);
+    expect((galat as SessionError).code).toBe("konflik");
+  });
+
+  test("steerQueued menolak id antrean yang tak dikenal", async () => {
+    const { runner, started } = steerRunner();
+    const mgr = manager(runner);
+    const info = await mgr.create({ prompt: "mulai", cwd: project });
+    await started;
+
+    let galat: unknown;
+    try {
+      mgr.steerQueued(info.id, "tidak-ada");
+    } catch (caught) {
+      galat = caught;
+    }
+    expect(galat).toBeInstanceOf(SessionError);
+    expect((galat as SessionError).code).toBe("tidak-ditemukan");
+
+    mgr.interrupt(info.id);
+    await tungguSelesai(mgr, info.id);
+  });
+});
+
+describe("ganti sandbox saat sesi berjalan", () => {  test("giliran berjalan dibatalkan lalu dilanjutkan dengan mode baru", async () => {
     const { runner, inputs } = holdingRunner();
     const mgr = manager(runner, {
       sandbox: { store: new FileSandboxStore(":memory:"), home: HOME },
@@ -387,6 +516,39 @@ describe("rute antrean", () => {
       "POST",
       `/api/sessions/${info.id}/queue/${idDua}/send-now`,
     );
+    expect(konflik.status).toBe(409);
+  });
+
+  test("POST steer: 200 saat berhasil, 404 untuk id tak dikenal, 409 saat tak berjalan", async () => {
+    const { runner, steered, started } = steerRunner();
+    const mgr = manager(runner);
+    const app = makeApp(mgr);
+    const info = await mgr.create({ prompt: "mulai", cwd: project });
+    await started;
+    await mgr.send(info.id, "satu");
+
+    const antrean = mgr.get(info.id)?.queuedMessages ?? [];
+    const idSatu = antrean[0]!.id;
+
+    // Id antrean tak dikenal -> 404.
+    const salah = await req(
+      app,
+      "POST",
+      `/api/sessions/${info.id}/queue/tidak-ada/steer`,
+    );
+    expect(salah.status).toBe(404);
+
+    // Arahkan pesan -> 200 dan pesan keluar dari antrean.
+    const arahkan = await req(app, "POST", `/api/sessions/${info.id}/queue/${idSatu}/steer`);
+    expect(arahkan.status).toBe(200);
+    expect(await arahkan.json()).toEqual({ ok: true });
+    expect(steered).toEqual(["satu"]);
+    expect(mgr.get(info.id)?.queuedMessages ?? []).toHaveLength(0);
+
+    // Sesi tak berjalan -> 409.
+    mgr.interrupt(info.id);
+    await tungguSelesai(mgr, info.id);
+    const konflik = await req(app, "POST", `/api/sessions/${info.id}/queue/${idSatu}/steer`);
     expect(konflik.status).toBe(409);
   });
 });

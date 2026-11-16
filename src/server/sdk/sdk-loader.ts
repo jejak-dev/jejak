@@ -41,7 +41,11 @@ export interface SdkQuery extends AsyncIterable<unknown> {
 }
 
 export interface SdkModule {
-  query(args: { prompt: string; options?: Record<string, unknown> }): SdkQuery;
+  /** Prompt string (biasa) atau prompt streaming (jalur "Arahkan"). */
+  query(args: {
+    prompt: string | AsyncIterable<unknown>;
+    options?: Record<string, unknown>;
+  }): SdkQuery;
 }
 
 export interface SdkLoaderOptions {

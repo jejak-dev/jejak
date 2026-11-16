@@ -159,6 +159,14 @@ export interface RunInput {
     toolInput: unknown;
     agentId?: string;
   }) => { reason: string; rule?: string } | undefined;
+  /**
+   * Bila diisi, runner memakai input streaming dan memanggil callback ini dengan
+   * fungsi `steer(text)` begitu giliran mulai, lalu dengan `undefined` saat giliran
+   * berakhir. `steer` mengembalikan true bila pesan diterima giliran yang masih
+   * berjalan, false bila giliran sudah tidak menerima pesan (pemanggil harus
+   * menganggap pesan belum terkirim).
+   */
+  registerSteer?: (steer: ((text: string) => boolean) | undefined) => void;
 }
 
 export interface AgentRunner {

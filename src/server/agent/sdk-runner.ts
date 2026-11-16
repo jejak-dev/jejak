@@ -21,6 +21,12 @@ import type {
   ResolvedMcpServer,
 } from "./events";
 import { assistantUuidOf, contextTokensOf, contextWindowOf, mapSdkMessage } from "./sdk-mapper";
+import {
+  createSteerInput,
+  queuedTurnCountOf,
+  type SteerInput,
+  type SteerUserMessage,
+} from "./steer-input";
 
 export type { SdkModule, SdkQuery } from "../sdk/sdk-loader";
 
@@ -332,7 +338,26 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         return;
       }
 
+      // Jalur "Arahkan": prompt streaming supaya pesan susulan bisa masuk ke
+      // giliran yang sedang berjalan. Tanpa `registerSteer`, perilaku lama
+      // persis (prompt string).
+      const registerSteer = input.registerSteer;
+      const steerInput: SteerInput | undefined =
+        registerSteer !== undefined ? createSteerInput(input.prompt) : undefined;
+      const promptValue: string | AsyncIterable<SteerUserMessage> =
+        steerInput !== undefined ? steerInput.iterable : input.prompt;
+
       const abortController = new AbortController();
+      if (steerInput !== undefined) {
+        // Sinyal batal menutup input supaya iterasi prompt selesai.
+        abortController.signal.addEventListener(
+          "abort",
+          () => {
+            steerInput.close();
+          },
+          { once: true },
+        );
+      }
       const forwardAbort = (): void => abortController.abort();
       const signal = input.signal;
       if (signal !== undefined) {
@@ -539,13 +564,18 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       let query: SdkQuery | undefined;
       let sawResult = false;
       try {
+        if (steerInput !== undefined) {
+          // Fungsi steer didaftarkan sebelum iterasi: giliran yang sedang
+          // berjalan menerima pesan susulan lewat sini.
+          registerSteer?.(steerInput.steer);
+        }
         try {
-          query = sdk.query({ prompt: input.prompt, options: sdkOptions });
+          query = sdk.query({ prompt: promptValue, options: sdkOptions });
         } catch (error) {
           // SDK lama tak mengenal opsi `promptSuggestions`: ulangi tanpa opsi itu.
           if (!wantSuggestions || !isUnknownOptionError(error)) throw error;
           delete sdkOptions.promptSuggestions;
-          query = sdk.query({ prompt: input.prompt, options: sdkOptions });
+          query = sdk.query({ prompt: promptValue, options: sdkOptions });
         }
         // Delta teks digabung ~50 ms agar tidak membanjiri SSE; event final menggantikannya.
         let pendingDelta = "";
@@ -579,6 +609,17 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
             }
             pendingDelta = "";
             if (event.type === "result") {
+              if (steerInput !== undefined) {
+                const queued = queuedTurnCountOf(message);
+                const pending = steerInput.pendingCount();
+                if (queued > 0 || pending > 0) {
+                  // Hasil perantara: giliran lanjutan masih jalan. Tak
+                  // diteruskan supaya hasil giliran terakhir tak hilang.
+                  continue;
+                }
+                // Hasil akhir: tutup input supaya iterasi prompt selesai.
+                steerInput.close();
+              }
               sawResult = true;
               if (contextTokens !== undefined) event.contextTokens = contextTokens;
               // Jendela dari profil menang atas tebakan SDK (SDK memakai 200 rb untuk model non-Claude).
@@ -621,6 +662,14 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         yield { type: "error", message };
         if (!sawResult) yield { type: "result", ok: false, error: message };
       } finally {
+        if (steerInput !== undefined) {
+          try {
+            registerSteer?.(undefined);
+          } catch {
+            // Pembersihan tidak boleh menggagalkan giliran.
+          }
+          steerInput.close();
+        }
         if (signal !== undefined) {
           signal.removeEventListener("abort", forwardAbort);
         }

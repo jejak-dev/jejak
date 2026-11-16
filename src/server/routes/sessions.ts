@@ -492,6 +492,14 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
         return errorResponse(error);
       }
     })
+    .post("/api/sessions/:id/queue/:queueId/steer", ({ params }) => {
+      try {
+        manager.steerQueued(params.id, params.queueId);
+        return jsonResponse(200, { ok: true });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
     .post("/api/sessions/:id/interrupt", ({ params }) => {
       if (manager.get(params.id) === undefined) {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });

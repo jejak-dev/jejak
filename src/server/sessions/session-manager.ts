@@ -303,6 +303,12 @@ interface SessionRecord {
    * antrean teratas (dikirim lewat "Kirim sekarang" atau ganti sandbox).
    */
   sendNowPending?: boolean;
+  /**
+   * Fungsi "Arahkan" untuk giliran yang sedang berjalan: menerima pesan
+   * antrean lalu menyusunkannya ke giliran itu tanpa membatalkannya.
+   * Hilang saat giliran berakhir.
+   */
+  steer?: (text: string) => boolean;
   /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
   turns: number;
   /**
@@ -1974,6 +1980,36 @@ export class SessionManager {
   }
 
   /**
+   * Arahkan satu pesan antrean ke giliran yang sedang berjalan: pesan itu
+   * disisipkan ke giliran berjalan tanpa membatalkannya, jadi giliran tak
+   * perlu dihentikan lalu diulang.
+   */
+  steerQueued(id: string, queueId: string): void {
+    const record = this.requireRecord(id);
+    const steer = record.steer;
+    if (record.info.status !== "berjalan" || steer === undefined) {
+      throw new SessionError("Sesi sedang tidak berjalan.", "konflik");
+    }
+    // Pesan sistem (hidden) tak pernah bisa diarahkan pengguna.
+    const index = record.queue.findIndex(
+      (item) => item.id === queueId && item.hidden !== true,
+    );
+    if (index === -1) {
+      throw new SessionError("pesan antrean tidak ditemukan", "tidak-ditemukan");
+    }
+    const entry = record.queue[index]!;
+    const masuk = steer(entry.text);
+    if (!masuk) {
+      throw new SessionError("Giliran sudah selesai; pesan tetap antre.", "konflik");
+    }
+    record.queue.splice(index, 1);
+    record.info.queued = record.queue.length;
+    this.append(record, { type: "user_message", text: entry.text });
+    this.persistSession(record);
+    this.notify(record);
+  }
+
+  /**
    * Mundur percakapan: pesan pengguna target dan semua sesudahnya dibuang dari
    * riwayat sesi. Giliran berikutnya melanjutkan percakapan SDK dari jangkar
    * giliran sebelumnya (opsi `resumeSessionAt` + fork). Berkas tidak ikut
@@ -2604,6 +2640,10 @@ export class SessionManager {
         : permissionMode) as PermissionMode,
       signal: record.controller.signal,
       requestPermission: (request) => this.requestPermission(record, request),
+      // Jalur "Arahkan": pesan antrean bisa disisipkan ke giliran ini.
+      registerSteer: (steer) => {
+        record.steer = steer;
+      },
     };
     if (resumeSessionId !== undefined) {
       input.resumeSessionId = resumeSessionId;
@@ -2734,6 +2774,8 @@ export class SessionManager {
       if (record.info.status === "berjalan") {
         this.setStatus(record, "gagal");
       }
+      // Giliran selesai: tak ada lagi pesan yang bisa diarahkan ke giliran ini.
+      record.steer = undefined;
       record.settle();
       this.notify(record);
       this.reportTurnEnd(record);
