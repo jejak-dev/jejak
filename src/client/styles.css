@@ -4385,6 +4385,11 @@ h2.jk-md-heading {
   border-bottom: 1px solid var(--line);
 }
 
+.jk-memory-head > .jk-panel-tabs {
+  flex: none;
+  max-width: 100%;
+}
+
 .jk-memory-filters {
   display: flex;
   align-items: center;
