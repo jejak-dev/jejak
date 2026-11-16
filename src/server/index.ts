@@ -118,6 +118,13 @@ import {
   MemoryHeldPromptStore,
   type HeldPromptStore,
 } from "./sessions/held-prompts";
+import { scheduleRoutes } from "./routes/schedules";
+import {
+  defaultScheduledTaskStore,
+  MemoryScheduledTaskStore,
+  ScheduledTaskService,
+  type ScheduledTaskStore,
+} from "./sessions/scheduled-tasks";
 import { sdkRoutes } from "./routes/sdk";
 import type { LocateOptions } from "./sdk/claude-locator";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
@@ -250,6 +257,10 @@ export interface CreateAppOptions {
   heldPrompts?: HeldPromptService;
   /** Penyimpanan prompt tertahan; default store memori (persistensi di server). */
   heldPromptStore?: HeldPromptStore;
+  /** Layanan tugas terjadwal; tanpa ini dibuat dari store bawaan. */
+  scheduledTasks?: ScheduledTaskService;
+  /** Penyimpanan tugas terjadwal; default store memori (persistensi di server). */
+  scheduledTaskStore?: ScheduledTaskStore;
   /** Mode desktop: rute masuk sekali pakai dan cookie sesi 30 hari. */
   desktop?: DesktopOptions;
 }
@@ -514,6 +525,14 @@ export function createApp(options: CreateAppOptions = {}) {
     new HeldPromptService({
       manager,
       store: options.heldPromptStore ?? new MemoryHeldPromptStore(),
+    });
+
+  // Tugas terjadwal: prompt yang dijalankan otomatis sebagai sesi baru.
+  const scheduledTasks =
+    options.scheduledTasks ??
+    new ScheduledTaskService({
+      manager,
+      store: options.scheduledTaskStore ?? new MemoryScheduledTaskStore(),
     });
 
   // Folder yang boleh dipakai: folder sesi aktif (dan worktree miliknya).
@@ -815,6 +834,10 @@ export function createApp(options: CreateAppOptions = {}) {
   if (memoryBridge !== undefined) {
     app = app.use(memoryBridge.routes);
   }
+  // Rute tugas terjadwal dipasang sebelum rute klien. Rantai `.use()` yang
+  // terlalu panjang membuat tipe Elysia terlalu dalam untuk dihitung
+  // TypeScript, jadi pemasangan ini dibiarkan di luar rantai.
+  (app as unknown as Elysia).use(scheduleRoutes({ service: scheduledTasks }));
   const result = app.use(clientRoutes(options.client));
   if (memoryBridge !== undefined) {
     // Seam untuk tes dan integrasi in-process: membuka sesi memory tanpa HTTP.
@@ -828,6 +851,9 @@ export function createApp(options: CreateAppOptions = {}) {
   };
   // Seam untuk jam tahanan: server menyalakan dan mematikan layanannya.
   (result as unknown as { heldPrompts?: HeldPromptService }).heldPrompts = heldPrompts;
+  // Seam untuk jam tugas terjadwal: sama seperti tahanan.
+  (result as unknown as { scheduledTasks?: ScheduledTaskService }).scheduledTasks =
+    scheduledTasks;
   return result;
 }
 
@@ -857,6 +883,9 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const store = defaultSessionStore(process.env);
   // Prompt tertahan disimpan di server supaya bertahan dari muat ulang.
   const heldStore = defaultHeldPromptStore(process.env);
+  // Tugas terjadwal juga disimpan di server: jadwal harus tetap berlaku
+  // setelah server mati.
+  const scheduleStore = defaultScheduledTaskStore(process.env);
   const memoryStore = defaultMemoryStore(process.env);
   const memory =
     memoryStore === undefined
@@ -952,6 +981,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const app = createApp({
     sessionStore: store,
     heldPromptStore: heldStore,
+    scheduledTaskStore: scheduleStore,
     memory,
     mcpUrl,
     checkpoints,
@@ -994,6 +1024,11 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   // tes memakai sapuan manual.
   const heldService = (app as unknown as { heldPrompts?: HeldPromptService }).heldPrompts;
   if (heldService !== undefined) heldService.start();
+  // Jam tugas terjadwal dinyalakan di server yang berjalan, bukan di
+  // createApp: tes memakai sapuan manual.
+  const scheduledService = (app as unknown as { scheduledTasks?: ScheduledTaskService })
+    .scheduledTasks;
+  if (scheduledService !== undefined) scheduledService.start();
   // Listener jaringan (bila diizinkan sebelumnya) dinyalakan lagi.
   if (network !== undefined) void network.start();
 
@@ -1004,6 +1039,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   if (network !== undefined) closers.push(() => void network.stop());
   if (store !== undefined) closers.push(() => store.close());
   if (heldService !== undefined) closers.push(() => heldService.close());
+  if (scheduledService !== undefined) closers.push(() => scheduledService.close());
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
