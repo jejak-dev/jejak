@@ -305,7 +305,7 @@ export function UsagePage({ api, sessions }: UsagePageProps) {
     <section class="jk-usage" aria-labelledby="jk-usage-title">
       <header class="jk-settings-head">
         <h2 id="jk-usage-title" tabIndex={-1} class="jk-settings-title">
-          Usage
+          Pemakaian
         </h2>
         <p class="jk-privacy-note">
           Ringkasan biaya dan token dari buku catatan pemakaian lokal.

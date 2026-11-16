@@ -584,7 +584,7 @@ export function Sidebar({
 
         <button type="button" class="jk-button jk-button-primary jk-new" onClick={onNew}>
           <Icon name="plus" />
-          New session
+          Sesi baru
         </button>
 
         <nav class="jk-groups" aria-label="Daftar sesi">
@@ -712,7 +712,7 @@ export function Sidebar({
                 aria-current={instruksiActive ? "page" : undefined}
               >
                 <Icon name="doc" />
-                <span class="jk-foot-text">Instructions</span>
+                <span class="jk-foot-text">Instruksi</span>
               </a>
               <a
                 class={`jk-foot-link${schedulesActive ? " jk-foot-link-active" : ""}`}
@@ -720,7 +720,7 @@ export function Sidebar({
                 aria-current={schedulesActive ? "page" : undefined}
               >
                 <Icon name="clock" />
-                <span class="jk-foot-text">Schedules</span>
+                <span class="jk-foot-text">Jadwal</span>
               </a>
               <a
                 class={`jk-foot-link${usageActive ? " jk-foot-link-active" : ""}`}
@@ -728,7 +728,7 @@ export function Sidebar({
                 aria-current={usageActive ? "page" : undefined}
               >
                 <Icon name="chart" />
-                <span class="jk-foot-text">Usage</span>
+                <span class="jk-foot-text">Pemakaian</span>
               </a>
               <a
                 class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
@@ -736,7 +736,7 @@ export function Sidebar({
                 aria-current={auditActive ? "page" : undefined}
               >
                 <Icon name="audit" />
-                <span class="jk-foot-text">Audit log</span>
+                <span class="jk-foot-text">Log audit</span>
               </a>
             </details>
           </div>

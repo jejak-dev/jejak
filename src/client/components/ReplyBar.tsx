@@ -54,9 +54,9 @@ const MAX_TEXTAREA_PX = 8 * 24;
 type LiveMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
 
 const MODE_OPTIONS: { value: LiveMode; label: string }[] = [
-  { value: "default", label: "Ask permissions" },
-  { value: "acceptEdits", label: "Accept edits" },
-  { value: "plan", label: "Plan mode" },
+  { value: "default", label: "Tanya izin" },
+  { value: "acceptEdits", label: "Terima perubahan" },
+  { value: "plan", label: "Rencana" },
   { value: "bypassPermissions", label: "Lewati izin (berbahaya)" },
 ];
 
@@ -410,7 +410,7 @@ export function ReplyBar({
   const currentProfile = profiles.find((profile) => profile.id === session.profileId);
   const modelList = currentProfile?.models ?? [];
   const modelId = session.model ?? "";
-  const modelLabel = modelList.find((entry) => entry.id === modelId)?.label ?? (modelId || "Default model");
+  const modelLabel = modelList.find((entry) => entry.id === modelId)?.label ?? (modelId || "Model bawaan");
 
   const changeProvider = async (selection: { profileId?: string; model?: string }): Promise<void> => {
     setError(undefined);

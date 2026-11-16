@@ -93,13 +93,13 @@ export interface BuildCommandsInput {
 /** Aksi tetap dulu, lalu sesi tidak terarsip terbaru (maks 50). */
 export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommandsInput): Command[] {
   const commands: Command[] = [
-    { id: "new-session", label: "New session", group: "aksi", run: "new-session" },
+    { id: "new-session", label: "Sesi baru", group: "aksi", run: "new-session" },
     { id: "open-workspace", label: "Buka Workspace", group: "aksi", run: "open-workspace" },
     { id: "open-mcp", label: "Buka Server MCP", group: "aksi", run: "open-mcp" },
     { id: "open-audit", label: "Buka log audit", group: "aksi", run: "open-audit" },
     { id: "open-instruksi", label: "Buka instruksi dan skills", group: "aksi", run: "open-instruksi" },
-    { id: "open-schedules", label: "Buka tugas terjadwal", group: "aksi", run: "open-schedules" },
-    { id: "open-usage", label: "Buka Usage", group: "aksi", run: "open-usage" },
+    { id: "open-schedules", label: "Buka jadwal", group: "aksi", run: "open-schedules" },
+    { id: "open-usage", label: "Buka Pemakaian", group: "aksi", run: "open-usage" },
     { id: "open-memory", label: "Buka Memory", group: "aksi", run: "open-memory" },
     { id: "open-providers", label: "Buka Provider", group: "aksi", run: "open-providers" },
   ];

@@ -204,7 +204,7 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
 
             {mode === "mati" && (
               <p class="jk-secret-warning" role="status">
-                Sesi baru berjalan tanpa batas sandbox. Perubahan tercatat di Audit log.
+                Sesi baru berjalan tanpa batas sandbox. Perubahan tercatat di Log audit.
               </p>
             )}
 
@@ -280,7 +280,7 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
               />
               <p class="jk-note">
                 Folder kerja sudah bisa ditulis. Jalur di sini memperlebar akses Bash; setiap izin
-                tercatat di Audit log.
+                tercatat di Log audit.
               </p>
             </div>
 
@@ -305,7 +305,7 @@ export function SandboxSettings({ api }: SandboxSettingsProps) {
               <p class="jk-note">
                 Contoh: ~/.orbstack/run/docker.sock dan /var/run/docker.sock. Untuk database lokal
                 lewat TCP, tambahkan localhost dan 127.0.0.1 di daftar domain. Setiap izin
-                memperlebar akses Bash dan tercatat di Audit log.
+                memperlebar akses Bash dan tercatat di Log audit.
               </p>
             </div>
 

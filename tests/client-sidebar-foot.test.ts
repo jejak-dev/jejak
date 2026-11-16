@@ -73,21 +73,21 @@ describe("kelompok footer sidebar", () => {
     expect(groups[2]).toEqual([
       "Lainnya",
       "Server MCP",
-      "Instructions",
-      "Schedules",
-      "Usage",
-      "Audit log",
+      "Instruksi",
+      "Jadwal",
+      "Pemakaian",
+      "Log audit",
     ]);
   });
 
-  test("Pengaturan satu kelompok penuh, Tema dan Notifications jadi tombol ikon", () => {
+  test("Pengaturan satu kelompok penuh, Tema dan Notifikasi jadi tombol ikon", () => {
     const groups = kelompok(isiFooter(sidebar));
     expect(groups[3]).toEqual(["Pengaturan", "Keluar"]);
     // Baris ikon tidak punya label teks.
     expect(groups[4]).toEqual([]);
     const footer = isiFooter(sidebar);
     expect(footer).not.toContain('<span class="jk-foot-text">Tema</span>');
-    expect(footer).not.toContain('<span class="jk-foot-text">Notifications</span>');
+    expect(footer).not.toContain('<span class="jk-foot-text">Notifikasi</span>');
   });
 
   test("setiap kelompok memakai pembungkus jk-foot-group tanpa aria-label", () => {
@@ -116,10 +116,10 @@ describe("kelompok Lainnya yang dilipat", () => {
     const more = isiMore(sidebar);
     for (const [teks, href] of [
       ["Server MCP", "#/mcp"],
-      ["Instructions", "#/instruksi"],
-      ["Schedules", "#/schedules"],
-      ["Usage", "#/usage"],
-      ["Audit log", "#/audit"],
+      ["Instruksi", "#/instruksi"],
+      ["Jadwal", "#/schedules"],
+      ["Pemakaian", "#/usage"],
+      ["Log audit", "#/audit"],
     ] as const) {
       expect(more).toContain(`href="${href}"`);
       expect(more).toContain(`<span class="jk-foot-text">${teks}</span>`);
@@ -148,7 +148,7 @@ describe("kelompok Lainnya yang dilipat", () => {
   });
 });
 
-describe("tombol ikon Tema dan Notifications", () => {
+describe("tombol ikon Tema dan Notifikasi", () => {
   test("berada di satu baris jk-foot-icons tanpa teks tampil", () => {
     const footer = isiFooter(sidebar);
     expect(footer).toContain('<div class="jk-foot-icons">');
@@ -169,7 +169,7 @@ describe("tombol ikon Tema dan Notifications", () => {
     );
   });
 
-  test("Notifications aktif tetap memakai gaya jk-foot-link-active", () => {
+  test("Notifikasi aktif tetap memakai gaya jk-foot-link-active", () => {
     const footer = isiFooter(sidebar);
     expect(footer).toContain('jk-foot-icon${notifyPrefs.enabled ? " jk-foot-link-active" : ""}');
   });

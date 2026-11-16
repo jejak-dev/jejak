@@ -14,7 +14,7 @@ export function sandboxBadge(
   if (session.sandbox !== "mati") return undefined;
   return {
     label: "Tanpa sandbox",
-    title: "Bash agent berjalan tanpa batas berkas dan jaringan dari sandbox. Lihat Audit log.",
+    title: "Bash agent berjalan tanpa batas berkas dan jaringan dari sandbox. Lihat Log audit.",
     tone: "warn",
   };
 }

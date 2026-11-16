@@ -335,13 +335,13 @@ export function App() {
           : showingMcp
             ? "Server MCP · Jejak"
             : showingAudit
-              ? "Audit log · Jejak"
+              ? "Log audit · Jejak"
               : showingInstruksi
-                ? "Instructions · Jejak"
+                ? "Instruksi · Jejak"
                 : showingSchedules
-                  ? "Schedules · Jejak"
+                  ? "Jadwal · Jejak"
                   : showingUsage
-                    ? "Usage · Jejak"
+                    ? "Pemakaian · Jejak"
                     : selected !== undefined
                       ? `${selected.title} · Jejak`
                       : "Jejak";
@@ -520,7 +520,7 @@ export function App() {
     togglePanel,
   ]);
 
-  // Fokus ke textarea tugas setelah "New session" lewat pintasan.
+  // Fokus ke textarea tugas setelah "Sesi baru" lewat pintasan.
   const handledPromptFocusRef = useRef(0);
   useEffect(() => {
     if (promptFocusTick === 0 || handledPromptFocusRef.current === promptFocusTick) return;

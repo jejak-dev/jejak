@@ -254,7 +254,7 @@ export function SchedulesPage({ api, defaultCwd, recentCwds = [] }: SchedulesPag
             tabIndex={-1}
             class="jk-settings-title"
           >
-            Tugas terjadwal
+            Jadwal
           </h2>
           <p class="jk-privacy-note">
             Prompt yang dijalankan otomatis sebagai sesi baru saat waktunya tiba.

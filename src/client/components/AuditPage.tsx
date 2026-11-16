@@ -141,13 +141,13 @@ export function AuditPage({ api, sessions }: AuditPageProps) {
     <section class="jk-audit" aria-labelledby="jk-audit-title">
       <header class="jk-settings-head">
         <h2 id="jk-audit-title" tabIndex={-1} class="jk-settings-title">
-          Audit log
+          Log audit
         </h2>
         <p class="jk-privacy-note">{NOTE}</p>
       </header>
 
       {disabled ? (
-        <p class="jk-note">Audit log dimatikan (JEJAK_AUDIT=0).</p>
+        <p class="jk-note">Log audit dimatikan (JEJAK_AUDIT=0).</p>
       ) : (
         <>
           <div class="jk-audit-top">

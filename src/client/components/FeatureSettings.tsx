@@ -47,7 +47,7 @@ export function FeatureSettingsView(props: FeatureSettingsViewProps) {
       </h2>
       <p class="jk-help">
         Saklar berlaku untuk Jejak yang sedang berjalan. Mematikan fitur menutup sesi atau
-        proses yang sedang berjalan. Perubahan dicatat di Audit log.
+        proses yang sedang berjalan. Perubahan dicatat di Log audit.
       </p>
 
       {props.loading && <p class="jk-note">Memuat fitur…</p>}

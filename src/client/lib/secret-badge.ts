@@ -16,6 +16,6 @@ export function secretBadge(session: { redactedEvents?: number }): SecretBadge |
   return {
     label: "Disamarkan",
     ariaLabel: "Rahasia disamarkan",
-    title: `${count} event disamarkan di sesi ini. Lihat Audit log untuk rinciannya.`,
+    title: `${count} event disamarkan di sesi ini. Lihat Log audit untuk rinciannya.`,
   };
 }

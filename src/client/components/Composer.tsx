@@ -45,10 +45,10 @@ export interface ComposerProps {
 type PermissionMode = ComposerPermissionMode;
 
 const PERMISSION_OPTIONS: { value: PermissionMode; label: string }[] = [
-  { value: "default", label: "Ask permissions" },
-  { value: "acceptEdits", label: "Accept edits" },
-  { value: "plan", label: "Plan mode" },
-  { value: "bypassPermissions", label: "Bypass permissions (dangerous)" },
+  { value: "default", label: "Tanya izin" },
+  { value: "acceptEdits", label: "Terima perubahan" },
+  { value: "plan", label: "Rencana" },
+  { value: "bypassPermissions", label: "Lewati izin (berbahaya)" },
 ];
 
 const STORAGE_CWD = "jejak.cwd";
@@ -441,7 +441,7 @@ export function Composer({
   const modelEntry = models.find((entry) => entry.id === model);
   const modelLabel = hasModelList
     ? model === ""
-      ? "Default model"
+      ? "Model bawaan"
       : (modelEntry?.label ?? model)
     : undefined;
   const modeLabel =
@@ -630,7 +630,7 @@ export function Composer({
 
           {hasModelList ? (
             <Dropdown
-              label={modelLabel ?? "Default model"}
+              label={modelLabel ?? "Model bawaan"}
               ariaLabel="Model"
               placement="down"
               align="start"
@@ -638,7 +638,7 @@ export function Composer({
               sections={[
                 {
                   options: [
-                    { value: "", label: "Default model" },
+                    { value: "", label: "Model bawaan" },
                     ...models.map((entry) => ({ value: entry.id, label: entry.label ?? entry.id })),
                   ],
                   value: model,
@@ -653,7 +653,7 @@ export function Composer({
                 id="jk-model"
                 type="text"
                 class="jk-chip-input"
-                placeholder="Default model"
+                placeholder="Model bawaan"
                 size={14}
                 value={model}
                 onInput={(event) => setModel((event.currentTarget as HTMLInputElement).value)}

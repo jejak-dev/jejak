@@ -20,7 +20,7 @@ export interface TerminalTabProps {
 }
 
 const NOTE =
-  "Terminal ini memberi akses shell penuh dengan hak akunmu dan TIDAK disandbox. Env dibersihkan dari kunci Jejak. Ketikan tidak dicatat; pembukaan dan penutupan tercatat di Audit log. Terminal sederhana: program layar penuh (vim, htop) belum didukung. Tutup otomatis setelah 30 menit tanpa aktivitas.";
+  "Terminal ini memberi akses shell penuh dengan hak akunmu dan TIDAK disandbox. Env dibersihkan dari kunci Jejak. Ketikan tidak dicatat; pembukaan dan penutupan tercatat di Log audit. Terminal sederhana: program layar penuh (vim, htop) belum didukung. Tutup otomatis setelah 30 menit tanpa aktivitas.";
 
 type State = "siap" | "membuka" | "aktif" | "selesai" | "mati";
 
