@@ -52,6 +52,28 @@ jobs:
       - name: Periksa versi manifest
         run: bun run check:version
 
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Pasang Bun 1.4.2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Pasang dependensi
+        run: bun install --frozen-lockfile
+
+      - name: Pasang Chromium untuk Playwright
+        run: bunx playwright install --with-deps chromium
+
+      # Server uji memakai runner mock dan JEJAK_HOME sementara.
+      - name: Jalankan tes e2e
+        run: bun run test:e2e
+
   rust:
     name: Rust (src-tauri)
     runs-on: macos-latest
