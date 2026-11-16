@@ -6630,6 +6630,13 @@ h2.jk-md-heading {
   align-self: center;
 }
 
+.jk-instruksi-switch-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
 .jk-instruksi-head {
   display: flex;
   flex-wrap: wrap;
@@ -6645,6 +6652,37 @@ h2.jk-md-heading {
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+/* Tab khusus halaman Instruksi: lebih jelas dari tab panel umum. */
+.jk-instruksi-head .jk-panel-tabs {
+  flex: none;
+  gap: 4px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.jk-instruksi-head .jk-panel-tab {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 8px;
+  font-size: var(--fs-ui);
+}
+
+.jk-instruksi-head .jk-panel-tab:hover {
+  background: var(--hover-2);
+}
+
+.jk-instruksi-head .jk-panel-tab-active {
+  background: var(--hover);
+  color: var(--t1);
+  font-weight: 500;
+  border-bottom-color: transparent;
+}
+
+.jk-instruksi-head .jk-panel-tab:focus-visible {
+  outline: 2px solid var(--line-2);
+  outline-offset: 1px;
 }
 
 .jk-instruksi-select {

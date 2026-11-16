@@ -444,15 +444,22 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
                     Hooks menjalankan perintah shell di komputermu.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  class="jk-link-btn jk-instruksi-switch"
-                  disabled={configBusy}
-                  aria-pressed={config.userSettings}
-                  onClick={() => void updateConfig({ userSettings: !config.userSettings })}
-                >
-                  {config.userSettings ? "Aktif" : "Mati"}
-                </button>
+                <div class="jk-instruksi-switch jk-instruksi-switch-wrap">
+                  <span class="jk-help" aria-hidden="true">
+                    {config.userSettings ? "Aktif" : "Nonaktif"}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    class={`jk-switch${config.userSettings ? " jk-switch-on" : ""}`}
+                    aria-checked={config.userSettings ? "true" : "false"}
+                    aria-label="Muat pengaturan pengguna"
+                    disabled={configBusy}
+                    onClick={() =>
+                      void updateConfig({ userSettings: !config.userSettings })
+                    }
+                  />
+                </div>
               </div>
               <div class="jk-instruksi-setting">
                 <div class="jk-instruksi-setting-text">
@@ -462,15 +469,20 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
                     tetap aktif.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  class="jk-link-btn jk-instruksi-switch"
-                  disabled={configBusy}
-                  aria-pressed={config.hooksEnabled}
-                  onClick={() => void updateConfig({ hooksEnabled: !config.hooksEnabled })}
-                >
-                  {config.hooksEnabled ? "Aktif" : "Mati"}
-                </button>
+                <div class="jk-instruksi-switch jk-instruksi-switch-wrap">
+                  <span class="jk-help" aria-hidden="true">
+                    {config.hooksEnabled ? "Aktif" : "Nonaktif"}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    class={`jk-switch${config.hooksEnabled ? " jk-switch-on" : ""}`}
+                    aria-checked={config.hooksEnabled ? "true" : "false"}
+                    aria-label="Jalankan hooks Claude"
+                    disabled={configBusy}
+                    onClick={() => void updateConfig({ hooksEnabled: !config.hooksEnabled })}
+                  />
+                </div>
               </div>
             </>
           )}
