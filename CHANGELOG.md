@@ -10,6 +10,20 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 - Atur sandi akses dari Pengaturan (Akses & sandi); Keluar tampil setelah sandi dibuat.
 - Akses dari perangkat lain: Pengaturan (Akses & sandi) bisa menyalakan listener kedua di jaringan (port 4747, bisa diubah) supaya Jejak dibuka dari HP atau laptop lain; hanya menyala bila sandi tersimpan ada.
+- Kode QR untuk tiap alamat akses jaringan di Pengaturan, supaya HP tinggal memindai.
+- Arahkan pesan antrean ke giliran yang sedang berjalan (steering) tanpa menghentikannya.
+- Pencarian teks di tab Files memakai `git grep` (menghormati `.gitignore`), dengan regex PCRE, kata utuh, glob sertakan/kecualikan, sorotan kecocokan, dan hasil per berkas.
+- Prompt tertahan: sesi baru bisa menunggu sesi lain selesai ("Tunggu sesi" di komposer), daftar "Tertahan" di sidebar, dan Batal memulihkan draf.
+- Tugas terjadwal: halaman Schedules untuk sesi otomatis sekali, berulang, atau harian (waktu lokal server); mode tanpa izin tidak diizinkan.
+- Tab Konteks di panel kanan: pemakaian jendela konteks, token, biaya, hitungan alat, dan giliran per sesi.
+- Saran prompt berikutnya sebagai chip di atas komposer; konsolidasi ringkasan sesi di halaman Memory.
+- Tes e2e Playwright (`bun run test:e2e`) dan job CI-nya.
+
+### Diubah
+
+- Pengaturan dipecah jadi bagian Provider, Keamanan, Biaya, Fitur, dan Sistem; footer sidebar dikelompokkan.
+- Proses kerja giliran yang selesai dilipat jadi satu blok "Bekerja, N langkah"; tombol Hentikan pindah ke komposer.
+- Tipografi memakai skala token (jawaban agen serif 15.5px, dasar 14px, teks terkecil 12px); lencana header tidak terpotong dan persen konteks tampil.
 
 ### Diperbaiki
 
