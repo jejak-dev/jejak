@@ -454,6 +454,9 @@ export function Sidebar({
     return isMac ? "⌘K" : "Ctrl K";
   };
 
+  /** Nama profil aktif untuk tautan Pengaturan; string kosong berarti belum ada. */
+  const namaProfil = activeProfileLabel?.trim() ?? "";
+
   /** Sesi yang sedang menunggu konfirmasi hapus. */
   const deletingSession =
     openRowId === undefined ? undefined : sessions.find((session) => session.id === openRowId);
@@ -524,119 +527,129 @@ export function Sidebar({
 
         <footer class="jk-sidebar-foot">
           {onOpenPalette !== undefined && (
-            <button type="button" class="jk-foot-link jk-foot-btn" onClick={onOpenPalette}>
-              <span class="jk-foot-text">Perintah</span>
-              <span class="jk-foot-count">{paletteKeys()}</span>
-            </button>
-          )}
-          <a
-            class={`jk-foot-link${workspacesActive ? " jk-foot-link-active" : ""}`}
-            href="#/workspaces"
-            aria-current={workspacesActive ? "page" : undefined}
-          >
-            <Icon name="workspace" />
-            <span class="jk-foot-text">Workspace</span>
-          </a>
-          <a
-            class={`jk-foot-link${memoryActive ? " jk-foot-link-active" : ""}`}
-            href="#/memory"
-            aria-current={memoryActive ? "page" : undefined}
-          >
-            <Icon name="memory" />
-            <span class="jk-foot-text">Memory</span>
-            {memoryProposed !== undefined && memoryProposed > 0 && (
-              <span class="jk-foot-count">{memoryProposed}</span>
-            )}
-          </a>
-          <a
-            class={`jk-foot-link${mcpActive ? " jk-foot-link-active" : ""}`}
-            href="#/mcp"
-            aria-current={mcpActive ? "page" : undefined}
-          >
-            <Icon name="cube" />
-            <span class="jk-foot-text">Server MCP</span>
-          </a>
-          <a
-            class={`jk-foot-link${instruksiActive ? " jk-foot-link-active" : ""}`}
-            href="#/instruksi"
-            aria-current={instruksiActive ? "page" : undefined}
-          >
-            <Icon name="doc" />
-            <span class="jk-foot-text">Instructions</span>
-          </a>
-          <a
-            class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
-            href="#/audit"
-            aria-current={auditActive ? "page" : undefined}
-          >
-            <Icon name="audit" />
-            <span class="jk-foot-text">Audit log</span>
-          </a>
-          <a
-            class={`jk-foot-link${usageActive ? " jk-foot-link-active" : ""}`}
-            href="#/usage"
-            aria-current={usageActive ? "page" : undefined}
-          >
-            <Icon name="chart" />
-            <span class="jk-foot-text">Usage</span>
-          </a>
-          <a
-            class={`jk-foot-link${providersActive ? " jk-foot-link-active" : ""}`}
-            href="#/providers"
-            aria-current={providersActive ? "page" : undefined}
-          >
-            <Icon name="cube" />
-            <span class="jk-foot-text">{activeProfileLabel ?? "Set up provider"}</span>
-          </a>
-          <button
-            type="button"
-            class="jk-foot-link jk-foot-btn"
-            aria-label={`Tema: ${themeLabel(theme)}. Klik untuk mengganti.`}
-            onClick={cycleTheme}
-          >
-            <Icon name={theme === "light" ? "sun" : theme === "dark" ? "moon" : "monitor"} />
-            <span class="jk-foot-text">Tema</span>
-            <span class="jk-foot-count">{themeLabel(theme)}</span>
-          </button>
-          <button
-            type="button"
-            class={`jk-foot-link jk-foot-btn${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
-            aria-expanded={notifyOpen}
-            onClick={() => {
-              setNotifyOpen((open) => !open);
-              setNotifyError(undefined);
-            }}
-          >
-            <Icon name="bell" />
-            <span class="jk-foot-text">Notifications</span>
-            <span class="jk-foot-count">{notifyPrefs.enabled ? "Aktif" : "Mati"}</span>
-          </button>
-          {notifyOpen && (
-            <div class="jk-notify-menu">
-              <button type="button" class="jk-link-btn" onClick={() => void toggleNotify()}>
-                Notifikasi desktop: {notifyPrefs.enabled ? "aktif" : "mati"}
+            <div class="jk-foot-group" role="group">
+              <button type="button" class="jk-foot-link jk-foot-btn" onClick={onOpenPalette}>
+                <span class="jk-foot-text">Perintah</span>
+                <span class="jk-foot-count">{paletteKeys()}</span>
               </button>
-              <button
-                type="button"
-                class="jk-link-btn"
-                disabled={!notifyPrefs.enabled}
-                onClick={toggleSound}
-              >
-                Bunyi: {notifyPrefs.sound ? "aktif" : "mati"}
-              </button>
-              {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
             </div>
           )}
-          {authRequired && onLogout !== undefined && (
+          <div class="jk-foot-group" role="group">
+            <a
+              class={`jk-foot-link${workspacesActive ? " jk-foot-link-active" : ""}`}
+              href="#/workspaces"
+              aria-current={workspacesActive ? "page" : undefined}
+            >
+              <Icon name="workspace" />
+              <span class="jk-foot-text">Workspace</span>
+            </a>
+            <a
+              class={`jk-foot-link${memoryActive ? " jk-foot-link-active" : ""}`}
+              href="#/memory"
+              aria-current={memoryActive ? "page" : undefined}
+            >
+              <Icon name="memory" />
+              <span class="jk-foot-text">Memory</span>
+              {memoryProposed !== undefined && memoryProposed > 0 && (
+                <span class="jk-foot-count">{memoryProposed}</span>
+              )}
+            </a>
+            <a
+              class={`jk-foot-link${mcpActive ? " jk-foot-link-active" : ""}`}
+              href="#/mcp"
+              aria-current={mcpActive ? "page" : undefined}
+            >
+              <Icon name="cube" />
+              <span class="jk-foot-text">Server MCP</span>
+            </a>
+            <a
+              class={`jk-foot-link${instruksiActive ? " jk-foot-link-active" : ""}`}
+              href="#/instruksi"
+              aria-current={instruksiActive ? "page" : undefined}
+            >
+              <Icon name="doc" />
+              <span class="jk-foot-text">Instructions</span>
+            </a>
+          </div>
+          <div class="jk-foot-group" role="group">
+            <a
+              class={`jk-foot-link${usageActive ? " jk-foot-link-active" : ""}`}
+              href="#/usage"
+              aria-current={usageActive ? "page" : undefined}
+            >
+              <Icon name="chart" />
+              <span class="jk-foot-text">Usage</span>
+            </a>
+            <a
+              class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
+              href="#/audit"
+              aria-current={auditActive ? "page" : undefined}
+            >
+              <Icon name="audit" />
+              <span class="jk-foot-text">Audit log</span>
+            </a>
+          </div>
+          <div class="jk-foot-group" role="group">
+            <a
+              class={`jk-foot-link${providersActive ? " jk-foot-link-active" : ""}`}
+              href="#/providers"
+              aria-current={providersActive ? "page" : undefined}
+              aria-label={namaProfil === "" ? "Pengaturan" : `Pengaturan, profil aktif ${namaProfil}`}
+            >
+              <Icon name="gear" />
+              <span class="jk-foot-text">Pengaturan</span>
+              <span class="jk-foot-count">{namaProfil === "" ? "Atur provider" : namaProfil}</span>
+            </a>
             <button
               type="button"
               class="jk-foot-link jk-foot-btn"
-              onClick={() => onLogout()}
-              aria-label="Keluar dari Jejak"
+              aria-label={`Tema: ${themeLabel(theme)}. Klik untuk mengganti.`}
+              onClick={cycleTheme}
             >
-              <span class="jk-foot-text">Keluar</span>
+              <Icon name={theme === "light" ? "sun" : theme === "dark" ? "moon" : "monitor"} />
+              <span class="jk-foot-text">Tema</span>
+              <span class="jk-foot-count">{themeLabel(theme)}</span>
             </button>
-          )}
+            <button
+              type="button"
+              class={`jk-foot-link jk-foot-btn${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
+              aria-expanded={notifyOpen}
+              onClick={() => {
+                setNotifyOpen((open) => !open);
+                setNotifyError(undefined);
+              }}
+            >
+              <Icon name="bell" />
+              <span class="jk-foot-text">Notifications</span>
+              <span class="jk-foot-count">{notifyPrefs.enabled ? "Aktif" : "Mati"}</span>
+            </button>
+            {notifyOpen && (
+              <div class="jk-notify-menu">
+                <button type="button" class="jk-link-btn" onClick={() => void toggleNotify()}>
+                  Notifikasi desktop: {notifyPrefs.enabled ? "aktif" : "mati"}
+                </button>
+                <button
+                  type="button"
+                  class="jk-link-btn"
+                  disabled={!notifyPrefs.enabled}
+                  onClick={toggleSound}
+                >
+                  Bunyi: {notifyPrefs.sound ? "aktif" : "mati"}
+                </button>
+                {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
+              </div>
+            )}
+            {authRequired && onLogout !== undefined && (
+              <button
+                type="button"
+                class="jk-foot-link jk-foot-btn"
+                onClick={() => onLogout()}
+                aria-label="Keluar dari Jejak"
+              >
+                <span class="jk-foot-text">Keluar</span>
+              </button>
+            )}
+          </div>
         </footer>
       </aside>
 

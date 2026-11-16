@@ -742,6 +742,13 @@ code {
   border-top: 1px solid var(--line);
 }
 
+/* Kelompok footer: pemisah tipis antar kelompok, tanpa label. */
+.jk-foot-group + .jk-foot-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+
 .jk-foot-link {
   display: flex;
   align-items: center;
@@ -5813,6 +5820,14 @@ h2.jk-md-heading {
   margin-top: 28px;
   padding-top: 22px;
   border-top: 1px solid var(--line);
+}
+
+/* Bagian pertama di bawah navigasi Pengaturan tak perlu garis pemisah lagi;
+   navigasi sudah memakai garis bawah sendiri. */
+.jk-settings-nav + section {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .jk-update-title {
