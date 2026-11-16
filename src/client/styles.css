@@ -1921,6 +1921,13 @@ h2.jk-md-heading {
   padding: 4px 16px 14px;
 }
 
+/* Teks narasi di dalam blok "Bekerja": lebih kecil dan rapat, sejajar baris langkah. */
+.jk-steps-list > .jk-text {
+  font-size: 13.5px;
+  color: var(--t2);
+  padding: 6px 16px;
+}
+
 .jk-step-think > summary {
   font-style: italic;
 }

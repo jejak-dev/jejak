@@ -4,7 +4,7 @@ import { CANCELLED_MESSAGE, dedupeToolPermission, type TimelineItem } from "../l
 import { resumablePermissionIds } from "../lib/plans";
 import { endedByRestart } from "../lib/sessions";
 import { StepsGroup } from "./StepsGroup";
-import { groupSteps, stepsStatus, summarizeSteps, type StepItem } from "../lib/step-groups";
+import { foldWork, groupSteps, stepsStatus, summarizeSteps, workTitle, type StepItem, type TextItem } from "../lib/step-groups";
 import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
 import { formatCost, formatCount } from "../lib/format";
 import { attachmentUrl, splitAttachments } from "../lib/attachments";
@@ -499,6 +499,17 @@ export function Timeline({
               );
   };
 
+  /** Teks agen, dipakai di luar blok "Bekerja" maupun di dalamnya. */
+  const renderText = (item: TextItem, index: number) => (
+    <div
+      class={`jk-text${item.streaming === true ? " jk-text-streaming" : ""}`}
+      key={index}
+      style={depthStyle(item.depth)}
+    >
+      <Markdown text={item.text} />
+    </div>
+  );
+
   return (
     <div class="jk-timeline">
       <div
@@ -511,7 +522,28 @@ export function Timeline({
         <div class="jk-col">
           {items.length === 0 && <p class="jk-empty-line">Belum ada aktivitas.</p>}
 
-          {groupSteps(visibleItems).map((block) => {
+          {foldWork(groupSteps(visibleItems), { live: running === true }).map((block) => {
+            if (block.kind === "work") {
+              const langkah = block.items.filter(
+                (item): item is StepItem => item.kind === "tool" || item.kind === "thinking",
+              );
+              const status = stepsStatus(langkah);
+              return (
+                <StepsGroup
+                  key={`work-${block.index}`}
+                  summary={workTitle(block)}
+                  liveLabel=""
+                  live={false}
+                  failed={status.failed}
+                >
+                  {block.items.map((item, offset) =>
+                    item.kind === "text"
+                      ? renderText(item, block.index + offset)
+                      : renderStep(item, block.index + offset),
+                  )}
+                </StepsGroup>
+              );
+            }
             if (block.kind === "steps") {
               const summary = summarizeSteps(block.items);
               const status = stepsStatus(block.items);
@@ -552,15 +584,7 @@ export function Timeline({
 
 
               case "text":
-                return (
-                  <div
-                    class={`jk-text${item.streaming === true ? " jk-text-streaming" : ""}`}
-                    key={index}
-                    style={depthStyle(item.depth)}
-                  >
-                    <Markdown text={item.text} />
-                  </div>
-                );
+                return renderText(item, index);
 
 
               case "permission":
