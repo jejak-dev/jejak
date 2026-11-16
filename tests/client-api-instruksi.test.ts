@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { ApiError, createApiClient, type ClaudeHookItem, type ClaudeSkillItem } from "../src/client/lib/api";
+import {
+  ApiError,
+  createApiClient,
+  type ClaudeHookItem,
+  type ClaudePluginItem,
+  type ClaudeSkillItem,
+} from "../src/client/lib/api";
 
 interface Call {
   url: string;
@@ -190,5 +196,59 @@ describe("hooks", () => {
     const api = createApiClient({ fetch });
 
     await expect(api.listHooks("/kerja")).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+const PLUGIN: ClaudePluginItem = {
+  id: "alpha@pasar",
+  name: "alpha",
+  marketplace: "pasar",
+  description: "Plugin contoh",
+  version: "1.0.0",
+  author: "Penulis",
+  path: "/home/u/.claude/plugins/alpha",
+  skills: 3,
+  commands: 2,
+  agents: 1,
+  hasHooks: true,
+  enabled: false,
+};
+
+describe("plugin", () => {
+  test("listPlugins membuka bungkus plugins", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ plugins: [PLUGIN] }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.listPlugins()).toEqual([PLUGIN]);
+    expect(calls[0]?.url).toBe("/api/claude/plugins");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("respons salah bentuk ditolak", async () => {
+    const salah = fakeFetch(() => jsonResponse({ plugins: [{ id: "alpha" }] }));
+    await expect(createApiClient({ fetch: salah.fetch }).listPlugins()).rejects.toBeInstanceOf(
+      ApiError,
+    );
+    const bukanArray = fakeFetch(() => jsonResponse({ plugins: null }));
+    await expect(
+      createApiClient({ fetch: bukanArray.fetch }).listPlugins(),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("setPluginEnabled meng-encode id dan mengirim body", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ id: "a b@pasar", enabled: true }));
+    const api = createApiClient({ fetch });
+
+    await api.setPluginEnabled("a b@pasar", true);
+    expect(calls[0]?.url).toBe("/api/claude/plugins/a%20b%40pasar");
+    expect(calls[0]?.init.method).toBe("PUT");
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ enabled: true }));
+  });
+
+  test("respons setPluginEnabled salah bentuk ditolak", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ id: "alpha@pasar" }));
+    await expect(
+      createApiClient({ fetch }).setPluginEnabled("alpha@pasar", true),
+    ).rejects.toBeInstanceOf(ApiError);
   });
 });

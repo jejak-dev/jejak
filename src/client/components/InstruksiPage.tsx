@@ -1,4 +1,5 @@
 import { AgentsPanel } from "./AgentsPanel";
+import { PluginsPanel } from "./PluginsPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import {
@@ -31,13 +32,14 @@ export interface InstruksiPageProps {
   defaultCwd?: string;
 }
 
-type TabId = "claude" | "skills" | "agents" | "hooks";
+type TabId = "claude" | "skills" | "agents" | "hooks" | "plugins";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "claude", label: "CLAUDE.md" },
   { id: "skills", label: "Skills" },
   { id: "agents", label: "Subagent" },
   { id: "hooks", label: "Hooks" },
+  { id: "plugins", label: "Plugin" },
 ];
 
 const SKILLS_NOTE =
@@ -858,6 +860,8 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
           <p class="jk-note jk-instruksi-note">{HOOKS_NOTE}</p>
         </div>
       )}
+
+      {tab === "plugins" && <PluginsPanel api={api} />}
     </section>
   );
 }

@@ -38,6 +38,7 @@ import {
 } from "./claude-memory";
 import type { HookInfo } from "../../server/claude-config/hooks";
 import type { InstructionFile } from "../../server/claude-config/instructions";
+import type { PluginInfo } from "../../server/claude-config/plugins";
 import type { TerminalInfo } from "../../server/terminal/terminal-manager";
 import type { RunnerCommand } from "../../server/runner/runner-service";
 import type { RemoteRepo } from "../../server/gitprovider/adapters";
@@ -270,6 +271,9 @@ export type ClaudeAgentItem = AgentInfo;
 export type ClaudeAgentFile = ClaudeAgentItem & { content: string };
 export type ClaudeHookItem = HookInfo;
 export type ClaudeScope = "user" | "project";
+
+/** Plugin Claude Code yang terpasang; `enabled` berasal dari pengaturan Jejak. */
+export type ClaudePluginItem = PluginInfo & { enabled: boolean };
 
 export interface ClaudeConfigPatch {
   userSettings?: boolean;
@@ -880,6 +884,10 @@ export interface ApiClient {
     cwd?: string,
   ): Promise<ClaudeAgentFile>;
   listHooks(cwd?: string): Promise<ClaudeHookItem[]>;
+  /** Daftar plugin Claude Code yang sudah terpasang. */
+  listPlugins(): Promise<ClaudePluginItem[]>;
+  /** Nyalakan atau matikan plugin; berlaku untuk sesi berikutnya. */
+  setPluginEnabled(id: string, enabled: boolean): Promise<void>;
   /** Daftar perintah slash yang tersedia di folder kerja tertentu. */
   listCommands(cwd: string): Promise<CommandListResult>;
 }
@@ -1571,6 +1579,51 @@ function agentFileFrom(payload: unknown): ClaudeAgentFile {
 function hookListFrom(payload: unknown): ClaudeHookItem[] {
   if (!isRecord(payload) || !Array.isArray(payload.hooks)) throw invalidResponse();
   return payload.hooks as ClaudeHookItem[];
+}
+
+/** Bentuk plugin dari server; field yang salah jenis ditolak. */
+function pluginItemFrom(value: unknown): ClaudePluginItem {
+  if (!isRecord(value)) throw invalidResponse();
+  const {
+    id,
+    name,
+    marketplace,
+    description,
+    version,
+    author,
+    path,
+    skills,
+    commands,
+    agents,
+    hasHooks,
+    enabled,
+  } = value;
+  if (
+    typeof id !== "string" ||
+    typeof name !== "string" ||
+    typeof marketplace !== "string" ||
+    typeof description !== "string" ||
+    typeof version !== "string" ||
+    typeof author !== "string" ||
+    typeof path !== "string" ||
+    typeof skills !== "number" ||
+    !Number.isFinite(skills) ||
+    typeof commands !== "number" ||
+    !Number.isFinite(commands) ||
+    typeof agents !== "number" ||
+    !Number.isFinite(agents) ||
+    typeof hasHooks !== "boolean" ||
+    typeof enabled !== "boolean"
+  ) {
+    throw invalidResponse();
+  }
+  return value as unknown as ClaudePluginItem;
+}
+
+/** Daftar plugin dari server; bentuk salah ditolak. */
+function pluginListFrom(payload: unknown): ClaudePluginItem[] {
+  if (!isRecord(payload) || !Array.isArray(payload.plugins)) throw invalidResponse();
+  return payload.plugins.map(pluginItemFrom);
 }
 
 /** Perintah runner dari server; `group` dan `detail` boleh absen. */
@@ -2905,6 +2958,21 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async listHooks(cwd) {
       return hookListFrom(await request("GET", `/api/claude/hooks${claudeQuery(cwd)}`));
+    },
+
+    async listPlugins() {
+      return pluginListFrom(await request("GET", "/api/claude/plugins"));
+    },
+
+    async setPluginEnabled(id, enabled) {
+      const data = await request(
+        "PUT",
+        `/api/claude/plugins/${encodeURIComponent(id)}`,
+        { enabled },
+      );
+      if (!isRecord(data) || typeof data.id !== "string" || typeof data.enabled !== "boolean") {
+        throw invalidResponse();
+      }
     },
 
     async listCommands(cwd) {
