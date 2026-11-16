@@ -97,6 +97,17 @@ export function networkUrls(status: NetworkStatus | undefined): string[] {
 }
 
 /**
+ * Pure: URL mana yang kodenya terbuka setelah tombol QR ditekan.
+ * Satu kode terbuka sekali; menekan tombol yang sama menutupnya.
+ */
+export function toggleQrUrl(
+  current: string | undefined,
+  url: string,
+): string | undefined {
+  return current === url ? undefined : url;
+}
+
+/**
  * Baca status jaringan dari respons server. Bentuk tak dikenal memakai nilai
  * aman (mati) supaya klien tak pernah menampilkan keadaan palsu.
  */

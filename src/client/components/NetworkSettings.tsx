@@ -10,10 +10,12 @@ import {
   networkUrls,
   resolveNetworkPort,
   shouldReloadNetworkStatus,
+  toggleQrUrl,
   validateNetworkPort,
   type NetworkRefreshKey,
   type NetworkStatus,
 } from "../lib/network-form";
+import { encodeQr, qrPath } from "../lib/qr";
 import { CopyButton } from "./CopyButton";
 
 export interface NetworkSettingsViewProps {
@@ -29,6 +31,34 @@ export interface NetworkSettingsViewProps {
   onPort: (value: string) => void;
   /** Saklar akses jaringan ditekan. */
   onToggle: () => void;
+  /** URL yang kodenya sedang terbuka; `undefined` bila semua tertutup. */
+  qrUrl?: string | undefined;
+  /** Tombol QR ditekan: buka kodenya, atau tutup bila sedang terbuka. */
+  onToggleQr?: (url: string) => void;
+}
+
+/**
+ * Kode QR sebagai SVG. Latar putih dan modul hitam selalu, bukan token
+ * tema, supaya tetap terbaca pemindai saat aplikasi memakai mode gelap.
+ */
+function QrCode({ value }: { value: string }) {
+  const modules = encodeQr(value);
+  // Quiet zone 4 modul di tiap sisi.
+  const total = modules.length + 8;
+  return (
+    <svg
+      class="jk-qr"
+      role="img"
+      aria-label={`Kode QR untuk ${value}`}
+      viewBox={`0 0 ${total} ${total}`}
+      shape-rendering="crispEdges"
+    >
+      <rect x="0" y="0" width={total} height={total} fill="#ffffff" />
+      <g transform="translate(4 4)">
+        <path d={qrPath(modules)} fill="#000000" />
+      </g>
+    </svg>
+  );
 }
 
 /** Tampilan bagian akses jaringan tanpa hook; dipakai uji render tanpa DOM. */
@@ -82,9 +112,25 @@ export function NetworkSettingsView(props: NetworkSettingsViewProps) {
       <p class="jk-access-status">{networkStatusText(status)}</p>
 
       {urls.map((url) => (
-        <div class="jk-network-url" key={url}>
-          <span class="jk-network-url-text">{url}</span>
-          <CopyButton text={url} label={`Salin ${url}`} />
+        <div class="jk-network-url-row" key={url}>
+          <div class="jk-network-url">
+            <span class="jk-network-url-text">{url}</span>
+            <CopyButton text={url} label={`Salin ${url}`} />
+            <button
+              type="button"
+              class="jk-qr-toggle"
+              aria-label={`Tampilkan kode QR untuk ${url}`}
+              onClick={() => props.onToggleQr?.(url)}
+            >
+              QR
+            </button>
+          </div>
+          {props.qrUrl === url && (
+            <>
+              <QrCode value={url} />
+              <p class="jk-note">Pindai dari HP di jaringan yang sama.</p>
+            </>
+          )}
         </div>
       ))}
 
@@ -127,6 +173,8 @@ export function NetworkSettings({ api, refreshKey = 0 }: NetworkSettingsProps) {
   const [port, setPort] = useState(String(DEFAULT_NETWORK_PORT));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  // URL yang kodenya terbuka; satu saja supaya tak menumpuk.
+  const [qrUrl, setQrUrl] = useState<string | undefined>(undefined);
   // True kalau pengguna sendiri yang mengubah kolom port; muat ulang status
   // tak boleh menimpa isian yang sedang diketik.
   const portEdited = useRef(false);
@@ -193,6 +241,10 @@ export function NetworkSettings({ api, refreshKey = 0 }: NetworkSettingsProps) {
     }
   }, [api, port, status]);
 
+  const onToggleQr = useCallback((url: string): void => {
+    setQrUrl((current) => toggleQrUrl(current, url));
+  }, []);
+
   if (available === false) return null;
 
   return (
@@ -203,6 +255,8 @@ export function NetworkSettings({ api, refreshKey = 0 }: NetworkSettingsProps) {
       port={port}
       onPort={onPort}
       onToggle={() => void onToggle()}
+      qrUrl={qrUrl}
+      onToggleQr={onToggleQr}
     />
   );
 }

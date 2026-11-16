@@ -5809,6 +5809,38 @@ h2.jk-md-heading {
   overflow-wrap: anywhere;
 }
 
+.jk-network-url-row {
+  display: grid;
+  gap: 8px;
+}
+
+.jk-qr-toggle {
+  flex: none;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--t3);
+}
+
+.jk-qr-toggle:hover,
+.jk-qr-toggle:focus-visible {
+  border-color: var(--line-2);
+  color: var(--t1);
+}
+
+/* Kode QR: latar putih tetap, bukan token tema, agar pemindai bisa baca. */
+.jk-qr {
+  display: block;
+  width: 136px;
+  height: 136px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
 /* SDK yang dipasang pengguna */
 
 .jk-sdk {
