@@ -59,6 +59,31 @@ function errorResponse(error: unknown): Response {
 const MAX_QUERY_LENGTH = 200;
 const INVALID_QUERY = "Kata kunci tidak valid.";
 const EDIT_DISABLED = "Penyuntingan berkas dimatikan.";
+const MAX_GLOB_ITEMS = 10;
+const INVALID_GLOB = "Pola berkas tidak valid.";
+
+/**
+ * Daftar glob dari parameter query: dipisah koma, item kosong dibuang, dan
+ * maksimal 10 item per daftar.
+ */
+function globList(value: unknown): string[] {
+  if (value === undefined) return [];
+  const raw = Array.isArray(value) ? value : [value];
+  const items: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "string") {
+      throw new FileError(INVALID_GLOB, "tidak-valid");
+    }
+    for (const part of entry.split(",")) {
+      if (part.trim() === "") continue;
+      items.push(part);
+    }
+  }
+  if (items.length > MAX_GLOB_ITEMS) {
+    throw new FileError(INVALID_GLOB, "tidak-valid");
+  }
+  return items;
+}
 
 /** Query `q` harus string tunggal 1..200 tanpa NUL/baris baru. */
 function searchQuery(value: unknown): string {
@@ -152,7 +177,13 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
         const q = rawQuery.getAll("q").length > 1 ? undefined : query.q;
         const text = searchQuery(q);
         const root = await resolveRepoRoot(session, query.repo, workspaces);
-        return await searchText(root, text, { caseSensitive: query.case === "1" });
+        return await searchText(root, text, {
+          caseSensitive: query.case === "1",
+          regex: query.regex === "1",
+          wholeWord: query.word === "1",
+          include: globList(query.include),
+          exclude: globList(query.exclude),
+        });
       } catch (error) {
         if (error instanceof FileError) {
           return jsonResponse(400, { error: error.message });

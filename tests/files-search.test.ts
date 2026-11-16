@@ -89,9 +89,15 @@ function searchUrl(id: string, query: string, extra = ""): string {
 }
 
 interface SearchBody {
-  matches: Array<{ path: string; line: number; text: string }>;
+  matches: Array<{
+    path: string;
+    line: number;
+    text: string;
+    ranges?: { start: number; end: number }[];
+  }>;
   files: number;
   truncated: boolean;
+  engine?: "git" | "scan";
 }
 
 describe("searchText", () => {
@@ -99,9 +105,12 @@ describe("searchText", () => {
     await writeFile(join(dir, "a.txt"), "baris satu\nHalo Dunia\n");
     await writeFile(join(dir, "b.txt"), "tidak ada\n");
     const result = await searchText(dir, "halo dunia");
-    expect(result.matches).toEqual([{ path: "a.txt", line: 2, text: "Halo Dunia" }]);
+    expect(result.matches).toEqual([
+      { path: "a.txt", line: 2, text: "Halo Dunia", ranges: [{ start: 0, end: 10 }] },
+    ]);
     expect(result.files).toBe(2);
     expect(result.truncated).toBe(false);
+    expect(result.engine).toBe("scan");
 
     const regex = await searchText(dir, "a.*b");
     expect(regex.matches).toEqual([]);
@@ -164,6 +173,49 @@ describe("searchText", () => {
     expect(result.matches[0]?.line).toBe(1);
     expect(result.matches[0]?.text.length).toBe(300);
   });
+
+  test("wholeWord hanya cocok satu kata utuh", async () => {
+    await writeFile(join(dir, "a.txt"), "cat concatenate cat\n");
+    const loose = await searchText(dir, "cat");
+    expect(loose.matches[0]?.ranges).toEqual([
+      { start: 0, end: 3 },
+      { start: 7, end: 10 },
+      { start: 16, end: 19 },
+    ]);
+    const whole = await searchText(dir, "cat", { wholeWord: true });
+    expect(whole.matches[0]?.ranges).toEqual([
+      { start: 0, end: 3 },
+      { start: 16, end: 19 },
+    ]);
+  });
+
+  test("include dan exclude memakai glob pada folder non-git", async () => {
+    await writeFile(join(dir, "a.ts"), "kata kunci\n");
+    await writeFile(join(dir, "b.txt"), "kata kunci\n");
+    await writeFile(join(dir, "c.md"), "kata kunci\n");
+    const included = await searchText(dir, "kata kunci", { include: ["*.ts"] });
+    expect(included.matches.map((match) => match.path)).toEqual(["a.ts"]);
+    const excluded = await searchText(dir, "kata kunci", { exclude: ["*.md", "*.ts"] });
+    expect(excluded.matches.map((match) => match.path)).toEqual(["b.txt"]);
+  });
+
+  test("glob tidak valid -> FileError", async () => {
+    await writeFile(join(dir, "a.txt"), "kata\n");
+    for (const include of [["../x"], ["/"], ["a".repeat(201)], [""]]) {
+      await expect(searchText(dir, "kata", { include })).rejects.toThrow("Pola berkas tidak valid.");
+    }
+    const banyak = Array.from({ length: 11 }, (_, index) => `p${index}`);
+    await expect(searchText(dir, "kata", { include: banyak })).rejects.toThrow(
+      "Pola berkas tidak valid.",
+    );
+  });
+
+  test("regex di luar repo git ditolak", async () => {
+    await writeFile(join(dir, "a.txt"), "foo1\n");
+    await expect(searchText(dir, "foo\\d+", { regex: true })).rejects.toThrow(
+      "Regex memerlukan repo git.",
+    );
+  });
 });
 
 describe("GET /api/sessions/:id/search", () => {
@@ -176,7 +228,9 @@ describe("GET /api/sessions/:id/search", () => {
     const res = await req(app, "GET", searchUrl(id, "cari aku"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as SearchBody;
-    expect(body.matches).toEqual([{ path: "sub/a.txt", line: 1, text: "cari AKU" }]);
+    expect(body.matches).toEqual([
+      { path: "sub/a.txt", line: 1, text: "cari AKU", ranges: [{ start: 0, end: 8 }] },
+    ]);
     expect(body.matches.every((match) => !match.path.startsWith("/"))).toBe(true);
 
     const sensitive = await req(app, "GET", searchUrl(id, "cari AKU", "&case=1"));
@@ -203,6 +257,20 @@ describe("GET /api/sessions/:id/search", () => {
       expect(res.status).toBe(400);
       expect(((await res.json()) as { error: string }).error).toBe("Kata kunci tidak valid.");
     }
+  });
+
+  test("regex di luar repo git dan glob tidak valid -> 400", async () => {
+    await writeFile(join(dir, "a.txt"), "foo1\n");
+    const app = makeApp();
+    const id = await createSession(app);
+
+    const regex = await req(app, "GET", searchUrl(id, "foo\\d+", "&regex=1"));
+    expect(regex.status).toBe(400);
+    expect(((await regex.json()) as { error: string }).error).toBe("Regex memerlukan repo git.");
+
+    const glob = await req(app, "GET", searchUrl(id, "foo", `&include=${encodeURIComponent("../x")}`));
+    expect(glob.status).toBe(400);
+    expect(((await glob.json()) as { error: string }).error).toBe("Pola berkas tidak valid.");
   });
 
   test("?repo= mencari di repo workspace", async () => {

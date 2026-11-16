@@ -1546,6 +1546,7 @@ describe("searchFiles", () => {
     matches: [{ path: "src/a.ts", line: 3, text: "const kata = 1;" }],
     files: 12,
     truncated: false,
+    engine: "scan" as const,
   };
 
   test("query dienkode termasuk spasi, &, dan unicode", async () => {
