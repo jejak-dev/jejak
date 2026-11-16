@@ -1241,6 +1241,15 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Periksa input pembuatan sesi tanpa membuat sesi. Aturan izin, bypass,
+   * cwd, dan workspace diperiksa persis seperti saat sesi dibuat; dipakai
+   * rute prompt tertahan yang menunda pembuatan sesi.
+   */
+  async checkCreateInput(input: CreateSessionInput): Promise<void> {
+    await this.validate(input);
+  }
+
   list(): SessionInfo[] {
     return Array.from(this.sessions.values())
       .reverse()

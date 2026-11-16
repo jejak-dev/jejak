@@ -42,7 +42,7 @@ function invalid(message: string): SessionError {
   return new SessionError(message, "tidak-valid");
 }
 
-function parseJsonBody(body: unknown): unknown {
+export function parseJsonBody(body: unknown): unknown {
   if (typeof body !== "string" || body.trim() === "") {
     throw invalid("Body permintaan harus berupa JSON.");
   }
@@ -53,7 +53,7 @@ function parseJsonBody(body: unknown): unknown {
   }
 }
 
-function parseCreateBody(body: unknown): CreateSessionInput {
+export function parseCreateBody(body: unknown): CreateSessionInput {
   const parsed = parseJsonBody(body);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     throw invalid("Body permintaan harus berupa objek.");

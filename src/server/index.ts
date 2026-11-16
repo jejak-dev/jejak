@@ -111,6 +111,13 @@ import { QuestionService } from "./questions/question-service";
 import { defaultQuestionStore, type QuestionStore } from "./questions/question-store";
 import { providerRoutes } from "./routes/providers";
 import { sessionRoutes } from "./routes/sessions";
+import { heldRoutes } from "./routes/held";
+import {
+  defaultHeldPromptStore,
+  HeldPromptService,
+  MemoryHeldPromptStore,
+  type HeldPromptStore,
+} from "./sessions/held-prompts";
 import { sdkRoutes } from "./routes/sdk";
 import type { LocateOptions } from "./sdk/claude-locator";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
@@ -239,6 +246,10 @@ export interface CreateAppOptions {
   passwordStore?: PasswordStore;
   /** Manajer akses dari jaringan; tanpa ini rute jaringan menjawab 404. */
   network?: NetworkManager;
+  /** Layanan prompt tertahan; tanpa ini dibuat dari store bawaan. */
+  heldPrompts?: HeldPromptService;
+  /** Penyimpanan prompt tertahan; default store memori (persistensi di server). */
+  heldPromptStore?: HeldPromptStore;
   /** Mode desktop: rute masuk sekali pakai dan cookie sesi 30 hari. */
   desktop?: DesktopOptions;
 }
@@ -496,6 +507,15 @@ export function createApp(options: CreateAppOptions = {}) {
     (sessionId) => manager.hasActiveGoal(sessionId),
   );
 
+  // Prompt tertahan: dibuat bersama manajer sesi. Tanpa store yang disuntik
+  // isinya hanya di memori; server yang berjalan memakai store SQLite.
+  const heldPrompts =
+    options.heldPrompts ??
+    new HeldPromptService({
+      manager,
+      store: options.heldPromptStore ?? new MemoryHeldPromptStore(),
+    });
+
   // Folder yang boleh dipakai: folder sesi aktif (dan worktree miliknya).
   const sessionCwds = (): string[] => {
     const paths: string[] = [];
@@ -668,6 +688,7 @@ export function createApp(options: CreateAppOptions = {}) {
       }),
     )
     .use(sessionRoutes({ manager, workspaces: workspaceResolver, audit: options.audit }))
+    .use(heldRoutes({ service: heldPrompts, manager }))
     .use(goalRoutes({ manager, audit: options.audit }))
     .use(worktreeRoutes({ manager, service: worktrees, audit: options.audit }))
     .use(
@@ -805,6 +826,8 @@ export function createApp(options: CreateAppOptions = {}) {
     terminal: terminalGate,
     browser: browserGate,
   };
+  // Seam untuk jam tahanan: server menyalakan dan mematikan layanannya.
+  (result as unknown as { heldPrompts?: HeldPromptService }).heldPrompts = heldPrompts;
   return result;
 }
 
@@ -832,6 +855,8 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const host = options.host ?? process.env.HOST ?? "127.0.0.1";
   const requestedPort = options.port ?? Number(process.env.PORT ?? 3000);
   const store = defaultSessionStore(process.env);
+  // Prompt tertahan disimpan di server supaya bertahan dari muat ulang.
+  const heldStore = defaultHeldPromptStore(process.env);
   const memoryStore = defaultMemoryStore(process.env);
   const memory =
     memoryStore === undefined
@@ -926,6 +951,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
 
   const app = createApp({
     sessionStore: store,
+    heldPromptStore: heldStore,
     memory,
     mcpUrl,
     checkpoints,
@@ -964,6 +990,10 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   // Supaya konteks permintaan punya `server` (alamat socket untuk throttle).
   app.server = server;
   const gates = (app as unknown as { featureGates?: FeatureGates }).featureGates;
+  // Jam tahanan dinyalakan di server yang berjalan, bukan di createApp:
+  // tes memakai sapuan manual.
+  const heldService = (app as unknown as { heldPrompts?: HeldPromptService }).heldPrompts;
+  if (heldService !== undefined) heldService.start();
   // Listener jaringan (bila diizinkan sebelumnya) dinyalakan lagi.
   if (network !== undefined) void network.start();
 
@@ -973,6 +1003,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const closers: Array<() => void> = [];
   if (network !== undefined) closers.push(() => void network.stop());
   if (store !== undefined) closers.push(() => store.close());
+  if (heldService !== undefined) closers.push(() => heldService.close());
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
