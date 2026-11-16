@@ -7672,6 +7672,60 @@ h2.jk-md-heading {
   }
 }
 
+/* Layar kecil: komposer diremehkan agar textarea dapat lebar penuh. */
+
+@media (max-width: 640px) {
+  /* Tombol bahasa dikte disembunyikan; tombol mikrofon tetap ada. */
+  .jk-dictation .jk-dd-btn {
+    display: none;
+  }
+
+  .jk-dictation-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .jk-pill-row {
+    gap: 4px;
+  }
+
+  .jk-comp-card {
+    padding: 8px;
+  }
+
+  .jk-pill-row .jk-comp-input {
+    min-height: 40px;
+    line-height: 1.4;
+  }
+
+  .jk-comp-meta {
+    gap: 4px 4px;
+    padding: 0 4px;
+  }
+
+  .jk-comp-meta .jk-chip {
+    padding: 0 7px;
+  }
+
+  .jk-select.jk-chip-select .jk-select-label {
+    max-width: 110px;
+  }
+
+  .jk-chip-input {
+    min-width: 0;
+  }
+}
+
+/* Layar sentuh tak punya keyboard, jadi pintasan "Ctrl K" tak relevan. */
+
+@media (hover: none) {
+  .jk-foot-count {
+    display: none;
+  }
+}
+
 /* ---------- Tab Commands (peluncur perintah) ---------- */
 
 .jk-runner {
