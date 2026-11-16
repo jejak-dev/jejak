@@ -18,11 +18,14 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Tab Konteks di panel kanan: pemakaian jendela konteks, token, biaya, hitungan alat, dan giliran per sesi.
 - Saran prompt berikutnya sebagai chip di atas komposer; konsolidasi ringkasan sesi di halaman Memory.
 - Tes e2e Playwright (`bun run test:e2e`) dan job CI-nya.
+- Plugin Claude Code: tab Plugin di halaman Instruksi (daftar terpasang, saklar per plugin) dan sub-tab Jelajahi untuk memasang atau mencopot plugin dari marketplace.
+- Beranda menampilkan daftar "Lanjutkan sesi"; keadaan kosong Jadwal punya tombol "Buat tugas pertama".
 
 ### Diubah
 
 - Pengaturan dipecah jadi bagian Provider, Keamanan, Biaya, Fitur, dan Sistem; footer sidebar dikelompokkan.
 - Proses kerja giliran yang selesai dilipat jadi satu blok "Bekerja, N langkah"; tombol Hentikan pindah ke komposer.
+- Label antarmuka diseragamkan ke bahasa Indonesia; tab dan saklar halaman Instruksi lebih jelas; pertanyaan agent yang sudah dijawab dilipat; header sesi lebih ringkas, terutama di HP.
 - Tipografi memakai skala token (jawaban agen serif 15.5px, dasar 14px, teks terkecil 12px); lencana header tidak terpotong dan persen konteks tampil.
 
 ### Diperbaiki
