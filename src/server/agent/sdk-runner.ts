@@ -13,9 +13,13 @@ import {
   SdkNotInstalledError,
   type SdkModule,
   type SdkQuery,
+  type SdkSlashCommand,
 } from "../sdk/sdk-loader";
 import type {
   AgentRunner,
+  CommandInfo,
+  ListCommandsInput,
+  RunClaudeConfig,
   RunInput,
   PermissionRequest,
   ResolvedMcpServer,
@@ -52,6 +56,8 @@ export interface SdkRunnerOptions {
   isCompiled?: () => boolean;
   /** Jam untuk cache pencarian; bawaan `Date.now`. */
   now?: () => number;
+  /** Batas waktu membaca daftar perintah; bawaan 20 detik. */
+  commandTimeoutMs?: number;
 }
 
 const defaultLoad = defaultSdkLoader;
@@ -316,6 +322,108 @@ function isUnknownOptionError(error: unknown): boolean {
   );
 }
 
+/**
+ * Opsi sumber Claude untuk SDK.
+ *
+ * Dipakai bersama oleh giliran dan pembacaan daftar perintah supaya
+ * keduanya melihat skill dan pengaturan yang sama.
+ */
+function applyClaudeOptions(
+  sdkOptions: Record<string, unknown>,
+  claude: RunClaudeConfig | undefined,
+): void {
+  if (claude === undefined) return;
+  sdkOptions.settingSources = claude.userSettings
+    ? ["project", "user"]
+    : ["project"];
+  if (claude.hooksEnabled === false) {
+    const existingSettings = isRecord(sdkOptions.settings)
+      ? sdkOptions.settings
+      : {};
+    sdkOptions.settings = { ...existingSettings, disableAllHooks: true };
+  }
+  if (claude.skills !== undefined) {
+    sdkOptions.skills = [...claude.skills];
+  }
+}
+
+/**
+ * Teruskan CLI `claude` milik pengguna ke SDK bila sumbernya eksplisit
+ * (env, pengaturan Jejak, atau CLI bawaan SDK yang terkelola) atau Jejak
+ * berjalan sebagai binary terkompilasi. Di mode dev dengan auto-deteksi,
+ * perilaku SDK dibiarkan.
+ */
+async function applyClaudeExecutable(
+  sdkOptions: Record<string, unknown>,
+  locate: () => Promise<ClaudeLocation | null>,
+  now: () => number,
+  cacheKey: string,
+  isCompiled: () => boolean,
+): Promise<void> {
+  let location: ClaudeLocation | null = null;
+  try {
+    location = await cachedClaude(cacheKey, locate, now);
+  } catch {
+    location = null;
+  }
+  if (
+    location !== null &&
+    (location.source === "env" ||
+      location.source === "setting" ||
+      location.source === "managed" ||
+      isCompiled())
+  ) {
+    sdkOptions.pathToClaudeCodeExecutable = location.path;
+  }
+}
+
+/**
+ * Prompt yang tak pernah menghasilkan apa pun.
+ *
+ * Dipakai saat membaca daftar perintah: model tak dipanggil, dan iterable
+ * ini hanya menahan sesi tetap hidup sampai `close()` dipanggil.
+ */
+async function* promptDiam(): AsyncGenerator<never> {
+  await new Promise<void>(() => {
+    // Menunggu selamanya; sesi ditutup pemanggil.
+  });
+}
+
+/** Batas waktu membaca daftar perintah; lewat itu sesi ditutup. */
+const COMMAND_TIMEOUT_MS = 20_000;
+
+/** Tolak proses yang tak selesai dalam batas waktu. */
+async function denganBatasWaktu<T>(
+  kerja: Promise<T>,
+  ms: number,
+  pesan: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      kerja,
+      new Promise<never>((_, tolak) => {
+        timer = setTimeout(() => tolak(new Error(pesan)), ms);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+/** Petakan perintah SDK ke bentuk yang dipakai Jejak. */
+function keCommandInfo(raw: SdkSlashCommand): CommandInfo {
+  const aliases = Array.isArray(raw.aliases)
+    ? raw.aliases.filter((item): item is string => typeof item === "string" && item !== "")
+    : [];
+  return {
+    name: raw.name,
+    description: typeof raw.description === "string" ? raw.description : "",
+    argumentHint: typeof raw.argumentHint === "string" ? raw.argumentHint : "",
+    ...(aliases.length > 0 ? { aliases } : {}),
+  };
+}
+
 export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
   const load = options.load ?? defaultLoad;
   const baseEnv = options.baseEnv ?? process.env;
@@ -323,6 +431,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
     options.locateClaude ?? ((): Promise<ClaudeLocation | null> => defaultLocateClaude());
   const isCompiled = options.isCompiled ?? detectCompiled;
   const now = options.now ?? Date.now;
+  const commandTimeoutMs = options.commandTimeoutMs ?? COMMAND_TIMEOUT_MS;
   // Kunci cache unik per runner supaya dua runner di proses yang sama tidak saling menimpa.
   const cacheKey = nextClaudeCacheKey("runner");
 
@@ -425,21 +534,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
 
       // Tanpa `claude` perilaku lama persis; dengan `claude`, sumber pengguna
       // opt-in dan saklar global hooks diteruskan ke SDK.
-      const claude = input.claude;
-      if (claude !== undefined) {
-        sdkOptions.settingSources = claude.userSettings
-          ? ["project", "user"]
-          : ["project"];
-        if (claude.hooksEnabled === false) {
-          const existingSettings = isRecord(sdkOptions.settings)
-            ? sdkOptions.settings
-            : {};
-          sdkOptions.settings = { ...existingSettings, disableAllHooks: true };
-        }
-        if (claude.skills !== undefined) {
-          sdkOptions.skills = [...claude.skills];
-        }
-      }
+      applyClaudeOptions(sdkOptions, input.claude);
       const allowedTools = allowedToolsFor(input);
       const memoryServers: Record<string, unknown> = {};
       const hasMemoryServer =
@@ -545,21 +640,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       // (env, pengaturan Jejak, atau CLI bawaan SDK yang terkelola) atau
       // Jejak berjalan sebagai binary terkompilasi. Di mode dev dengan
       // auto-deteksi, perilaku SDK dibiarkan.
-      let location: ClaudeLocation | null = null;
-      try {
-        location = await cachedClaude(cacheKey, locate, now);
-      } catch {
-        location = null;
-      }
-      if (
-        location !== null &&
-        (location.source === "env" ||
-          location.source === "setting" ||
-          location.source === "managed" ||
-          isCompiled())
-      ) {
-        sdkOptions.pathToClaudeCodeExecutable = location.path;
-      }
+      await applyClaudeExecutable(sdkOptions, locate, now, cacheKey, isCompiled);
 
       let query: SdkQuery | undefined;
       let sawResult = false;
@@ -677,6 +758,55 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           query?.close?.();
         } catch {
           // close milik SDK tidak boleh menggagalkan run.
+        }
+      }
+    },
+    /**
+     * Daftar perintah slash yang tersedia untuk satu folder kerja.
+     *
+     * Model tak dipanggil: SDK hanya diminta daftar perintahnya, lalu sesi
+     * ditutup. Galat (SDK lama, timeout, kegagalan) dilempar ke pemanggil.
+     */
+    async listCommands(input: ListCommandsInput): Promise<CommandInfo[]> {
+      const sdk = requireSdkModule(await load());
+      const provider = input.provider ?? { profileId: "bawaan" };
+      // Sinyal batal dipakai untuk menghentikan sesi SDK setelah daftar
+      // perintah terbaca (prompt memang tak pernah menghasilkan apa pun).
+      const abortController = new AbortController();
+      const sdkOptions: Record<string, unknown> = {
+        cwd: input.cwd,
+        env: buildSdkEnv(baseEnv, provider),
+        permissionMode: "default",
+        settingSources: ["project"],
+        systemPrompt: { type: "preset", preset: "claude_code" },
+        abortController,
+      };
+      applyClaudeOptions(sdkOptions, input.claude);
+      if (provider.model !== undefined) sdkOptions.model = provider.model;
+      await applyClaudeExecutable(sdkOptions, locate, now, cacheKey, isCompiled);
+
+      const query = sdk.query({ prompt: promptDiam(), options: sdkOptions });
+      try {
+        const supported = query.supportedCommands;
+        if (typeof supported !== "function") {
+          throw new Error("SDK tak mendukung pembacaan daftar perintah.");
+        }
+        const raw = await denganBatasWaktu(
+          Promise.resolve(supported.call(query)),
+          commandTimeoutMs,
+          "baca daftar perintah lewat batas waktu",
+        );
+        return raw.map(keCommandInfo);
+      } finally {
+        try {
+          abortController.abort();
+        } catch {
+          // pembatalan tak boleh menggagalkan pembacaan perintah.
+        }
+        try {
+          query.close?.();
+        } catch {
+          // close milik SDK tidak boleh menggagalkan pembacaan perintah.
         }
       }
     },

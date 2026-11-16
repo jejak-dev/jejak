@@ -169,6 +169,33 @@ export interface RunInput {
   registerSteer?: (steer: ((text: string) => boolean) | undefined) => void;
 }
 
+/** Satu perintah slash yang tersedia untuk sebuah folder kerja. */
+export interface CommandInfo {
+  /** Nama perintah tanpa garis miring (mis. `compact`). */
+  name: string;
+  description: string;
+  /** Petunjuk argumen (mis. `<file>`); string kosong bila tak ada. */
+  argumentHint: string;
+  /** Nama lain yang menerima perintah sama. */
+  aliases?: string[];
+}
+
+/** Masukan untuk membaca daftar perintah yang tersedia. */
+export interface ListCommandsInput {
+  cwd: string;
+  /** Pengaturan sumber Claude; sama seperti saat satu giliran berjalan. */
+  claude?: RunClaudeConfig;
+  /** Provider aktif; dipakai untuk menyusun env SDK. */
+  provider?: ResolvedProvider;
+}
+
 export interface AgentRunner {
   run(input: RunInput): AsyncIterable<AgentEvent>;
+  /**
+   * Daftar perintah slash yang tersedia.
+   *
+   * Opsional: runner lama (atau runner tiruan) tak punya, dan pemanggil
+   * lalu memakai daftar bawaan.
+   */
+  listCommands?(input: ListCommandsInput): Promise<CommandInfo[]>;
 }

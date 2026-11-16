@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentRunner } from "./events";
+import type { AgentEvent, AgentRunner, CommandInfo } from "./events";
 
 const DEFAULT_SCRIPT: AgentEvent[] = [
   { type: "session", sessionId: "mock-session", model: "mock-model" },
@@ -21,6 +21,21 @@ const DEFAULT_SCRIPT: AgentEvent[] = [
     cacheWriteTokens: 0,
     numTurns: 1,
   },
+];
+
+/**
+ * Daftar perintah tiruan.
+ *
+ * Dipakai untuk uji UI dan e2e: memuat perintah bawaan, satu skill tiruan,
+ * dan satu perintah kustom tiruan.
+ */
+export const MOCK_COMMANDS: CommandInfo[] = [
+  { name: "compact", description: "Padatkan percakapan jadi ringkas.", argumentHint: "" },
+  { name: "context", description: "Tampilkan penggunaan konteks sesi.", argumentHint: "" },
+  { name: "usage", description: "Tampilkan penggunaan token sesi.", argumentHint: "" },
+  { name: "init", description: "Buat berkas CLAUDE.md untuk proyek.", argumentHint: "" },
+  { name: "contoh-skill", description: "Skill tiruan untuk uji tampilan perintah.", argumentHint: "" },
+  { name: "ping", description: "Perintah kustom tiruan.", argumentHint: "<x>" },
 ];
 
 export interface MockRunnerOptions {
@@ -359,6 +374,9 @@ export function createMockRunner(options: MockRunnerOptions = {}): AgentRunner {
         }
         yield event.type === "result" ? withAnchor(event) : event;
       }
+    },
+    async listCommands(): Promise<CommandInfo[]> {
+      return MOCK_COMMANDS.map((command) => ({ ...command }));
     },
   };
 }

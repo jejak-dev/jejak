@@ -119,6 +119,8 @@ import {
   type HeldPromptStore,
 } from "./sessions/held-prompts";
 import { scheduleRoutes } from "./routes/schedules";
+import { commandRoutes } from "./routes/commands";
+import { CommandCatalog } from "./sessions/command-catalog";
 import {
   defaultScheduledTaskStore,
   MemoryScheduledTaskStore,
@@ -455,10 +457,13 @@ export function createApp(options: CreateAppOptions = {}) {
       : new WorktreeService({ root: join(jejakHome(env), "worktrees") }));
 
   const secretsMode = env.JEJAK_SECRETS?.trim();
+  // Satu runner dipakai sesi dan katalog perintah, supaya keduanya
+  // membaca perintah dari sumber yang sama.
+  const agentRunner = options.runner ?? createRunner(env);
   const manager =
     options.sessions ??
     new SessionManager({
-      runner: options.runner ?? createRunner(env),
+      runner: agentRunner,
       resolveProvider: async (selection) =>
         resolveRegistryProvider(await loadRegistry(path, env), selection),
       fallback: async (profileId) => {
@@ -517,6 +522,10 @@ export function createApp(options: CreateAppOptions = {}) {
     (sessionId, report) => manager.reportGoal(sessionId, report),
     (sessionId) => manager.hasActiveGoal(sessionId),
   );
+
+  // Katalog perintah slash: daftar dibaca dari SDK lalu disimpan sebentar
+  // per folder kerja.
+  const commandCatalog = new CommandCatalog({ runner: agentRunner });
 
   // Prompt tertahan: dibuat bersama manajer sesi. Tanpa store yang disuntik
   // isinya hanya di memori; server yang berjalan memakai store SQLite.
@@ -838,6 +847,10 @@ export function createApp(options: CreateAppOptions = {}) {
   // terlalu panjang membuat tipe Elysia terlalu dalam untuk dihitung
   // TypeScript, jadi pemasangan ini dibiarkan di luar rantai.
   (app as unknown as Elysia).use(scheduleRoutes({ service: scheduledTasks }));
+  // Rute perintah slash dipasang di luar rantai demi alasan yang sama.
+  (app as unknown as Elysia).use(
+    commandRoutes({ catalog: commandCatalog, manager }),
+  );
   const result = app.use(clientRoutes(options.client));
   if (memoryBridge !== undefined) {
     // Seam untuk tes dan integrasi in-process: membuka sesi memory tanpa HTTP.
@@ -854,6 +867,8 @@ export function createApp(options: CreateAppOptions = {}) {
   // Seam untuk jam tugas terjadwal: sama seperti tahanan.
   (result as unknown as { scheduledTasks?: ScheduledTaskService }).scheduledTasks =
     scheduledTasks;
+  // Seam untuk katalog perintah: dipakai tes dan integrasi in-process.
+  (result as unknown as { commands?: CommandCatalog }).commands = commandCatalog;
   return result;
 }
 

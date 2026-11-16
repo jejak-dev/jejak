@@ -820,18 +820,27 @@ export class SessionManager {
    * berjalan tanpa konfigurasi tambahan; `input.claude` hanya diisi bila ada store.
    */
   private claudeForRun(record: SessionRecord): RunClaudeConfig | undefined {
+    return this.claudeForCwd(this.cwdForMemory(record));
+  }
+
+  /**
+   * Pengaturan sumber Claude untuk satu folder kerja.
+   *
+   * Dipakai juga di luar giliran (mis. daftar perintah) supaya hasilnya
+   * sama: sumber pengguna dan skill aktif dibaca dengan cara yang sama.
+   */
+  private claudeForCwd(cwd: string): RunClaudeConfig | undefined {
     const store = this.claudeConfig;
     if (store === undefined) return undefined;
     try {
       const config = store.get();
-      const projectRoot = this.cwdForMemory(record);
-      const disabled = store.disabledFor(projectRoot);
+      const disabled = store.disabledFor(cwd);
       const result: RunClaudeConfig = {
         userSettings: config.userSettings,
         hooksEnabled: config.hooksEnabled,
       };
       if (disabled.length > 0) {
-        const found = listSkills(projectRoot, this.home, disabled);
+        const found = listSkills(cwd, this.home, disabled);
         const names = new Set<string>();
         for (const skill of found) {
           if (skill.scope === "user" && !config.userSettings) continue;
@@ -844,6 +853,17 @@ export class SessionManager {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * Konteks perintah untuk satu folder kerja.
+   *
+   * Mengembalikan pengaturan Claude yang sama dengan saat giliran
+   * dijalankan, tanpa membuat sesi.
+   */
+  commandContext(cwd: string): { claude?: RunClaudeConfig } {
+    const claude = this.claudeForCwd(cwd);
+    return claude === undefined ? {} : { claude };
   }
 
   /**

@@ -36,8 +36,23 @@ export class SdkBrokenInstallError extends Error {
   }
 }
 
+/** Perintah slash yang dilaporkan SDK (bawaan, skill, dan perintah kustom). */
+export interface SdkSlashCommand {
+  name: string;
+  description?: string;
+  argumentHint?: string;
+  aliases?: string[];
+}
+
 export interface SdkQuery extends AsyncIterable<unknown> {
   close?(): void;
+  /**
+   * Daftar perintah slash yang didukung sesi.
+   *
+   * Ada pada SDK baru; SDK lama tak punya dan pemanggil memakai daftar
+   * bawaan.
+   */
+  supportedCommands?(): Promise<SdkSlashCommand[]>;
 }
 
 export interface SdkModule {
