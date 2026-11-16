@@ -829,6 +829,53 @@ code {
   cursor: pointer;
 }
 
+/* Kelompok "Lainnya": tautan ekstra dilipat di dalam <details>. */
+.jk-foot-more {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.jk-foot-more > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.jk-foot-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jk-foot-chev {
+  display: inline-flex;
+  flex: none;
+  color: var(--t3);
+  transition: transform 0.15s ease;
+}
+
+.jk-foot-chev .jk-icon {
+  width: 10px;
+  height: 10px;
+}
+
+.jk-foot-more[open] .jk-foot-chev {
+  transform: rotate(180deg);
+}
+
+/* Baris ikon: Tema dan Notifications. */
+.jk-foot-icons {
+  display: flex;
+  gap: 4px;
+}
+
+.jk-foot-icon {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  gap: 0;
+  justify-content: center;
+}
+
 .jk-notify-menu {
   display: flex;
   flex-direction: column;

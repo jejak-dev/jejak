@@ -74,6 +74,27 @@ function potong(teks: string, maks: number): string {
 
 type RowMode = "menu" | "rename" | "delete";
 
+/** Kunci localStorage untuk pilihan buka/tutup kelompok "Lainnya". */
+const MORE_STORAGE_KEY = "jejak.sidebar.more";
+
+/** Baca pilihan buka/tutup "Lainnya"; default tertutup bila belum pernah disimpan. */
+function bacaMorePref(): boolean {
+  try {
+    return window.localStorage.getItem(MORE_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** Simpan pilihan buka/tutup "Lainnya"; penyimpanan diblokir pilihan berlaku untuk sesi ini. */
+function simpanMorePref(nilai: boolean): void {
+  try {
+    window.localStorage.setItem(MORE_STORAGE_KEY, nilai ? "1" : "0");
+  } catch {
+    // penyimpanan tidak tersedia
+  }
+}
+
 export function Sidebar({
   info,
   sessions,
@@ -129,6 +150,18 @@ export function Sidebar({
     }
   };
   const [notifyError, setNotifyError] = useState<string | undefined>(undefined);
+
+  // Kelompok "Lainnya": terbuka otomatis bila salah satu rute di dalamnya aktif,
+  // pilihan pengguna disimpan sendiri dan menang atas keadaan rute.
+  const moreAktif =
+    mcpActive || instruksiActive || schedulesActive || usageActive || auditActive;
+  const [moreTerbuka, setMoreTerbuka] = useState(() => moreAktif || bacaMorePref());
+  /** Tandai perubahan dari klik pengguna, bukan dari perubahan atribut `open`. */
+  const moreDiklik = useRef(false);
+
+  useEffect(() => {
+    if (moreAktif) setMoreTerbuka(true);
+  }, [moreAktif]);
 
   const searchRef = useRef<HTMLInputElement | null>(null);
   const renameRef = useRef<HTMLInputElement | null>(null);
@@ -641,48 +674,71 @@ export function Sidebar({
                 <span class="jk-foot-count">{memoryProposed}</span>
               )}
             </a>
-            <a
-              class={`jk-foot-link${mcpActive ? " jk-foot-link-active" : ""}`}
-              href="#/mcp"
-              aria-current={mcpActive ? "page" : undefined}
-            >
-              <Icon name="cube" />
-              <span class="jk-foot-text">Server MCP</span>
-            </a>
-            <a
-              class={`jk-foot-link${instruksiActive ? " jk-foot-link-active" : ""}`}
-              href="#/instruksi"
-              aria-current={instruksiActive ? "page" : undefined}
-            >
-              <Icon name="doc" />
-              <span class="jk-foot-text">Instructions</span>
-            </a>
-            <a
-              class={`jk-foot-link${schedulesActive ? " jk-foot-link-active" : ""}`}
-              href="#/schedules"
-              aria-current={schedulesActive ? "page" : undefined}
-            >
-              <Icon name="clock" />
-              <span class="jk-foot-text">Schedules</span>
-            </a>
           </div>
           <div class="jk-foot-group" role="group">
-            <a
-              class={`jk-foot-link${usageActive ? " jk-foot-link-active" : ""}`}
-              href="#/usage"
-              aria-current={usageActive ? "page" : undefined}
+            <details
+              class="jk-foot-more"
+              open={moreTerbuka}
+              onToggle={(event) => {
+                const terbuka = (event.currentTarget as HTMLDetailsElement).open;
+                if (!moreDiklik.current) return;
+                moreDiklik.current = false;
+                setMoreTerbuka(terbuka);
+                simpanMorePref(terbuka);
+              }}
             >
-              <Icon name="chart" />
-              <span class="jk-foot-text">Usage</span>
-            </a>
-            <a
-              class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
-              href="#/audit"
-              aria-current={auditActive ? "page" : undefined}
-            >
-              <Icon name="audit" />
-              <span class="jk-foot-text">Audit log</span>
-            </a>
+              <summary
+                class="jk-foot-link"
+                onClick={() => {
+                  moreDiklik.current = true;
+                }}
+              >
+                <span class="jk-foot-text">Lainnya</span>
+                <span class="jk-foot-chev">
+                  <Icon name="chevron-down" />
+                </span>
+              </summary>
+              <a
+                class={`jk-foot-link${mcpActive ? " jk-foot-link-active" : ""}`}
+                href="#/mcp"
+                aria-current={mcpActive ? "page" : undefined}
+              >
+                <Icon name="cube" />
+                <span class="jk-foot-text">Server MCP</span>
+              </a>
+              <a
+                class={`jk-foot-link${instruksiActive ? " jk-foot-link-active" : ""}`}
+                href="#/instruksi"
+                aria-current={instruksiActive ? "page" : undefined}
+              >
+                <Icon name="doc" />
+                <span class="jk-foot-text">Instructions</span>
+              </a>
+              <a
+                class={`jk-foot-link${schedulesActive ? " jk-foot-link-active" : ""}`}
+                href="#/schedules"
+                aria-current={schedulesActive ? "page" : undefined}
+              >
+                <Icon name="clock" />
+                <span class="jk-foot-text">Schedules</span>
+              </a>
+              <a
+                class={`jk-foot-link${usageActive ? " jk-foot-link-active" : ""}`}
+                href="#/usage"
+                aria-current={usageActive ? "page" : undefined}
+              >
+                <Icon name="chart" />
+                <span class="jk-foot-text">Usage</span>
+              </a>
+              <a
+                class={`jk-foot-link${auditActive ? " jk-foot-link-active" : ""}`}
+                href="#/audit"
+                aria-current={auditActive ? "page" : undefined}
+              >
+                <Icon name="audit" />
+                <span class="jk-foot-text">Audit log</span>
+              </a>
+            </details>
           </div>
           <div class="jk-foot-group" role="group">
             <a
@@ -695,29 +751,42 @@ export function Sidebar({
               <span class="jk-foot-text">Pengaturan</span>
               <span class="jk-foot-count">{namaProfil === "" ? "Atur provider" : namaProfil}</span>
             </a>
-            <button
-              type="button"
-              class="jk-foot-link jk-foot-btn"
-              aria-label={`Tema: ${themeLabel(theme)}. Klik untuk mengganti.`}
-              onClick={cycleTheme}
-            >
-              <Icon name={theme === "light" ? "sun" : theme === "dark" ? "moon" : "monitor"} />
-              <span class="jk-foot-text">Tema</span>
-              <span class="jk-foot-count">{themeLabel(theme)}</span>
-            </button>
-            <button
-              type="button"
-              class={`jk-foot-link jk-foot-btn${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
-              aria-expanded={notifyOpen}
-              onClick={() => {
-                setNotifyOpen((open) => !open);
-                setNotifyError(undefined);
-              }}
-            >
-              <Icon name="bell" />
-              <span class="jk-foot-text">Notifications</span>
-              <span class="jk-foot-count">{notifyPrefs.enabled ? "Aktif" : "Mati"}</span>
-            </button>
+            {authRequired && onLogout !== undefined && (
+              <button
+                type="button"
+                class="jk-foot-link jk-foot-btn"
+                onClick={() => onLogout()}
+                aria-label="Keluar dari Jejak"
+              >
+                <span class="jk-foot-text">Keluar</span>
+              </button>
+            )}
+          </div>
+          <div class="jk-foot-group" role="group">
+            <div class="jk-foot-icons">
+              <button
+                type="button"
+                class="jk-foot-link jk-foot-btn jk-foot-icon"
+                aria-label={`Tema: ${themeLabel(theme)}. Klik untuk mengganti.`}
+                title={`Tema: ${themeLabel(theme)}`}
+                onClick={cycleTheme}
+              >
+                <Icon name={theme === "light" ? "sun" : theme === "dark" ? "moon" : "monitor"} />
+              </button>
+              <button
+                type="button"
+                class={`jk-foot-link jk-foot-btn jk-foot-icon${notifyPrefs.enabled ? " jk-foot-link-active" : ""}`}
+                aria-label={`Notifikasi: ${notifyPrefs.enabled ? "Aktif" : "Mati"}`}
+                title={`Notifikasi: ${notifyPrefs.enabled ? "Aktif" : "Mati"}`}
+                aria-expanded={notifyOpen}
+                onClick={() => {
+                  setNotifyOpen((open) => !open);
+                  setNotifyError(undefined);
+                }}
+              >
+                <Icon name="bell" />
+              </button>
+            </div>
             {notifyOpen && (
               <div class="jk-notify-menu">
                 <button type="button" class="jk-link-btn" onClick={() => void toggleNotify()}>
@@ -733,16 +802,6 @@ export function Sidebar({
                 </button>
                 {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
               </div>
-            )}
-            {authRequired && onLogout !== undefined && (
-              <button
-                type="button"
-                class="jk-foot-link jk-foot-btn"
-                onClick={() => onLogout()}
-                aria-label="Keluar dari Jejak"
-              >
-                <span class="jk-foot-text">Keluar</span>
-              </button>
             )}
           </div>
         </footer>
