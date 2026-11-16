@@ -4020,6 +4020,7 @@ h2.jk-md-heading {
     inset: 0;
     z-index: 4;
     width: auto;
+    max-width: none;
     border-left: 0;
     overflow-y: auto;
     grid-template-columns: minmax(0, 1fr);
@@ -4044,16 +4045,19 @@ h2.jk-md-heading {
     order: -1;
   }
 
-  /* Rel jadi baris ikon horizontal di bawah header; semua ikon muat tanpa gulir. */
+  /* Rel jadi baris ikon horizontal di bawah header; meluber digulir mendatar,
+     scrollbar disembunyikan (aturan dasar `.jk-panel-rail`). */
   .jk-panel-rail {
     flex-direction: row;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
+    justify-content: safe center;
     gap: 1px;
     padding: 4px;
     border-left: 0;
     border-bottom: 1px solid var(--line);
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .jk-rail-group {
@@ -4072,6 +4076,7 @@ h2.jk-md-heading {
   }
 
   .jk-rail-btn {
+    flex: none;
     width: 32px;
     height: 40px;
   }

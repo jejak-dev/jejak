@@ -479,9 +479,12 @@ export function Panel({
   };
 
   return (
+    // Layar sempit: panel jadi lapisan penuh; biarkan CSS yang menentukan
+    // lebar (inline width akan menimpanya dan membuat panel hanya memakai
+    // sebagian sisi).
     <aside
       class="jk-panel"
-      style={width === undefined ? undefined : { width: `${width}px` }}
+      style={sempit || width === undefined ? undefined : { width: `${width}px` }}
       aria-label={PANEL_LABEL}>
       <div class="jk-pane-stack">
         {renderLayout.panes.map((pane, index) => {

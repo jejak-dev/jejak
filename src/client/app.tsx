@@ -1004,7 +1004,7 @@ export function App() {
                   width={panelNow}
                 />
               )}
-              {panelOpen && (
+              {panelOpen && !sempit && (
                 <PaneResizer
                   width={panelNow}
                   min={panelWidth.spec.min}
