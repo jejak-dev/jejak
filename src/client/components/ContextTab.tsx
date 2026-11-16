@@ -161,7 +161,7 @@ export function ContextTab({ telemetry, model, profileId }: ContextTabProps) {
         <h3 class="jk-ctx-title">Giliran</h3>
         <Facts
           rows={[
-            ["Pesan pengguna", formatCount(telemetry.userMessages)],
+            ["Pesan lanjutan", formatCount(telemetry.userMessages)],
             ["Hasil sukses", formatCount(telemetry.resultsOk)],
             ["Hasil gagal", formatCount(telemetry.resultsFailed)],
             ["Model", model === undefined || model === "" ? "–" : model],
