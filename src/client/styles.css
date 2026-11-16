@@ -7491,6 +7491,91 @@ h2.jk-md-heading {
   font-size: 12px;
 }
 
+/* Tab Konteks: blok, bar konteks, dan tabel angka */
+
+.jk-ctx-block {
+  margin-bottom: 18px;
+}
+
+.jk-ctx-title {
+  margin: 0 0 6px;
+  color: var(--t1);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jk-ctx-line {
+  margin: 0 0 6px;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
+.jk-ctx-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+
+.jk-ctx-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--t2);
+}
+
+.jk-ctx-warn .jk-ctx-bar-fill {
+  background: var(--warn);
+}
+
+.jk-ctx-high .jk-ctx-bar-fill {
+  background: var(--bad);
+}
+
+.jk-ctx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.jk-ctx-table th {
+  padding: 4px 8px 4px 0;
+  color: var(--t3);
+  font-size: 12px;
+  font-weight: 400;
+  text-align: left;
+}
+
+.jk-ctx-table td {
+  padding: 4px 0;
+  color: var(--t1);
+}
+
+.jk-ctx-table thead th {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-2);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.jk-ctx-table tbody tr + tr th,
+.jk-ctx-table tbody tr + tr td {
+  border-top: 1px solid var(--line);
+}
+
+.jk-ctx-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.jk-ctx-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* Menu pilihan (model, provider, mode) ala Claude */
 
 .jk-dd {

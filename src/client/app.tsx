@@ -1097,6 +1097,7 @@ export function App() {
                   eventCount={selected.eventCount}
                   status={timeline.status ?? selected.status}
                   timelineItems={timeline.items}
+                  timelineEvents={timeline.events}
                   open={panelOpen}
                   onOpenChange={onPanelOpenChange}
                   focusedPlanId={planFocus}

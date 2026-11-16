@@ -9,7 +9,8 @@ export type PanelTab =
   | "commands"
   | "terminal"
   | "browser"
-  | "plan";
+  | "plan"
+  | "context";
 
 export interface PanelPrefs {
   open: boolean;
@@ -31,6 +32,7 @@ export const PANEL_TAB_IDS: readonly PanelTab[] = [
   "terminal",
   "browser",
   "plan",
+  "context",
 ];
 
 function isTab(value: unknown): value is PanelTab {

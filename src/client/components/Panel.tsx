@@ -32,6 +32,8 @@ import {
   nextPanelTabIndex,
 } from "../lib/panel-rail";
 import type { TimelineItem } from "../lib/timeline";
+import type { RewindEvent } from "../lib/rewind";
+import { computeTelemetry, type Telemetry } from "../lib/telemetry";
 import { extractPlans, pendingPlans, type PlanEntry } from "../lib/plans";
 import { latestTodos, todoProgress, type TodoItem } from "../lib/todos";
 import {
@@ -44,6 +46,7 @@ import { useSessionRepos } from "../hooks";
 import { ChangesTab } from "./ChangesTab";
 import { BrowserTab } from "./BrowserTab";
 import { CheckpointsTab } from "./CheckpointsTab";
+import { ContextTab } from "./ContextTab";
 import { FilesTab } from "./FilesTab";
 import { GitTab } from "./GitTab";
 import { PanelRail } from "./PanelRail";
@@ -69,6 +72,8 @@ export interface PanelProps {
   onOpenChange: (open: boolean) => void;
   /** Item timeline berjalan; sumber daftar langkah agent (tool TodoWrite). */
   timelineItems?: readonly TimelineItem[];
+  /** Event mentah sesi; sumber telemetri tab Konteks. */
+  timelineEvents?: readonly RewindEvent[];
   /** Rencana yang difokuskan di tab Rencana; undefined = yang terbaru. */
   focusedPlanId?: string;
   /** Kirim keputusan rencana dari tab Rencana. */
@@ -86,7 +91,7 @@ export interface PanelProps {
 }
 
 const PANEL_LABEL =
-  "Perubahan, langkah, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, browser, dan rencana";
+  "Perubahan, langkah, konteks, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, browser, dan rencana";
 
 /** Kunci navigasi keyboard pada rel ikon. */
 const RAIL_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End"]);
@@ -104,6 +109,8 @@ interface PanelTabBodyProps {
   repo?: string;
   todos: readonly TodoItem[];
   plans: readonly PlanEntry[];
+  /** Telemetri sesi untuk tab Konteks. */
+  telemetry: Telemetry;
   focusedPlanId?: string;
   onDecide?: (
     requestId: string,
@@ -142,6 +149,7 @@ function PanelTabBody(props: PanelTabBodyProps) {
     repo,
     todos,
     plans,
+    telemetry,
     focusedPlanId,
     onDecide,
     checkpointNote,
@@ -175,6 +183,15 @@ function PanelTabBody(props: PanelTabBodyProps) {
     );
   }
   if (tab === "todos") return <TodosTab todos={todos} />;
+  if (tab === "context") {
+    return (
+      <ContextTab
+        telemetry={telemetry}
+        model={session?.model}
+        profileId={session?.profileId}
+      />
+    );
+  }
   if (tab === "plan") {
     return (
       <PlanTab plans={plans} focusedPlanId={focusedPlanId} onDecide={onDecide} />
@@ -252,6 +269,7 @@ export function Panel({
   open,
   onOpenChange,
   timelineItems,
+  timelineEvents,
   focusedPlanId,
   onDecide,
   tabRequest,
@@ -302,6 +320,12 @@ export function Panel({
   // Dokumen rencana (ExitPlanMode) tak pernah tampil di chat; hidup di tab Rencana.
   const plans = useMemo(() => extractPlans(timelineItems ?? []), [timelineItems]);
   const planPending = pendingPlans(plans).length;
+
+  // Telemetri sesi untuk tab Konteks; dihitung dari event mentah yang sama.
+  const telemetry = useMemo(
+    () => computeTelemetry((timelineEvents ?? []).map((entry) => entry.event)),
+    [timelineEvents],
+  );
 
   // Jendela yang sedang difokuskan; jatuh ke jendela terakhir bila hilang.
   const paneTerfokus = useMemo(
@@ -542,6 +566,7 @@ export function Panel({
                   repo={repo}
                   todos={todos}
                   plans={plans}
+                  telemetry={telemetry}
                   focusedPlanId={focusedPlanId}
                   onDecide={onDecide}
                   checkpointNote={checkpointNote}
