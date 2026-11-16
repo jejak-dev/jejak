@@ -44,7 +44,7 @@ import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notif
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
 import { extractPlans } from "./lib/plans";
 import { effectiveMax, effectiveMaxNarrow, panelWidth } from "./lib/panel-width";
-import { useNarrowViewport } from "./lib/pane-narrow";
+import { NARROW_VIEWPORT_QUERY, useNarrowViewport } from "./lib/pane-narrow";
 import {
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
@@ -239,7 +239,11 @@ export function App() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const [panelOpen, setPanelOpen] = useState(() => readPanelPrefs().open);
+  // Di layar sempit panel menutupi chat, jadi tak dibuka otomatis dari
+  // preferensi tersimpan; pengguna membukanya sendiri.
+  const [panelOpen, setPanelOpen] = useState(
+    () => readPanelPrefs().open && !window.matchMedia(NARROW_VIEWPORT_QUERY).matches,
+  );
   const [panelTabRequest, setPanelTabRequest] = useState<
     { tab: PanelTab; nonce: number } | undefined
   >(undefined);
