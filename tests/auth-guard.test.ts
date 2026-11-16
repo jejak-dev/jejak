@@ -62,7 +62,11 @@ describe("authGuard", () => {
     expect(health.status).toBe(200);
     const status = await get(app, "/api/auth/status");
     expect(status.status).toBe(200);
-    expect(await status.json()).toEqual({ required: true, authenticated: false });
+    expect(await status.json()).toEqual({
+      required: true,
+      authenticated: false,
+      manualLogin: true,
+    });
   });
 
   test("aset klien di luar /api tidak disentuh", async () => {
@@ -153,7 +157,11 @@ describe("authGuard", () => {
     const sessions = await get(app, "/api/sessions");
     expect(sessions.status).toBe(200);
     const status = await get(app, "/api/auth/status");
-    expect(await status.json()).toEqual({ required: false, authenticated: true });
+    expect(await status.json()).toEqual({
+      required: false,
+      authenticated: true,
+      manualLogin: false,
+    });
   });
 
   test("daftar host diizinkan diperluas dengan host tambahan", async () => {

@@ -2,6 +2,22 @@
 export interface AuthStatus {
   required: boolean;
   authenticated: boolean;
+  /**
+   * True bila sandi dibuat pengguna sehingga bisa login dan keluar manual.
+   * Absent pada server lama: dianggap `true` bila `required` menyala.
+   */
+  manualLogin?: boolean;
+}
+
+/**
+ * True bila tombol "Keluar" boleh tampil.
+ * Mode desktop memakai sandi internal acak: keluar berarti terkunci sampai
+ * restart, jadi tombolnya disembunyikan.
+ */
+export function canShowLogout(status: AuthStatus | undefined): boolean {
+  if (status === undefined) return false;
+  if (!status.required) return false;
+  return status.manualLogin ?? true;
 }
 
 /** True bila status respons berarti "perlu login". */

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { ApiError, createApiClient } from "../src/client/lib/api";
 import { followSession } from "../src/client/lib/sse";
 import {
+  canShowLogout,
   formatRetry,
   isAuthError,
   isLoopbackHostname,
@@ -60,15 +61,58 @@ describe("fungsi murni lib/auth", () => {
     expect(needsTlsWarning("http:", "127.0.0.1")).toBe(false);
     expect(needsTlsWarning("http:", "localhost")).toBe(false);
   });
+
+  test("tombol Keluar hanya tampil bila sandi manual ada", () => {
+    // Mode desktop: sandi internal acak, tak bisa keluar manual.
+    expect(canShowLogout({ required: true, authenticated: true, manualLogin: false })).toBe(false);
+    // Sandi buatan pengguna.
+    expect(canShowLogout({ required: true, authenticated: false, manualLogin: true })).toBe(true);
+    // Tanpa autentikasi sama sekali.
+    expect(canShowLogout({ required: false, authenticated: true, manualLogin: false })).toBe(false);
+    // Server lama: field manualLogin tak ada, dianggap manual bila perlu login.
+    expect(canShowLogout({ required: true, authenticated: false })).toBe(true);
+    // Status belum diketahui.
+    expect(canShowLogout(undefined)).toBe(false);
+  });
 });
 
 describe("api klien untuk autentikasi", () => {
   test("getAuthStatus membaca status server", async () => {
-    const { fetch, calls } = fakeFetch(() => jsonResponse({ required: true, authenticated: false }));
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ required: true, authenticated: false, manualLogin: true }),
+    );
     const api = createApiClient({ fetch });
 
-    expect(await api.getAuthStatus()).toEqual({ required: true, authenticated: false });
+    expect(await api.getAuthStatus()).toEqual({
+      required: true,
+      authenticated: false,
+      manualLogin: true,
+    });
     expect(calls[0]?.url).toBe("/api/auth/status");
+  });
+
+  test("getAuthStatus menganggap manual saat server lama tak mengirim manualLogin", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ required: true, authenticated: false }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getAuthStatus()).toEqual({
+      required: true,
+      authenticated: false,
+      manualLogin: true,
+    });
+  });
+
+  test("getAuthStatus meneruskan manualLogin false dari mode desktop", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ required: true, authenticated: true, manualLogin: false }),
+    );
+    const api = createApiClient({ fetch });
+
+    expect(await api.getAuthStatus()).toEqual({
+      required: true,
+      authenticated: true,
+      manualLogin: false,
+    });
   });
 
   test("login mengirim password dan mengembalikan ok", async () => {
@@ -122,6 +166,92 @@ describe("api klien untuk autentikasi", () => {
 
     await expect(api.listSessions()).rejects.toThrow(ApiError);
     expect(unauthorized).toBe(1);
+  });
+
+  test("getPasswordStatus membaca status sandi", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ configured: true, updatedAt: "2026-11-16T08:00:00.000Z" }),
+    );
+    const api = createApiClient({ fetch });
+
+    expect(await api.getPasswordStatus()).toEqual({
+      configured: true,
+      updatedAt: "2026-11-16T08:00:00.000Z",
+    });
+    expect(calls[0]?.url).toBe("/api/auth/password");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("getPasswordStatus menandai sandi belum ada", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ configured: false }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getPasswordStatus()).toEqual({ configured: false });
+  });
+
+  test("setPassword mengirim sandi tanpa current saat belum ada", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true, updatedAt: "2026-11-16" }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.setPassword({ password: "sandi-12345" })).toEqual({
+      ok: true,
+      updatedAt: "2026-11-16",
+    });
+    expect(calls[0]?.url).toBe("/api/auth/password");
+    expect(calls[0]?.init.method).toBe("PUT");
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ password: "sandi-12345" }));
+  });
+
+  test("setPassword menyertakan current saat mengganti", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await api.setPassword({ password: "sandi-baru", current: "sandi-lama" });
+    expect(calls[0]?.init.body).toBe(
+      JSON.stringify({ password: "sandi-baru", current: "sandi-lama" }),
+    );
+  });
+
+  test("clearPassword mengirim sandi lama", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.clearPassword("sandi-lama")).toEqual({ ok: true });
+    expect(calls[0]?.url).toBe("/api/auth/password");
+    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ current: "sandi-lama" }));
+  });
+
+  test("setPassword dengan sandi lama salah 401 tidak memicu onUnauthorized", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "sandi lama salah" }, 401));
+    let unauthorized = 0;
+    const api = createApiClient({ fetch, onUnauthorized: () => (unauthorized += 1) });
+
+    try {
+      await api.setPassword({ password: "sandi-baru", current: "sandi-lama" });
+      throw new Error("harus gagal");
+    } catch (error) {
+      expect(error instanceof ApiError).toBe(true);
+      expect((error as ApiError).status).toBe(401);
+      expect((error as ApiError).message).toBe("sandi lama salah");
+    }
+    expect(unauthorized).toBe(0);
+  });
+
+  test("clearPassword dengan sandi lama salah 401 tidak memicu onUnauthorized", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "sandi lama salah" }, 401));
+    let unauthorized = 0;
+    const api = createApiClient({ fetch, onUnauthorized: () => (unauthorized += 1) });
+
+    try {
+      await api.clearPassword("sandi-lama");
+      throw new Error("harus gagal");
+    } catch (error) {
+      expect(error instanceof ApiError).toBe(true);
+      expect((error as ApiError).status).toBe(401);
+      expect((error as ApiError).message).toBe("sandi lama salah");
+    }
+    expect(unauthorized).toBe(0);
   });
 });
 

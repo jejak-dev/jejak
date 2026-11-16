@@ -28,6 +28,8 @@ const PLAIN_NAMES: ReadonlyArray<{ name: string; rule: string }> = [
   { name: ".pgpass", rule: ".pgpass" },
   { name: ".git-credentials", rule: ".git-credentials" },
   { name: "secret-allow.json", rule: "secret-allow.json" },
+  // Penyimpanan sandi Jejak (hash scrypt); tak boleh dibaca agen.
+  { name: "auth.json", rule: "auth.json" },
 ];
 
 /** Ekstensi berkas yang selalu rahasia. */

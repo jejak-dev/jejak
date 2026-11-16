@@ -32,7 +32,7 @@ export interface SidebarProps {
   notifyPrefs: NotifyPrefs;
   onNotifyPrefsChange: (prefs: NotifyPrefs) => void;
   onOpenPalette?: () => void;
-  /** True bila autentikasi aktif; tombol "Keluar" hanya tampil bila true. */
+  /** True bila keluar manual tersedia; tombol "Keluar" hanya tampil bila true. */
   authRequired?: boolean;
   /** Aksi keluar (hapus sesi di server). */
   onLogout?: () => void;

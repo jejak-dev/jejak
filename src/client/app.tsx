@@ -11,6 +11,7 @@ import { McpPage } from "./components/McpPage";
 import { Panel } from "./components/Panel";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { FeatureSettings } from "./components/FeatureSettings";
+import { AccessSettings } from "./components/AccessSettings";
 import { ReplyBar } from "./components/ReplyBar";
 import { GoalBar } from "./components/GoalBar";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
@@ -30,7 +31,7 @@ import {
   useWorkspaces,
 } from "./hooks";
 import { createApiClient, ApiError } from "./lib/api";
-import { needsTlsWarning, type AuthStatus } from "./lib/auth";
+import { canShowLogout, needsTlsWarning, type AuthStatus } from "./lib/auth";
 import { buildCommands, type CommandId } from "./lib/commands";
 import { contextUsage } from "./lib/context";
 import { groupSessions } from "./lib/format";
@@ -107,6 +108,18 @@ export function App() {
     };
   }, [api]);
 
+  // Status autentikasi disegarkan ulang setelah sandi dibuat atau dihapus,
+  // supaya tombol "Keluar" muncul (atau hilang) sesuai keadaan terbaru.
+  const refreshAuth = useCallback((): void => {
+    void (async () => {
+      try {
+        setAuth(await api.getAuthStatus());
+      } catch {
+        // Status tak berubah; tombol Keluar tetap seperti sebelumnya.
+      }
+    })();
+  }, [api]);
+
   const onLogin = useCallback(
     async (password: string): Promise<void> => {
       setLoginError(undefined);
@@ -115,7 +128,7 @@ export function App() {
         await api.login(password);
         setAuth((current) =>
           current === undefined
-            ? { required: true, authenticated: true }
+            ? { required: true, authenticated: true, manualLogin: true }
             : { ...current, authenticated: true },
         );
       } catch (error) {
@@ -814,7 +827,7 @@ export function App() {
         notifyPrefs={notifyPrefs}
         onNotifyPrefsChange={onNotifyPrefsChange}
         onOpenPalette={openPalette}
-        authRequired={auth?.required === true}
+        authRequired={canShowLogout(auth)}
         onLogout={onLogout}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
@@ -852,6 +865,7 @@ export function App() {
               <div class="jk-settings">
                 <ProviderSettings api={api} onSaved={onSaved} sessions={sessions} />
                 <FeatureSettings api={api} />
+                <AccessSettings api={api} onAuthChanged={refreshAuth} />
               </div>
             </div>
           </>

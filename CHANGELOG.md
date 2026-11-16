@@ -6,6 +6,15 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambah
+
+- Atur sandi akses dari Pengaturan (Akses & sandi); Keluar tampil setelah sandi dibuat.
+
+### Diperbaiki
+
+- Tombol Keluar tidak lagi tampil di aplikasi desktop (sandi internalnya tidak dikenal pengguna, sehingga keluar berarti terkunci sampai restart).
+- Sandi lama yang salah di kartu Akses & sandi kini menampilkan galat, tidak lagi memantulkan ke layar login.
+
 ## [0.1.0-beta.4] - 2026-11-15
 
 ### Ditambah

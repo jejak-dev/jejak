@@ -7,6 +7,7 @@ import { SqliteAuditStore } from "../src/server/audit/audit-store";
 
 const PASSWORD = "sandi-uji-123";
 const HOST = { host: "127.0.0.1:3000" };
+const DESKTOP_TOKEN = "token-desktop-uji-1234567890abcdefgh";
 
 let dir: string;
 let audit: SqliteAuditStore;
@@ -32,6 +33,17 @@ function makeApp(auth: boolean): App {
   });
 }
 
+/** Mode desktop: sandi internal acak plus token masuk sekali pakai. */
+function makeDesktopApp(): App {
+  return createApp({
+    providersPath: join(dir, "providers.json"),
+    env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
+    audit,
+    auth: { password: PASSWORD, port: 3000 },
+    desktop: { token: DESKTOP_TOKEN },
+  });
+}
+
 function post(app: App, path: string, body: unknown, headers: Record<string, string> = {}) {
   return app.handle(
     new Request(`http://127.0.0.1:3000${path}`, {
@@ -49,7 +61,11 @@ function get(app: App, path: string, headers: Record<string, string> = {}) {
 describe("rute autentikasi", () => {
   test("status tanpa login bilang perlu autentikasi", async () => {
     const res = await get(makeApp(true), "/api/auth/status");
-    expect(await res.json()).toEqual({ required: true, authenticated: false });
+    expect(await res.json()).toEqual({
+      required: true,
+      authenticated: false,
+      manualLogin: true,
+    });
   });
 
   test("status dengan cookie sah bilang sudah masuk", async () => {
@@ -57,7 +73,11 @@ describe("rute autentikasi", () => {
     const login = await post(app, "/api/auth/login", { password: PASSWORD });
     const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
     const res = await get(app, "/api/auth/status", { cookie });
-    expect(await res.json()).toEqual({ required: true, authenticated: true });
+    expect(await res.json()).toEqual({
+      required: true,
+      authenticated: true,
+      manualLogin: true,
+    });
   });
 
   test("login dengan sandi benar memberi cookie sesi", async () => {
@@ -110,11 +130,38 @@ describe("rute autentikasi", () => {
   test("tidak ada auth: status bebas, login dan logout 404", async () => {
     const app = makeApp(false);
     const status = await get(app, "/api/auth/status");
-    expect(await status.json()).toEqual({ required: false, authenticated: true });
+    expect(await status.json()).toEqual({
+      required: false,
+      authenticated: true,
+      manualLogin: false,
+    });
     const login = await post(app, "/api/auth/login", { password: PASSWORD });
     expect(login.status).toBe(404);
     const logout = await post(app, "/api/auth/logout", {});
     expect(logout.status).toBe(404);
+  });
+
+  test("mode desktop: status tanpa manualLogin dan logout ditolak", async () => {
+    const app = makeDesktopApp();
+    const status = await get(app, "/api/auth/status");
+    expect(await status.json()).toEqual({
+      required: true,
+      authenticated: false,
+      manualLogin: false,
+    });
+
+    const masuk = await get(app, `/__desktop/enter?t=${DESKTOP_TOKEN}`);
+    expect(masuk.status).toBe(302);
+    const cookie = (masuk.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    expect(cookie).not.toBe("");
+
+    const keluar = await post(app, "/api/auth/logout", {}, { cookie });
+    expect(keluar.status).toBe(404);
+    expect(await keluar.json()).toEqual({
+      error: "keluar tidak tersedia di aplikasi desktop",
+    });
+    // Cookie sesi tak boleh dihapus: keluar akan mengunci aplikasi.
+    expect(keluar.headers.get("set-cookie") ?? "").not.toContain("Max-Age=0");
   });
 
   test("audit mencatat masuk dan keluar tanpa memuat sandi", async () => {

@@ -102,6 +102,9 @@ Flag dan variabel lingkungan yang berguna:
 
 - `--password auto` / `--password-file <path>` / `JEJAK_PASSWORD` — melindungi server
   dengan satu kata sandi.
+- Sandi yang Anda buat sendiri di Pengaturan → *Akses & sandi* disimpan sebagai
+  hash scrypt di `~/.jejak/auth.json` (mode `600`) dan dipakai otomatis oleh
+  `jejak serve` bila tak ada flag sandi atau variabel lingkungan.
 - `--allow-host <host>` — menambah host yang diizinkan pada header `Host` (bisa
   diulang).
 - `--insecure-no-auth` — mengizinkan bind non-loopback tanpa kata sandi (berisiko).

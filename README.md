@@ -100,6 +100,9 @@ Useful flags and environment variables:
 
 - `--password auto` / `--password-file <path>` / `JEJAK_PASSWORD` — protect the
   server with a single password.
+- A password you set yourself in Settings → *Access & password* is stored as a
+  scrypt hash in `~/.jejak/auth.json` (mode `600`) and is used automatically by
+  `jejak serve` when no password flag or environment variable is given.
 - `--allow-host <host>` — add an allowed `Host` header (repeatable).
 - `--insecure-no-auth` — allow a non-loopback bind without a password (risky).
 - `--tls-cert <path> --tls-key <path>` — serve HTTPS with your own certificate.

@@ -4,7 +4,8 @@ import { isLiteralIpHost, isLoopbackHost, parseArgs } from "./args";
 import { installDesktopLifecycle } from "./desktop";
 import { runDoctor } from "./doctor";
 import { startServer } from "../server";
-import { resolvePassword } from "../server/auth/password";
+import { resolvePassword, type PasswordVerifier } from "../server/auth/password";
+import { createStoreVerifier, defaultPasswordStore } from "../server/auth/password-store";
 import {
   DESKTOP_READY_PREFIX,
   generateDesktopPassword,
@@ -84,7 +85,7 @@ switch (args.command) {
     }
 
     const envPasswordSet = envValue("JEJAK_PASSWORD") !== undefined;
-    let password: string | undefined;
+    let password: string | PasswordVerifier | undefined;
     let desktopToken: string | undefined;
     let generated = false;
     if (desktop) {
@@ -126,6 +127,14 @@ switch (args.command) {
         envPasswordSet
       ) {
         console.error("Catatan: JEJAK_PASSWORD aktif, --password auto diabaikan.");
+      }
+      // Tanpa sandi dari flag atau env: pakai sandi tersimpan milik pengguna
+      // (dibuat di Pengaturan) sebagai sumber autentikasi.
+      if (password === undefined && args.insecureNoAuth !== true) {
+        const store = defaultPasswordStore(process.env);
+        if (store.has()) {
+          password = createStoreVerifier(store);
+        }
       }
     }
 

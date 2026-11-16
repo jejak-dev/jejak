@@ -5,6 +5,11 @@ import { createRunner, type AgentRunner } from "./agent";
 import { defaultAuditStore, type AuditStore } from "./audit/audit-store";
 import { authGuard } from "./auth/auth-guard";
 import { createVerifier, type PasswordVerifier } from "./auth/password";
+import {
+  defaultPasswordStore,
+  isStoreVerifier,
+  type PasswordStore,
+} from "./auth/password-store";
 import { createSessionCodec } from "./auth/session-cookie";
 import { createThrottle } from "./auth/throttle";
 import { CheckpointService } from "./checkpoints/checkpoint-service";
@@ -220,6 +225,8 @@ export interface CreateAppOptions {
   sdk?: { root?: string; locate?: LocateOptions };
   /** Autentikasi opsional; bila diisi, guard dan rute auth dipasang. */
   auth?: AuthOptions;
+  /** Penyimpanan sandi milik pengguna; default berkas `auth.json` di JEJAK_HOME. */
+  passwordStore?: PasswordStore;
   /** Mode desktop: rute masuk sekali pakai dan cookie sesi 30 hari. */
   desktop?: DesktopOptions;
 }
@@ -553,12 +560,27 @@ export function createApp(options: CreateAppOptions = {}) {
   // rute auth dipasang lebih dulu agar status dan login terjangkau.
   const authOptions = options.auth;
   const desktop = options.desktop;
-  const verifier: PasswordVerifier | undefined =
+  // Penyimpanan sandi milik pengguna; dibaca dinamis (perubahan langsung berlaku).
+  const passwordStore = options.passwordStore ?? defaultPasswordStore(env);
+  const internalVerifier: PasswordVerifier | undefined =
     authOptions === undefined
       ? undefined
       : typeof authOptions.password === "string"
         ? createVerifier(authOptions.password)
         : authOptions.password;
+  // Verifier gabungan: sandi internal/CLI ATAU sandi tersimpan milik pengguna.
+  const verifier: PasswordVerifier | undefined =
+    internalVerifier === undefined
+      ? undefined
+      : isStoreVerifier(internalVerifier)
+        ? internalVerifier
+        : {
+            verify(input: string): boolean {
+              const candidate = typeof input === "string" ? input : "";
+              if (internalVerifier.verify(candidate)) return true;
+              return passwordStore.verify(candidate);
+            },
+          };
   const codec =
     authOptions === undefined
       ? undefined
@@ -583,8 +605,10 @@ export function createApp(options: CreateAppOptions = {}) {
     authRoutes({
       ...(verifier === undefined ? {} : { verifier }),
       ...(codec === undefined ? {} : { codec }),
+      passwordStore,
       throttle,
       audit: options.audit,
+      ...(desktop === undefined ? {} : { desktop: true }),
       ...(authOptions?.secureCookie === undefined
         ? {}
         : { secureCookie: authOptions.secureCookie }),

@@ -1,13 +1,16 @@
 import { Elysia } from "elysia";
 import type { AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
-import type { PasswordVerifier } from "../auth/password";
+import { MAX_PASSWORD_LENGTH, type PasswordStore } from "../auth/password-store";
+import { MIN_PASSWORD_LENGTH, type PasswordVerifier } from "../auth/password";
 import { parseCookies, type SessionCodec } from "../auth/session-cookie";
 import type { Throttle } from "../auth/throttle";
 
 export interface AuthRoutesOptions {
   /** Verifier kata sandi; `undefined` berarti autentikasi tidak aktif. */
   verifier?: PasswordVerifier;
+  /** Penyimpanan sandi milik pengguna; tanpa ini rute sandi menjawab 404. */
+  passwordStore?: PasswordStore;
   /** Codec cookie sesi; `undefined` berarti autentikasi tidak aktif. */
   codec?: SessionCodec;
   /** Throttle login per alamat socket. */
@@ -16,11 +19,23 @@ export interface AuthRoutesOptions {
   audit?: AuditStore;
   /** Paksa penanda `Secure` pada cookie. */
   secureCookie?: boolean;
+  /** Mode desktop: sandi internal acak yang tak diketahui pengguna. */
+  desktop?: boolean;
 }
 
 export interface AuthStatus {
   required: boolean;
   authenticated: boolean;
+  /** True bila sandi dibuat pengguna sehingga bisa login dan keluar manual. */
+  manualLogin: boolean;
+}
+
+/** Status sandi milik pengguna. */
+export interface PasswordStatus {
+  /** True bila sandi tersimpan ada. */
+  configured: boolean;
+  /** Waktu sandi terakhir diubah (ISO). */
+  updatedAt?: string;
 }
 
 function jsonResponse(
@@ -65,7 +80,11 @@ export function authRoutes(options: AuthRoutesOptions): Elysia {
   const codec = options.codec;
   const throttle = options.throttle;
   const audit = options.audit;
+  const desktop = options.desktop === true;
+  const store = options.passwordStore;
   const active = verifier !== undefined && codec !== undefined;
+  /** True bila pengguna sudah punya sandi tersimpan. */
+  const stored = (): boolean => store?.has() === true;
 
   const auditAuth = (aksi: string, alamat: string): void => {
     recordAudit(audit, {
@@ -78,13 +97,16 @@ export function authRoutes(options: AuthRoutesOptions): Elysia {
   const plugin = new Elysia({ name: "jejak-auth-routes" })
     .get("/api/auth/status", ({ request }): AuthStatus => {
       if (!active || codec === undefined) {
-        return { required: false, authenticated: true };
+        return { required: false, authenticated: true, manualLogin: false };
       }
       const cookies = parseCookies(request.headers.get("cookie"));
       const value = cookies[codec.cookieName];
       return {
         required: true,
         authenticated: value !== undefined && codec.verify(value),
+        // Mode desktop memakai sandi internal acak yang tak dikenal pengguna:
+        // keluar manual baru mungkin bila ada sandi tersimpan milik pengguna.
+        manualLogin: desktop ? stored() : true,
       };
     })
     .post(
@@ -127,6 +149,11 @@ export function authRoutes(options: AuthRoutesOptions): Elysia {
     .post(
       "/api/auth/logout",
       ({ request, server }) => {
+        // Mode desktop memakai sandi internal acak yang tak dikenal pengguna:
+        // keluar hanya mungkin bila ada sandi tersimpan untuk masuk lagi.
+        if (desktop && !stored()) {
+          return jsonResponse(404, { error: "keluar tidak tersedia di aplikasi desktop" });
+        }
         if (!active || codec === undefined) {
           return jsonResponse(404, { error: "autentikasi tidak aktif" });
         }
@@ -134,6 +161,116 @@ export function authRoutes(options: AuthRoutesOptions): Elysia {
         auditAuth("keluar", address);
         const secure = options.secureCookie ?? isSecureRequest(request);
         return jsonResponse(200, { ok: true }, { "set-cookie": codec.clear({ secure }) });
+      },
+      { parse: "text" },
+    )
+    .get("/api/auth/password", (): Response => {
+      if (!active || codec === undefined || store === undefined) {
+        return jsonResponse(404, { error: "autentikasi tidak aktif" });
+      }
+      const record = store.load();
+      if (record === undefined) {
+        return jsonResponse(200, { configured: false } satisfies PasswordStatus);
+      }
+      return jsonResponse(200, {
+        configured: true,
+        updatedAt: record.updatedAt,
+      } satisfies PasswordStatus);
+    })
+    .put(
+      "/api/auth/password",
+      ({ request, body, server }) => {
+        if (!active || codec === undefined || store === undefined) {
+          return jsonResponse(404, { error: "autentikasi tidak aktif" });
+        }
+
+        const payload = parseBody(body);
+        const password = typeof payload.password === "string" ? payload.password : "";
+        const current = typeof payload.current === "string" ? payload.current : "";
+        const address = socketAddress(server, request);
+        const existing = store.load();
+
+        // Bila sandi sudah ada, sandi lama wajib benar (throttle sama dengan login).
+        if (existing !== undefined) {
+          const blocked = throttle.check(address);
+          const correct = store.verify(current);
+          if (blocked.blocked) {
+            auditAuth("terblokir-throttle", address);
+            return jsonResponse(
+              429,
+              { error: "terlalu banyak percobaan" },
+              { "retry-after": String(blocked.retryAfterSec) },
+            );
+          }
+          if (!correct) {
+            throttle.fail(address);
+            auditAuth("sandi-gagal", address);
+            return jsonResponse(401, { error: "sandi lama salah" });
+          }
+          throttle.succeed(address);
+        }
+
+        if (password.length < MIN_PASSWORD_LENGTH) {
+          return jsonResponse(400, {
+            error: `Kata sandi minimal ${MIN_PASSWORD_LENGTH} karakter.`,
+          });
+        }
+        if (password.length > MAX_PASSWORD_LENGTH) {
+          return jsonResponse(400, {
+            error: `Kata sandi maksimal ${MAX_PASSWORD_LENGTH} karakter.`,
+          });
+        }
+
+        let updatedAt: string;
+        try {
+          updatedAt = store.set(password).updatedAt;
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : "gagal menyimpan sandi";
+          return jsonResponse(400, { error: detail });
+        }
+        // Audit hanya mencatat aksi; nilai sandi tak pernah ikut.
+        auditAuth(existing === undefined ? "sandi-diatur" : "sandi-diganti", address);
+        return jsonResponse(200, { ok: true, updatedAt });
+      },
+      { parse: "text" },
+    )
+    .delete(
+      "/api/auth/password",
+      ({ request, body, server }) => {
+        if (!active || codec === undefined || store === undefined) {
+          return jsonResponse(404, { error: "autentikasi tidak aktif" });
+        }
+        if (store.load() === undefined) {
+          return jsonResponse(404, { error: "belum ada sandi" });
+        }
+
+        const payload = parseBody(body);
+        const current = typeof payload.current === "string" ? payload.current : "";
+        const address = socketAddress(server, request);
+        const blocked = throttle.check(address);
+        const correct = store.verify(current);
+        if (blocked.blocked) {
+          auditAuth("terblokir-throttle", address);
+          return jsonResponse(
+            429,
+            { error: "terlalu banyak percobaan" },
+            { "retry-after": String(blocked.retryAfterSec) },
+          );
+        }
+        if (!correct) {
+          throttle.fail(address);
+          auditAuth("sandi-gagal", address);
+          return jsonResponse(401, { error: "sandi lama salah" });
+        }
+        throttle.succeed(address);
+
+        try {
+          store.clear();
+        } catch {
+          return jsonResponse(500, { error: "gagal menghapus sandi" });
+        }
+        auditAuth("sandi-dihapus", address);
+        return jsonResponse(200, { ok: true });
       },
       { parse: "text" },
     );

@@ -1,5 +1,6 @@
 import type { AuditEntry, AuditSummary } from "../../server/audit/audit-store";
 import type { AuthStatus } from "./auth";
+import type { PasswordStatus } from "./password-form";
 import type {
   ChangeAction,
   CheckpointChange,
@@ -528,6 +529,15 @@ export interface ApiClient {
   login(password: string): Promise<{ ok: boolean }>;
   /** Keluar: hapus cookie sesi. */
   logout(): Promise<{ ok: boolean }>;
+  /** Status sandi milik pengguna. */
+  getPasswordStatus(): Promise<PasswordStatus>;
+  /** Simpan atau ganti sandi; `current` wajib bila sandi sudah ada. */
+  setPassword(input: {
+    password: string;
+    current?: string;
+  }): Promise<{ ok: boolean; updatedAt?: string }>;
+  /** Hapus sandi; `current` (sandi lama) wajib dan harus benar. */
+  clearPassword(current: string): Promise<{ ok: boolean }>;
   listSessions(): Promise<SessionInfo[]>;
   getSession(id: string): Promise<SessionInfo>;
   renameSession(id: string, title: string): Promise<SessionInfo>;
@@ -1523,9 +1533,14 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async getAuthStatus() {
       const data = await request("GET", "/api/auth/status");
+      const required = field(data, "required") === true;
+      const manual = field(data, "manualLogin");
       return {
-        required: field(data, "required") === true,
+        required,
         authenticated: field(data, "authenticated") === true,
+        // Server lama tak mengirim `manualLogin`: anggap manual bila perlu
+        // login, supaya perilaku peramban dan sandi tak berubah.
+        manualLogin: manual === undefined ? required : manual === true,
       } satisfies AuthStatus;
     },
 
@@ -1541,6 +1556,43 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     async logout() {
       const data = await request("POST", "/api/auth/logout", {});
+      return { ok: field(data, "ok") === true };
+    },
+
+    async getPasswordStatus() {
+      const data = await request("GET", "/api/auth/password");
+      const configured = field(data, "configured") === true;
+      const updatedAt = field(data, "updatedAt");
+      return {
+        configured,
+        ...(typeof updatedAt === "string" && updatedAt !== "" ? { updatedAt } : {}),
+      } satisfies PasswordStatus;
+    },
+
+    async setPassword(input) {
+      const data = await request(
+        "PUT",
+        "/api/auth/password",
+        {
+          password: input.password,
+          ...(input.current === undefined ? {} : { current: input.current }),
+        },
+        { skipUnauthorized: true },
+      );
+      const updatedAt = field(data, "updatedAt");
+      return {
+        ok: field(data, "ok") === true,
+        ...(typeof updatedAt === "string" && updatedAt !== "" ? { updatedAt } : {}),
+      };
+    },
+
+    async clearPassword(current: string) {
+      const data = await request(
+        "DELETE",
+        "/api/auth/password",
+        { current },
+        { skipUnauthorized: true },
+      );
       return { ok: field(data, "ok") === true };
     },
 

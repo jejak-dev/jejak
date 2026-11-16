@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isLiteralIpHost, parseArgs } from "../src/cli/args";
+import { FilePasswordStore } from "../src/server/auth/password-store";
 
 const CLI = join(process.cwd(), "src/cli/index.ts");
 
@@ -204,5 +205,26 @@ describe("perilaku CLI", () => {
     const hasil = await runCli(["serve", "--password", "rahasia-saya"]);
     expect(hasil.code).toBe(1);
     expect(hasil.stderr).toContain("JEJAK_PASSWORD");
+  });
+
+  test("sandi tersimpan dipakai sebagai sumber autentikasi", async () => {
+    // Tanpa sandi tersimpan, bind ke jaringan tanpa sandi ditolak.
+    const tanpaSandi = await runCli(["serve", "--host", "0.0.0.0", "--port", "39878"], {
+      env: { JEJAK_PASSWORD: "" },
+    });
+    expect(tanpaSandi.code).toBe(1);
+    expect(tanpaSandi.stderr).toContain("--password auto");
+
+    // Sandi dibuat dari Pengaturan (disimpan di JEJAK_HOME/auth.json).
+    new FilePasswordStore(join(home, "auth.json")).set("sandi-tersimpan-123");
+
+    const denganSandi = await runCli(
+      ["serve", "--host", "0.0.0.0", "--port", "39879", "--allow-host", "192.168.1.5"],
+      { env: { JEJAK_PASSWORD: "" }, ready: "siap di" },
+    );
+    expect(denganSandi.stdout).toContain("siap di");
+    expect(denganSandi.stderr).not.toContain("--password auto");
+    // Nilai sandi tak pernah dicetak.
+    expect(denganSandi.stdout).not.toContain("sandi-tersimpan-123");
   });
 });
