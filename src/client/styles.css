@@ -5418,6 +5418,28 @@ h2.jk-md-heading {
   color: var(--warn);
 }
 
+/* Layar sempit: judul ambil satu baris penuh, path dan lencana turun ke baris
+   berikutnya. Blok ini diletakkan setelah aturan badge dan judul supaya
+   menimpanya (> 760px tak berubah). */
+@media (max-width: 760px) {
+  .jk-top-title {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .jk-top-title h2 {
+    flex: 1 1 100%;
+  }
+
+  .jk-worktree-badge,
+  .jk-secret-badge,
+  .jk-budget-badge,
+  .jk-sandbox-badge {
+    flex: none;
+    max-width: 100%;
+  }
+}
+
 .jk-sandbox-settings {
   display: grid;
   gap: 10px;
