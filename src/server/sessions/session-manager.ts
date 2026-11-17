@@ -971,12 +971,12 @@ export class SessionManager {
    */
   private commandEnvForRun(
     record: SessionRecord,
-  ): { file: string; values: string[]; keys: string[] } | undefined {
+  ): { file: string; values: string[]; keys: string[]; env: Record<string, string> } | undefined {
     const store = this.commandEnvStore;
     if (store === undefined) return undefined;
     let file: string | undefined;
     try {
-      file = store.get(this.cwdForMemory(record));
+      file = store.get(this.secretRootOf(record));
     } catch {
       return undefined;
     }
@@ -984,7 +984,7 @@ export class SessionManager {
     try {
       const parsed = readCommandEnv(file);
       record.commandEnvValues = parsed.values;
-      return { file, values: parsed.values, keys: parsed.keys };
+      return { file, values: parsed.values, keys: parsed.keys, env: parsed.env };
     } catch {
       if (!this.commandEnvWarned) {
         this.commandEnvWarned = true;
@@ -1347,7 +1347,15 @@ export class SessionManager {
    * worktree, cwd untuk sesi biasa; di-realpath bila ada.
    */
   secretProjectRoot(id: string): string {
-    const record = this.requireRecord(id);
+    return this.secretRootOf(this.requireRecord(id));
+  }
+
+  /**
+   * Akar proyek untuk kunci penyimpanan rahasia (izin berkas, env perintah):
+   * selalu di-realpath agar cocok dengan yang disimpan rute (mis. /tmp di macOS
+   * adalah symlink ke /private/tmp).
+   */
+  private secretRootOf(record: SessionRecord): string {
     const root = this.cwdForMemory(record);
     try {
       return realpathSync(root);
@@ -2799,7 +2807,7 @@ export class SessionManager {
 
     if (this.blockSecretPaths || commandEnv !== undefined) {
       const allow = this.secretAllow;
-      const root = allow === undefined ? undefined : this.cwdForMemory(record);
+      const root = allow === undefined ? undefined : this.secretRootOf(record);
       input.secretGuard = (call) => {
         const verdict = checkSecretAccess(
           {

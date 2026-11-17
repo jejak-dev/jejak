@@ -231,12 +231,18 @@ function isPlaceholderValue(value: string): boolean {
  * komentar dilewati, tanda petik dihormati.
  *
  * `values` hanya nilai yang layak disamarkan (≥4 karakter, bukan angka murni
- * atau placeholder). Galat baca dilempar ke pemanggil.
+ * atau placeholder). `env` memuat semua pasangan kunci-nilai yang valid (nilai
+ * kosong dilewati). Galat baca dilempar ke pemanggil.
  */
-export function readCommandEnv(path: string): { keys: string[]; values: string[] } {
+export function readCommandEnv(path: string): {
+  keys: string[];
+  values: string[];
+  env: Record<string, string>;
+} {
   const text = readFileSync(path, "utf8");
   const keys: string[] = [];
   const values: string[] = [];
+  const env: Record<string, string> = {};
   const seenKeys = new Set<string>();
   const seenValues = new Set<string>();
 
@@ -262,6 +268,7 @@ export function readCommandEnv(path: string): { keys: string[]; values: string[]
     if (!seenKeys.has(key)) {
       seenKeys.add(key);
       keys.push(key);
+      if (value !== "") env[key] = value;
     }
     if (value.length < 4) continue;
     if (/^\d+$/.test(value)) continue;
@@ -272,5 +279,5 @@ export function readCommandEnv(path: string): { keys: string[]; values: string[]
     values.push(value);
   }
 
-  return { keys, values };
+  return { keys, values, env };
 }

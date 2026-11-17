@@ -116,6 +116,24 @@ describe("readCommandEnv", () => {
       "rahasia dengan spasi",
       "token-panjang-123",
     ]);
+    expect(parsed.env).toEqual({
+      DB_HOST: "localhost",
+      DB_PASSWORD: "rahasia dengan spasi",
+      API_TOKEN: "token-panjang-123",
+      PENDEK: "abc",
+      ANGKA: "12345",
+    });
+  });
+
+  test("kunci tak valid dibuang, nilai kosong dilewati", async () => {
+    const file = join(root, "campur.env");
+    await writeFile(
+      file,
+      ["1BAD=satu", "BAD KEY=dua", "OK=satu", "KOSONG=", "OK=lain"].join("\n"),
+    );
+    const parsed = readCommandEnv(file);
+    expect(parsed.keys).toEqual(["OK", "KOSONG"]);
+    expect(parsed.env).toEqual({ OK: "satu" });
   });
 
   test("galat baca dilempar", () => {

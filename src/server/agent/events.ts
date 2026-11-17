@@ -163,10 +163,15 @@ export interface RunInput {
   }) => { reason: string; rule?: string } | undefined;
   /**
    * Berkas `.env` yang isinya dipakai sebagai variabel lingkungan perintah
-   * Bash. Nilainya tak pernah dikirim ke model: perintah dibungkus `set -a`
-   * dan output disamarkan lewat hook `PostToolUse`.
+   * Bash. Nilainya tak pernah dikirim ke model: `env` diteruskan ke opsi `env`
+   * SDK dan output disamarkan lewat hook `PostToolUse`.
    */
-  commandEnv?: { file: string; values: string[]; keys: string[] };
+  commandEnv?: {
+    file: string;
+    values: string[];
+    keys: string[];
+    env: Record<string, string>;
+  };
   /**
    * Bila diisi, runner memakai input streaming dan memanggil callback ini dengan
    * fungsi `steer(text)` begitu giliran mulai, lalu dengan `undefined` saat giliran

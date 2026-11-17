@@ -552,11 +552,11 @@ export function createApp(options: CreateAppOptions = {}) {
         mode: secretsMode === "off" || secretsMode === "warn" ? secretsMode : "redact",
         blockPaths: env.JEJAK_SECRET_BLOCK?.trim() !== "0",
         ...(options.secretAllow === undefined ? {} : { allow: options.secretAllow }),
-      ...(options.commandEnv === undefined ? {} : { commandEnv: options.commandEnv }),
         ...(env.JEJAK_SECRETS_ENV?.trim() === "1"
           ? { loadEnvValues: loadEnvValuesFromDir }
           : {}),
       },
+      ...(options.commandEnv === undefined ? {} : { commandEnv: options.commandEnv }),
       onSessionDeleted: (id) =>
         removeSessionUndo(
           options.undoDir ?? join(jejakHome(env), "undo"),

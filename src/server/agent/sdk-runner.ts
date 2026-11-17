@@ -209,23 +209,66 @@ function modelIdentityModel(provider: ResolvedProvider): string | undefined {
 type SecretGuard = NonNullable<RunInput["secretGuard"]>;
 type CommandEnv = NonNullable<RunInput["commandEnv"]>;
 
-/** Quote jalur untuk shell POSIX: bungkus petik tunggal, escape petik di dalamnya. */
-function shellQuote(path: string): string {
-  return `'${path.split("'").join(`'\\''`)}'`;
+/**
+ * Nama env yang tidak boleh disuntik dari berkas env perintah (dibandingkan
+ * tanpa beda huruf besar-kecil). Mencegah berkas env menimpa PATH, memuat kode
+ * lewat `LD_PRELOAD`/`BASH_ENV`, atau mengubah konfigurasi SDK.
+ */
+const COMMAND_ENV_DENIED_EXACT = new Set([
+  "PATH",
+  "HOME",
+  "SHELL",
+  "USER",
+  "LOGNAME",
+  "TMPDIR",
+  "PWD",
+  "IFS",
+  "BASH_ENV",
+  "ENV",
+  "PROMPT_COMMAND",
+  "NODE_OPTIONS",
+  "BUN_OPTIONS",
+  "HTTP_PROXY",
+  "HTTPS_PROXY",
+  "ALL_PROXY",
+  "NO_PROXY",
+]);
+
+const COMMAND_ENV_DENIED_PREFIXES = ["LD_", "DYLD_", "ANTHROPIC_", "CLAUDE_", "JEJAK_"];
+
+/**
+ * Saring env perintah sebelum digabung ke env SDK: buang nama terlarang agar
+ * berkas env pengguna tidak bisa menimpa/menyuntik variabel penting.
+ */
+export function filterCommandEnv(
+  env: Record<string, string> | undefined,
+): Record<string, string> {
+  if (env === undefined) return {};
+  const result: Record<string, string> = {};
+  for (const [name, value] of Object.entries(env)) {
+    const upper = name.toUpperCase();
+    if (COMMAND_ENV_DENIED_EXACT.has(upper)) continue;
+    if (COMMAND_ENV_DENIED_PREFIXES.some((prefix) => upper.startsWith(prefix))) continue;
+    result[name] = value;
+  }
+  return result;
 }
 
-/** Bungkus perintah Bash agar variabel dari berkas env tersedia tanpa terlihat. */
-function wrapBashCommand(command: string, file: string): string {
-  return `set -a; . ${shellQuote(file)} >/dev/null 2>&1; set +a; ${command}`;
+/** Gabungkan env perintah yang lolos saringan ke env dasar (env dasar dulu). */
+export function mergeCommandEnv(
+  base: Record<string, string | undefined>,
+  commandEnv: CommandEnv | undefined,
+): Record<string, string | undefined> {
+  const extra = filterCommandEnv(commandEnv?.env);
+  if (Object.keys(extra).length === 0) return base;
+  return { ...base, ...extra };
 }
 
 /**
- * Hook `PreToolUse`: menolak tool bila kebijakan rahasia mengembalikan alasan,
- * dan membungkus perintah Bash dengan env perintah bila aktif.
+ * Hook `PreToolUse`: menolak tool bila kebijakan rahasia mengembalikan alasan.
  */
 function preToolUseHook(
   guard: SecretGuard | undefined,
-  commandEnv: CommandEnv | undefined,
 ): (input: unknown) => Promise<unknown> {
   return async (input: unknown): Promise<unknown> => {
     try {
@@ -243,20 +286,6 @@ function preToolUseHook(
               hookEventName: "PreToolUse",
               permissionDecision: "deny",
               permissionDecisionReason: result.reason,
-            },
-          };
-        }
-      }
-      if (commandEnv !== undefined && toolName === "Bash" && isRecord(input.tool_input)) {
-        const command = input.tool_input.command;
-        if (typeof command === "string" && command !== "") {
-          return {
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              updatedInput: {
-                ...input.tool_input,
-                command: wrapBashCommand(command, commandEnv.file),
-              },
             },
           };
         }
@@ -625,7 +654,10 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
 
       const sdkOptions: Record<string, unknown> = {
         cwd: input.cwd,
-        env: withMaxRetries(buildSdkEnv(baseEnv, input.provider), input.maxRetries),
+        env: withMaxRetries(
+          mergeCommandEnv(buildSdkEnv(baseEnv, input.provider), input.commandEnv),
+          input.maxRetries,
+        ),
         permissionMode: input.permissionMode ?? "default",
         abortController,
         includePartialMessages: true,
@@ -711,7 +743,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       if (secretGuard !== undefined || commandEnv !== undefined) {
         const existingHooks = isRecord(sdkOptions.hooks) ? sdkOptions.hooks : {};
         const existingPre = existingHooks.PreToolUse;
-        const ours = { hooks: [preToolUseHook(secretGuard, commandEnv)] };
+        const ours = { hooks: [preToolUseHook(secretGuard)] };
         sdkOptions.hooks = {
           ...existingHooks,
           PreToolUse: Array.isArray(existingPre) ? [...existingPre, ours] : [ours],

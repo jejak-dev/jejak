@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { realpathSync } from "node:fs";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRunner, RunInput } from "../src/server/agent";
@@ -71,10 +71,24 @@ describe("SessionManager env perintah", () => {
       file: join(project, ".env"),
       keys: ["DB_HOST", "DB_PASSWORD"],
       values: ["localhost", SECRET],
+      env: { DB_HOST: "localhost", DB_PASSWORD: SECRET },
     });
     const events = await collect(mgr.events(info.id));
     expect(JSON.stringify(events)).not.toContain(SECRET);
     expect(JSON.stringify(events)).toContain("[disembunyikan:");
+  });
+
+  test("cwd lewat symlink tetap cocok dengan akar yang disimpan (mis. /tmp di macOS)", async () => {
+    const store = new FileCommandEnvStore(":memory:");
+    // Rute menyimpan memakai akar ter-realpath.
+    store.set(project, join(project, ".env"));
+    const tautan = join(root, "tautan-proyek");
+    await symlink(project, tautan);
+    const recording = recordingRunner(() => [{ type: "result", ok: true }]);
+    const mgr = manager(recording.runner, { commandEnv: store });
+    const info = await mgr.create({ prompt: "halo", cwd: tautan });
+    await mgr.done(info.id);
+    expect(recording.runs[0]?.commandEnv?.file).toBe(join(project, ".env"));
   });
 
   test("tanpa store tidak ada commandEnv", async () => {

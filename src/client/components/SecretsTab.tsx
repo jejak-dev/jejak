@@ -26,8 +26,8 @@ const EMPTY_MESSAGE = "Belum ada berkas yang diizinkan.";
 const COMMAND_ENV_NOTE =
   "Pilih berkas .env (boleh di luar proyek). Setiap perintah Bash agent dijalankan " +
   "dengan isinya sebagai variabel lingkungan; agent hanya melihat nama kunci, " +
-  "nilainya disamarkan. Berkas harus berformat shell (KEY=value; beri tanda petik " +
-  "bila ada spasi). Penyamaran bersifat upaya terbaik.";
+  "nilainya disamarkan. Berkas boleh berformat dotenv biasa (KEY=value, tanda " +
+  "petik opsional). Penyamaran bersifat upaya terbaik.";
 
 const COMMAND_ENV_DISABLED = "Env perintah dimatikan.";
 const COMMAND_ENV_EMPTY_KEYS = "Tidak ada kunci yang terbaca dari berkas ini.";
