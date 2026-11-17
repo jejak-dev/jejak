@@ -276,6 +276,8 @@ export function App() {
   const [restoreDraft, setRestoreDraft] = useState<
     { id: string; input: HeldPrompt["input"] } | undefined
   >(undefined);
+  // Folder kerja yang dipasang ke komposer beranda dari tombol grup sidebar.
+  const [presetCwd, setPresetCwd] = useState<{ id: number; cwd: string } | undefined>(undefined);
 
   // Batas lebar panel mengikuti ruang jendela yang tersisa.
   const sempit = useNarrowViewport();
@@ -659,6 +661,15 @@ export function App() {
     navigate();
   }, [navigate]);
 
+  // Sesi baru di folder grup sidebar: beranda dengan folder kerja terisi.
+  const onNewInFolder = useCallback(
+    (cwd: string): void => {
+      setPresetCwd({ id: Date.now(), cwd });
+      navigate();
+    },
+    [navigate],
+  );
+
   const onCreated = useCallback(
     (session: SessionInfo): void => {
       const warning = dirtyWarning(session.dirtyInSource);
@@ -932,6 +943,7 @@ export function App() {
         }
         onSelect={onSelect}
         onNew={onNew}
+        onNewInFolder={onNewInFolder}
         onClose={closeDrawer}
         activeProfileLabel={activeProfileLabel}
         providersActive={showingProviders}
@@ -1222,6 +1234,7 @@ export function App() {
                   runningSessions={runningSessions}
                   onHeld={onHeld}
                   restoreDraft={restoreDraft}
+                  presetCwd={presetCwd}
                   mobile={showingHome}
                 />
               </div>

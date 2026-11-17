@@ -16,6 +16,8 @@ export interface SidebarProps {
   selectedId?: string;
   onSelect: (id: string) => void;
   onNew: () => void;
+  /** Buka beranda dengan folder kerja grup sudah terisi. */
+  onNewInFolder?: (cwd: string) => void;
   onClose: () => void;
   activeProfileLabel?: string;
   providersActive?: boolean;
@@ -103,6 +105,7 @@ export function Sidebar({
   selectedId,
   onSelect,
   onNew,
+  onNewInFolder,
   onClose,
   activeProfileLabel,
   providersActive = false,
@@ -628,10 +631,23 @@ export function Sidebar({
           ) : (
             groups.map((group) => (
               <section class="jk-group" key={group.cwd}>
-                <h2 class="jk-group-label" title={group.cwd}>
-                  <Icon name="folder" />
-                  <span>{group.label}</span>
-                </h2>
+                <div class="jk-group-head">
+                  <h2 class="jk-group-label" title={group.cwd}>
+                    <Icon name="folder" />
+                    <span>{group.label}</span>
+                  </h2>
+                  {onNewInFolder !== undefined && (
+                    <button
+                      type="button"
+                      class="jk-group-add"
+                      aria-label={`Sesi baru di ${group.label}`}
+                      title="Sesi baru di folder ini"
+                      onClick={() => onNewInFolder(group.cwd)}
+                    >
+                      <Icon name="plus" />
+                    </button>
+                  )}
+                </div>
                 <ul class="jk-session-items">
                   {group.items.map((session) => renderRow(session, false))}
                 </ul>

@@ -42,6 +42,8 @@ export interface ComposerProps {
   onHeld?: () => void;
   /** Draf yang dipulihkan (mis. tahanan yang dibatalkan); diisi ulang saat id berubah. */
   restoreDraft?: { id: string; input: HeldPrompt["input"] };
+  /** Folder kerja yang dipasang dari sidebar; diisi ulang saat id berubah. */
+  presetCwd?: { id: number; cwd: string };
   /** Layar ponsel: kontrol folder/profil/model/izin di balik tombol "Opsi". */
   mobile?: boolean;
 }
@@ -104,6 +106,7 @@ export function Composer({
   runningSessions = [],
   onHeld,
   restoreDraft,
+  presetCwd,
   mobile = false,
 }: ComposerProps) {
   const [prompt, setPrompt] = useState("");
@@ -137,6 +140,8 @@ export function Composer({
   const caretRef = useRef<number | undefined>(undefined);
   /** Id tahanan terakhir yang dipulihkan; draf tak diisi ulang dua kali. */
   const restoredIdRef = useRef<string | undefined>(undefined);
+  /** Id preset folder terakhir yang dipasang; klik ulang di folder sama tetap berlaku. */
+  const presetIdRef = useRef<number | undefined>(undefined);
   const att = useAttachments(api);
   const cwdRef = useRef<HTMLInputElement | null>(null);
   const dict = useDictation({ draft: prompt, setDraft: setPrompt, disabled: busy });
@@ -322,6 +327,19 @@ export function Composer({
     }
     promptRef.current?.focus();
   }, [restoreDraft]);
+
+  // Folder dipasang dari tombol grup sidebar: isi folder kerja, kembali ke mode
+  // folder biasa, dan fokuskan prompt tanpa menimpa teks yang sedang diketik.
+  useEffect(() => {
+    if (presetCwd === undefined) return;
+    if (presetIdRef.current === presetCwd.id) return;
+    presetIdRef.current = presetCwd.id;
+    setCwd(presetCwd.cwd);
+    setWorkspaceId("");
+    setRepoPath("");
+    setCwdError(undefined);
+    promptRef.current?.focus();
+  }, [presetCwd]);
 
   const submit = async (): Promise<void> => {
     if (busy) return;

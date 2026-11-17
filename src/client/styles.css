@@ -498,15 +498,60 @@ code {
   gap: 14px;
 }
 
+.jk-group-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .jk-group-label {
   display: flex;
   align-items: center;
   gap: 7px;
+  flex: 1;
+  min-width: 0;
   margin: 0;
   padding: 0 8px 4px;
   font-size: 12px;
   font-weight: 600;
   color: var(--t2);
+}
+
+.jk-group-add {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t3);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.jk-group:hover .jk-group-add,
+.jk-group:focus-within .jk-group-add {
+  opacity: 1;
+}
+
+.jk-group-add:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+@media (hover: none) {
+  .jk-group-add {
+    opacity: 1;
+  }
+}
+
+.jk-app[data-mobile] .jk-group-add {
+  width: 44px;
+  height: 44px;
+  opacity: 1;
 }
 
 .jk-group-label span {
