@@ -791,17 +791,29 @@ export function Sidebar({
             </div>
             {notifyOpen && (
               <div class="jk-notify-menu">
-                <button type="button" class="jk-link-btn" onClick={() => void toggleNotify()}>
-                  Notifikasi desktop: {notifyPrefs.enabled ? "aktif" : "mati"}
-                </button>
-                <button
-                  type="button"
-                  class="jk-link-btn"
-                  disabled={!notifyPrefs.enabled}
-                  onClick={toggleSound}
-                >
-                  Bunyi: {notifyPrefs.sound ? "aktif" : "mati"}
-                </button>
+                <div class="jk-notify-row">
+                  <span class="jk-notify-label">Notifikasi desktop</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    class={`jk-switch${notifyPrefs.enabled ? " jk-switch-on" : ""}`}
+                    aria-checked={notifyPrefs.enabled ? "true" : "false"}
+                    aria-label="Notifikasi desktop"
+                    onClick={() => void toggleNotify()}
+                  />
+                </div>
+                <div class="jk-notify-row">
+                  <span class="jk-notify-label">Bunyi</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    class={`jk-switch${notifyPrefs.sound ? " jk-switch-on" : ""}`}
+                    aria-checked={notifyPrefs.sound ? "true" : "false"}
+                    aria-label="Bunyi notifikasi"
+                    disabled={!notifyPrefs.enabled}
+                    onClick={toggleSound}
+                  />
+                </div>
                 {notifyError !== undefined && <p class="jk-error-line">{notifyError}</p>}
               </div>
             )}

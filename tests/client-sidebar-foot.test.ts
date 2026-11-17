@@ -251,3 +251,49 @@ describe("garis ganda di halaman Pengaturan", () => {
     expect(isi).toMatch(/padding-top:\s*0/);
   });
 });
+
+describe("menu notifikasi memakai switch", () => {
+  /** Isi blok `.jk-notify-menu`. */
+  function isiMenuNotifikasi(): string {
+    const mulai = sidebar.indexOf('<div class="jk-notify-menu">');
+    const akhir = sidebar.indexOf("</div>", sidebar.indexOf("jk-error-line", mulai));
+    expect(mulai).toBeGreaterThanOrEqual(0);
+    expect(akhir).toBeGreaterThan(mulai);
+    return sidebar.slice(mulai, akhir);
+  }
+
+  test("dua switch dengan role dan aria-checked sesuai preferensi", () => {
+    const menu = isiMenuNotifikasi();
+    expect(menu.match(/role="switch"/g)?.length).toBe(2);
+    expect(menu).toContain('aria-checked={notifyPrefs.enabled ? "true" : "false"}');
+    expect(menu).toContain('aria-checked={notifyPrefs.sound ? "true" : "false"}');
+    expect(menu).toContain('aria-label="Notifikasi desktop"');
+    expect(menu).toContain('aria-label="Bunyi notifikasi"');
+  });
+
+  test("Bunyi nonaktif saat notifikasi mati", () => {
+    const menu = isiMenuNotifikasi();
+    expect(menu).toContain("disabled={!notifyPrefs.enabled}");
+  });
+
+  test("label tampil tanpa teks aktif/mati di tombol", () => {
+    const menu = isiMenuNotifikasi();
+    expect(menu).toContain('<span class="jk-notify-label">Notifikasi desktop</span>');
+    expect(menu).toContain('<span class="jk-notify-label">Bunyi</span>');
+    expect(menu).not.toContain("aktif");
+    expect(menu).not.toContain("mati");
+  });
+
+  test("handler klik tetap sama", () => {
+    const menu = isiMenuNotifikasi();
+    expect(menu).toContain("void toggleNotify()");
+    expect(menu).toContain("onClick={toggleSound}");
+  });
+
+  test("baris label dan switch sebaris", () => {
+    const baris = isiAturan(css, ".jk-notify-row");
+    expect(baris).toBeDefined();
+    expect(baris).toMatch(/display:\s*flex/);
+    expect(baris).toMatch(/justify-content:\s*space-between/);
+  });
+});

@@ -9512,3 +9512,23 @@ h2.jk-md-heading {
 .jk-price-fold[open] > summary::before {
   content: "\25BE";
 }
+
+/* Baris notifikasi: label kiri, switch kanan. */
+.jk-notify-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 2px 0;
+}
+
+.jk-notify-label {
+  font-size: 13px;
+  color: var(--t2);
+  text-decoration: none;
+}
+
+.jk-app[data-mobile] .jk-notify-row {
+  min-height: 44px;
+}
