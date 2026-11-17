@@ -87,7 +87,7 @@ export function AccessSettingsView(props: AccessSettingsViewProps) {
           Sandi
         </h3>
 
-        <p class="jk-access-status">{passwordStatusText(props.status)}</p>
+        {!authDisabled && <p class="jk-access-status">{passwordStatusText(props.status)}</p>}
 
         {props.loading && !showError && !authDisabled && (
           <p class="jk-note">Memuat status sandi…</p>

@@ -95,7 +95,7 @@ export function passwordStatusText(status: PasswordStatus | undefined): string {
 
 /** Catatan pengganti formulir saat server mandiri berjalan tanpa sandi. */
 export const PASSWORD_DESKTOP_ONLY_NOTE =
-  "Sandi hanya bisa diatur di aplikasi desktop. Untuk server mandiri, jalankan dengan --password atau JEJAK_PASSWORD.";
+  "Server ini berjalan tanpa sandi, jadi sandi belum bisa dibuat dari sini. Jalankan ulang dengan JEJAK_PASSWORD=sandimu (atau --password), atau pakai aplikasi desktop.";
 
 /**
  * Pure: apakah galat berarti server berjalan tanpa autentikasi (404

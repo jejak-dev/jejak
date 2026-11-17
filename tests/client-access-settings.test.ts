@@ -194,7 +194,7 @@ describe("kartu Akses & sandi", () => {
     });
     const teks = textOf(pohon);
     expect(teks).toContain(
-      "Sandi hanya bisa diatur di aplikasi desktop. Untuk server mandiri, jalankan dengan --password atau JEJAK_PASSWORD.",
+      "Server ini berjalan tanpa sandi, jadi sandi belum bisa dibuat dari sini. Jalankan ulang dengan JEJAK_PASSWORD=sandimu (atau --password), atau pakai aplikasi desktop.",
     );
     expect(teks).not.toContain("autentikasi tidak aktif");
     expect(teks).not.toContain("Memuat status sandi…");
