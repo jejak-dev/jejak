@@ -6,6 +6,19 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambah
+
+- Agent boleh membaca `.env` dengan nilai rahasia disamarkan (host, port, dan nama basis data tetap terlihat; kata sandi, token, dan kredensial dalam URL disembunyikan).
+- Env untuk perintah: kredensial dari berkas `.env` dipasang ke semua perintah Bash tanpa pernah dilihat agent; diatur di bagian "Env untuk perintah" pada tab Rahasia.
+- Agent boleh membuat berkas `.env` baru atau menyalin dari `.env.sample`, tanpa menimpa yang sudah ada.
+
+### Diperbaiki
+
+- Drop berkas dan gambar ke komposer berfungsi di app desktop.
+- Giliran kosong dan kompaksi yang gagal tampil sebagai gagal, bukan "selesai" tanpa hasil.
+- Angka konteks yang tak masuk akal (melewati jendela, mis. 100% palsu) dikoreksi dari ringkasan usage giliran.
+- Pesan "data lebih baru" menyebut lokasi aplikasi yang sedang berjalan.
+
 ## [0.1.0-beta.5] - 2026-11-16
 
 ### Ditambah
