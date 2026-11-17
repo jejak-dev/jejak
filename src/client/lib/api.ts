@@ -2,6 +2,7 @@ import type { AuditEntry, AuditSummary } from "../../server/audit/audit-store";
 import type { AuthStatus } from "./auth";
 import type { PasswordStatus } from "./password-form";
 import { parseNetworkStatus, type NetworkStatus } from "./network-form";
+import { parseTunnelStatus, type TunnelStatus } from "./tunnel-form";
 import type {
   ChangeAction,
   CheckpointChange,
@@ -684,6 +685,16 @@ export interface ApiClient {
   getNetworkStatus(): Promise<NetworkStatus>;
   /** Nyalakan atau matikan akses dari jaringan. */
   setNetwork(input: { enabled: boolean; port?: number }): Promise<NetworkStatus>;
+  /** Status Cloudflare Tunnel (tanpa token). */
+  getTunnel(): Promise<TunnelStatus>;
+  /** Nyalakan atau matikan tunnel; `token` tak pernah dicatat di galat. */
+  putTunnel(input: {
+    enabled: boolean;
+    publicHost?: string;
+    token?: string;
+  }): Promise<TunnelStatus>;
+  /** Hapus token tunnel tersimpan. */
+  deleteTunnelToken(): Promise<TunnelStatus>;
   listSessions(): Promise<SessionInfo[]>;
   getSession(id: string): Promise<SessionInfo>;
   renameSession(id: string, title: string): Promise<SessionInfo>;
@@ -1865,6 +1876,27 @@ function wikiPageFrom(payload: unknown): WikiPage {
   return { ...ref, content, truncated, commit, fetchedAt };
 }
 
+/**
+ * Ganti kemunculan token pada pesan galat dengan `***`. Token adalah rahasia:
+ * bila server (atau apa pun) memantulkannya di pesan, klien tak boleh
+ * menampilkannya.
+ */
+function redactTunnelToken(error: unknown, token: string | undefined): unknown {
+  if (token === undefined || token === "") return error;
+  if (error instanceof ApiError) {
+    return new ApiError(
+      error.message.split(token).join("***"),
+      error.status,
+      error.details,
+      error.retryAfterSec,
+    );
+  }
+  if (error instanceof Error) {
+    return new Error(error.message.split(token).join("***"));
+  }
+  return error;
+}
+
 export function createApiClient(options: ApiClientOptions = {}): ApiClient {
   const baseUrl = options.baseUrl ?? "";
   const doFetch: typeof fetch = options.fetch ?? globalThis.fetch;
@@ -2031,6 +2063,30 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         ...(input.port === undefined ? {} : { port: input.port }),
       });
       return parseNetworkStatus(data);
+    },
+
+    async getTunnel() {
+      const data = await request("GET", "/api/tunnel");
+      return parseTunnelStatus(data);
+    },
+
+    async putTunnel(input) {
+      try {
+        const data = await request("PUT", "/api/tunnel", {
+          enabled: input.enabled,
+          ...(input.publicHost === undefined ? {} : { publicHost: input.publicHost }),
+          ...(input.token === undefined ? {} : { token: input.token }),
+        });
+        return parseTunnelStatus(data);
+      } catch (caught) {
+        // Token adalah rahasia: jangan pernah ikut di pesan galat.
+        throw redactTunnelToken(caught, input.token);
+      }
+    },
+
+    async deleteTunnelToken() {
+      const data = await request("DELETE", "/api/tunnel/token");
+      return parseTunnelStatus(data);
     },
 
     async listSessions() {

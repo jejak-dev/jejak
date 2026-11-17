@@ -6041,6 +6041,24 @@ h2.jk-md-heading {
   color: var(--t1);
 }
 
+/* Panduan tunnel: daftar langkah tetap satu kolom dan mudah dibaca. */
+.jk-network ol {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.jk-network code {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* Ponsel: target sentuh tunnel sebesar jari. */
+.jk-app[data-mobile] .jk-network .jk-button {
+  min-height: 44px;
+}
+
 /* Kode QR: latar putih tetap, bukan token tema, agar pemindai bisa baca. */
 .jk-qr {
   display: block;

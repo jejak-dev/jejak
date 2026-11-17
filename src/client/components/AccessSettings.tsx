@@ -12,6 +12,7 @@ import {
   type ConfirmDialogBindings,
 } from "./ConfirmDialog";
 import { NetworkSettings } from "./NetworkSettings";
+import { TunnelSettings } from "./TunnelSettings";
 
 export interface AccessSettingsViewProps {
   /** Status sandi terakhir dari server. */
@@ -56,6 +57,8 @@ export interface AccessSettingsViewProps {
   dialog?: ConfirmDialogBindings;
   /** Isi bagian akses jaringan (disisipkan di dalam kartu). */
   network?: ComponentChild;
+  /** Isi bagian tunnel Cloudflare (disisipkan setelah akses jaringan). */
+  tunnel?: ComponentChild;
 }
 
 /** Tampilan kartu Akses & sandi tanpa hook; dipakai uji render tanpa DOM. */
@@ -72,6 +75,7 @@ export function AccessSettingsView(props: AccessSettingsViewProps) {
         masuk otomatis.
       </p>
       {props.network}
+      {props.tunnel}
 
       <p class="jk-access-status">{passwordStatusText(props.status)}</p>
 
@@ -205,6 +209,11 @@ export interface AccessSettingsProps {
  */
 export function accessNetworkSlot(api: ApiClient, refreshKey: number): ComponentChild {
   return h(NetworkSettings, { api, refreshKey });
+}
+
+/** Slot bagian tunnel Cloudflare di kartu Akses & sandi. */
+export function accessTunnelSlot(api: ApiClient): ComponentChild {
+  return h(TunnelSettings, { api });
 }
 
 /** Pesan galat singkat dari galat API atau galat biasa. */
@@ -346,6 +355,7 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
       onCancelDelete={onCancelDelete}
       dialog={dialog}
       network={accessNetworkSlot(api, networkRefreshKey)}
+      tunnel={accessTunnelSlot(api)}
     />
   );
 }
