@@ -452,6 +452,12 @@ export interface SecretAllowAddResult {
   allowed: string[];
 }
 
+/** Berkas .env untuk perintah Bash; hanya nama kunci yang dikirim server. */
+export interface CommandEnvState {
+  path?: string;
+  keys: string[];
+}
+
 export type BudgetLevel = "ok" | "warn" | "over";
 
 export interface BudgetConfigItem {
@@ -855,6 +861,9 @@ export interface ApiClient {
     sessionId: string,
     path: string,
   ): Promise<{ removed: boolean; allowed: string[] }>;
+  getCommandEnv(sessionId: string): Promise<CommandEnvState>;
+  setCommandEnv(sessionId: string, path: string): Promise<CommandEnvState>;
+  clearCommandEnv(sessionId: string): Promise<{ removed: boolean }>;
   getBudget(): Promise<BudgetConfigItem>;
   /** `null` pada batas berarti hapus batas. */
   putBudget(patch: BudgetPatch): Promise<BudgetConfigItem>;
@@ -1162,8 +1171,23 @@ function secretAllowRemoveFrom(payload: unknown): { removed: boolean; allowed: s
   return { removed: payload.removed, allowed: payload.allowed as string[] };
 }
 
-const BUDGET_LEVELS = new Set(["ok", "warn", "over"]);
+function commandEnvStateFrom(payload: unknown): CommandEnvState {
+  if (!isRecord(payload) || !Array.isArray(payload.keys)) {
+    throw invalidResponse();
+  }
+  const state: CommandEnvState = { keys: payload.keys as string[] };
+  if (typeof payload.path === "string") state.path = payload.path;
+  return state;
+}
 
+function commandEnvClearFrom(payload: unknown): { removed: boolean } {
+  if (!isRecord(payload) || typeof payload.removed !== "boolean") {
+    throw invalidResponse();
+  }
+  return { removed: payload.removed };
+}
+
+const BUDGET_LEVELS = new Set(["ok", "warn", "over"]);
 function finiteOrUndefined(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -2903,6 +2927,34 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
           "DELETE",
           `/api/sessions/${encodeURIComponent(sessionId)}/secret-allow`,
           { path },
+        ),
+      );
+    },
+
+    async getCommandEnv(sessionId) {
+      return commandEnvStateFrom(
+        await request(
+          "GET",
+          `/api/sessions/${encodeURIComponent(sessionId)}/command-env`,
+        ),
+      );
+    },
+
+    async setCommandEnv(sessionId, path) {
+      return commandEnvStateFrom(
+        await request(
+          "PUT",
+          `/api/sessions/${encodeURIComponent(sessionId)}/command-env`,
+          { path },
+        ),
+      );
+    },
+
+    async clearCommandEnv(sessionId) {
+      return commandEnvClearFrom(
+        await request(
+          "DELETE",
+          `/api/sessions/${encodeURIComponent(sessionId)}/command-env`,
         ),
       );
     },
