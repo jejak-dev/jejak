@@ -3,6 +3,7 @@ import {
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
   formatDateId,
+  isAuthDisabledError,
   passwordStatusText,
   validatePasswordForm,
 } from "../src/client/lib/password-form";
@@ -88,5 +89,13 @@ describe("teks status sandi", () => {
     expect(formatDateId("bukan tanggal")).toBeUndefined();
     expect(formatDateId("")).toBeUndefined();
     expect(formatDateId(undefined)).toBeUndefined();
+  });
+
+  test("galat autentikasi tidak aktif dikenali", () => {
+    expect(isAuthDisabledError({ status: 404, message: "autentikasi tidak aktif" })).toBe(true);
+    expect(isAuthDisabledError({ status: 404, message: "lain" })).toBe(false);
+    expect(isAuthDisabledError({ status: 500, message: "autentikasi tidak aktif" })).toBe(false);
+    expect(isAuthDisabledError(new Error("autentikasi tidak aktif"))).toBe(false);
+    expect(isAuthDisabledError(undefined)).toBe(false);
   });
 });

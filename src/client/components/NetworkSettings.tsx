@@ -6,6 +6,7 @@ import {
   MIN_NETWORK_PORT,
   NETWORK_FIREWALL_NOTE,
   NETWORK_WARNING,
+  networkBadge,
   networkStatusText,
   networkUrls,
   resolveNetworkPort,
@@ -17,6 +18,7 @@ import {
 } from "../lib/network-form";
 import { encodeQr, qrPath } from "../lib/qr";
 import { CopyButton } from "./CopyButton";
+import { StatusBadge } from "./StatusBadge";
 
 export interface NetworkSettingsViewProps {
   /** Status jaringan terakhir dari server. */
@@ -35,6 +37,8 @@ export interface NetworkSettingsViewProps {
   qrUrl?: string | undefined;
   /** Tombol QR ditekan: buka kodenya, atau tutup bila sedang terbuka. */
   onToggleQr?: (url: string) => void;
+  /** True bila server berjalan tanpa sandi sehingga akses tak bisa dinyalakan. */
+  authDisabled?: boolean;
 }
 
 /**
@@ -69,18 +73,29 @@ export function NetworkSettingsView(props: NetworkSettingsViewProps) {
   const needsPassword = status?.passwordRequired === true;
   const urls = networkUrls(status);
   const galat = props.error ?? status?.error;
+  const badge = networkBadge(status);
+  // Alasan tombol nonaktif tampil langsung di bawah tombolnya.
+  const alasan =
+    props.authDisabled === true
+      ? "Butuh sandi"
+      : needsPassword
+        ? "Buat sandi dulu"
+        : undefined;
 
   return (
-    <section class="jk-network" aria-labelledby="jk-network-title">
-      <h3 class="jk-network-title" id="jk-network-title">
-        Akses dari jaringan
-      </h3>
+    <section class="jk-access-block" aria-labelledby="jk-network-title">
+      <div class="jk-access-block-head">
+        <h3 class="jk-access-block-title" id="jk-network-title">
+          Akses dari jaringan
+        </h3>
+        <StatusBadge label={badge.label} tone={badge.tone} />
+      </div>
 
       <div class="jk-network-actions">
         <button
           type="button"
           class="jk-button"
-          disabled={props.busy || needsPassword}
+          disabled={props.busy || alasan !== undefined}
           onClick={props.onToggle}
         >
           {aktif
@@ -89,7 +104,7 @@ export function NetworkSettingsView(props: NetworkSettingsViewProps) {
         </button>
       </div>
 
-      {needsPassword && <p class="jk-note">Buat sandi dulu</p>}
+      {alasan !== undefined && <p class="jk-note jk-access-reason">{alasan}</p>}
 
       <div class="jk-field">
         <label class="jk-label" for="jk-network-port">
@@ -109,7 +124,7 @@ export function NetworkSettingsView(props: NetworkSettingsViewProps) {
         />
       </div>
 
-      <p class="jk-access-status">{networkStatusText(status)}</p>
+      {listening && <p class="jk-access-status">{networkStatusText(status)}</p>}
 
       {urls.map((url) => (
         <div class="jk-network-url-row" key={url}>
@@ -154,6 +169,8 @@ export interface NetworkSettingsProps {
    * kartu ini langsung menyegarkan statusnya.
    */
   refreshKey?: NetworkRefreshKey;
+  /** True bila server berjalan tanpa sandi; tombol nonaktif dengan alasan. */
+  authDisabled?: boolean;
 }
 
 /** Pesan galat singkat dari galat API atau galat biasa. */
@@ -166,7 +183,7 @@ function messageOf(error: unknown): string {
  * Bagian "Akses dari jaringan" di kartu Akses & sandi: menyalakan listener
  * kedua supaya Jejak bisa dibuka dari perangkat lain di jaringan yang sama.
  */
-export function NetworkSettings({ api, refreshKey = 0 }: NetworkSettingsProps) {
+export function NetworkSettings({ api, refreshKey = 0, authDisabled = false }: NetworkSettingsProps) {
   const [status, setStatus] = useState<NetworkStatus | undefined>(undefined);
   // `undefined` berarti belum tahu apakah fitur ini tersedia di server.
   const [available, setAvailable] = useState<boolean | undefined>(undefined);
@@ -257,6 +274,7 @@ export function NetworkSettings({ api, refreshKey = 0 }: NetworkSettingsProps) {
       onToggle={() => void onToggle()}
       qrUrl={qrUrl}
       onToggleQr={onToggleQr}
+      authDisabled={authDisabled}
     />
   );
 }

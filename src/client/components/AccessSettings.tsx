@@ -2,6 +2,8 @@ import { h, type ComponentChild } from "preact";
 import { useCallback, useEffect, useState } from "preact/hooks";
 import type { ApiClient } from "../lib/api";
 import {
+  PASSWORD_DESKTOP_ONLY_NOTE,
+  isAuthDisabledError,
   passwordStatusText,
   validatePasswordForm,
   type PasswordStatus,
@@ -55,7 +57,9 @@ export interface AccessSettingsViewProps {
   onCancelDelete: () => void;
   /** Binding fokus dan keyboard untuk modal konfirmasi. */
   dialog?: ConfirmDialogBindings;
-  /** Isi bagian akses jaringan (disisipkan di dalam kartu). */
+  /** True bila server berjalan tanpa sandi; formulir sandi disembunyikan. */
+  authDisabled?: boolean;
+  /** Isi bagian akses jaringan (disisipkan setelah formulir sandi). */
   network?: ComponentChild;
   /** Isi bagian tunnel Cloudflare (disisipkan setelah akses jaringan). */
   tunnel?: ComponentChild;
@@ -64,6 +68,9 @@ export interface AccessSettingsViewProps {
 /** Tampilan kartu Akses & sandi tanpa hook; dipakai uji render tanpa DOM. */
 export function AccessSettingsView(props: AccessSettingsViewProps) {
   const replacing = props.status?.configured === true;
+  const authDisabled = props.authDisabled === true;
+  // Galat mentah "autentikasi tidak aktif" diganti catatan netral.
+  const showError = props.error !== undefined && !authDisabled;
 
   return (
     <section class="jk-access-settings" aria-labelledby="jk-access-title">
@@ -74,86 +81,105 @@ export function AccessSettingsView(props: AccessSettingsViewProps) {
         Sandi dipakai untuk masuk dari peramban atau perangkat lain. Aplikasi desktop ini tetap
         masuk otomatis.
       </p>
-      {props.network}
-      {props.tunnel}
 
-      <p class="jk-access-status">{passwordStatusText(props.status)}</p>
+      <section class="jk-access-block" aria-labelledby="jk-access-password-title">
+        <h3 class="jk-access-block-title" id="jk-access-password-title">
+          Sandi
+        </h3>
 
-      {props.loading && <p class="jk-note">Memuat status sandi…</p>}
+        <p class="jk-access-status">{passwordStatusText(props.status)}</p>
 
-      {props.error !== undefined && (
-        <p class="jk-error-line" role="alert">
-          {props.error}
-        </p>
-      )}
-
-      {props.notice !== undefined && (
-        <p class="jk-note" role="status">
-          {props.notice}
-        </p>
-      )}
-
-      <form class="jk-access-form" onSubmit={props.onSubmit}>
-        {replacing && (
-          <div class="jk-field">
-            <label class="jk-label" for="jk-access-current">
-              Sandi lama
-            </label>
-            <input
-              id="jk-access-current"
-              class="jk-input"
-              type="password"
-              autoComplete="off"
-              value={props.current}
-              onInput={(event) => props.onCurrent((event.currentTarget as HTMLInputElement).value)}
-            />
-          </div>
+        {props.loading && !showError && !authDisabled && (
+          <p class="jk-note">Memuat status sandi…</p>
         )}
 
-        <div class="jk-field">
-          <label class="jk-label" for="jk-access-password">
-            {replacing ? "Sandi baru" : "Sandi"}
-          </label>
-          <input
-            id="jk-access-password"
-            class="jk-input"
-            type="password"
-            autoComplete="new-password"
-            value={props.password}
-            onInput={(event) => props.onPassword((event.currentTarget as HTMLInputElement).value)}
-          />
-        </div>
+        {authDisabled && <p class="jk-note">{PASSWORD_DESKTOP_ONLY_NOTE}</p>}
 
-        <div class="jk-field">
-          <label class="jk-label" for="jk-access-repeat">
-            Ulangi sandi
-          </label>
-          <input
-            id="jk-access-repeat"
-            class="jk-input"
-            type="password"
-            autoComplete="new-password"
-            value={props.repeat}
-            onInput={(event) => props.onRepeat((event.currentTarget as HTMLInputElement).value)}
-          />
-        </div>
+        {showError && (
+          <p class="jk-error-line" role="alert">
+            {props.error}
+          </p>
+        )}
 
-        <div class="jk-access-actions">
-          <button type="submit" class="jk-button jk-button-primary" disabled={props.busy}>
-            {replacing ? "Ganti sandi" : "Buat sandi"}
-          </button>
-          {replacing && (
-            <button
-              type="button"
-              class="jk-button jk-button-danger"
-              disabled={props.busy}
-              onClick={props.onRequestDelete}
-            >
-              Hapus sandi
-            </button>
-          )}
-        </div>
-      </form>
+        {props.notice !== undefined && (
+          <p class="jk-note" role="status">
+            {props.notice}
+          </p>
+        )}
+
+        {!authDisabled && (
+          <form class="jk-access-form" onSubmit={props.onSubmit}>
+            {replacing && (
+              <div class="jk-field">
+                <label class="jk-label" for="jk-access-current">
+                  Sandi lama
+                </label>
+                <input
+                  id="jk-access-current"
+                  class="jk-input"
+                  type="password"
+                  autoComplete="off"
+                  value={props.current}
+                  onInput={(event) =>
+                    props.onCurrent((event.currentTarget as HTMLInputElement).value)
+                  }
+                />
+              </div>
+            )}
+
+            <div class="jk-field">
+              <label class="jk-label" for="jk-access-password">
+                {replacing ? "Sandi baru" : "Sandi"}
+              </label>
+              <input
+                id="jk-access-password"
+                class="jk-input"
+                type="password"
+                autoComplete="new-password"
+                value={props.password}
+                onInput={(event) =>
+                  props.onPassword((event.currentTarget as HTMLInputElement).value)
+                }
+              />
+            </div>
+
+            <div class="jk-field">
+              <label class="jk-label" for="jk-access-repeat">
+                Ulangi sandi
+              </label>
+              <input
+                id="jk-access-repeat"
+                class="jk-input"
+                type="password"
+                autoComplete="new-password"
+                value={props.repeat}
+                onInput={(event) =>
+                  props.onRepeat((event.currentTarget as HTMLInputElement).value)
+                }
+              />
+            </div>
+
+            <div class="jk-access-actions">
+              <button type="submit" class="jk-button jk-button-primary" disabled={props.busy}>
+                {replacing ? "Ganti sandi" : "Buat sandi"}
+              </button>
+              {replacing && (
+                <button
+                  type="button"
+                  class="jk-button jk-button-danger"
+                  disabled={props.busy}
+                  onClick={props.onRequestDelete}
+                >
+                  Hapus sandi
+                </button>
+              )}
+            </div>
+          </form>
+        )}
+      </section>
+
+      {props.network}
+      {props.tunnel}
 
       <ConfirmDialogView
         open={props.confirmOpen}
@@ -207,13 +233,17 @@ export interface AccessSettingsProps {
  * diganti, atau dihapus) kunci berubah dan kartu jaringan langsung memuat
  * status terbaru dari server.
  */
-export function accessNetworkSlot(api: ApiClient, refreshKey: number): ComponentChild {
-  return h(NetworkSettings, { api, refreshKey });
+export function accessNetworkSlot(
+  api: ApiClient,
+  refreshKey: number,
+  authDisabled = false,
+): ComponentChild {
+  return h(NetworkSettings, { api, refreshKey, authDisabled });
 }
 
 /** Slot bagian tunnel Cloudflare di kartu Akses & sandi. */
-export function accessTunnelSlot(api: ApiClient): ComponentChild {
-  return h(TunnelSettings, { api });
+export function accessTunnelSlot(api: ApiClient, authDisabled = false): ComponentChild {
+  return h(TunnelSettings, { api, authDisabled });
 }
 
 /** Pesan galat singkat dari galat API atau galat biasa. */
@@ -235,6 +265,8 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [dialogError, setDialogError] = useState<string | undefined>(undefined);
   const [deletePassword, setDeletePassword] = useState("");
+  // True bila server berjalan tanpa autentikasi (404 "autentikasi tidak aktif").
+  const [authDisabled, setAuthDisabled] = useState(false);
   // Kunci pemicu status jaringan; naik setiap kali sandi berubah.
   const [networkRefreshKey, setNetworkRefreshKey] = useState(0);
 
@@ -243,8 +275,16 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
     try {
       setStatus(await api.getPasswordStatus());
       setError(undefined);
+      setAuthDisabled(false);
     } catch (caught) {
-      setError(messageOf(caught));
+      if (isAuthDisabledError(caught)) {
+        // Server tanpa sandi: bukan galat pengguna, tampilkan catatan netral.
+        setAuthDisabled(true);
+        setStatus(undefined);
+        setError(undefined);
+      } else {
+        setError(messageOf(caught));
+      }
     } finally {
       setLoading(false);
     }
@@ -354,8 +394,9 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
       onConfirmDelete={() => void onConfirmDelete()}
       onCancelDelete={onCancelDelete}
       dialog={dialog}
-      network={accessNetworkSlot(api, networkRefreshKey)}
-      tunnel={accessTunnelSlot(api)}
+      authDisabled={authDisabled}
+      network={accessNetworkSlot(api, networkRefreshKey, authDisabled)}
+      tunnel={accessTunnelSlot(api, authDisabled)}
     />
   );
 }

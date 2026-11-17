@@ -5988,6 +5988,57 @@ h2.jk-md-heading {
   gap: 10px;
 }
 
+/* Bagian di dalam kartu Akses & sandi: judul tingkat-3 dan pemisah atas. */
+.jk-access-block {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.jk-access-block-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.jk-access-block-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Alasan tombol nonaktif: dekat tombol dan tetap terbaca. */
+.jk-access-reason {
+  margin: 0;
+  color: var(--t2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Lencana status: titik berwarna plus label, satu gaya untuk jaringan dan tunnel. */
+.jk-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--t3);
+}
+
+.jk-status-badge .jk-dot {
+  background: var(--line-2);
+}
+
+.jk-status-badge-on {
+  color: var(--ok);
+}
+
+.jk-status-badge-on .jk-dot {
+  background: var(--ok);
+}
+
 /* Akses dari jaringan */
 
 .jk-network {
@@ -6042,20 +6093,22 @@ h2.jk-md-heading {
 }
 
 /* Panduan tunnel: daftar langkah tetap satu kolom dan mudah dibaca. */
-.jk-network ol {
+.jk-network ol,
+.jk-access-block ol {
   margin: 0;
   padding-left: 18px;
   display: grid;
   gap: 4px;
 }
 
-.jk-network code {
+.jk-network code,
+.jk-access-block code {
   font-family: var(--mono);
   font-size: 12px;
 }
 
 /* Ponsel: target sentuh tunnel sebesar jari. */
-.jk-app[data-mobile] .jk-network .jk-button {
+.jk-app[data-mobile] .jk-access-block .jk-button {
   min-height: 44px;
 }
 

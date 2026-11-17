@@ -166,4 +166,72 @@ describe("bagian tunnel Cloudflare", () => {
     expect(textOf(render({ confirmOpen: true }))).toContain("Hapus token tunnel?");
     expect(textOf(render())).not.toContain("Hapus token tunnel?");
   });
+
+  test("status tunnel memakai lencana dengan titik berwarna", () => {
+    const mati = findNodes(render(), (vnode) => {
+      const value = propsOf(vnode)["class"];
+      return typeof value === "string" && value.split(" ").includes("jk-status-badge");
+    });
+    expect(mati.length).toBe(1);
+    expect(textOf(mati[0]?.props.children as ComponentChild)).toBe("Mati");
+
+    const nyala = findNodes(
+      render({ status: status({ enabled: true, running: true }) }),
+      (vnode) => {
+        const value = propsOf(vnode)["class"];
+        return typeof value === "string" && value.split(" ").includes("jk-status-badge-on");
+      },
+    );
+    expect(nyala.length).toBe(1);
+    expect(textOf(nyala[0]?.props.children as ComponentChild)).toBe("Berjalan");
+  });
+
+  test("alasan tombol nonaktif tampil tepat setelah baris tombol", () => {
+    const pohon = render({ networkEnabled: false });
+    // Cari larik anak yang memuat baris tombol, lalu ambil saudara sesudahnya.
+    const cari = (node: ComponentChild): ComponentChild[] | undefined => {
+      if (node === null || node === undefined || typeof node !== "object") return undefined;
+      if (Array.isArray(node)) {
+        const cocok = node.some(
+          (item) =>
+            item !== null &&
+            typeof item === "object" &&
+            !Array.isArray(item) &&
+            (item as VNode).type === "div" &&
+            String(propsOf(item as VNode)["class"] ?? "").includes("jk-network-actions"),
+        );
+        if (cocok) return node;
+        for (const item of node) {
+          const hasil = cari(item as ComponentChild);
+          if (hasil !== undefined) return hasil;
+        }
+        return undefined;
+      }
+      const vnode = node as VNode;
+      if (typeof vnode.type === "function") {
+        return cari((vnode.type as (props: unknown) => ComponentChild)(vnode.props));
+      }
+      return cari(vnode.props.children as ComponentChild);
+    };
+    const daftar = cari(pohon);
+    expect(daftar).toBeDefined();
+    const indeksTombol = (daftar ?? []).findIndex(
+      (item) =>
+        item !== null &&
+        typeof item === "object" &&
+        !Array.isArray(item) &&
+        (item as VNode).type === "div" &&
+        String(propsOf(item as VNode)["class"] ?? "").includes("jk-network-actions"),
+    );
+    expect(indeksTombol).toBeGreaterThan(-1);
+    expect(textOf((daftar ?? [])[indeksTombol + 1] as ComponentChild)).toBe(
+      "Nyalakan akses dari jaringan dulu.",
+    );
+  });
+
+  test("autentikasi tidak aktif: alasan Butuh sandi dan tombol nonaktif", () => {
+    const pohon = render({ authDisabled: true });
+    expect(propsOf(buttons(pohon)[0])["disabled"]).toBe(true);
+    expect(textOf(pohon)).toContain("Butuh sandi");
+  });
 });

@@ -7,6 +7,7 @@ import {
   TUNNEL_POLL_MS,
   shouldPollTunnel,
   tunnelBadge,
+  tunnelBadgeTone,
   tunnelErrorKind,
   tunnelErrorMessage,
   tunnelToggleReason,
@@ -19,6 +20,7 @@ import {
   useConfirmDialogBindings,
   type ConfirmDialogBindings,
 } from "./ConfirmDialog";
+import { StatusBadge } from "./StatusBadge";
 
 export interface TunnelSettingsViewProps {
   /** Status tunnel terakhir dari server. */
@@ -53,6 +55,8 @@ export interface TunnelSettingsViewProps {
   onCancelDelete: () => void;
   /** Binding fokus dan keyboard untuk modal konfirmasi. */
   dialog?: ConfirmDialogBindings;
+  /** True bila server berjalan tanpa sandi sehingga tunnel tak bisa dinyalakan. */
+  authDisabled?: boolean;
 }
 
 /** Tampilan bagian tunnel tanpa hook; dipakai uji render tanpa DOM. */
@@ -65,14 +69,18 @@ export function TunnelSettingsView(props: TunnelSettingsViewProps) {
     publicHost: props.publicHost,
     hasToken: status?.hasToken === true,
     token: props.token,
+    authDisabled: props.authDisabled === true,
   });
   const galat = props.error ?? status?.error;
 
   return (
-    <section class="jk-network" aria-labelledby="jk-tunnel-title">
-      <h3 class="jk-network-title" id="jk-tunnel-title">
-        Akses dari mana saja (Cloudflare)
-      </h3>
+    <section class="jk-access-block" aria-labelledby="jk-tunnel-title">
+      <div class="jk-access-block-head">
+        <h3 class="jk-access-block-title" id="jk-tunnel-title">
+          Akses dari mana saja (Cloudflare)
+        </h3>
+        <StatusBadge label={tunnelBadge(status)} tone={tunnelBadgeTone(status)} />
+      </div>
 
       <p class="jk-note">
         Tunnel Cloudflare membuka Jejak ke internet lewat hostname milikmu, tanpa membuka port
@@ -85,12 +93,6 @@ export function TunnelSettingsView(props: TunnelSettingsViewProps) {
         </li>
         <li>Tempel token tunnel di sini.</li>
       </ol>
-
-      <p class="jk-access-status">
-        <span class={`jk-badge ${status?.running === true ? "jk-badge-success" : "jk-badge-muted"}`}>
-          {tunnelBadge(status)}
-        </span>
-      </p>
 
       {status?.url !== undefined && (
         <div class="jk-network-url">
@@ -167,7 +169,7 @@ export function TunnelSettingsView(props: TunnelSettingsViewProps) {
             )}
           </div>
 
-          {!aktif && alasan !== undefined && <p class="jk-note">{alasan}</p>}
+          {!aktif && alasan !== undefined && <p class="jk-note jk-access-reason">{alasan}</p>}
           {status?.installed === false && (
             <p class="jk-note">Pasang dengan: {CLOUDFLARED_INSTALL_COMMAND}</p>
           )}
@@ -199,13 +201,15 @@ export function TunnelSettingsView(props: TunnelSettingsViewProps) {
 
 export interface TunnelSettingsProps {
   api: ApiClient;
+  /** True bila server berjalan tanpa sandi; tombol nonaktif dengan alasan. */
+  authDisabled?: boolean;
 }
 
 /**
  * Bagian "Akses dari mana saja" di kartu Akses & sandi: menyalakan Cloudflare
  * Tunnel ke listener jaringan. Token tak pernah ditampilkan ulang.
  */
-export function TunnelSettings({ api }: TunnelSettingsProps) {
+export function TunnelSettings({ api, authDisabled = false }: TunnelSettingsProps) {
   const [status, setStatus] = useState<TunnelStatus | undefined>(undefined);
   // `undefined` berarti belum tahu apakah fitur ini tersedia di server.
   const [available, setAvailable] = useState<boolean | undefined>(undefined);
@@ -368,6 +372,7 @@ export function TunnelSettings({ api }: TunnelSettingsProps) {
         onConfirmDelete={() => void onConfirmDelete()}
         onCancelDelete={onCancelDelete}
         dialog={dialog}
+        authDisabled={authDisabled}
       />
     </div>
   );

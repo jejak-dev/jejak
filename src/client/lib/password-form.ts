@@ -92,3 +92,23 @@ export function passwordStatusText(status: PasswordStatus | undefined): string {
   const date = formatDateId(status.updatedAt);
   return date === undefined ? "Sandi aktif" : `Sandi aktif sejak ${date}`;
 }
+
+/** Catatan pengganti formulir saat server mandiri berjalan tanpa sandi. */
+export const PASSWORD_DESKTOP_ONLY_NOTE =
+  "Sandi hanya bisa diatur di aplikasi desktop. Untuk server mandiri, jalankan dengan --password atau JEJAK_PASSWORD.";
+
+/**
+ * Pure: apakah galat berarti server berjalan tanpa autentikasi (404
+ * "autentikasi tidak aktif"). Galat ini bukan kesalahan pengguna sehingga
+ * tidak boleh tampil sebagai galat merah.
+ */
+export function isAuthDisabledError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const status = (error as { status?: unknown }).status;
+  const message = (error as { message?: unknown }).message;
+  return (
+    status === 404 &&
+    typeof message === "string" &&
+    message.includes("autentikasi tidak aktif")
+  );
+}

@@ -159,4 +159,52 @@ describe("bagian akses dari jaringan", () => {
     expect(teks).toContain("Matikan akses dari perangkat lain");
     expect(buttonTexts(render())).toEqual(["Izinkan akses dari perangkat lain"]);
   });
+
+  test("status tampil sebagai lencana dengan titik berwarna", () => {
+    const mati = findNodes(render(), (vnode) => {
+      const value = propsOf(vnode)["class"];
+      return typeof value === "string" && value.split(" ").includes("jk-status-badge");
+    });
+    expect(mati.length).toBe(1);
+    expect(textOf(mati[0]?.props.children as ComponentChild)).toBe("Mati");
+    expect(
+      findNodes(mati[0] as ComponentChild, (vnode) => {
+        const value = propsOf(vnode)["class"];
+        return typeof value === "string" && value.split(" ").includes("jk-dot");
+      }).length,
+    ).toBe(1);
+
+    const nyala = findNodes(
+      render({ status: status({ enabled: true, listening: true }) }),
+      (vnode) => {
+        const value = propsOf(vnode)["class"];
+        return typeof value === "string" && value.split(" ").includes("jk-status-badge-on");
+      },
+    );
+    expect(nyala.length).toBe(1);
+    expect(textOf(nyala[0]?.props.children as ComponentChild)).toBe("Aktif");
+  });
+
+  test("alasan tombol nonaktif tampil tepat setelah tombol", () => {
+    const pohon = render({ status: status({ passwordRequired: true }) });
+    const anak = (pohon as VNode).props.children as ComponentChild[];
+    const daftar = Array.isArray(anak) ? anak : [anak];
+    const indeksTombol = daftar.findIndex(
+      (item) =>
+        item !== null &&
+        typeof item === "object" &&
+        !Array.isArray(item) &&
+        (item as VNode).type === "div" &&
+        String(propsOf(item as VNode)["class"] ?? "").includes("jk-network-actions"),
+    );
+    expect(indeksTombol).toBeGreaterThan(-1);
+    const sesudah = daftar[indeksTombol + 1];
+    expect(textOf(sesudah as ComponentChild)).toBe("Buat sandi dulu");
+  });
+
+  test("autentikasi tidak aktif: tombol nonaktif dengan alasan Butuh sandi", () => {
+    const pohon = render({ authDisabled: true });
+    expect(propsOf(buttons(pohon)[0])["disabled"]).toBe(true);
+    expect(textOf(pohon)).toContain("Butuh sandi");
+  });
 });

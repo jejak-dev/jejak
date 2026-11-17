@@ -165,4 +165,60 @@ describe("kartu Akses & sandi", () => {
     const lain = accessNetworkSlot(api, 5) as VNode;
     expect(propsOf(lain)["refreshKey"]).toBe(5);
   });
+
+  test("urutan bagian: penjelasan, sandi, jaringan, lalu tunnel", () => {
+    const pohon = render({
+      network: h("p", null, "ISI-JARINGAN"),
+      tunnel: h("p", null, "ISI-TUNNEL"),
+    });
+    const teks = textOf(pohon);
+    const posSandi = teks.indexOf("Sandi");
+    const posJaringan = teks.indexOf("ISI-JARINGAN");
+    const posTunnel = teks.indexOf("ISI-TUNNEL");
+    expect(posSandi).toBeGreaterThan(-1);
+    expect(posJaringan).toBeGreaterThan(posSandi);
+    expect(posTunnel).toBeGreaterThan(posJaringan);
+  });
+
+  test("judul bagian sandi memakai tingkat-3", () => {
+    const judul = findNodes(render(), (vnode) => vnode.type === "h3");
+    expect(judul.length).toBe(1);
+    expect(textOf(judul[0]?.props.children as ComponentChild)).toBe("Sandi");
+  });
+
+  test("autentikasi tidak aktif: catatan netral, tanpa galat merah dan tanpa Memuat", () => {
+    const pohon = render({
+      authDisabled: true,
+      loading: true,
+      error: "autentikasi tidak aktif",
+    });
+    const teks = textOf(pohon);
+    expect(teks).toContain(
+      "Sandi hanya bisa diatur di aplikasi desktop. Untuk server mandiri, jalankan dengan --password atau JEJAK_PASSWORD.",
+    );
+    expect(teks).not.toContain("autentikasi tidak aktif");
+    expect(teks).not.toContain("Memuat status sandi…");
+    expect(byClass(pohon, "jk-error-line").length).toBe(0);
+    // Formulir sandi disembunyikan.
+    expect(findNodes(pohon, (vnode) => vnode.type === "input").length).toBe(0);
+  });
+
+  test("autentikasi tidak aktif: dua bagian lain tetap tampil", () => {
+    const teks = textOf(
+      render({
+        authDisabled: true,
+        network: h("p", null, "ISI-JARINGAN"),
+        tunnel: h("p", null, "ISI-TUNNEL"),
+      }),
+    );
+    expect(teks).toContain("ISI-JARINGAN");
+    expect(teks).toContain("ISI-TUNNEL");
+  });
+
+  test("Memuat hanya tampil selama loading dan tanpa galat", () => {
+    expect(textOf(render({ loading: true }))).toContain("Memuat status sandi…");
+    expect(textOf(render({ loading: true, error: "Sandi lama salah." }))).not.toContain(
+      "Memuat status sandi…",
+    );
+  });
 });

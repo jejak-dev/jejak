@@ -89,6 +89,17 @@ export function networkStatusText(status: NetworkStatus | undefined): string {
   return status.listening ? "Mendengarkan di:" : "Mati";
 }
 
+/** Lencana status jaringan: label singkat dan nada titiknya. */
+export function networkBadge(status: NetworkStatus | undefined): {
+  label: string;
+  tone: "success" | "muted";
+} {
+  if (status === undefined) return { label: "Memuat…", tone: "muted" };
+  return status.listening
+    ? { label: "Aktif", tone: "success" }
+    : { label: "Mati", tone: "muted" };
+}
+
 /** Daftar URL yang boleh dibuka; kosong saat listener tak menyala. */
 export function networkUrls(status: NetworkStatus | undefined): string[] {
   if (status === undefined) return [];

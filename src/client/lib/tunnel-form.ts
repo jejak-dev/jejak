@@ -88,6 +88,8 @@ export interface TunnelToggleInput {
   hasToken: boolean;
   /** Isian kolom token (kosong bila tak diketik). */
   token: string;
+  /** True bila server berjalan tanpa sandi sehingga tunnel tak bisa dinyalakan. */
+  authDisabled?: boolean;
 }
 
 /**
@@ -96,6 +98,7 @@ export interface TunnelToggleInput {
  * mendasar.
  */
 export function tunnelToggleReason(input: TunnelToggleInput): string | undefined {
+  if (input.authDisabled === true) return "Butuh sandi";
   if (!input.networkEnabled) return "Nyalakan akses dari jaringan dulu.";
   if (!input.installed) return TUNNEL_INSTALL_MESSAGE;
   const host = validatePublicHost(input.publicHost);
@@ -112,6 +115,11 @@ export function tunnelToggleReason(input: TunnelToggleInput): string | undefined
 export function tunnelBadge(status: TunnelStatus | undefined): string {
   if (status === undefined) return "Memuat…";
   return status.running ? "Berjalan" : "Mati";
+}
+
+/** Nada titik lencana status tunnel. */
+export function tunnelBadgeTone(status: TunnelStatus | undefined): "success" | "muted" {
+  return status?.running === true ? "success" : "muted";
 }
 
 /** Jenis galat tunnel: 403 (perangkat lain), 404 (fitur tak ada), atau pesan. */
