@@ -207,28 +207,136 @@ function modelIdentityModel(provider: ResolvedProvider): string | undefined {
 }
 
 type SecretGuard = NonNullable<RunInput["secretGuard"]>;
+type CommandEnv = NonNullable<RunInput["commandEnv"]>;
 
-/** Hook `PreToolUse` yang menolak tool bila kebijakan rahasia mengembalikan alasan. */
-function preToolUseHook(guard: SecretGuard): (input: unknown) => Promise<unknown> {
+/** Quote jalur untuk shell POSIX: bungkus petik tunggal, escape petik di dalamnya. */
+function shellQuote(path: string): string {
+  return `'${path.split("'").join(`'\\''`)}'`;
+}
+
+/** Bungkus perintah Bash agar variabel dari berkas env tersedia tanpa terlihat. */
+function wrapBashCommand(command: string, file: string): string {
+  return `set -a; . ${shellQuote(file)} >/dev/null 2>&1; set +a; ${command}`;
+}
+
+/**
+ * Hook `PreToolUse`: menolak tool bila kebijakan rahasia mengembalikan alasan,
+ * dan membungkus perintah Bash dengan env perintah bila aktif.
+ */
+function preToolUseHook(
+  guard: SecretGuard | undefined,
+  commandEnv: CommandEnv | undefined,
+): (input: unknown) => Promise<unknown> {
   return async (input: unknown): Promise<unknown> => {
     try {
       if (!isRecord(input) || input.hook_event_name !== "PreToolUse") return {};
       const toolName = typeof input.tool_name === "string" ? input.tool_name : "";
-      const agentId =
-        typeof input.agent_id === "string" && input.agent_id !== ""
-          ? input.agent_id
-          : undefined;
-      const result = guard({ toolName, toolInput: input.tool_input, agentId });
-      if (!isRecord(result) || typeof result.reason !== "string") return {};
+      if (guard !== undefined) {
+        const agentId =
+          typeof input.agent_id === "string" && input.agent_id !== ""
+            ? input.agent_id
+            : undefined;
+        const result = guard({ toolName, toolInput: input.tool_input, agentId });
+        if (isRecord(result) && typeof result.reason === "string") {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: result.reason,
+            },
+          };
+        }
+      }
+      if (commandEnv !== undefined && toolName === "Bash" && isRecord(input.tool_input)) {
+        const command = input.tool_input.command;
+        if (typeof command === "string" && command !== "") {
+          return {
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              updatedInput: {
+                ...input.tool_input,
+                command: wrapBashCommand(command, commandEnv.file),
+              },
+            },
+          };
+        }
+      }
+      return {};
+    } catch {
+      // Kebijakan tidak boleh membuat sesi macet.
+      return {};
+    }
+  };
+}
+
+/** Ganti semua kemunculan nilai rahasia pada string; `undefined` bila tak berubah. */
+function redactCommandEnvString(text: string, values: readonly string[]): string | undefined {
+  let output = text;
+  for (const value of values) {
+    if (value === "") continue;
+    if (!output.includes(value)) continue;
+    output = output.split(value).join("[disembunyikan:env]");
+  }
+  return output === text ? undefined : output;
+}
+
+/** Telusuri `tool_response` rekursif; `undefined` bila tak ada yang berubah. */
+function redactCommandEnvValue(
+  value: unknown,
+  values: readonly string[],
+): { changed: boolean; value: unknown } {
+  if (typeof value === "string") {
+    const redacted = redactCommandEnvString(value, values);
+    return redacted === undefined
+      ? { changed: false, value }
+      : { changed: true, value: redacted };
+  }
+  if (Array.isArray(value)) {
+    let changed = false;
+    const output = value.map((item) => {
+      const result = redactCommandEnvValue(item, values);
+      if (result.changed) changed = true;
+      return result.value;
+    });
+    return { changed, value: changed ? output : value };
+  }
+  if (isRecord(value)) {
+    let changed = false;
+    const output: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      const result = redactCommandEnvValue(item, values);
+      if (result.changed) changed = true;
+      output[key] = result.value;
+    }
+    return { changed, value: changed ? output : value };
+  }
+  return { changed: false, value };
+}
+
+/**
+ * Hook `PostToolUse`: menyamarkan nilai env perintah pada output tool sebelum
+ * dikirim ke model. Hanya mengembalikan rewrite bila ada yang berubah.
+ */
+function postToolUseHook(
+  commandEnv: CommandEnv,
+): (input: unknown) => Promise<unknown> {
+  const values = [...new Set(commandEnv.values)]
+    .filter((value) => value !== "")
+    .sort((left, right) => right.length - left.length);
+  return async (input: unknown): Promise<unknown> => {
+    try {
+      if (!isRecord(input) || input.hook_event_name !== "PostToolUse") return {};
+      if (values.length === 0) return {};
+      const result = redactCommandEnvValue(input.tool_response, values);
+      if (!result.changed) return {};
       return {
         hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "deny",
-          permissionDecisionReason: result.reason,
+          hookEventName: "PostToolUse",
+          updatedToolOutput: result.value,
         },
       };
     } catch {
-      // Kebijakan tidak boleh membuat sesi macet.
+      // Penyamaran gagal tidak boleh membuat sesi macet.
       return {};
     }
   };
@@ -599,13 +707,23 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       }
 
       const secretGuard = input.secretGuard;
-      if (secretGuard !== undefined) {
+      const commandEnv = input.commandEnv;
+      if (secretGuard !== undefined || commandEnv !== undefined) {
         const existingHooks = isRecord(sdkOptions.hooks) ? sdkOptions.hooks : {};
         const existingPre = existingHooks.PreToolUse;
-        const ours = { hooks: [preToolUseHook(secretGuard)] };
+        const ours = { hooks: [preToolUseHook(secretGuard, commandEnv)] };
         sdkOptions.hooks = {
           ...existingHooks,
           PreToolUse: Array.isArray(existingPre) ? [...existingPre, ours] : [ours],
+        };
+      }
+      if (commandEnv !== undefined) {
+        const existingHooks = isRecord(sdkOptions.hooks) ? sdkOptions.hooks : {};
+        const existingPost = existingHooks.PostToolUse;
+        const ours = { hooks: [postToolUseHook(commandEnv)] };
+        sdkOptions.hooks = {
+          ...existingHooks,
+          PostToolUse: Array.isArray(existingPost) ? [...existingPost, ours] : [ours],
         };
       }
 

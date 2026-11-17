@@ -66,6 +66,7 @@ import { redactEvent } from "../security/redact-event";
 import { SECRET_BLOCK_REASON, checkSecretAccess, resolveSecretReadPath } from "../security/secret-paths";
 import { redactEnvFileText } from "../security/env-redact";
 import type { SecretAllowStore } from "../security/secret-allow-store";
+import { readCommandEnv, type CommandEnvStore } from "../security/command-env-store";
 import { WorktreeError, type WorktreeInfo, type WorktreeService } from "../git/worktree-service";
 import type { SessionStore, StoredSession } from "./session-store";
 
@@ -240,6 +241,8 @@ export interface SessionManagerOptions {
   claude?: ClaudeConfigStore;
   /** Sandbox Bash; tanpa store `input.sandbox` tidak diisi. */
   sandbox?: { store: SandboxStore; home?: string };
+  /** Berkas `.env` per proyek untuk env perintah Bash; tanpa store fitur mati. */
+  commandEnv?: CommandEnvStore;
   /** Direktori home pengguna untuk skills `~/.claude`; default `os.homedir()`. */
   home?: string;
   /** Anggaran peringatan; tanpa store fitur dimatikan. */
@@ -338,6 +341,8 @@ interface SessionRecord {
   workspaceWarned?: boolean;
   /** Nilai rahasia dari `.env` sesi; dimuat malas dan tidak dipersist. */
   envValues?: readonly string[];
+  /** Nilai env perintah giliran berjalan; ikut disamarkan di riwayat. */
+  commandEnvValues?: readonly string[];
   /** Penyalur event yang tertahan sebelum output substantif (mode fallback). */
   flushPending?: () => void;
   /** Kunci tambahan yang ikut disanitasi dari event (kunci profil asal saat fallback). */
@@ -617,6 +622,8 @@ export class SessionManager {
   private readonly loadEnvValues: ((cwd: string) => readonly string[]) | undefined;
   private readonly blockSecretPaths: boolean;
   private readonly secretAllow: SecretAllowStore | undefined;
+  private readonly commandEnvStore: CommandEnvStore | undefined;
+  private commandEnvWarned = false;
   private storeWarned = false;
   private memoryWarned = false;
   private checkpointWarned = false;
@@ -660,6 +667,7 @@ export class SessionManager {
     this.blockSecretPaths =
       this.secretsMode !== "off" && options.secrets?.blockPaths !== false;
     this.secretAllow = options.secrets?.allow;
+    this.commandEnvStore = options.commandEnv;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -954,6 +962,39 @@ export class SessionManager {
     }
     record.envValues = values;
     return values;
+  }
+
+  /**
+   * Env perintah untuk satu giliran: berkas `.env` yang ditunjuk pengguna untuk
+   * akar proyek sesi. Galat baca tidak menggagalkan giliran; peringatan dicatat
+   * sekali per sesi.
+   */
+  private commandEnvForRun(
+    record: SessionRecord,
+  ): { file: string; values: string[]; keys: string[] } | undefined {
+    const store = this.commandEnvStore;
+    if (store === undefined) return undefined;
+    let file: string | undefined;
+    try {
+      file = store.get(this.cwdForMemory(record));
+    } catch {
+      return undefined;
+    }
+    if (file === undefined) return undefined;
+    try {
+      const parsed = readCommandEnv(file);
+      record.commandEnvValues = parsed.values;
+      return { file, values: parsed.values, keys: parsed.keys };
+    } catch {
+      if (!this.commandEnvWarned) {
+        this.commandEnvWarned = true;
+        this.append(record, {
+          type: "error",
+          message: "Berkas env perintah tidak bisa dibaca; giliran berjalan tanpa env tersebut.",
+        });
+      }
+      return undefined;
+    }
   }
 
   /** Samarkan teks untuk tampilan (`info`); mode warn/off tidak mengubah apa pun. */
@@ -2751,7 +2792,12 @@ export class SessionManager {
       }
     }
 
-    if (this.blockSecretPaths) {
+    const commandEnv = this.commandEnvForRun(record);
+    if (commandEnv !== undefined) {
+      input.commandEnv = commandEnv;
+    }
+
+    if (this.blockSecretPaths || commandEnv !== undefined) {
       const allow = this.secretAllow;
       const root = allow === undefined ? undefined : this.cwdForMemory(record);
       input.secretGuard = (call) => {
@@ -2761,9 +2807,12 @@ export class SessionManager {
             toolInput: call.toolInput,
             cwd: record.info.cwd,
           },
-          allow === undefined || root === undefined
-            ? {}
-            : { isAllowed: (abs) => allow.isAllowed(root, abs) },
+          {
+            ...(allow === undefined || root === undefined
+              ? {}
+              : { isAllowed: (abs: string) => allow.isAllowed(root, abs) }),
+            ...(commandEnv === undefined ? {} : { commandEnv: { keys: commandEnv.keys, file: commandEnv.file } }),
+          },
         );
         if (!verdict.blocked) return undefined;
         const rule = verdict.rule ?? "";
@@ -3304,7 +3353,10 @@ export class SessionManager {
     let storedEvent = sanitized;
     if (this.secretsMode !== "off") {
       try {
-        const redacted = redactEvent(sanitized, this.envValuesFor(record));
+        const redacted = redactEvent(sanitized, [
+          ...this.envValuesFor(record),
+          ...(record.commandEnvValues ?? []),
+        ]);
         if (this.secretsMode === "redact") {
           storedEvent = redacted.event;
         }

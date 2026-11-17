@@ -50,6 +50,10 @@ import {
   defaultSecretAllowStore,
   type SecretAllowStore,
 } from "./security/secret-allow-store";
+import {
+  defaultCommandEnvStore,
+  type CommandEnvStore,
+} from "./security/command-env-store";
 import { AttachmentStore } from "./attachments/store";
 import { attachmentRoutes } from "./routes/attachments";
 import { authRoutes } from "./routes/auth";
@@ -62,6 +66,7 @@ import { goalRoutes } from "./routes/goal";
 import { gitRoutes } from "./routes/git";
 import { worktreeRoutes } from "./routes/worktree";
 import { secretAllowRoutes } from "./routes/secret-allow";
+import { commandEnvRoutes } from "./routes/command-env";
 import { budgetRoutes } from "./routes/budget";
 import { usageRoutes } from "./routes/usage";
 import { claudeConfigRoutes } from "./routes/claude-config";
@@ -218,6 +223,8 @@ export interface CreateAppOptions {
   audit?: AuditStore;
   /** Daftar izin berkas rahasia; tanpa opsi ini rute `secret-allow` menjawab 503. */
   secretAllow?: SecretAllowStore;
+  /** Berkas env perintah Bash per proyek; tanpa opsi ini rute `command-env` menjawab 503. */
+  commandEnv?: CommandEnvStore;
   /** Pengaturan anggaran; tanpa opsi ini semua rute `/api/budget*` menjawab 503. */
   budget?: BudgetStore;
   /** Buku pemakaian biaya untuk status anggaran dan peringatan sesi. */
@@ -545,6 +552,7 @@ export function createApp(options: CreateAppOptions = {}) {
         mode: secretsMode === "off" || secretsMode === "warn" ? secretsMode : "redact",
         blockPaths: env.JEJAK_SECRET_BLOCK?.trim() !== "0",
         ...(options.secretAllow === undefined ? {} : { allow: options.secretAllow }),
+      ...(options.commandEnv === undefined ? {} : { commandEnv: options.commandEnv }),
         ...(env.JEJAK_SECRETS_ENV?.trim() === "1"
           ? { loadEnvValues: loadEnvValuesFromDir }
           : {}),
@@ -885,6 +893,14 @@ export function createApp(options: CreateAppOptions = {}) {
   // terlalu panjang membuat tipe Elysia terlalu dalam untuk dihitung
   // TypeScript, jadi pemasangan ini dibiarkan di luar rantai.
   (app as unknown as Elysia).use(scheduleRoutes({ service: scheduledTasks }));
+  // Rute env perintah dipasang di luar rantai demi alasan yang sama.
+  (app as unknown as Elysia).use(
+    commandEnvRoutes({
+      manager,
+      store: options.commandEnv,
+      audit: options.audit,
+    }),
+  );
   // Rute perintah slash dipasang di luar rantai demi alasan yang sama.
   (app as unknown as Elysia).use(
     commandRoutes({ catalog: commandCatalog, manager }),
@@ -963,6 +979,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const mcpServers = defaultMcpServerService(process.env);
   const audit = defaultAuditStore(process.env);
   const secretAllow = defaultSecretAllowStore(process.env);
+  const commandEnv = defaultCommandEnvStore(process.env);
   const budget = defaultBudgetStore(process.env);
   const usageLedger = defaultUsageLedger(process.env);
   const claudeConfig = defaultClaudeConfigStore(process.env);
@@ -1071,6 +1088,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     ...(mcpServers === undefined ? {} : { mcpServers }),
     ...(audit === undefined ? {} : { audit }),
     ...(secretAllow === undefined ? {} : { secretAllow }),
+    ...(commandEnv === undefined ? {} : { commandEnv }),
     ...(budget === undefined ? {} : { budget }),
     ...(usageLedger === undefined ? {} : { usageLedger }),
     ...(claudeConfig === undefined ? {} : { claudeConfig }),

@@ -9,6 +9,16 @@ export interface SecretAccessCheck {
   home?: string;
 }
 
+/** Env perintah yang aktif untuk sesi; hanya nama kunci yang dipakai penjaga. */
+export interface CommandEnvGuard {
+  keys: readonly string[];
+  /** Jalur berkas env perintah; berkas itu sendiri tak boleh dibaca agent walau namanya bebas. */
+  file?: string;
+}
+
+export const COMMAND_ENV_REASON =
+  "Perintah ini akan menampilkan variabel lingkungan rahasia.";
+
 export interface SecretAccessVerdict {
   blocked: boolean;
   rule?: string;
@@ -269,9 +279,73 @@ function tokenizeCommand(command: string): string[] {
   return tokens;
 }
 
+/** Pecah perintah menjadi segmen perintah sederhana (dipisah `;`, `&&`, `|`, baris baru). */
+function commandSegments(command: string): string[] {
+  return command
+    .split(/&&|\|\||[;|\n]/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== "");
+}
+
+function basenameOf(token: string): string {
+  const parts = token.split(/[\\/]+/);
+  return parts[parts.length - 1] ?? token;
+}
+
+/**
+ * Penjaga upaya-terbaik untuk env perintah: menolak perintah yang menampilkan
+ * variabel lingkungan. Ini bukan jaminan — shell bisa menyamarkan nilai lewat
+ * cara tak terduga (mis. `cat` berkas turunan, `awk`), jadi penyamaran output
+ * tetap lapis utama.
+ */
+function commandEnvVerdict(command: string, keys: readonly string[]): SecretAccessVerdict {
+  const lower = command.toLowerCase();
+  if (lower.includes("/proc/") && lower.includes("environ")) {
+    return { blocked: true, rule: "env-perintah", reason: COMMAND_ENV_REASON };
+  }
+
+  const keySet = new Set(keys);
+  for (const segment of commandSegments(command)) {
+    const tokens = tokenizeCommand(segment);
+    if (tokens.length === 0) continue;
+    const first = basenameOf(tokens[0] ?? "");
+
+    if (first === "env" || first === "printenv") {
+      return { blocked: true, rule: "env-perintah", reason: COMMAND_ENV_REASON };
+    }
+    if (first === "set" && tokens.length === 1) {
+      return { blocked: true, rule: "env-perintah", reason: COMMAND_ENV_REASON };
+    }
+    if (
+      (first === "export" || first === "declare" || first === "typeset") &&
+      tokens[1] === "-p"
+    ) {
+      return { blocked: true, rule: "env-perintah", reason: COMMAND_ENV_REASON };
+    }
+    if (first === "compgen" && tokens[1] === "-v") {
+      return { blocked: true, rule: "env-perintah", reason: COMMAND_ENV_REASON };
+    }
+    if (first === "echo" || first === "printf") {
+      for (const token of tokens.slice(1)) {
+        for (const key of keySet) {
+          if (token.includes(`$${key}`) || token.includes(`\${${key}}`)) {
+            return { blocked: true, rule: "env-perintah", reason: COMMAND_ENV_REASON };
+          }
+        }
+      }
+    }
+  }
+  return { blocked: false };
+}
+
 export function checkSecretAccess(
   check: SecretAccessCheck,
-  options: { isAllowed?: (absPath: string) => boolean; platform?: NodeJS.Platform } = {},
+  options: {
+    isAllowed?: (absPath: string) => boolean;
+    platform?: NodeJS.Platform;
+    /** Env perintah aktif; menolak perintah yang menampilkan variabelnya. */
+    commandEnv?: CommandEnvGuard;
+  } = {},
 ): SecretAccessVerdict {
   try {
     if (!isRecord(check)) return { blocked: false };
@@ -284,9 +358,18 @@ export function checkSecretAccess(
     const isAllowed = options.isAllowed;
     const platform = options.platform ?? process.platform;
 
+    const commandEnvFile =
+      options.commandEnv?.file === undefined || options.commandEnv.file === ""
+        ? undefined
+        : normalizePath(options.commandEnv.file, cwd, home, platform);
+
     const blockedByPath = (raw: string | undefined): SecretAccessVerdict => {
       if (raw === undefined || raw === "") return { blocked: false };
       const absPath = normalizePath(raw, cwd, home, platform);
+      // Berkas env perintah selalu tertutup, apa pun namanya; allow-list tak melonggarkannya.
+      if (commandEnvFile !== undefined && sameName(absPath, commandEnvFile, platform)) {
+        return { blocked: true, rule: "env-perintah-berkas", reason: SECRET_BLOCK_REASON };
+      }
       const rule = ruleForPath(absPath, platform);
       if (rule === undefined) return { blocked: false };
       if (isAllowed !== undefined) {
@@ -325,11 +408,20 @@ export function checkSecretAccess(
       case "Bash": {
         const command = stringField(toolInput, "command");
         if (command === undefined) return { blocked: false };
+        const commandEnv = options.commandEnv;
+        if (commandEnv !== undefined) {
+          const envVerdict = commandEnvVerdict(command, commandEnv.keys);
+          if (envVerdict.blocked) return envVerdict;
+        }
         for (const token of tokenizeCommand(command)) {
           // Agent tidak boleh mengubah daftar izinnya sendiri lewat API.
           // `/secret-allow` mencakup rute nyata `/api/sessions/:id/secret-allow`.
           if (token.includes("/api/secret-allow") || token.includes("/secret-allow")) {
             return { blocked: true, rule: "secret-allow-api", reason: SECRET_BLOCK_REASON };
+          }
+          // Agent tidak boleh mengubah env perintahnya sendiri lewat API.
+          if (token.includes("/command-env")) {
+            return { blocked: true, rule: "command-env-api", reason: SECRET_BLOCK_REASON };
           }
           // Agent tidak boleh menyalakan sumber pengguna / mengubah skills lewat API.
           if (token.includes("/api/claude")) {
@@ -350,7 +442,12 @@ export function checkSecretAccess(
           if (token.includes("/api/sandbox")) {
             return { blocked: true, rule: "sandbox-api", reason: SECRET_BLOCK_REASON };
           }
-          if (!tokenMayBeSecret(token, platform)) continue;
+          if (
+            !tokenMayBeSecret(token, platform) &&
+            !(commandEnvFile !== undefined && token.includes(pathApi(platform).basename(commandEnvFile)))
+          ) {
+            continue;
+          }
           const verdict = blockedByPath(token);
           if (verdict.blocked) return verdict;
         }
