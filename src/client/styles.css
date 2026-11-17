@@ -9491,3 +9491,24 @@ h2.jk-md-heading {
     font-size: var(--fs-small);
   }
 }
+
+/* Tarif model dilipat: hanya ringkasan satu baris sampai dibuka. */
+.jk-price-fold > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.jk-price-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.jk-price-fold > summary::before {
+  content: "\25B8";
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--t3);
+}
+
+.jk-price-fold[open] > summary::before {
+  content: "\25BE";
+}

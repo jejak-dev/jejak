@@ -114,6 +114,12 @@ export function ProfileForm({
   onLoadModels,
 }: ProfileFormProps) {
   const models = splitModels(profile.modelsText);
+  // Tarif dilipat secara bawaan; terbuka otomatis bila sudah ada angka yang diisi.
+  const hasPrices = models.some((modelId) =>
+    Object.values(profile.modelPrices[modelId] ?? {}).some(
+      (value) => typeof value === "string" && value.trim() !== "",
+    ),
+  );
   const grouped = new Map<string, string[]>();
   for (const message of errors) {
     const key = fieldOf(message);
@@ -392,8 +398,10 @@ export function ProfileForm({
       </div>
 
       {models.length > 0 && (
-        <div class="jk-field">
-          <span class="jk-label">Tarif (opsional)</span>
+        <details class="jk-field jk-price-fold" open={hasPrices ? true : undefined}>
+          <summary class="jk-label jk-price-summary">
+            Tarif (opsional){hasPrices ? "" : `, ${models.length} model`}
+          </summary>
           <p class="jk-help">
             USD per 1 juta token. Dipakai untuk menghitung biaya sendiri, karena angka biaya
             dari SDK memakai tarif Claude.
@@ -428,7 +436,7 @@ export function ProfileForm({
             ))}
           </div>
           <FieldError id="jk-pf-prices-error" messages={messagesFor("prices")} />
-        </div>
+        </details>
       )}
 
       <div class="jk-field">
