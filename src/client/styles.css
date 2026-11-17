@@ -388,6 +388,39 @@ code {
   grid-template-columns: var(--side-w, 264px) minmax(0, 1fr);
   height: 100%;
   overflow: hidden;
+  transition: grid-template-columns 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jk-app {
+    transition: none;
+  }
+}
+
+/* Sidebar disembunyikan: kolom kiri menutup, isi sidebar tak bisa disentuh. */
+.jk-app.jk-app-side-hidden {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.jk-app-side-hidden .jk-sidebar {
+  visibility: hidden;
+  overflow: hidden;
+  pointer-events: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Tombol kecil di kiri atas untuk memunculkan sidebar lagi. */
+.jk-side-reveal {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 8;
+}
+
+.jk-app-side-hidden .jk-top,
+.jk-app-side-hidden .jk-pane:first-child .jk-pane-head {
+  padding-left: 48px;
 }
 
 .jk-main {
@@ -484,9 +517,53 @@ code {
   margin-left: auto;
 }
 
+/* Tombol sembunyikan sidebar di kanan judul; hanya desktop. */
+.jk-side-hide {
+  margin-left: auto;
+  width: 28px;
+  height: 28px;
+  color: var(--t3);
+}
+
+.jk-side-hide:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-app[data-mobile] .jk-side-hide {
+  display: none;
+}
+
 .jk-new {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
-  margin-bottom: 14px;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t1);
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+
+.jk-new:hover {
+  background: var(--hover);
+}
+
+.jk-new:focus-visible {
+  outline: 2px solid var(--t2);
+  outline-offset: 2px;
+}
+
+.jk-new .jk-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .jk-groups {
@@ -495,7 +572,7 @@ code {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 18px;
 }
 
 .jk-group-head {
@@ -511,10 +588,10 @@ code {
   flex: 1;
   min-width: 0;
   margin: 0;
-  padding: 0 8px 4px;
+  padding: 0 8px 2px;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--t2);
+  font-weight: 500;
+  color: var(--t3);
 }
 
 .jk-group-add {
@@ -571,12 +648,13 @@ code {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 30px;
+  height: 32px;
   padding: 0 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
   color: var(--t2);
+  font-size: 13.5px;
   text-align: left;
 }
 
@@ -605,8 +683,11 @@ code {
 
 .jk-session-bypass {
   flex: none;
-  font-size: 12px;
-  color: var(--warn);
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--warn);
+  margin-left: auto;
 }
 
 /* Prompt tertahan */
@@ -649,12 +730,17 @@ code {
 }
 
 .jk-session-search .jk-input {
-  height: 28px;
-  min-height: 28px;
+  height: 32px;
+  min-height: 32px;
   padding: 0 10px;
+  border-color: transparent;
   border-radius: 8px;
-  background: transparent;
-  font-size: 12.5px;
+  background: var(--hover);
+  font-size: 13px;
+}
+
+.jk-session-search .jk-input:focus {
+  border-color: var(--line-2);
 }
 
 .jk-session-line {
@@ -827,8 +913,8 @@ code {
 
 /* Kelompok footer: pemisah tipis antar kelompok, tanpa label. */
 .jk-foot-group + .jk-foot-group {
-  margin-top: 6px;
-  padding-top: 6px;
+  margin-top: 4px;
+  padding-top: 4px;
   border-top: 1px solid var(--line);
 }
 
@@ -848,6 +934,12 @@ code {
 .jk-foot-link-active {
   background: var(--hover);
   color: var(--t1);
+}
+
+/* Ikon footer seragam supaya Pengaturan dan Keluar sejajar. */
+.jk-foot-link .jk-icon {
+  width: 15px;
+  height: 15px;
 }
 
 .jk-foot-count {
@@ -8544,6 +8636,21 @@ h2.jk-md-heading {
   .jk-panel-tab,
   .jk-pane-tab {
     min-height: 40px;
+  }
+
+  /* Sidebar: baris sesi dan tombol sesi baru tetap nyaman disentuh. */
+  .jk-new,
+  .jk-session-row {
+    min-height: 40px;
+  }
+
+  .jk-group-label {
+    min-height: 24px;
+  }
+
+  .jk-session-bypass {
+    width: 8px;
+    height: 8px;
   }
 
   .jk-rail-btn {

@@ -46,6 +46,8 @@ export interface SidebarProps {
   authRequired?: boolean;
   /** Aksi keluar (hapus sesi di server). */
   onLogout?: () => void;
+  /** Sembunyikan sidebar (desktop). */
+  onHideSidebar?: () => void;
 }
 
 /** Penanda status sesi; dipakai sidebar dan daftar "Lanjutkan sesi". */
@@ -128,6 +130,7 @@ export function Sidebar({
   onOpenPalette,
   authRequired = false,
   onLogout,
+  onHideSidebar,
 }: SidebarProps) {
   const now = new Date();
   const [query, setQuery] = useState("");
@@ -376,6 +379,7 @@ export function Sidebar({
               class={`jk-session-row${session.id === selectedId ? " jk-session-row-active" : ""}`}
               onClick={() => onSelect(session.id)}
               aria-current={session.id === selectedId ? "page" : undefined}
+              title={`${session.title} — ${formatAgo(session.updatedAt, now)}`}
             >
               <span
                 class={dotClass(session)}
@@ -391,13 +395,10 @@ export function Sidebar({
                 <span
                   class="jk-session-bypass"
                   title="Izin dilewati: agen menjalankan tool tanpa bertanya"
-                >
-                  Bypass
-                </span>
+                  role="img"
+                  aria-label="Izin dilewati: agen menjalankan tool tanpa bertanya"
+                />
               )}
-              <time class="jk-session-time" dateTime={session.updatedAt}>
-                {formatAgo(session.updatedAt, now)}
-              </time>
             </button>
             {archived ? (
               <span class="jk-session-inline">
@@ -585,9 +586,20 @@ export function Sidebar({
           <button type="button" class="jk-icon-btn jk-drawer-close" onClick={onClose} aria-label="Tutup sidebar">
             <Icon name="menu" />
           </button>
+          {onHideSidebar !== undefined && (
+            <button
+              type="button"
+              class="jk-icon-btn jk-side-hide"
+              aria-label="Sembunyikan sidebar"
+              title="Sembunyikan sidebar"
+              onClick={onHideSidebar}
+            >
+              <Icon name="sidebar" />
+            </button>
+          )}
         </header>
 
-        <button type="button" class="jk-button jk-button-primary jk-new" onClick={onNew}>
+        <button type="button" class="jk-new" onClick={onNew}>
           <Icon name="plus" />
           Sesi baru
         </button>
@@ -633,7 +645,6 @@ export function Sidebar({
               <section class="jk-group" key={group.cwd}>
                 <div class="jk-group-head">
                   <h2 class="jk-group-label" title={group.cwd}>
-                    <Icon name="folder" />
                     <span>{group.label}</span>
                   </h2>
                   {onNewInFolder !== undefined && (
@@ -776,6 +787,7 @@ export function Sidebar({
                 onClick={() => onLogout()}
                 aria-label="Keluar dari Jejak"
               >
+                <Icon name="logout" />
                 <span class="jk-foot-text">Keluar</span>
               </button>
             )}

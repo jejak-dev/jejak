@@ -44,6 +44,8 @@ const PATHS = {
   down: "M8 3v10M3.5 8.5 8 13l4.5-4.5",
   expand: "M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10",
   collapse: "M2.5 2.5H6V6M13.5 2.5H10V6M10 13.5h3.5V10M6 13.5H2.5V10",
+  logout: "M6.5 2.5H3.5v11h3M9.5 5.5 12.5 8l-3 2.5M12.5 8H6.5",
+  sidebar: "M2.5 3.5h11v9h-11zM6 3.5v9",
 } as const;
 
 export type IconName = keyof typeof PATHS;

@@ -16,6 +16,7 @@ export type ShortcutAction =
   | "search"
   | "new-session"
   | "toggle-panel"
+  | "toggle-sidebar"
   | "prev-session"
   | "next-session"
   | "escape";
@@ -26,6 +27,7 @@ export const SHORTCUT_LIST: readonly { label: string; keys: string }[] = [
   { label: "Cari sesi", keys: "/" },
   { label: "Sesi baru", keys: "n" },
   { label: "Tampilkan/sembunyikan panel", keys: "p" },
+  { label: "Sembunyikan/tampilkan sidebar", keys: "Ctrl B / ⌘B" },
   { label: "Sesi sebelumnya", keys: "Alt ↑" },
   { label: "Sesi berikutnya", keys: "Alt ↓" },
   { label: "Tutup overlay", keys: "Esc" },
@@ -54,7 +56,9 @@ export function targetKindOf(target: unknown): TargetKind {
 function matchInInput(event: KeyEventLike): ShortcutAction | undefined {
   if (event.ctrlKey || event.metaKey) {
     if (event.altKey || event.shiftKey) return undefined;
-    return event.key.toLowerCase() === "k" ? "palette" : undefined;
+    const key = event.key.toLowerCase();
+    if (key === "k") return "palette";
+    return key === "b" ? "toggle-sidebar" : undefined;
   }
   if (event.altKey && !event.shiftKey) {
     if (event.key === "ArrowUp") return "prev-session";
@@ -76,7 +80,9 @@ export function matchShortcut(event: KeyEventLike): ShortcutAction | undefined {
   // Ctrl/Cmd+K di luar input; modifier lain di luar itu tidak sah.
   if (base.ctrlKey || base.metaKey) {
     if (base.altKey || event.shiftKey) return undefined;
-    return event.key.toLowerCase() === "k" ? "palette" : undefined;
+    const key = event.key.toLowerCase();
+    if (key === "k") return "palette";
+    return key === "b" ? "toggle-sidebar" : undefined;
   }
 
   if (base.altKey) {

@@ -63,6 +63,7 @@ export type CommandId =
   | "open-git"
   | "open-secrets-tab"
   | "focus-search"
+  | "toggle-sidebar"
   | "show-shortcuts"
   | "compact";
 
@@ -132,6 +133,12 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
     });
   }
 
+  commands.push({
+    id: "toggle-sidebar",
+    label: "Sembunyikan/Tampilkan sidebar",
+    group: "aksi",
+    run: "toggle-sidebar",
+  });
   commands.push({ id: "focus-search", label: "Cari sesi", hint: "/", group: "aksi", run: "focus-search" });
   commands.push({
     id: "show-shortcuts",

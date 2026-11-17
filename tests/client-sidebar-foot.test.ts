@@ -237,8 +237,8 @@ describe("gaya footer", () => {
     const isi = isiAturan(css, ".jk-foot-group + .jk-foot-group");
     expect(isi).toBeDefined();
     expect(isi).toMatch(/border-top:\s*1px solid var\(--line\)/);
-    expect(isi).toMatch(/margin-top:\s*6px/);
-    expect(isi).toMatch(/padding-top:\s*6px/);
+    expect(isi).toMatch(/margin-top:\s*4px/);
+    expect(isi).toMatch(/padding-top:\s*4px/);
   });
 });
 

@@ -63,6 +63,7 @@ describe("matchShortcut saat fokus di input", () => {
   test("Ctrl/Cmd+K tetap membuka palette", () => {
     expect(matchShortcut(key("k", { ctrlKey: true, targetKind: input }))).toBe("palette");
     expect(matchShortcut(key("k", { metaKey: true, targetKind: input }))).toBe("palette");
+    expect(matchShortcut(key("b", { ctrlKey: true, targetKind: input }))).toBe("toggle-sidebar");
   });
 
   test("Alt+panah tetap memindah sesi", () => {
@@ -96,7 +97,12 @@ describe("modifier tak terduga dan isComposing", () => {
   });
 
   test("Ctrl+tombol lain diabaikan", () => {
-    expect(matchShortcut(key("b", { ctrlKey: true }))).toBe(undefined);
+    expect(matchShortcut(key("j", { ctrlKey: true }))).toBe(undefined);
+  });
+
+  test("Ctrl/Cmd+B mengalihkan sidebar", () => {
+    expect(matchShortcut(key("b", { ctrlKey: true }))).toBe("toggle-sidebar");
+    expect(matchShortcut(key("b", { metaKey: true }))).toBe("toggle-sidebar");
   });
 
   test("Alt+Shift+panah diabaikan", () => {

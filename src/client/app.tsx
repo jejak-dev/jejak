@@ -59,6 +59,7 @@ import {
   saveSidebarWidth,
   sidebarWidth,
 } from "./lib/sidebar-width";
+import { loadSidebarHidden, saveSidebarHidden } from "./lib/sidebar-hidden";
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 import { rewindableSeqs } from "./lib/rewind";
@@ -239,6 +240,25 @@ export function App() {
   const [viewportW, setViewportW] = useState(() =>
     typeof window === "undefined" ? 1280 : window.innerWidth
   );
+  // Sidebar tersembunyi hanya berlaku di desktop; pilihan disimpan antar sesi.
+  const [sideHidden, setSideHidden] = useState(() => {
+    try {
+      return loadSidebarHidden(window.localStorage);
+    } catch {
+      return loadSidebarHidden(undefined);
+    }
+  });
+  const toggleSidebar = useCallback((): void => {
+    setSideHidden((hidden) => {
+      const next = !hidden;
+      try {
+        saveSidebarHidden(window.localStorage, next);
+      } catch {
+        // penyimpanan tidak tersedia
+      }
+      return next;
+    });
+  }, []);
 
   // Lebar jendela berubah: batas panel ikut menyesuaikan supaya kolom chat
   // tak pernah terlalu sempit.
@@ -534,6 +554,14 @@ export function App() {
         return;
       }
 
+      if (action === "toggle-sidebar") {
+        // Di ponsel sidebar berupa laci; pintasan ini hanya untuk desktop.
+        if (mobile) return;
+        event.preventDefault();
+        toggleSidebar();
+        return;
+      }
+
       if (action === "prev-session" || action === "next-session") {
         event.preventDefault();
         // Urutan sama dengan daftar sidebar: per folder, terbaru dulu.
@@ -548,12 +576,14 @@ export function App() {
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [
     helpOpen,
+    mobile,
     navigate,
     paletteOpen,
     selected,
     selectedId,
     sessions,
     togglePanel,
+    toggleSidebar,
   ]);
 
   // Fokus ke textarea tugas setelah "Sesi baru" lewat pintasan.
@@ -618,6 +648,9 @@ export function App() {
         case "toggle-panel":
           togglePanel();
           return;
+        case "toggle-sidebar":
+          if (!mobile) toggleSidebar();
+          return;
         case "open-git":
           openGitPanel();
           return;
@@ -637,7 +670,7 @@ export function App() {
           return;
       }
     },
-    [api, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToSchedules, navigateToUsage, openGitPanel, openSecretsTab, togglePanel],
+    [api, mobile, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToSchedules, navigateToUsage, openGitPanel, openSecretsTab, togglePanel, toggleSidebar],
   );
 
   const commands = useMemo(
@@ -929,7 +962,7 @@ export function App() {
 
   return (
     <div
-      class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}`}
+      class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}${sideHidden && !mobile ? " jk-app-side-hidden" : ""}`}
       data-mobile={mobile ? "1" : undefined}
       style={{ "--side-w": `${sideWidth}px` }}
     >
@@ -966,30 +999,44 @@ export function App() {
         onOpenPalette={openPalette}
         authRequired={canShowLogout(auth)}
         onLogout={onLogout}
+        onHideSidebar={mobile ? undefined : toggleSidebar}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
-      <PaneResizer
-        width={sideWidth}
-        min={SIDEBAR_MIN}
-        max={SIDEBAR_MAX}
-        def={SIDEBAR_DEFAULT}
-        label="Lebar sidebar"
-        edge="end"
-        style={{ left: `${sideWidth - 3}px` }}
-        clamp={sidebarWidth.clamp}
-        keyFor={(current, key) => sidebarWidth.forKey(current, key, "ArrowRight")}
-        onChange={setSideWidth}
-        onCommit={(width) => {
-          setSideWidth(width);
-          try {
-            saveSidebarWidth(window.localStorage, width);
-          } catch {
-            // penyimpanan tidak tersedia
-          }
-        }}
-      />
+      {!mobile && !sideHidden && (
+        <PaneResizer
+          width={sideWidth}
+          min={SIDEBAR_MIN}
+          max={SIDEBAR_MAX}
+          def={SIDEBAR_DEFAULT}
+          label="Lebar sidebar"
+          edge="end"
+          style={{ left: `${sideWidth - 3}px` }}
+          clamp={sidebarWidth.clamp}
+          keyFor={(current, key) => sidebarWidth.forKey(current, key, "ArrowRight")}
+          onChange={setSideWidth}
+          onCommit={(width) => {
+            setSideWidth(width);
+            try {
+              saveSidebarWidth(window.localStorage, width);
+            } catch {
+              // penyimpanan tidak tersedia
+            }
+          }}
+        />
+      )}
 
       <main class={mainClass}>
+        {sideHidden && !mobile && (
+          <button
+            type="button"
+            class="jk-icon-btn jk-side-reveal"
+            aria-label="Tampilkan sidebar"
+            title="Tampilkan sidebar"
+            onClick={toggleSidebar}
+          >
+            <Icon name="sidebar" />
+          </button>
+        )}
         {tlsWarning && (
           <p class="jk-auth-banner" role="status">
             Tanpa HTTPS: kata sandi dan cookie sesi dikirim sebagai teks biasa di jaringan.
