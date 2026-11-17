@@ -3,6 +3,10 @@
 # Rahasia yang harus diisi pemilik (nama saja, tanpa nilai):
 #   - TAURI_SIGNING_PRIVATE_KEY        (kunci privat minisign untuk penandatangan)
 #   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD (sandi kunci privat)
+#   - ANDROID_KEYSTORE_BASE64          (keystore rilis APK, di-base64; opsional)
+#   - ANDROID_KEYSTORE_PASSWORD        (sandi keystore APK)
+#   - ANDROID_KEY_ALIAS                (alias kunci di keystore APK)
+#   Bila ANDROID_KEYSTORE_BASE64 kosong, job APK dilewati (rilis desktop tetap jalan).
 #   GITHUB_TOKEN disediakan otomatis oleh GitHub.
 #
 # Cara memicu rilis:
@@ -168,3 +172,63 @@ jobs:
           releaseDraft: false
           includeUpdaterJson: true
           args: --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
+
+  # APK Android klien tipis (WebView ke server Jejak). Dibangun setelah rilis
+  # desktop supaya rilis draf/beta dari tauri-action sudah ada untuk dilampiri.
+  apk:
+    name: Bangun APK Android
+    needs: [gerbang, bangun]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      JEJAK_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      JEJAK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+    steps:
+      - name: Periksa rahasia penandatanganan
+        id: rahasia
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::notice::ANDROID_KEYSTORE_BASE64 kosong, APK dilewati."
+            echo "ada=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ada=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ambil kode
+        if: steps.rahasia.outputs.ada == 'true'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Siapkan SDK dan keystore
+        if: steps.rahasia.outputs.ada == 'true'
+        run: |
+          echo "JAVA_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "$JAVA_HOME_17_X64/bin" >> "$GITHUB_PATH"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.0.0" "platforms;android-36" >/dev/null
+          echo "ANDROID_BUILD_TOOLS=$ANDROID_HOME/build-tools/36.0.0" >> "$GITHUB_ENV"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/jejak-rilis.jks"
+          echo "JEJAK_KEYSTORE=$RUNNER_TEMP/jejak-rilis.jks" >> "$GITHUB_ENV"
+
+      - name: Bangun APK
+        if: steps.rahasia.outputs.ada == 'true'
+        run: bash android/build.sh
+
+      - name: Lampirkan APK ke rilis
+        if: steps.rahasia.outputs.ada == 'true'
+        run: |
+          VERSI="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' src-tauri/tauri.conf.json | head -1)"
+          if [ "${{ needs.gerbang.outputs.channel }}" = "beta" ]; then TAG=beta; else TAG="$GITHUB_REF_NAME"; fi
+          NAMA="Jejak-${VERSI}.apk"
+          cp android/build/jejak.apk "$NAMA"
+          # Rilis draf tidak ditemukan lewat tag, jadi cari di daftar rilis.
+          RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
+          [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
+          # Hapus APK lama bernama sama (tag beta bergulir, atau jalan ulang).
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq '.[] | select(.name|test("^Jejak-.*\\.apk$")) | .id' |
+            while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
+          gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$NAMA" \
+            -H "Content-Type: application/vnd.android.package-archive" --input "$NAMA"
+          echo "Terunggah: $NAMA ke rilis $TAG"
