@@ -26,6 +26,7 @@ describe("penyimpanan pengaturan jaringan", () => {
         version: 1,
         enabled: false,
         port: DEFAULT_NETWORK_PORT,
+        tunnelEnabled: false,
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -37,8 +38,8 @@ describe("penyimpanan pengaturan jaringan", () => {
     try {
       const path = join(dir, "network.json");
       const store = new FileNetworkStore(path);
-      store.save({ version: 1, enabled: true, port: 5000 });
-      expect(store.load()).toEqual({ version: 1, enabled: true, port: 5000 });
+      store.save({ version: 1, enabled: true, port: 5000, tunnelEnabled: false });
+      expect(store.load()).toEqual({ version: 1, enabled: true, port: 5000, tunnelEnabled: false });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -62,7 +63,7 @@ describe("penyimpanan pengaturan jaringan", () => {
       const path = join(dir, "network.json");
       await writeFile(
         path,
-        JSON.stringify({ version: 1, enabled: true, port: 80 }),
+        JSON.stringify({ version: 1, enabled: true, port: 80, tunnelEnabled: false }),
         "utf8",
       );
       const store = new FileNetworkStore(path);
@@ -77,7 +78,7 @@ describe("penyimpanan pengaturan jaringan", () => {
     try {
       const path = join(dir, "network.json");
       const store = new FileNetworkStore(path);
-      store.save({ version: 1, enabled: true, port: DEFAULT_NETWORK_PORT });
+      store.save({ version: 1, enabled: true, port: DEFAULT_NETWORK_PORT, tunnelEnabled: false });
       const info = await stat(path);
       expect(info.mode & 0o777).toBe(0o600);
     } finally {
@@ -97,11 +98,11 @@ describe("penyimpanan pengaturan jaringan", () => {
 
   test("parse menerima bentuk sah dan menolak sisanya", () => {
     expect(
-      parseNetworkSettings({ version: 1, enabled: false, port: 4747 }),
-    ).toEqual({ version: 1, enabled: false, port: 4747 });
+      parseNetworkSettings({ version: 1, enabled: false, port: 4747, tunnelEnabled: false }),
+    ).toEqual({ version: 1, enabled: false, port: 4747, tunnelEnabled: false });
     expect(parseNetworkSettings({ version: 2, enabled: false, port: 4747 })).toBeUndefined();
     expect(parseNetworkSettings({ version: 1, enabled: "ya", port: 4747 })).toBeUndefined();
-    expect(parseNetworkSettings({ version: 1, enabled: false, port: 70 })).toBeUndefined();
+    expect(parseNetworkSettings({ version: 1, enabled: false, port: 70, tunnelEnabled: false })).toBeUndefined();
     expect(parseNetworkSettings([])).toBeUndefined();
   });
 

@@ -36,6 +36,9 @@ import {
   type NetworkInterfaceEntry,
 } from "./network/network-manager";
 import { defaultNetworkStore } from "./network/network-store";
+import { defaultTunnelTokenStore } from "./network/token-store";
+import { TunnelManager, spawnCloudflared, whichBinary } from "./network/tunnel-manager";
+import { tunnelRoutes } from "./routes/tunnel";
 import { GoalReporterHolder } from "./goals/goal-reporter";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
@@ -275,6 +278,8 @@ export interface CreateAppOptions {
   passwordStore?: PasswordStore;
   /** Manajer akses dari jaringan; tanpa ini rute jaringan menjawab 404. */
   network?: NetworkManager;
+  /** Manajer Cloudflare Tunnel; tanpa ini rute tunnel menjawab 404. */
+  tunnel?: TunnelManager;
   /** Layanan prompt tertahan; tanpa ini dibuat dari store bawaan. */
   heldPrompts?: HeldPromptService;
   /** Penyimpanan prompt tertahan; default store memori (persistensi di server). */
@@ -746,8 +751,16 @@ export function createApp(options: CreateAppOptions = {}) {
         ...(desktop === undefined ? {} : { guardedPrefixes: ["/api/", "/__desktop/"] }),
         // Listener jaringan hanya boleh melayani host privat, dan hanya lewat
         // jalur yang ditandai server sendiri (header tak bisa dipalsukan klien).
+        // Hostname publik tunnel tersimpan juga diterima (persis).
         extraHostAllowed:
-          options.network === undefined ? undefined : isAllowedNetworkHost,
+          options.network === undefined
+            ? undefined
+            : (hostname, request) =>
+                isAllowedNetworkHost(
+                  hostname,
+                  request,
+                  options.tunnel === undefined ? undefined : () => options.tunnel?.publicHost(),
+                ),
       }),
     )
     .use(authPlugins)
@@ -893,6 +906,10 @@ export function createApp(options: CreateAppOptions = {}) {
   // terlalu panjang membuat tipe Elysia terlalu dalam untuk dihitung
   // TypeScript, jadi pemasangan ini dibiarkan di luar rantai.
   (app as unknown as Elysia).use(scheduleRoutes({ service: scheduledTasks }));
+  // Rute tunnel dipasang di luar rantai demi alasan yang sama.
+  (app as unknown as Elysia).use(
+    tunnelRoutes({ tunnel: options.tunnel, audit: options.audit }),
+  );
   // Rute env perintah dipasang di luar rantai demi alasan yang sama.
   (app as unknown as Elysia).use(
     commandEnvRoutes({
@@ -1010,7 +1027,24 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const authActive = options.password !== undefined || storedPassword !== undefined;
   // Manajer akses dari jaringan hanya dibuat bila listener utama loopback:
   // server yang sudah terbuka ke jaringan tak boleh menambah listener kedua.
-  const network = isLoopbackHostname(host)
+  // Tunnel Cloudflare hanya ada bersama manajer jaringan (butuh listener-nya).
+  const tunnelTokenStore = defaultTunnelTokenStore(process.env);
+  const tunnel: TunnelManager | undefined =
+    isLoopbackHostname(host)
+      ? new TunnelManager({
+          spawn: spawnCloudflared,
+          which: (name) => whichBinary(name),
+          store: networkStore,
+          tokenStore: tunnelTokenStore,
+          passwordStore,
+          network: {
+            status: (): { listening: boolean } => ({
+              listening: network?.status().listening === true,
+            }),
+          },
+        })
+      : undefined;
+  const network: NetworkManager | undefined = isLoopbackHostname(host)
     ? new NetworkManager({
         serve: (opts) =>
           Bun.serve({
@@ -1023,6 +1057,15 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
         passwordStore,
         store: networkStore,
         authActive: () => authActive,
+        ...(tunnel === undefined ? {} : { publicHost: () => tunnel.publicHost() }),
+        // Jaringan dimatikan berarti tunnel ikut berhenti.
+        ...(tunnel === undefined
+          ? {}
+          : {
+              onStopped: () => {
+                void tunnel.disable();
+              },
+            }),
         handle: (request) => {
           const pending = holder.app;
           if (pending === undefined) {
@@ -1067,6 +1110,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     workspaces,
     passwordStore,
     ...(network === undefined ? {} : { network }),
+    ...(tunnel === undefined ? {} : { tunnel }),
     ...(options.allowHosts === undefined ? {} : { allowHosts: options.allowHosts }),
     ...(options.password === undefined && storedPassword === undefined
       ? {}
@@ -1109,13 +1153,17 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   const scheduledService = (app as unknown as { scheduledTasks?: ScheduledTaskService })
     .scheduledTasks;
   if (scheduledService !== undefined) scheduledService.start();
-  // Listener jaringan (bila diizinkan sebelumnya) dinyalakan lagi.
-  if (network !== undefined) void network.start();
+  // Listener jaringan (bila diizinkan sebelumnya) dinyalakan lagi. Tunnel
+  // menyala sesudahnya: syaratnya listener jaringan menyala.
+  if (network !== undefined) {
+    void network.start().then(() => tunnel?.start());
+  }
 
   console.log(
     `Jejak ${VERSION} siap di ${options.tls === undefined ? "http" : "https"}://${host}:${port}`,
   );
   const closers: Array<() => void> = [];
+  if (tunnel !== undefined) closers.push(() => void tunnel.stop());
   if (network !== undefined) closers.push(() => void network.stop());
   if (store !== undefined) closers.push(() => store.close());
   if (heldService !== undefined) closers.push(() => heldService.close());
@@ -1137,6 +1185,7 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   }
   // Penutup yang boleh menunggu (dipakai `stop()`).
   const asyncClosers: Array<() => Promise<void>> = [];
+  if (tunnel !== undefined) asyncClosers.push(async () => tunnel.stop());
   if (network !== undefined) asyncClosers.push(async () => network.stop());
   if (gates !== undefined) {
     asyncClosers.push(async () => {

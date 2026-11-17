@@ -25,15 +25,43 @@ export interface NetworkSettings {
   enabled: boolean;
   /** Port listener jaringan. */
   port: number;
+  /** Hostname publik Cloudflare Tunnel; `undefined` bila belum diatur. */
+  publicHost?: string;
+  /** True bila tunnel Cloudflare diizinkan menyala. */
+  tunnelEnabled: boolean;
 }
 
-/** Pengaturan bawaan: akses jaringan mati, port bawaan. */
+/** Pengaturan bawaan: akses jaringan mati, port bawaan, tunnel mati. */
 export function defaultNetworkSettings(): NetworkSettings {
   return {
     version: NETWORK_STORE_VERSION,
     enabled: false,
     port: DEFAULT_NETWORK_PORT,
+    tunnelEnabled: false,
   };
+}
+
+/**
+ * True bila nilai sah sebagai hostname publik tunnel: huruf kecil, FQDN
+ * minimal dua label, tiap label 1-63 karakter `[a-z0-9-]` tanpa '-' di ujung,
+ * bukan IP, tanpa port/skema/path/wildcard.
+ */
+export function isValidPublicHost(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  if (value === "" || value.length > 253) return false;
+  if (value !== value.toLowerCase()) return false;
+  if (value.includes(":") || value.includes("/") || value.includes("*")) return false;
+  if (value.includes(" ") || value.includes("\t") || value.includes("\n")) return false;
+  const labels = value.split(".");
+  if (labels.length < 2) return false;
+  for (const label of labels) {
+    if (label.length < 1 || label.length > 63) return false;
+    if (!/^[a-z0-9-]+$/.test(label)) return false;
+    if (label.startsWith("-") || label.endsWith("-")) return false;
+  }
+  // Semua label angka berarti IPv4, bukan nama host.
+  if (labels.every((label) => /^\d+$/.test(label))) return false;
+  return true;
 }
 
 /** True bila port sah untuk listener jaringan (1024-65535). */
@@ -71,10 +99,14 @@ export function parseNetworkSettings(raw: unknown): NetworkSettings | undefined 
   if (record.version !== NETWORK_STORE_VERSION) return undefined;
   if (typeof record.enabled !== "boolean") return undefined;
   if (!isValidNetworkPort(record.port)) return undefined;
+  // Field tunnel opsional: berkas lama tanpa field berarti tunnel mati.
+  const publicHost = isValidPublicHost(record.publicHost) ? record.publicHost : undefined;
   return {
     version: NETWORK_STORE_VERSION,
     enabled: record.enabled,
     port: record.port,
+    ...(publicHost === undefined ? {} : { publicHost }),
+    tunnelEnabled: record.tunnelEnabled === true,
   };
 }
 
@@ -114,11 +146,14 @@ export class FileNetworkStore implements NetworkStore {
 
   save(settings: NetworkSettings): void {
     const port = isValidNetworkPort(settings.port) ? settings.port : DEFAULT_NETWORK_PORT;
+    const publicHost = isValidPublicHost(settings.publicHost) ? settings.publicHost : undefined;
     const body = `${JSON.stringify(
       {
         version: NETWORK_STORE_VERSION,
         enabled: settings.enabled === true,
         port,
+        ...(publicHost === undefined ? {} : { publicHost }),
+        tunnelEnabled: settings.tunnelEnabled === true,
       },
       null,
       2,

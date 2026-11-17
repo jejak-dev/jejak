@@ -4,9 +4,14 @@ import { localGuard } from "../src/server/guard";
 import { isAllowedNetworkHost } from "../src/server/network/network-host";
 import { VIA_HEADER, VIA_NETWORK } from "../src/server/network/network-fetch";
 
-function makeApp() {
+function makeApp(publicHost?: () => string | undefined) {
   return new Elysia()
-    .use(localGuard({ extraHostAllowed: isAllowedNetworkHost }))
+    .use(
+      localGuard({
+        extraHostAllowed: (hostname, request) =>
+          isAllowedNetworkHost(hostname, request, publicHost),
+      }),
+    )
     .get("/api/x", () => ({ ok: true }))
     .get("/", () => new Response("home"));
 }
@@ -77,5 +82,38 @@ describe("penjaga Host/Origin untuk listener jaringan", () => {
       apiRequest("192.168.1.5:4747", {}, "/"),
     );
     expect(res.status).toBe(200);
+  });
+});
+
+describe("penjaga Host/Origin untuk host publik tunnel", () => {
+  const publik = () => "jejak.contoh.com";
+
+  test("host publik tersimpan dengan penanda jaringan lolos", async () => {
+    const res = await makeApp(publik).handle(apiRequest("jejak.contoh.com", VIA));
+    expect(res.status).toBe(200);
+  });
+
+  test("host publik lain ditolak", async () => {
+    const res = await makeApp(publik).handle(apiRequest("lain.contoh.com", VIA));
+    expect(res.status).toBe(403);
+  });
+
+  test("host publik tanpa penanda jaringan ditolak", async () => {
+    const res = await makeApp(publik).handle(apiRequest("jejak.contoh.com"));
+    expect(res.status).toBe(403);
+  });
+
+  test("origin https sama dengan host publik lolos", async () => {
+    const res = await makeApp(publik).handle(
+      apiRequest("jejak.contoh.com", { ...VIA, origin: "https://jejak.contoh.com" }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("origin lain ditolak", async () => {
+    const res = await makeApp(publik).handle(
+      apiRequest("jejak.contoh.com", { ...VIA, origin: "https://evil.test" }),
+    );
+    expect(res.status).toBe(403);
   });
 });

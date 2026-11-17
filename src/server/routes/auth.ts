@@ -5,7 +5,7 @@ import { MAX_PASSWORD_LENGTH, type PasswordStore } from "../auth/password-store"
 import { MIN_PASSWORD_LENGTH, type PasswordVerifier } from "../auth/password";
 import { parseCookies, type SessionCodec } from "../auth/session-cookie";
 import type { Throttle } from "../auth/throttle";
-import { PEER_HEADER } from "../network/network-fetch";
+import { PEER_HEADER, SECURE_HEADER } from "../network/network-fetch";
 import {
   recordNetworkAudit,
   type NetworkManager,
@@ -83,8 +83,14 @@ export function socketAddress(server: { requestIP(request: Request): { address: 
   }
 }
 
+/**
+ * True bila permintaan tiba lewat HTTPS. Selain skema URL, listener jaringan
+ * menandai permintaan tunnel (`x-jejak-secure`) setelah memeriksa header
+ * proksi dari peer loopback pada host publik.
+ */
 export function isSecureRequest(request: Request): boolean {
-  return new URL(request.url).protocol === "https:";
+  if (new URL(request.url).protocol === "https:") return true;
+  return request.headers.get(SECURE_HEADER) === "1";
 }
 
 /** Rute autentikasi: status, login, dan logout. */

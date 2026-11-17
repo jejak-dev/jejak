@@ -81,6 +81,10 @@ export interface NetworkManagerDeps {
    * jaringan hanya boleh hidup kalau `/api/` dijaga cookie; default `true`.
    */
   authActive?: () => boolean;
+  /** Dipanggil saat akses jaringan dimatikan (tunnel ikut berhenti). */
+  onStopped?: () => void | Promise<void>;
+  /** Hostname publik tunnel; header proksi hanya dipercaya untuk host ini. */
+  publicHost?: () => string | undefined;
 }
 
 /** Terjemahkan galat bind menjadi pesan berbahasa Indonesia. */
@@ -188,7 +192,10 @@ export class NetworkManager {
     }
 
     this.error = undefined;
+    // Gabung dengan berkas terbaru: field tunnel (host publik, saklar) tak
+    // boleh hilang karena salinan lama di memori.
     this.settings = {
+      ...this.deps.store.load(),
       version: NETWORK_STORE_VERSION,
       enabled: true,
       port: target,
@@ -201,8 +208,9 @@ export class NetworkManager {
   async disable(): Promise<NetworkStatus> {
     await this.stopListener();
     this.error = undefined;
-    this.settings = { ...this.settings, enabled: false };
+    this.settings = { ...this.deps.store.load(), enabled: false };
     this.deps.store.save(this.settings);
+    await this.notifyStopped();
     return this.status();
   }
 
@@ -210,8 +218,9 @@ export class NetworkManager {
   async onPasswordCleared(): Promise<void> {
     await this.stopListener();
     this.error = undefined;
-    this.settings = { ...this.settings, enabled: false };
+    this.settings = { ...this.deps.store.load(), enabled: false };
     this.deps.store.save(this.settings);
+    await this.notifyStopped();
   }
 
   /**
@@ -255,14 +264,25 @@ export class NetworkManager {
     await this.stopListener();
   }
 
+  /** Beri tahu pemilik (tunnel) bahwa akses jaringan berhenti. */
+  private async notifyStopped(): Promise<void> {
+    try {
+      await this.deps.onStopped?.();
+    } catch {
+      // Kegagalan pemberitahuan tak boleh menggagalkan operasi jaringan.
+    }
+  }
+
   /** Buka listener jaringan pada port tertentu. */
   private async listen(port: number): Promise<void> {
     await this.stopListener();
     this.listener = this.deps.serve({
       hostname: NETWORK_HOSTNAME,
       port,
-      fetch: networkFetch(this.deps.handle, (request, server) =>
-        server?.requestIP?.(request)?.address,
+      fetch: networkFetch(
+        this.deps.handle,
+        (request, server) => server?.requestIP?.(request)?.address,
+        this.deps.publicHost === undefined ? {} : { publicHost: this.deps.publicHost },
       ),
     });
   }

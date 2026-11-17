@@ -123,7 +123,7 @@ describe("manajer akses jaringan", () => {
     expect(status.listening).toBe(true);
     expect(status.port).toBe(4747);
     expect(status.passwordRequired).toBe(false);
-    expect(store.settings).toEqual({ version: 1, enabled: true, port: 4747 });
+    expect(store.settings).toEqual({ version: 1, enabled: true, port: 4747, tunnelEnabled: false });
     expect(serve.calls[0]?.hostname).toBe("0.0.0.0");
     expect(serve.calls[0]?.port).toBe(4747);
   });
@@ -175,7 +175,7 @@ describe("manajer akses jaringan", () => {
 
   test("start memulihkan listener saat akses diizinkan dan sandi ada", async () => {
     const store = new MemoryStore();
-    store.settings = { version: 1, enabled: true, port: 5000 };
+    store.settings = { version: 1, enabled: true, port: 5000, tunnelEnabled: false };
     const { manager, serve } = makeManager({ store });
     await manager.start();
     expect(manager.status().listening).toBe(true);
@@ -185,7 +185,7 @@ describe("manajer akses jaringan", () => {
 
   test("start tanpa sandi tidak menyalakan listener dan menyimpan enabled false", async () => {
     const store = new MemoryStore();
-    store.settings = { version: 1, enabled: true, port: 5000 };
+    store.settings = { version: 1, enabled: true, port: 5000, tunnelEnabled: false };
     const { manager, serve } = makeManager({ store, hasPassword: false });
     await manager.start();
     expect(manager.status().listening).toBe(false);
@@ -202,7 +202,7 @@ describe("manajer akses jaringan", () => {
 
   test("start tak menjatuhkan server saat bind gagal", async () => {
     const store = new MemoryStore();
-    store.settings = { version: 1, enabled: true, port: 5000 };
+    store.settings = { version: 1, enabled: true, port: 5000, tunnelEnabled: false };
     const serve = fakeServe();
     const error = new Error("Address already in use");
     (error as { code?: string }).code = "EADDRINUSE";
@@ -244,7 +244,7 @@ describe("manajer akses jaringan", () => {
 
   test("start tidak menyalakan listener bila autentikasi belum aktif", async () => {
     const store = new MemoryStore();
-    store.settings = { version: 1, enabled: true, port: 5000 };
+    store.settings = { version: 1, enabled: true, port: 5000, tunnelEnabled: false };
     const { manager, serve } = makeManager({ store, authActive: false });
     await manager.start();
     expect(serve.created).toBe(0);

@@ -123,15 +123,30 @@ export function isPrivateNetworkHostname(hostname: string): boolean {
   return false;
 }
 
+/** True bila nilai adalah alamat IP (IPv4 atau IPv6) yang sah. */
+export function isValidIpAddress(value: string): boolean {
+  const trimmed = value.trim();
+  if (trimmed === "") return false;
+  const bare =
+    trimmed.startsWith("[") && trimmed.endsWith("]") ? trimmed.slice(1, -1) : trimmed;
+  if (ipv4Bytes(bare) !== undefined) return true;
+  return ipv6Bytes(bare) !== undefined;
+}
+
 /**
  * True bila permintaan boleh dilayani penjaga Host/Origin lewat listener
  * jaringan: header penanda harus datang dari server sendiri dan host harus
- * privat. Header tak bisa dipalsukan klien karena pembungkus fetch membuangnya
- * lebih dulu.
+ * privat atau persis sama dengan hostname publik tunnel tersimpan. Header tak
+ * bisa dipalsukan klien karena pembungkus fetch membuangnya lebih dulu.
  */
-export function isAllowedNetworkHost(hostname: string, request: Request): boolean {
-  return (
-    request.headers.get(VIA_HEADER) === "net" &&
-    isPrivateNetworkHostname(hostname)
-  );
+export function isAllowedNetworkHost(
+  hostname: string,
+  request: Request,
+  publicHost?: () => string | undefined,
+): boolean {
+  if (request.headers.get(VIA_HEADER) !== "net") return false;
+  if (isPrivateNetworkHostname(hostname)) return true;
+  const publik = publicHost?.()?.trim().toLowerCase();
+  if (publik === undefined || publik === "") return false;
+  return hostname.trim().toLowerCase() === publik;
 }

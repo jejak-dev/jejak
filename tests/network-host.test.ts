@@ -5,6 +5,7 @@ import {
   isPrivateNetworkHostname,
 } from "../src/server/network/network-host";
 import { VIA_HEADER, VIA_NETWORK } from "../src/server/network/network-fetch";
+import { isValidPublicHost } from "../src/server/network/network-store";
 
 describe("host privat untuk listener jaringan", () => {
   test("rentang IPv4 privat diterima", () => {
@@ -90,5 +91,79 @@ describe("penjaga host jaringan", () => {
     expect(
       isAllowedNetworkHost("8.8.8.8", request({ [VIA_HEADER]: VIA_NETWORK })),
     ).toBe(false);
+  });
+
+  test("host publik persis sama dengan publicHost tersimpan: boleh", () => {
+    const publik = () => "jejak.contoh.com";
+    expect(
+      isAllowedNetworkHost(
+        "jejak.contoh.com",
+        request({ [VIA_HEADER]: VIA_NETWORK }),
+        publik,
+      ),
+    ).toBe(true);
+    // Perbandingan huruf kecil, tanpa port.
+    expect(
+      isAllowedNetworkHost(
+        "JEJAK.CONTOH.COM",
+        request({ [VIA_HEADER]: VIA_NETWORK }),
+        publik,
+      ),
+    ).toBe(true);
+  });
+
+  test("host publik lain tetap ditolak", () => {
+    const publik = () => "jejak.contoh.com";
+    for (const host of ["lain.contoh.com", "evil.test", "contoh.com"]) {
+      expect(
+        isAllowedNetworkHost(host, request({ [VIA_HEADER]: VIA_NETWORK }), publik),
+      ).toBe(false);
+    }
+  });
+
+  test("host publik tanpa penanda jaringan: ditolak", () => {
+    expect(
+      isAllowedNetworkHost("jejak.contoh.com", request({}), () => "jejak.contoh.com"),
+    ).toBe(false);
+  });
+
+  test("tanpa publicHost tersimpan: host publik ditolak", () => {
+    expect(
+      isAllowedNetworkHost(
+        "jejak.contoh.com",
+        request({ [VIA_HEADER]: VIA_NETWORK }),
+        () => undefined,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("validasi hostname publik tunnel", () => {
+  test("FQDN huruf kecil sah diterima", () => {
+    for (const host of ["jejak.contoh.com", "a-b.c-d.io", "x.y"]) {
+      expect(isValidPublicHost(host)).toBe(true);
+    }
+  });
+
+  test("bentuk tak sah ditolak", () => {
+    for (const host of [
+      "",
+      "localhost",
+      "JeJak.contoh.com",
+      "https://jejak.contoh.com",
+      "jejak.contoh.com:443",
+      "jejak.contoh.com/path",
+      "*.contoh.com",
+      "-jejak.contoh.com",
+      "jejak-.contoh.com",
+      "jejak..contoh.com",
+      "192.168.1.5",
+      "jejak contoh.com",
+      `${"a".repeat(64)}.contoh.com`,
+    ]) {
+      expect(isValidPublicHost(host)).toBe(false);
+    }
+    expect(isValidPublicHost(undefined)).toBe(false);
+    expect(isValidPublicHost(42)).toBe(false);
   });
 });

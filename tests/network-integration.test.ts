@@ -27,7 +27,13 @@ class MemoryStore implements NetworkStore {
     return { ...this.settings };
   }
 
-  save(settings: { version: number; enabled: boolean; port: number }): void {
+  save(settings: {
+    version: number;
+    enabled: boolean;
+    port: number;
+    publicHost?: string;
+    tunnelEnabled: boolean;
+  }): void {
     this.settings = { ...settings };
   }
 }

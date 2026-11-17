@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createThrottle } from "../src/server/auth/throttle";
-import { socketAddress } from "../src/server/routes/auth";
-import { PEER_HEADER } from "../src/server/network/network-fetch";
+import { isSecureRequest, socketAddress } from "../src/server/routes/auth";
+import { PEER_HEADER, SECURE_HEADER } from "../src/server/network/network-fetch";
 
 describe("alamat klien untuk throttle", () => {
   test("header peer dipakai bila ada", () => {
@@ -33,5 +33,23 @@ describe("alamat klien untuk throttle", () => {
     // Klien kedua tak boleh ikut terblokir.
     expect(throttle.check(second).blocked).toBe(false);
     expect(throttle.check(first).blocked).toBe(true);
+  });
+});
+
+describe("permintaan aman lewat tunnel", () => {
+  test("penanda secure dari listener jaringan membuat permintaan dianggap https", () => {
+    const request = new Request("http://jejak.contoh.com/api/auth/login", {
+      headers: { [SECURE_HEADER]: "1" },
+    });
+    expect(isSecureRequest(request)).toBe(true);
+  });
+
+  test("tanpa penanda secure: skema URL yang menentukan", () => {
+    expect(
+      isSecureRequest(new Request("http://jejak.contoh.com/api/auth/login")),
+    ).toBe(false);
+    expect(
+      isSecureRequest(new Request("https://jejak.contoh.com/api/auth/login")),
+    ).toBe(true);
   });
 });
