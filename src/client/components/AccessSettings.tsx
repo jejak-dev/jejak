@@ -70,7 +70,11 @@ export function AccessSettingsView(props: AccessSettingsViewProps) {
   const replacing = props.status?.configured === true;
   const authDisabled = props.authDisabled === true;
   // Galat mentah "autentikasi tidak aktif" diganti catatan netral.
-  const showError = props.error !== undefined && !authDisabled;
+  // Catatan netral sudah tampil; jangan ulangi sebagai galat merah.
+  const duplicate =
+    authDisabled &&
+    (props.error === PASSWORD_DESKTOP_ONLY_NOTE || props.error === "autentikasi tidak aktif");
+  const showError = props.error !== undefined && !duplicate;
 
   return (
     <section class="jk-access-settings" aria-labelledby="jk-access-title">
@@ -107,75 +111,73 @@ export function AccessSettingsView(props: AccessSettingsViewProps) {
           </p>
         )}
 
-        {!authDisabled && (
-          <form class="jk-access-form" onSubmit={props.onSubmit}>
+        <form class="jk-access-form" onSubmit={props.onSubmit}>
+          {replacing && (
+            <div class="jk-field">
+              <label class="jk-label" for="jk-access-current">
+                Sandi lama
+              </label>
+              <input
+                id="jk-access-current"
+                class="jk-input"
+                type="password"
+                autoComplete="off"
+                value={props.current}
+                onInput={(event) =>
+                  props.onCurrent((event.currentTarget as HTMLInputElement).value)
+                }
+              />
+            </div>
+          )}
+
+          <div class="jk-field">
+            <label class="jk-label" for="jk-access-password">
+              {replacing ? "Sandi baru" : "Sandi"}
+            </label>
+            <input
+              id="jk-access-password"
+              class="jk-input"
+              type="password"
+              autoComplete="new-password"
+              value={props.password}
+              onInput={(event) =>
+                props.onPassword((event.currentTarget as HTMLInputElement).value)
+              }
+            />
+          </div>
+
+          <div class="jk-field">
+            <label class="jk-label" for="jk-access-repeat">
+              Ulangi sandi
+            </label>
+            <input
+              id="jk-access-repeat"
+              class="jk-input"
+              type="password"
+              autoComplete="new-password"
+              value={props.repeat}
+              onInput={(event) =>
+                props.onRepeat((event.currentTarget as HTMLInputElement).value)
+              }
+            />
+          </div>
+
+          <div class="jk-access-actions">
+            <button type="submit" class="jk-button jk-button-primary" disabled={props.busy}>
+              {replacing ? "Ganti sandi" : "Buat sandi"}
+            </button>
             {replacing && (
-              <div class="jk-field">
-                <label class="jk-label" for="jk-access-current">
-                  Sandi lama
-                </label>
-                <input
-                  id="jk-access-current"
-                  class="jk-input"
-                  type="password"
-                  autoComplete="off"
-                  value={props.current}
-                  onInput={(event) =>
-                    props.onCurrent((event.currentTarget as HTMLInputElement).value)
-                  }
-                />
-              </div>
-            )}
-
-            <div class="jk-field">
-              <label class="jk-label" for="jk-access-password">
-                {replacing ? "Sandi baru" : "Sandi"}
-              </label>
-              <input
-                id="jk-access-password"
-                class="jk-input"
-                type="password"
-                autoComplete="new-password"
-                value={props.password}
-                onInput={(event) =>
-                  props.onPassword((event.currentTarget as HTMLInputElement).value)
-                }
-              />
-            </div>
-
-            <div class="jk-field">
-              <label class="jk-label" for="jk-access-repeat">
-                Ulangi sandi
-              </label>
-              <input
-                id="jk-access-repeat"
-                class="jk-input"
-                type="password"
-                autoComplete="new-password"
-                value={props.repeat}
-                onInput={(event) =>
-                  props.onRepeat((event.currentTarget as HTMLInputElement).value)
-                }
-              />
-            </div>
-
-            <div class="jk-access-actions">
-              <button type="submit" class="jk-button jk-button-primary" disabled={props.busy}>
-                {replacing ? "Ganti sandi" : "Buat sandi"}
+              <button
+                type="button"
+                class="jk-button jk-button-danger"
+                disabled={props.busy}
+                onClick={props.onRequestDelete}
+              >
+                Hapus sandi
               </button>
-              {replacing && (
-                <button
-                  type="button"
-                  class="jk-button jk-button-danger"
-                  disabled={props.busy}
-                  onClick={props.onRequestDelete}
-                >
-                  Hapus sandi
-                </button>
-              )}
-            </div>
-          </form>
-        )}
+            )}
+          </div>
+        </form>
       </section>
 
       {props.network}
@@ -320,7 +322,7 @@ export function AccessSettings({ api, onAuthChanged }: AccessSettingsProps) {
         setNetworkRefreshKey((value) => value + 1);
         onAuthChanged?.();
       } catch (caught) {
-        setError(messageOf(caught));
+        setError(isAuthDisabledError(caught) ? PASSWORD_DESKTOP_ONLY_NOTE : messageOf(caught));
       } finally {
         setBusy(false);
       }

@@ -199,8 +199,8 @@ describe("kartu Akses & sandi", () => {
     expect(teks).not.toContain("autentikasi tidak aktif");
     expect(teks).not.toContain("Memuat status sandi…");
     expect(byClass(pohon, "jk-error-line").length).toBe(0);
-    // Formulir sandi disembunyikan.
-    expect(findNodes(pohon, (vnode) => vnode.type === "input").length).toBe(0);
+    // Formulir sandi tetap tampil seperti biasa.
+    expect(findNodes(pohon, (vnode) => vnode.type === "input").length).toBeGreaterThan(0);
   });
 
   test("autentikasi tidak aktif: dua bagian lain tetap tampil", () => {
