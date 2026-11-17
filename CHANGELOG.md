@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.6] - 2026-11-17
+
 ### Ditambah
 
 - Agent boleh membaca `.env` dengan nilai rahasia disamarkan (host, port, dan nama basis data tetap terlihat; kata sandi, token, dan kredensial dalam URL disembunyikan).
