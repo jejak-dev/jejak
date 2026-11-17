@@ -148,6 +148,9 @@ fn buat_jendela(app: &AppHandle) -> tauri::Result<()> {
     .inner_size(1280.0, 820.0)
     .min_inner_size(900.0, 600.0)
     .center()
+    // Penangan drag-drop bawaan Tauri menyadap drop dari OS sehingga event
+    // dragover/drop tak sampai ke halaman; drop berkas ditangani HTML5 di web.
+    .disable_drag_drop_handler()
     // WKWebView tak punya API notifikasi; shim ini menggantinya dengan
     // kelas yang menembak plugin notifikasi Tauri.
     .initialization_script(SHIM_NOTIFIKASI)
