@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Membangun APK klien tipis Jejak tanpa Gradle.
 # Kebutuhan: JDK 17, Android SDK (platform android-36) dan build-tools terpasang.
-# Hasil: android/build/jejak.apk (ditandatangani kunci debug lokal android/.keystore).
+# Hasil: android/build/jejak.apk. Tanda tangan: env JEJAK_KEYSTORE (+ _PASSWORD, _ALIAS)
+# untuk rilis, atau kunci debug lokal android/.keystore bila env kosong.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -29,11 +30,21 @@ javac --release 17 -classpath "$JAR" -d "$OUT/classes" \
 (cd "$OUT" && zip -q base.apk classes.dex)
 "$BT/zipalign" -f 4 "$OUT/base.apk" "$OUT/jejak-aligned.apk"
 
-if [ ! -f .keystore ]; then
-  keytool -genkeypair -keystore .keystore -storepass android -keypass android \
-    -alias jejak -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Jejak Debug"
+# Penandatanganan: keystore rilis lewat env (CI), atau kunci debug lokal.
+# Tanda tangan harus sama di setiap rilis, kalau tidak Android menolak pembaruan.
+if [ -n "${JEJAK_KEYSTORE:-}" ]; then
+  [ -f "$JEJAK_KEYSTORE" ] || { echo "JEJAK_KEYSTORE tidak ditemukan: $JEJAK_KEYSTORE" >&2; exit 1; }
+  : "${JEJAK_KEYSTORE_PASSWORD:?JEJAK_KEYSTORE_PASSWORD wajib diisi}"
+  "$BT/apksigner" sign --ks "$JEJAK_KEYSTORE" --ks-key-alias "${JEJAK_KEY_ALIAS:-jejak}" \
+    --ks-pass env:JEJAK_KEYSTORE_PASSWORD \
+    --out "$OUT/jejak.apk" "$OUT/jejak-aligned.apk"
+else
+  if [ ! -f .keystore ]; then
+    keytool -genkeypair -keystore .keystore -storepass android -keypass android \
+      -alias jejak -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Jejak Debug"
+  fi
+  "$BT/apksigner" sign --ks .keystore --ks-pass pass:android --key-pass pass:android \
+    --out "$OUT/jejak.apk" "$OUT/jejak-aligned.apk"
 fi
-"$BT/apksigner" sign --ks .keystore --ks-pass pass:android --key-pass pass:android \
-  --out "$OUT/jejak.apk" "$OUT/jejak-aligned.apk"
 "$BT/apksigner" verify "$OUT/jejak.apk"
 echo "OK: android/$OUT/jejak.apk ($VERSI)"

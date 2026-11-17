@@ -32,6 +32,7 @@
     "typecheck": "tsc --noEmit",
     "build:binary": "bun run scripts/build-binary.ts",
     "stage:sidecar": "bun run scripts/stage-sidecar.ts",
+    "build:apk": "bash android/build.sh",
     "build:desktop": "bun run scripts/build-desktop.ts",
     "smoke:binary": "bun run scripts/smoke-binary.ts",
     "check:version": "bun run scripts/check-version.ts",
