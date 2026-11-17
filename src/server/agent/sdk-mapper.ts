@@ -157,19 +157,55 @@ function mapUser(message: Record<string, unknown>): AgentEvent[] {
   return events;
 }
 
+/** Pesan untuk giliran "sukses" yang ternyata tak memproses apa pun. */
+const EMPTY_TURN_ERROR =
+  "Giliran kosong: agent tidak memproses pesan (sesi mungkin terlalu besar atau gagal dilanjutkan). Kirim ulang pesan, atau mulai sesi baru bila berulang.";
+/** Awalan teks hasil yang sebenarnya galat kompaksi otomatis. */
+const COMPACTION_ERROR_PREFIX = "error during compaction";
+/** Panjang maksimum teks galat kompaksi yang diteruskan. */
+const MAX_COMPACTION_ERROR = 500;
+
 function mapResult(message: Record<string, unknown>): AgentEvent[] {
   const subtype = typeof message.subtype === "string" ? message.subtype : "";
-  const ok = subtype === "success" && message.is_error !== true;
+  const resultText = typeof message.result === "string" ? message.result : undefined;
+  const numTurns = typeof message.num_turns === "number" ? message.num_turns : undefined;
+  const usageRecord = message.usage;
+  const outputTokens =
+    isRecord(usageRecord) && typeof usageRecord.output_tokens === "number"
+      ? usageRecord.output_tokens
+      : undefined;
+
+  let ok = subtype === "success" && message.is_error !== true;
+  let forcedError: string | undefined;
+
+  if (ok) {
+    const trimmed = resultText?.trim() ?? "";
+    if (trimmed.toLowerCase().startsWith(COMPACTION_ERROR_PREFIX)) {
+      // SDK mencatat galat kompaksi sebagai hasil sukses; itu bukan jawaban.
+      ok = false;
+      forcedError = (resultText ?? "").slice(0, MAX_COMPACTION_ERROR);
+    } else if (
+      trimmed === "" &&
+      (numTurns === undefined || numTurns === 0) &&
+      (outputTokens === undefined || outputTokens === 0)
+    ) {
+      // Sukses tanpa teks, tanpa giliran, dan tanpa keluaran: prompt tak diproses.
+      ok = false;
+      forcedError = EMPTY_TURN_ERROR;
+    }
+  }
 
   const event: Extract<AgentEvent, { type: "result" }> = { type: "result", ok };
 
-  if (ok && typeof message.result === "string") {
-    event.summary = message.result;
+  if (ok && resultText !== undefined) {
+    event.summary = resultText;
   }
 
   if (!ok) {
     const errors = message.errors;
-    if (Array.isArray(errors) && errors.length > 0) {
+    if (forcedError !== undefined) {
+      event.error = forcedError;
+    } else if (Array.isArray(errors) && errors.length > 0) {
       event.error = errors.map((error) => String(error)).join("; ");
     } else {
       event.error = `eksekusi gagal (${subtype})`;

@@ -211,10 +211,71 @@ test("result sukses memetakan ringkasan, biaya, dan token", () => {
   ]);
 });
 
-test("result sukses tanpa result string tidak memuat summary", () => {
-  expect(mapSdkMessage({ type: "result", subtype: "success" })).toEqual([
-    { type: "result", ok: true },
+test("result sukses kosong dianggap gagal", () => {
+  const [event] = mapSdkMessage({ type: "result", subtype: "success" });
+  expect(event?.type).toBe("result");
+  if (event?.type === "result") {
+    expect(event.ok).toBe(false);
+    expect(event.error).toContain("Giliran kosong");
+  }
+});
+
+test("result sukses kosong dengan num_turns 0 dan output 0 dianggap gagal", () => {
+  const [event] = mapSdkMessage({
+    type: "result",
+    subtype: "success",
+    result: "",
+    num_turns: 0,
+    usage: { input_tokens: 0, output_tokens: 0 },
+  });
+  expect(event?.type).toBe("result");
+  if (event?.type === "result") {
+    expect(event.ok).toBe(false);
+    expect(event.error).toContain("Giliran kosong");
+  }
+});
+
+test("result sukses dengan teks walau num_turns 0 tetap sukses", () => {
+  expect(
+    mapSdkMessage({
+      type: "result",
+      subtype: "success",
+      result: "perintah slash selesai",
+      num_turns: 0,
+      usage: { output_tokens: 0 },
+    }),
+  ).toEqual([
+    { type: "result", ok: true, summary: "perintah slash selesai", outputTokens: 0, numTurns: 0 },
   ]);
+});
+
+test("result sukses normal tetap sukses", () => {
+  expect(
+    mapSdkMessage({
+      type: "result",
+      subtype: "success",
+      result: "selesai",
+      num_turns: 3,
+      usage: { output_tokens: 50 },
+    }),
+  ).toEqual([
+    { type: "result", ok: true, summary: "selesai", outputTokens: 50, numTurns: 3 },
+  ]);
+});
+
+test("result berisi galat kompaksi dianggap gagal", () => {
+  const [event] = mapSdkMessage({
+    type: "result",
+    subtype: "success",
+    result: "Error during compaction: API Error: 503 Service Unavailable",
+    num_turns: 1,
+    usage: { output_tokens: 10 },
+  });
+  expect(event?.type).toBe("result");
+  if (event?.type === "result") {
+    expect(event.ok).toBe(false);
+    expect(event.error).toContain("Error during compaction: API Error: 503");
+  }
 });
 
 test("result gagal error_max_turns memakai errors bila ada", () => {
@@ -246,12 +307,13 @@ test("result tidak memuat properti opsional yang salah tipe", () => {
   const [event] = mapSdkMessage({
     type: "result",
     subtype: "success",
+    result: "selesai",
     total_cost_usd: "0.5",
     num_turns: "3",
     usage: { input_tokens: "10", output_tokens: null },
   });
 
-  expect(event).toEqual({ type: "result", ok: true });
+  expect(event).toEqual({ type: "result", ok: true, summary: "selesai" });
 });
 
 test("tipe pesan lain dan input sampah menghasilkan array kosong", () => {
