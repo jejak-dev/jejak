@@ -24,7 +24,13 @@ import type {
   PermissionRequest,
   ResolvedMcpServer,
 } from "./events";
-import { assistantUuidOf, contextTokensOf, contextWindowOf, mapSdkMessage } from "./sdk-mapper";
+import {
+  assistantUuidOf,
+  contextTokensOf,
+  contextWindowOf,
+  mapSdkMessage,
+  reconcileContextTokens,
+} from "./sdk-mapper";
 import {
   createSteerInput,
   queuedTurnCountOf,
@@ -855,20 +861,26 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
                 steerInput.close();
               }
               sawResult = true;
-              if (contextTokens !== undefined) event.contextTokens = contextTokens;
               // Jendela dari profil menang atas tebakan SDK (SDK memakai 200 rb untuk model non-Claude).
               const window = input.provider.contextWindow ?? contextWindowOf(message);
               if (window !== undefined) event.contextWindow = window;
+              const reconciled = reconcileContextTokens(contextTokens, event, window);
+              if (reconciled.tokens !== undefined) event.contextTokens = reconciled.tokens;
+              if (reconciled.estimated) event.contextEstimated = true;
               // Jangkar hanya diisi bila runner memberi uuid (pesan assistant terakhir).
               if (anchorUuid !== undefined) event.anchorUuid = anchorUuid;
             }
             yield event;
           }
           if (callContext !== undefined) {
+            // Angka per panggilan yang melewati jendela tak masuk akal; cincin
+            // konteks lebih baik menunggu angka terkoreksi di hasil giliran.
             const window = input.provider.contextWindow;
-            yield window === undefined
-              ? { type: "context", tokens: callContext }
-              : { type: "context", tokens: callContext, window };
+            if (window === undefined || callContext <= window) {
+              yield window === undefined
+                ? { type: "context", tokens: callContext }
+                : { type: "context", tokens: callContext, window };
+            }
           }
         }
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mapSdkMessage } from "../src/server/agent/sdk-mapper";
+import { mapSdkMessage, reconcileContextTokens } from "../src/server/agent/sdk-mapper";
 
 test("pesan system init menjadi event session", () => {
   expect(
@@ -424,4 +424,39 @@ test("saran prompt dipotong 300 karakter dan saran kosong diabaikan", () => {
   expect((events[0] as { text: string }).text).toHaveLength(300);
   expect(mapSdkMessage({ type: "prompt_suggestion", suggestion: "   " })).toEqual([]);
   expect(mapSdkMessage({ type: "prompt_suggestion" })).toEqual([]);
+});
+
+test("reconcileContextTokens mengoreksi angka per pesan yang menggelembung", () => {
+  const usage = { inputTokens: 13_531, cacheReadTokens: 1_995_136, cacheWriteTokens: 0, numTurns: 17 };
+  const approx = Math.round((13_531 + 1_995_136) / 17);
+  expect(reconcileContextTokens(1_501_288, usage, 1_000_000)).toEqual({ tokens: approx, estimated: true });
+  expect(approx).toBeGreaterThan(117_000);
+  expect(approx).toBeLessThan(119_000);
+});
+
+test("reconcileContextTokens membiarkan angka normal", () => {
+  expect(
+    reconcileContextTokens(100_000, { inputTokens: 900_000, numTurns: 10 }, 1_000_000),
+  ).toEqual({ tokens: 100_000, estimated: false });
+});
+
+test("reconcileContextTokens memakai perkiraan bila angka per pesan tak ada", () => {
+  expect(reconcileContextTokens(undefined, { inputTokens: 900_000, numTurns: 10 })).toEqual({
+    tokens: 90_000,
+    estimated: true,
+  });
+});
+
+test("reconcileContextTokens membuang angka mustahil tanpa perkiraan", () => {
+  expect(reconcileContextTokens(1_500_000, {}, 1_000_000)).toEqual({ tokens: undefined, estimated: false });
+  expect(reconcileContextTokens(1_500_000, { inputTokens: 500, numTurns: 0 }, 1_000_000)).toEqual({
+    tokens: undefined,
+    estimated: false,
+  });
+});
+
+test("reconcileContextTokens ambang 2,5x perkiraan", () => {
+  const usage = { inputTokens: 1_000_000, numTurns: 10 }; // approx 100_000
+  expect(reconcileContextTokens(240_000, usage, 1_000_000)).toEqual({ tokens: 240_000, estimated: false });
+  expect(reconcileContextTokens(260_000, usage, 1_000_000)).toEqual({ tokens: 100_000, estimated: true });
 });

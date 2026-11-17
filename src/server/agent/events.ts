@@ -26,6 +26,8 @@ export type AgentEvent =
       numTurns?: number;
       /** Ukuran konteks (token) pada panggilan model terakhir giliran ini. */
       contextTokens?: number;
+      /** `contextTokens` adalah perkiraan (usage per pesan tak bisa dipercaya). */
+      contextEstimated?: boolean;
       /** Jendela konteks model menurut SDK; perkiraan untuk model non-Claude. */
       contextWindow?: number;
       /**

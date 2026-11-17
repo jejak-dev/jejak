@@ -117,6 +117,8 @@ test("runner SDK memetakan pesan menjadi event berurutan", async () => {
       inputTokens: 10,
       outputTokens: 5,
       numTurns: 1,
+      contextTokens: 10,
+      contextEstimated: true,
     },
   ]);
 });
@@ -1062,7 +1064,13 @@ test("result memuat contextTokens dari panggilan terakhir dan contextWindow dari
       INIT,
       withUsage(100),
       withUsage(300),
-      { ...RESULT_OK, modelUsage: { "model-profil": { contextWindow: 200000 } } },
+      {
+        ...RESULT_OK,
+        num_turns: 2,
+        // Usage kumulatif giliran: rata-rata per panggilan masuk akal dengan angka per pesan.
+        usage: { input_tokens: 1000, cache_read_input_tokens: 1000, output_tokens: 50 },
+        modelUsage: { "model-profil": { contextWindow: 200000 } },
+      },
     ],
   });
 
@@ -1263,7 +1271,7 @@ test("tanpa pesan assistant result tidak punya anchorUuid", async () => {
   );
 
   const result = events.find((event) => event.type === "result");
-  expect(result).toEqual({ type: "result", ok: true, summary: "selesai", costUsd: 0.01, inputTokens: 10, outputTokens: 5, numTurns: 1 });
+  expect(result).toEqual({ type: "result", ok: true, summary: "selesai", costUsd: 0.01, inputTokens: 10, outputTokens: 5, numTurns: 1, contextTokens: 10, contextEstimated: true });
 });
 
 test("pesan assistant subagent tidak dipakai sebagai jangkar", async () => {
@@ -1406,5 +1414,59 @@ test("SDK lama yang tak kenal opsi promptSuggestions tetap jalan", async () => {
 
   expect(panggilan).toBe(2);
   expect("promptSuggestions" in (received ?? {})).toBe(false);
+  expect(events.some((event) => event.type === "result")).toBe(true);
+});
+
+test("result mengoreksi contextTokens per pesan yang melewati jendela", async () => {
+  const sdk = fakeSdk({
+    messages: [
+      INIT,
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: "text", text: "halo" }],
+          usage: { input_tokens: 10, cache_read_input_tokens: 1_490_000, output_tokens: 5 },
+        },
+      },
+      {
+        ...RESULT_OK,
+        num_turns: 10,
+        usage: { input_tokens: 1_000, cache_read_input_tokens: 900_000, output_tokens: 5 },
+        modelUsage: { "model-profil": { contextWindow: 1_000_000 } },
+      },
+    ],
+  });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(baseInput()),
+  );
+  const result = events.find((event) => event.type === "result");
+  // (1.000 + 900.000) / 10 = 90.100
+  expect(result).toMatchObject({ contextTokens: 90_100, contextEstimated: true });
+});
+
+test("event context yang melewati jendela tidak dipancarkan", async () => {
+  const sdk = fakeSdk({
+    messages: [
+      INIT,
+      {
+        type: "assistant",
+        parent_tool_use_id: null,
+        message: {
+          content: [{ type: "text", text: "halo" }],
+          usage: { input_tokens: 1_500_000, output_tokens: 5 },
+        },
+      },
+      RESULT_OK,
+    ],
+  });
+
+  const events = await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      baseInput({ provider: { ...PROVIDER, contextWindow: 1_000_000 } }),
+    ),
+  );
+  expect(events.filter((event) => event.type === "context")).toEqual([]);
   expect(events.some((event) => event.type === "result")).toBe(true);
 });

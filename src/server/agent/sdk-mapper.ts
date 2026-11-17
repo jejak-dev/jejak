@@ -307,6 +307,53 @@ export function contextTokensOf(message: unknown): number | undefined {
   return total > 0 ? total : undefined;
 }
 
+/**
+ * Perkiraan token per panggilan dari usage giliran: (masuk + cache) / jumlah
+ * giliran. `undefined` bila tak bisa dihitung.
+ */
+function approxTokensPerCall(usage: {
+  inputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  numTurns?: number;
+}): number | undefined {
+  const turns = usage.numTurns;
+  if (typeof turns !== "number" || turns <= 0) return undefined;
+  const total = (usage.inputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
+  return total > 0 ? Math.round(total / turns) : undefined;
+}
+
+/**
+ * Koreksi ukuran konteks per pesan terhadap jendela dan rata-rata usage.
+ *
+ * Gateway sebagian provider melaporkan usage per pesan yang menggelembung
+ * (mis. cache dibaca ulang tiap langkah), sehingga cincin konteks bisa
+ * melewati jendela. Bila angka per pesan mustahil — melebihi jendela atau
+ * jauh di atas rata-rata per panggilan — pakai perkiraan rata-rata dan tandai
+ * `estimated`. Tanpa perkiraan yang masuk akal, angka mustahil dibuang.
+ */
+export function reconcileContextTokens(
+  perMessage: number | undefined,
+  usage: {
+    inputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
+    numTurns?: number;
+  },
+  window?: number,
+): { tokens: number | undefined; estimated: boolean } {
+  const approx = approxTokensPerCall(usage);
+  if (perMessage === undefined) return { tokens: approx, estimated: approx !== undefined };
+  const overWindow = window !== undefined && perMessage > window;
+  const overAverage = approx !== undefined && perMessage > 2.5 * approx;
+  if (overWindow || overAverage) {
+    return approx !== undefined
+      ? { tokens: approx, estimated: true }
+      : { tokens: undefined, estimated: false };
+  }
+  return { tokens: perMessage, estimated: false };
+}
+
 /** Jendela konteks terbesar dari `modelUsage` pesan hasil SDK. */
 export function contextWindowOf(message: unknown): number | undefined {
   if (!isRecord(message) || message.type !== "result" || !isRecord(message.modelUsage)) {
