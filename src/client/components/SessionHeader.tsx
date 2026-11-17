@@ -9,6 +9,10 @@ import { Icon } from "./Icon";
 
 export interface TopbarProps {
   onMenu: () => void;
+  /** Layar ponsel: tombol menu diganti tombol kembali. */
+  mobile?: boolean;
+  /** Aksi tombol kembali di layar ponsel. */
+  onBack?: () => void;
   title?: string;
   subtitle?: string;
   subtitleTitle?: string;
@@ -22,12 +26,23 @@ export interface TopbarProps {
   error?: string;
 }
 
-export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, budgetBadge, sandboxBadge: sandbox, panel, error }: TopbarProps) {
+export function Topbar({ onMenu, mobile, onBack, title, subtitle, subtitleTitle, state, bypass, badge, secretBadge, budgetBadge, sandboxBadge: sandbox, panel, error }: TopbarProps) {
   return (
     <header class="jk-top">
-      <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
-        <Icon name="menu" />
-      </button>
+      {mobile === true ? (
+        <button
+          type="button"
+          class="jk-icon-btn jk-back-btn"
+          onClick={onBack ?? onMenu}
+          aria-label="Kembali"
+        >
+          <Icon name="back" />
+        </button>
+      ) : (
+        <button type="button" class="jk-icon-btn jk-menu-btn" onClick={onMenu} aria-label="Buka sidebar">
+          <Icon name="menu" />
+        </button>
+      )}
       <div class="jk-top-title">
         {title !== undefined && <h2>{title}</h2>}
         {subtitle !== undefined && (
@@ -84,9 +99,9 @@ export function Topbar({ onMenu, title, subtitle, subtitleTitle, state, bypass, 
         </span>
       )}
       {state !== undefined && (
-        <span class="jk-state" role="status">
+        <span class="jk-state" role="status" aria-label={state.label} title={state.label}>
           <span class={`jk-dot${state.dot === "" ? "" : ` jk-dot-${state.dot}`}`} aria-hidden="true" />
-          {state.label}
+          <span class="jk-state-label">{state.label}</span>
         </span>
       )}
       {panel !== undefined && (
@@ -113,6 +128,10 @@ export interface SessionHeaderProps {
   session: SessionInfo;
   status: string;
   onMenu: () => void;
+  /** Layar ponsel: tombol kembali menggantikan menu. */
+  mobile?: boolean;
+  /** Kembali ke daftar sesi (batalkan pilihan). */
+  onBack?: () => void;
   panelOpen: boolean;
   onTogglePanel: () => void;
   error?: string;
@@ -136,6 +155,8 @@ export function SessionHeader({
   session,
   status,
   onMenu,
+  mobile,
+  onBack,
   panelOpen,
   onTogglePanel,
   error,
@@ -148,6 +169,10 @@ export function SessionHeader({
     state: sessionState(status, session.pendingPermissions),
     panel: { open: panelOpen, onToggle: onTogglePanel },
   };
+  if (mobile === true) {
+    props.mobile = true;
+    if (onBack !== undefined) props.onBack = onBack;
+  }
   if (showsBypassMarker(session.permissionMode)) props.bypass = true;
   const badge = worktreeBadge(session);
   if (badge !== undefined) props.badge = badge;

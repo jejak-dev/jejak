@@ -42,6 +42,8 @@ export interface ComposerProps {
   onHeld?: () => void;
   /** Draf yang dipulihkan (mis. tahanan yang dibatalkan); diisi ulang saat id berubah. */
   restoreDraft?: { id: string; input: HeldPrompt["input"] };
+  /** Layar ponsel: kontrol folder/profil/model/izin di balik tombol "Opsi". */
+  mobile?: boolean;
 }
 
 type PermissionMode = ComposerPermissionMode;
@@ -102,6 +104,7 @@ export function Composer({
   runningSessions = [],
   onHeld,
   restoreDraft,
+  mobile = false,
 }: ComposerProps) {
   const [prompt, setPrompt] = useState("");
   const [cwd, setCwd] = useState(() => readStorage(STORAGE_CWD) ?? defaultCwd ?? "");
@@ -124,6 +127,8 @@ export function Composer({
   const [apiError, setApiError] = useState<string | undefined>(undefined);
   /** Id sesi yang ditunggu; "" berarti prompt langsung dibuat. */
   const [waitFor, setWaitFor] = useState("");
+  /** Ponsel: area opsi (folder, profil, model, izin) terbuka dari pill. */
+  const [opsiOpen, setOpsiOpen] = useState(false);
 
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   /** Layar sempit: placeholder komposer dibuat pendek. */
@@ -352,6 +357,8 @@ export function Composer({
       return;
     }
     if (!usingWorkspace && trimmedCwd === "") {
+      // Ponsel: kolom folder ada di balik pill Opsi; buka supaya bisa diisi.
+      setOpsiOpen(true);
       cwdRef.current?.focus();
       return;
     }
@@ -471,7 +478,34 @@ export function Composer({
     .join(" ");
 
   return (
-    <form class="jk-composer" onSubmit={onSubmit} aria-busy={busy}>
+    <form
+      class={`jk-composer${mobile ? " jk-composer-mobile" : ""}${mobile && opsiOpen ? " jk-opsi-open" : ""}`}
+      onSubmit={onSubmit}
+      aria-busy={busy}
+    >
+      {mobile && (
+        <div class="jk-mobile-opsi-bar">
+          <button
+            type="button"
+            class="jk-chip jk-chip-btn jk-mobile-opsi-btn"
+            aria-expanded={opsiOpen}
+            aria-controls="jk-mobile-opsi"
+            title="Opsi folder, profil, model, dan izin"
+            onClick={() => setOpsiOpen((open) => !open)}
+          >
+            <Icon name="gear" />
+            <span class="jk-mobile-opsi-folder">
+              Folder:{" "}
+              {selectedWorkspace === undefined
+                ? folderName(cwd.trim()) === "/"
+                  ? "belum dipilih"
+                  : folderName(cwd.trim())
+                : selectedWorkspace.name}
+            </span>
+            <span class="jk-mobile-opsi-label">Opsi</span>
+          </button>
+        </div>
+      )}
       <div class={`jk-comp-card${att.dragging ? " jk-dropping" : ""}`} {...att.dropProps}>
         {att.dragging && <DropHint />}
         <AttachmentTray items={att.items} pending={att.pending} error={att.error} onRemove={att.remove} />
@@ -529,7 +563,7 @@ export function Composer({
         </div>
       </div>
 
-      <div class="jk-comp-meta">
+      <div class="jk-comp-meta" id={mobile ? "jk-mobile-opsi" : undefined}>
           {workspaces.length > 0 && (
             <label class="jk-chip" title="Workspace">
               <Icon name="workspace" />

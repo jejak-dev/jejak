@@ -9128,3 +9128,295 @@ h2.jk-md-heading {
 .jk-claude-project-body {
   margin: 0 0 10px 22px;
 }
+
+/* --------------------------------------------------------------------------
+   Ponsel (<= 640px): satu kolom dengan layar terpisah ala Kabmo. Semua aturan
+   memakai `.jk-app[data-mobile]` sehingga desktop tak tersentuh sama sekali.
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  /* Kerangka: tinggi mengikuti viewport dinamis supaya keyboard membuka
+     dengan layout yang menyusut, bukan menutupi kolom teks. */
+  .jk-app[data-mobile] {
+    height: 100dvh;
+  }
+
+  .jk-app[data-mobile] .jk-main {
+    overflow: hidden;
+  }
+
+  /* Bilah atas layar Sesi: judul serif di kiri, pengaturan di kanan. */
+  .jk-mobile-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex: none;
+    min-height: 52px;
+    padding: env(safe-area-inset-top, 0px) 12px 0 16px;
+  }
+
+  .jk-mobile-brand {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 21px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+
+  .jk-mobile-settings {
+    color: var(--t2);
+    text-decoration: none;
+  }
+
+  /* Target sentuh di bilah atas dan komposer minimal 44px. */
+  .jk-app[data-mobile] .jk-icon-btn,
+  .jk-app[data-mobile] .jk-top .jk-icon-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .jk-app[data-mobile] .jk-pill-row .jk-attach-btn,
+  .jk-app[data-mobile] .jk-pill-row .jk-send,
+  .jk-app[data-mobile] .jk-dictation-btn,
+  .jk-app[data-mobile] .jk-stop {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .jk-app[data-mobile] .jk-pill-row .jk-comp-input {
+    min-height: 44px;
+    padding: 10px 4px;
+  }
+
+  /* Header chat: kembali di kiri, titik status sebelum judul, panel di kanan. */
+  .jk-app[data-mobile] .jk-top {
+    flex-wrap: nowrap;
+    gap: 4px;
+    min-height: 56px;
+    padding: env(safe-area-inset-top, 0px) 8px 0;
+  }
+
+  .jk-app[data-mobile] .jk-back-btn {
+    order: -2;
+  }
+
+  .jk-app[data-mobile] .jk-top-title {
+    order: initial;
+    flex: 1 1 auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .jk-app[data-mobile] .jk-top-title h2 {
+    flex: 1 1 0;
+    font-size: 15px;
+  }
+
+  .jk-app[data-mobile] .jk-top-title .jk-mono {
+    display: none;
+  }
+
+  /* Status ringkas: titik di kiri judul saja, labelnya tetap untuk pembaca
+     layar lewat aria-label pada elemen status. */
+  .jk-app[data-mobile] .jk-state {
+    order: -1;
+    flex: none;
+    padding: 0 2px 0 4px;
+  }
+
+  .jk-app[data-mobile] .jk-state .jk-state-label {
+    display: none;
+  }
+
+  .jk-app[data-mobile] .jk-state .jk-dot {
+    width: 8px;
+    height: 8px;
+    background: var(--line-2);
+  }
+
+  /* Layar Sesi: daftar mengisi layar, komposer menempel di bawah. */
+  .jk-app[data-mobile] .jk-home-mobile {
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0;
+    padding: 0;
+  }
+
+  .jk-app[data-mobile] .jk-home-mobile .jk-home-wrap {
+    order: 2;
+    width: 100%;
+    flex: none;
+    padding: 6px 10px calc(8px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+
+  .jk-app[data-mobile] .jk-home-mobile .jk-mobile-sessions {
+    order: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    max-width: none;
+    overflow-y: auto;
+    padding: 4px 8px 12px;
+    border-top: 0;
+  }
+
+  .jk-mobile-sessions-title {
+    margin: 0 0 4px;
+    padding: 0 8px;
+    color: var(--t2);
+    font-size: var(--fs-small);
+    font-weight: 500;
+  }
+
+  .jk-mobile-empty {
+    margin: 18px 10px;
+    color: var(--t2);
+    font-size: var(--fs-small);
+    line-height: 1.6;
+  }
+
+  /* Satu baris sesi: titik status, nama, lalu folder dan waktu di baris kedua. */
+  .jk-app[data-mobile] .jk-mobile-session-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "dot name time"
+      "dot folder time";
+    align-items: center;
+    column-gap: 10px;
+    row-gap: 2px;
+    min-height: 56px;
+    padding: 8px 10px;
+    border-radius: 10px;
+  }
+
+  .jk-app[data-mobile] .jk-mobile-session-row .jk-dot {
+    grid-area: dot;
+  }
+
+  .jk-app[data-mobile] .jk-mobile-session-row .jk-home-recent-name {
+    grid-area: name;
+    font-size: var(--fs-ui);
+  }
+
+  .jk-app[data-mobile] .jk-mobile-session-row .jk-home-recent-folder {
+    grid-area: folder;
+    max-width: none;
+    color: var(--t3);
+    font-size: var(--fs-small);
+  }
+
+  .jk-app[data-mobile] .jk-mobile-session-row .jk-home-recent-time {
+    grid-area: time;
+    align-self: center;
+  }
+
+  /* Komposer ponsel: satu baris, opsi di balik pill. */
+  .jk-app[data-mobile] .jk-composer-mobile {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .jk-app[data-mobile] .jk-composer-mobile .jk-mobile-opsi-bar {
+    order: 1;
+    display: flex;
+  }
+
+  .jk-app[data-mobile] .jk-composer-mobile .jk-comp-card {
+    order: 3;
+  }
+
+  .jk-app[data-mobile] .jk-composer-mobile .jk-comp-meta {
+    display: none;
+    order: 2;
+    flex-wrap: wrap;
+    padding: 0;
+  }
+
+  .jk-app[data-mobile] .jk-composer-mobile.jk-opsi-open .jk-comp-meta {
+    display: flex;
+  }
+
+  .jk-app[data-mobile] .jk-composer-mobile > :not(.jk-mobile-opsi-bar):not(.jk-comp-card):not(.jk-comp-meta) {
+    order: 4;
+  }
+
+  .jk-mobile-opsi-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    height: 30px;
+    min-height: 30px;
+    padding: 0 10px;
+    color: var(--t2);
+  }
+
+  .jk-mobile-opsi-folder {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--t3);
+    font-size: var(--fs-small);
+  }
+
+  .jk-mobile-opsi-label {
+    flex: none;
+    color: var(--t1);
+    font-size: var(--fs-small);
+  }
+
+  /* Kolom balasan menempel di bawah dan setinggi satu baris saat kosong. */
+  .jk-app[data-mobile] .jk-reply {
+    padding: 0 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: var(--bg);
+    border-top: 1px solid var(--line);
+  }
+
+  .jk-app[data-mobile] .jk-reply .jk-comp-input {
+    min-height: 44px;
+    padding: 10px 4px;
+  }
+
+  /* Panel ponsel: layar penuh, tab bisa digeser, tutup berlabel jelas. */
+  .jk-app[data-mobile] .jk-pane-head {
+    min-height: calc(52px + env(safe-area-inset-top, 0px));
+    gap: 4px;
+    padding: 0 8px 0 6px;
+  }
+
+  .jk-app[data-mobile] .jk-pane-tabs {
+    scroll-padding-inline: 8px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .jk-app[data-mobile] .jk-pane-tab {
+    min-height: 44px;
+  }
+
+  .jk-app[data-mobile] .jk-panel-close {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: auto;
+    min-width: 44px;
+    height: 44px;
+    padding: 0 12px;
+  }
+
+  .jk-app[data-mobile] .jk-panel-close::after {
+    content: "Tutup";
+    font-size: var(--fs-small);
+  }
+}

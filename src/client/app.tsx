@@ -39,6 +39,8 @@ import {
   useWorkspaces,
 } from "./hooks";
 import { createApiClient, ApiError, type HeldPrompt } from "./lib/api";
+import { providersHash } from "./lib/format";
+import { Icon } from "./components/Icon";
 import { canShowLogout, needsTlsWarning, type AuthStatus } from "./lib/auth";
 import { buildCommands, type CommandId } from "./lib/commands";
 import { contextUsage } from "./lib/context";
@@ -48,6 +50,7 @@ import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-pref
 import { extractPlans } from "./lib/plans";
 import { effectiveMax, effectiveMaxNarrow, panelWidth } from "./lib/panel-width";
 import { NARROW_VIEWPORT_QUERY, useNarrowViewport } from "./lib/pane-narrow";
+import { mobileScreen, useMobile } from "./lib/mobile";
 import {
   SIDEBAR_DEFAULT,
   SIDEBAR_MAX,
@@ -276,6 +279,8 @@ export function App() {
 
   // Batas lebar panel mengikuti ruang jendela yang tersisa.
   const sempit = useNarrowViewport();
+  // Ponsel: tata letak satu kolom dengan layar terpisah (sesi, chat, panel).
+  const mobile = useMobile();
   const panelMax = sempit ? effectiveMaxNarrow(viewportW) : effectiveMax(viewportW, sideWidth);
 
   // Panel menyusut bila jendela mengecil, tapi nilai tersimpan pengguna tak
@@ -385,6 +390,34 @@ export function App() {
     setPanelOpen(next);
     writePanelPrefs({ open: next });
   }, [panelOpen]);
+
+  // Ponsel: panel tampil layar penuh, jadi tombol Back menutupnya. Satu entri
+  // riwayat ditambah saat panel dibuka; desktop tak menyentuh history.
+  const panelHistoryRef = useRef(false);
+  useEffect(() => {
+    if (!mobile) return;
+    if (panelOpen) {
+      if (!panelHistoryRef.current) {
+        panelHistoryRef.current = true;
+        window.history.pushState({ jkPanel: true }, "");
+      }
+    } else if (panelHistoryRef.current) {
+      panelHistoryRef.current = false;
+      window.history.back();
+    }
+  }, [mobile, panelOpen]);
+
+  useEffect(() => {
+    if (!mobile) return;
+    const onPop = (): void => {
+      if (!panelHistoryRef.current) return;
+      panelHistoryRef.current = false;
+      setPanelOpen(false);
+      writePanelPrefs({ open: false });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [mobile]);
 
   // Palette "Buka panel Git": buka panel lalu minta tab Git; preferensi ikut disimpan.
   const openGitPanel = useCallback((): void => {
@@ -847,6 +880,22 @@ export function App() {
       ? "jk-main"
       : "jk-main jk-main-home";
 
+  // Ponsel: satu kolom dengan layar terpisah (daftar sesi, chat, panel).
+  const screen = mobileScreen({
+    mobile,
+    hasSession: selected !== undefined,
+    hasPage:
+      showingProviders ||
+      showingMemory ||
+      showingWorkspaces ||
+      showingMcp ||
+      showingAudit ||
+      showingInstruksi ||
+      showingSchedules ||
+      showingUsage,
+  });
+  const showingHome = screen === "sesi";
+
   // Tanpa TLS di luar loopback, kata sandi dan cookie berjalan sebagai teks biasa.
   const tlsWarning = useMemo(() => {
     if (auth?.required !== true) return false;
@@ -870,6 +919,7 @@ export function App() {
   return (
     <div
       class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}`}
+      data-mobile={mobile ? "1" : undefined}
       style={{ "--side-w": `${sideWidth}px` }}
     >
       <Sidebar
@@ -1018,6 +1068,8 @@ export function App() {
               session={selected}
               status={timeline.status ?? selected.status}
               onMenu={openDrawer}
+              mobile={mobile}
+              onBack={onNew}
               panelOpen={panelOpen}
               onTogglePanel={togglePanel}
               error={headerError}
@@ -1135,11 +1187,30 @@ export function App() {
           </>
         ) : (
           <>
-            <Topbar onMenu={openDrawer} />
-            <section class="jk-home" aria-labelledby="jk-greeting">
-              <h2 id="jk-greeting" class="jk-greeting">
-                Mau mengerjakan apa hari ini?
-              </h2>
+            {showingHome ? (
+              <header class="jk-mobile-top">
+                <h1 class="jk-mobile-brand">Jejak</h1>
+                <a
+                  class="jk-icon-btn jk-mobile-settings"
+                  href={providersHash()}
+                  aria-label="Pengaturan"
+                  title="Pengaturan"
+                >
+                  <Icon name="gear" />
+                </a>
+              </header>
+            ) : (
+              <Topbar onMenu={openDrawer} />
+            )}
+            <section
+              class={`jk-home${showingHome ? " jk-home-mobile" : ""}`}
+              aria-labelledby={showingHome ? undefined : "jk-greeting"}
+            >
+              {!showingHome && (
+                <h2 id="jk-greeting" class="jk-greeting">
+                  Mau mengerjakan apa hari ini?
+                </h2>
+              )}
               <div class="jk-home-wrap">
                 <Composer
                   api={api}
@@ -1151,9 +1222,13 @@ export function App() {
                   runningSessions={runningSessions}
                   onHeld={onHeld}
                   restoreDraft={restoreDraft}
+                  mobile={showingHome}
                 />
               </div>
-              <RecentSessions sessions={sessions} />
+              <RecentSessions
+                sessions={sessions}
+                variant={showingHome ? "mobile" : "home"}
+              />
             </section>
           </>
         )}

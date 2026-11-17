@@ -453,6 +453,15 @@ export function PaneWindow(props: PaneWindowProps) {
     if (props.narrow === true && optionsOpen) setOptionsOpen(false);
   }, [props.narrow, optionsOpen]);
 
+  // Layar sempit: strip tab meluber, jadi tab aktif digulir ke tampak saat
+  // dipilih dari luar (rel ikon, palette, atau tab rencana).
+  const activeTab = props.pane.active;
+  useEffect(() => {
+    if (props.narrow !== true) return;
+    const tombol = tabRefs[activeTab];
+    tombol?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [props.narrow, activeTab, tabRefs]);
+
   const onTabKeyDown = (event: KeyboardEvent, tab: PanelTab): void => {
     const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
     if (!keys.includes(event.key)) return;
