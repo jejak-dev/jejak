@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambah
+
+- Akses dari mana saja lewat Cloudflare Tunnel: hostname, token, dan saklar di Pengaturan, Jejak menjalankan `cloudflared` sendiri. Token tersimpan 0600, perubahan hanya dari komputer server.
+
 ## [0.1.0-beta.7] - 2026-11-17
 
 ### Ditambah

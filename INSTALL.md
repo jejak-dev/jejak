@@ -129,6 +129,36 @@ Plain `http://` on a local network works, but voice dictation needs HTTPS
 (for example through Tailscale). Updates are installed over the existing app
 as long as they come from the same release signature.
 
+## Access from anywhere (Cloudflare Tunnel)
+
+To open Jejak from any network without installing anything on the phone, use a
+Cloudflare Tunnel with a domain you already have on Cloudflare. Jejak runs
+`cloudflared` for you; the tunnel is outbound only, so no port is opened.
+
+1. Install `cloudflared` on the computer that runs Jejak
+   (`brew install cloudflared` on macOS).
+2. In the Cloudflare dashboard go to **Networking → Tunnels → Create Tunnel**
+   (Cloudflared). Add a published application route: a hostname such as
+   `jejak.example.com`, service type **HTTP**, URL `localhost:4747`. Copy the
+   tunnel token (only the token; do not run the install command).
+3. In Jejak open **Settings → Keamanan**. Create an access password and turn on
+   network access first. Then, under **Akses dari mana saja (Cloudflare)**, enter
+   the hostname and token and press **Aktifkan**.
+4. Open `https://jejak.example.com` on any device, or enter it as the server
+   address in the Android app. Sign in with the access password.
+
+Notes:
+
+- Tunnel settings can only be changed on the computer that runs Jejak, never
+  from a remote session. Someone who signs in from the internet cannot open or
+  change the tunnel.
+- The token is stored in `~/.jejak/tunnel-token` (mode 0600) and is never shown
+  again. Use **Hapus token** to remove it.
+- This exposes Jejak to the internet, and the agent can run commands on your
+  computer. Use a strong password. For a second lock, add a Cloudflare Access
+  policy (email or Google login) in front of the hostname.
+- HTTPS comes from Cloudflare, so voice dictation works too.
+
 ## Automatic updates
 
 Jejak updates itself. The app checks for a new release about every six hours,

@@ -132,6 +132,37 @@ diperbarui; tampilan dimuat dari server.
 (misalnya lewat Tailscale). Pembaruan terpasang di atas aplikasi yang ada
 selama berasal dari tanda tangan rilis yang sama.
 
+## Akses dari mana saja (Cloudflare Tunnel)
+
+Supaya Jejak bisa dibuka dari jaringan mana pun tanpa memasang apa pun di
+ponsel, pakai Cloudflare Tunnel dengan domain yang sudah ada di Cloudflare.
+Jejak menjalankan `cloudflared` sendiri; tunnel hanya koneksi keluar, jadi tidak
+ada port yang dibuka.
+
+1. Pasang `cloudflared` di komputer yang menjalankan Jejak
+   (`brew install cloudflared` di macOS).
+2. Di dashboard Cloudflare buka **Networking → Tunnels → Create Tunnel**
+   (Cloudflared). Tambahkan published application route: hostname seperti
+   `jejak.contoh.com`, tipe layanan **HTTP**, URL `localhost:4747`. Salin token
+   tunnel (token saja; perintah instalasinya tidak perlu dijalankan).
+3. Di Jejak buka **Pengaturan → Keamanan**. Buat sandi akses dan nyalakan akses
+   dari jaringan lebih dulu. Lalu di bagian **Akses dari mana saja (Cloudflare)**
+   isi hostname dan token, kemudian tekan **Aktifkan**.
+4. Buka `https://jejak.contoh.com` di perangkat mana pun, atau isikan sebagai
+   alamat server di aplikasi Android. Masuk dengan sandi akses.
+
+Catatan:
+
+- Pengaturan tunnel hanya bisa diubah di komputer yang menjalankan Jejak, tidak
+  dari sesi jarak jauh. Orang yang berhasil masuk dari internet tidak bisa
+  membuka atau mengubah tunnel.
+- Token disimpan di `~/.jejak/tunnel-token` (mode 0600) dan tidak pernah
+  ditampilkan lagi. Pakai **Hapus token** untuk menghapusnya.
+- Ini membuka Jejak ke internet, padahal agent bisa menjalankan perintah di
+  komputermu. Pakai sandi yang kuat. Untuk kunci kedua, pasang kebijakan
+  Cloudflare Access (login email atau Google) di depan hostname.
+- HTTPS disediakan Cloudflare, jadi dikte suara ikut berfungsi.
+
 ## Pembaruan otomatis
 
 Jejak memperbarui dirinya sendiri. Aplikasi memeriksa rilis baru sekitar
