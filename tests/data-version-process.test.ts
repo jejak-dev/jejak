@@ -56,6 +56,7 @@ test("data lebih baru dari aplikasi: keluar 1 dengan pesan jelas", async () => {
   expect(stderr).toContain("lebih baru");
   expect(stderr).toContain(VERSI_BARU);
   expect(stderr).toContain("JEJAK_HOME");
+  expect(stderr).toContain("Aplikasi yang berjalan:");
   // Data tak boleh berubah dan tak ada cadangan yang dibuat.
   expect(await readdir(join(home, "backup")).catch(() => [])).toEqual([]);
   const isi = JSON.parse(

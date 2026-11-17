@@ -214,6 +214,10 @@ switch (args.command) {
     } catch (error) {
       if (error instanceof DataVersionError) {
         console.error(error.message);
+        if (error.code === "newer") {
+          // Bantu mengenali salinan aplikasi ganda (mis. /Applications vs ~/Applications).
+          console.error(`Aplikasi yang berjalan: ${process.execPath}`);
+        }
         process.exit(1);
       }
       throw error;
