@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -63,7 +63,8 @@ import {
 import type { SandboxMode, SandboxStore } from "../sandbox/sandbox-config";
 import { redactSecrets } from "../security/redact";
 import { redactEvent } from "../security/redact-event";
-import { SECRET_BLOCK_REASON, checkSecretAccess } from "../security/secret-paths";
+import { SECRET_BLOCK_REASON, checkSecretAccess, resolveSecretReadPath } from "../security/secret-paths";
+import { redactEnvFileText } from "../security/env-redact";
 import type { SecretAllowStore } from "../security/secret-allow-store";
 import { WorktreeError, type WorktreeInfo, type WorktreeService } from "../git/worktree-service";
 import type { SessionStore, StoredSession } from "./session-store";
@@ -704,6 +705,20 @@ export class SessionManager {
       store.append({ kind, summary, sessionId, meta });
     } catch {
       // Audit tidak boleh merusak sesi.
+    }
+  }
+
+  /**
+   * Baca isi `.env` untuk ditampilkan tersamar; `undefined` bila tak ada,
+   * gagal dibaca, atau lebih dari 64 KB.
+   */
+  private readEnvForDisplay(absPath: string): string | undefined {
+    try {
+      const info = statSync(absPath);
+      if (!info.isFile() || info.size > 64 * 1024) return undefined;
+      return readFileSync(absPath, "utf8");
+    } catch {
+      return undefined;
     }
   }
 
@@ -2752,12 +2767,31 @@ export class SessionManager {
         );
         if (!verdict.blocked) return undefined;
         const rule = verdict.rule ?? "";
+        const envPath = resolveSecretReadPath({
+          toolName: call.toolName,
+          toolInput: call.toolInput,
+          cwd: record.info.cwd,
+        });
+        const envText = envPath === undefined ? undefined : this.readEnvForDisplay(envPath);
         this.audit(
           "rahasia-diblokir",
           `Akses ke berkas rahasia diblokir: ${call.toolName}`,
           record.info.id,
-          { tool: call.toolName, aturan: rule, sub: call.agentId !== undefined },
+          {
+            tool: call.toolName,
+            aturan: rule,
+            sub: call.agentId !== undefined,
+            ...(envText === undefined ? {} : { tampilan: "disamarkan" }),
+          },
         );
+        if (envText !== undefined) {
+          return {
+            reason:
+              "Berkas .env dibaca dengan nilai rahasia disamarkan (nilai disembunyikan oleh kebijakan rahasia, jangan minta pengguna menempelkannya kecuali benar-benar perlu). Isi:\n" +
+              redactEnvFileText(envText),
+            rule: verdict.rule,
+          };
+        }
         return { reason: verdict.reason ?? SECRET_BLOCK_REASON, rule: verdict.rule };
       };
     }

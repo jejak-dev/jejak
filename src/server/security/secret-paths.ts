@@ -146,6 +146,33 @@ function ruleForPath(absPath: string, platform: NodeJS.Platform): string | undef
   return undefined;
 }
 
+/**
+ * Jalur absolut ternormalisasi bila panggilan `Read` menyasar berkas `.env`
+ * atau `.env.*`; selain itu `undefined`. Dipakai untuk menampilkan isi `.env`
+ * yang disamarkan sebagai alasan penolakan.
+ */
+export function resolveSecretReadPath(
+  check: SecretAccessCheck,
+  options: { platform?: NodeJS.Platform } = {},
+): string | undefined {
+  try {
+    if (!isRecord(check)) return undefined;
+    if (check.toolName !== "Read") return undefined;
+    const raw = stringField(check.toolInput, "file_path");
+    if (raw === undefined || raw === "") return undefined;
+    const cwd =
+      typeof check.cwd === "string" && check.cwd !== "" ? check.cwd : process.cwd();
+    const home =
+      typeof check.home === "string" && check.home !== "" ? check.home : homedir();
+    const platform = options.platform ?? process.platform;
+    const absPath = normalizePath(raw, cwd, home, platform);
+    const rule = ruleForPath(absPath, platform);
+    return rule === ".env" || rule === ".env.*" ? absPath : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Heuristik pola glob yang menyebut nama rahasia. */
 function ruleForPattern(pattern: string, platform: NodeJS.Platform): string | undefined {
   const p = pathApi(platform);

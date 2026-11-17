@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRunner, RunInput } from "../src/server/agent";
@@ -99,6 +99,28 @@ describe("SessionManager penolakan berkas rahasia", () => {
     expect(serialized).not.toContain(dir);
     expect(serialized).not.toContain("file_path");
     expect(serialized).not.toContain("command");
+  });
+
+  test("Read .env -> alasan memuat isi tersamar, bukan nilai rahasia", async () => {
+    const audit = memoryAudit();
+    const results: Array<GuardResult | undefined> = [];
+    await writeFile(join(dir, ".env"), "DB_HOST=localhost\nDB_PASSWORD=rahasia123\n");
+    const mgr = manager(
+      guardingRunner(
+        [{ toolName: "Read", toolInput: { file_path: join(dir, ".env") } }],
+        results,
+      ),
+      { audit },
+    );
+
+    const info = await mgr.create({ prompt: "p", cwd: dir });
+    await mgr.done(info.id);
+
+    expect(results[0]?.rule).toBe(".env");
+    expect(results[0]?.reason).toContain("DB_PASSWORD=[disembunyikan");
+    expect(results[0]?.reason).toContain("DB_HOST=localhost");
+    expect(results[0]?.reason).not.toContain("rahasia123");
+    expect(entriesOf(audit, info.id)[0]?.meta).toMatchObject({ tampilan: "disamarkan" });
   });
 
   test("tidak diblokir -> tanpa entri audit", async () => {
