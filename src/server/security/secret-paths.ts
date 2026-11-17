@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { isWindows, pathApi, toSlash } from "../platform";
 
@@ -79,7 +79,7 @@ function expandHome(raw: string, home: string, platform: NodeJS.Platform): strin
 }
 
 /** Jalur absolut ternormalisasi; realpath bila ada agar symlink ikut tertangkap. */
-function normalizePath(
+function logicalPath(
   raw: string,
   cwd: string,
   home: string,
@@ -87,13 +87,94 @@ function normalizePath(
 ): string {
   const p = pathApi(platform);
   const expanded = expandHome(raw, home, platform);
-  const absolute = p.isAbsolute(expanded) ? p.resolve(expanded) : p.resolve(cwd, expanded);
+  return p.isAbsolute(expanded) ? p.resolve(expanded) : p.resolve(cwd, expanded);
+}
+
+function normalizePath(
+  raw: string,
+  cwd: string,
+  home: string,
+  platform: NodeJS.Platform,
+): string {
+  const absolute = logicalPath(raw, cwd, home, platform);
   try {
     if (existsSync(absolute)) return realpathSync(absolute);
   } catch {
     // realpath bisa gagal (izin, balapan hapus); pakai jalur logis.
   }
   return absolute;
+}
+
+/** Apakah entri (berkas, direktori, atau symlink) sudah ada tanpa mengikuti symlink. */
+function pathEntryExists(absPath: string): boolean {
+  try {
+    lstatSync(absPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Basename berkas `.env.*` yang dianggap contoh/templat publik. */
+function isPublicEnvName(name: string, platform: NodeJS.Platform): boolean {
+  if (!startsWithName(name, ".env.", platform)) return false;
+  const suffix = name.slice(".env".length);
+  return ENV_PUBLIC_SUFFIXES.some((entry) => sameName(suffix, entry, platform));
+}
+
+/** Opsi `cp` yang menyalin direktori (rekursif); segmen seperti ini tak dibebaskan. */
+function isRecursiveCpOption(option: string): boolean {
+  if (option.startsWith("--")) return option === "--recursive" || option === "--archive";
+  return /[rRa]/.test(option.slice(1));
+}
+
+/**
+ * Indeks token TUJUAN pada segmen `cp <publik> <.env baru>` yang boleh
+ * dibebaskan dari penjaga rahasia. Segmen lain mengembalikan himpunan kosong.
+ */
+function cpAllowedDestinationIndices(
+  tokens: readonly string[],
+  cwd: string,
+  home: string,
+  platform: NodeJS.Platform,
+  commandEnvFile: string | undefined,
+): Set<number> {
+  const none = new Set<number>();
+  if (tokens.length === 0) return none;
+  if (basenameOf(tokens[0] ?? "") !== "cp") return none;
+
+  const operands: Array<{ token: string; index: number }> = [];
+  let optionsDone = false;
+  for (let index = 1; index < tokens.length; index += 1) {
+    const token = tokens[index] ?? "";
+    if (!optionsDone && token === "--") {
+      optionsDone = true;
+      continue;
+    }
+    if (!optionsDone && token.startsWith("-") && token !== "-") {
+      if (isRecursiveCpOption(token)) return none;
+      continue;
+    }
+    operands.push({ token, index });
+  }
+  if (operands.length !== 2) return none;
+
+  const source = operands[0]!;
+  const dest = operands[1]!;
+
+  // Sumber harus berkas contoh publik, juga setelah symlink diselesaikan.
+  const sourceAbs = normalizePath(source.token, cwd, home, platform);
+  if (!isPublicEnvName(pathApi(platform).basename(sourceAbs), platform)) return none;
+  if (commandEnvFile !== undefined && sameName(sourceAbs, commandEnvFile, platform)) return none;
+
+  // Tujuan harus `.env`/`.env.*` yang belum ada.
+  const destAbs = logicalPath(dest.token, cwd, home, platform);
+  const destRule = ruleForPath(destAbs, platform);
+  if (destRule !== ".env" && destRule !== ".env.*") return none;
+  if (commandEnvFile !== undefined && sameName(destAbs, commandEnvFile, platform)) return none;
+  if (pathEntryExists(destAbs)) return none;
+
+  return new Set([dest.index]);
 }
 
 /** Perbandingan nama berkas; Windows tak membedakan huruf besar-kecil. */
@@ -394,8 +475,23 @@ export function checkSecretAccess(
       case "Read":
       case "Edit":
       case "MultiEdit":
-      case "Write":
         return blockedByPath(stringField(toolInput, "file_path"));
+      case "Write": {
+        const raw = stringField(toolInput, "file_path");
+        // Membuat `.env`/`.env.*` BARU boleh; menimpa yang sudah ada tetap diblokir.
+        if (raw !== undefined && raw !== "") {
+          const absPath = logicalPath(raw, cwd, home, platform);
+          const rule = ruleForPath(absPath, platform);
+          if (
+            (rule === ".env" || rule === ".env.*") &&
+            !pathEntryExists(absPath) &&
+            !(commandEnvFile !== undefined && sameName(absPath, commandEnvFile, platform))
+          ) {
+            return { blocked: false };
+          }
+        }
+        return blockedByPath(raw);
+      }
       case "NotebookEdit":
         return blockedByPath(stringField(toolInput, "notebook_path"));
       case "Grep": {
@@ -413,7 +509,21 @@ export function checkSecretAccess(
           const envVerdict = commandEnvVerdict(command, commandEnv.keys);
           if (envVerdict.blocked) return envVerdict;
         }
-        for (const token of tokenizeCommand(command)) {
+        const tokensWithIndex: Array<{ token: string; exempt: boolean }> = [];
+        for (const segment of commandSegments(command)) {
+          const segmentTokens = tokenizeCommand(segment);
+          const exemptIndices = cpAllowedDestinationIndices(
+            segmentTokens,
+            cwd,
+            home,
+            platform,
+            commandEnvFile,
+          );
+          segmentTokens.forEach((token, index) => {
+            tokensWithIndex.push({ token, exempt: exemptIndices.has(index) });
+          });
+        }
+        for (const { token, exempt } of tokensWithIndex) {
           // Agent tidak boleh mengubah daftar izinnya sendiri lewat API.
           // `/secret-allow` mencakup rute nyata `/api/sessions/:id/secret-allow`.
           if (token.includes("/api/secret-allow") || token.includes("/secret-allow")) {
@@ -448,6 +558,7 @@ export function checkSecretAccess(
           ) {
             continue;
           }
+          if (exempt) continue;
           const verdict = blockedByPath(token);
           if (verdict.blocked) return verdict;
         }

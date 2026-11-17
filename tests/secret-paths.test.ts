@@ -114,11 +114,12 @@ test("isAllowed melonggarkan jalur yang cocok", () => {
   expectBlocked(throwing, ".env");
 });
 
-test("tool per-tool", () => {
+test("tool per-tool", async () => {
   expectBlocked(tool("Read", { file_path: ".env" }), ".env");
   expectBlocked(tool("Edit", { file_path: ".env" }), ".env");
   expectBlocked(tool("MultiEdit", { file_path: ".env" }), ".env");
-  expectBlocked(tool("Write", { file_path: ".env" }), ".env");
+  await writeFile(join(dir, ".env"), "TOKEN=sintetis\n");
+  expectBlocked(tool("Write", { file_path: ".env" }, { cwd: dir }), ".env");
   expectBlocked(tool("NotebookEdit", { notebook_path: "kunci.pem" }), "*.pem");
 
   expectBlocked(tool("Grep", { pattern: "X", path: ".env" }), ".env");
@@ -143,6 +144,49 @@ test("Bash upaya terbaik", () => {
   expect(tool("Bash", { command: "ls" })).toEqual({ blocked: false });
   expect(tool("Bash", { command: "cat README.md" })).toEqual({ blocked: false });
   expect(tool("Bash", { command: "echo environment" })).toEqual({ blocked: false });
+});
+
+test("Write boleh membuat .env baru, menimpa yang ada tetap diblokir", async () => {
+  const opts = { cwd: dir };
+  expect(tool("Write", { file_path: ".env" }, opts)).toEqual({ blocked: false });
+  expect(tool("Write", { file_path: ".env.local" }, opts)).toEqual({ blocked: false });
+
+  await writeFile(join(dir, ".env"), "TOKEN=sintetis\n");
+  expectBlocked(tool("Write", { file_path: ".env" }, opts), ".env");
+  // Symlink yang ada dihitung "ada" walau targetnya belum ada.
+  await symlink(join(dir, ".env.belum-ada"), join(dir, ".env.symlink"));
+  expectBlocked(tool("Write", { file_path: ".env.symlink" }, opts), ".env.*");
+  // Edit tetap diblokir, baik berkas ada maupun belum.
+  expectBlocked(tool("Edit", { file_path: ".env.local" }, opts), ".env.*");
+  expectBlocked(tool("Edit", { file_path: ".env" }, opts), ".env");
+  expectBlocked(tool("MultiEdit", { file_path: ".env.local" }, opts), ".env.*");
+  expectBlocked(tool("NotebookEdit", { notebook_path: ".env" }, opts), ".env");
+});
+
+test("Bash cp berkas contoh ke .env baru boleh", async () => {
+  const opts = { cwd: dir };
+  await writeFile(join(dir, ".env.sample"), "TOKEN=kosong\n");
+  expect(tool("Bash", { command: "cp .env.sample .env" }, opts)).toEqual({ blocked: false });
+  expect(tool("Bash", { command: "cp -n .env.sample .env" }, opts)).toEqual({ blocked: false });
+  expect(tool("Bash", { command: "cp -- .env.sample .env.local" }, opts)).toEqual({ blocked: false });
+  expect(tool("Bash", { command: "cp .env.sample .env; echo hi" }, opts)).toEqual({
+    blocked: false,
+  });
+  // Opsi rekursif dan bentuk lain tak dibebaskan walau tujuan belum ada.
+  expectBlocked(tool("Bash", { command: "cp -r .env.sample .env.rekursif" }, opts), ".env.*");
+  expectBlocked(tool("Bash", { command: "cp --recursive .env.sample .env.rekursif" }, opts), ".env.*");
+
+  // Tujuan sudah ada -> diblokir.
+  await writeFile(join(dir, ".env"), "TOKEN=sintetis\n");
+  await writeFile(join(dir, ".env.local"), "TOKEN=sintetis\n");
+  expectBlocked(tool("Bash", { command: "cp .env.sample .env" }, opts), ".env");
+  // Sumber rahasia, tujuan lain, dan bentuk lain tetap diblokir.
+  expectBlocked(tool("Bash", { command: "cp .env .env.bak" }, opts), ".env");
+  expectBlocked(tool("Bash", { command: "cp .env.sample .env && cat .env" }, opts), ".env");
+  expectBlocked(tool("Bash", { command: "cp .env.sample .env.local" }, opts), ".env.*");
+  expectBlocked(tool("Bash", { command: "mv .env.sample .env.kedua" }, opts), ".env.*");
+  expectBlocked(tool("Bash", { command: "ln .env.sample .env.ketiga" }, opts), ".env.*");
+  expectBlocked(tool("Bash", { command: "cp .env.sample .env.keempat > .env" }, opts), ".env.*");
 });
 
 test("masukan aneh tidak melempar dan tidak memblokir", () => {
