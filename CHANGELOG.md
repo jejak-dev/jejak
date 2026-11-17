@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.7] - 2026-11-17
+
 ### Ditambah
 
 - APK Android klien tipis yang membuka server Jejak lewat WebView; dibangun dengan `bun run build:apk` dan dilampirkan ke rilis GitHub bila rahasia keystore diisi.
