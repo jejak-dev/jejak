@@ -33,7 +33,7 @@ const PATTERNS: SecretPattern[] = [
 const TOKEN_ACAK_PANJANG = /[A-Za-z0-9+/=_-]{40,}/g;
 
 /** Panjang segmen jalur yang masih dianggap nama berkas, bukan string acak. */
-const MAX_SEGMENT_JALUR = 32;
+const MAX_SEGMENT_JALUR = 64;
 
 /** Panjang minimal segmen huruf besar + angka agar dianggap string acak. */
 const MIN_SEGMENT_ACAK = 6;
@@ -68,6 +68,8 @@ function tampakJalur(token: string): boolean {
   for (const bagian of segmen) {
     if (bagian.length >= MAX_SEGMENT_JALUR) return false;
     if (segmenAcak(bagian)) return false;
+    // Hex panjang (hash, kunci) bukan nama berkas, walau diapit "/".
+    if (bagian.length >= 32 && /^[0-9a-f]+$/i.test(bagian)) return false;
   }
   return true;
 }

@@ -79,6 +79,16 @@ describe("findSecret: jalur berkas bukan rahasia", () => {
     expect(findSecret(`Berkas diubah: ${jalur}`)).toBeNull();
   });
 
+  test("nama berkas panjang bergaris bawah lolos", () => {
+    expect(findSecret("Berkas diubah: …/memory/deepseek_worker_delegation_pattern.md")).toBeNull();
+    expect(findSecret("a /memory/limbah_keluar_two_track_flow_change b")).toBeNull();
+  });
+
+  test("hex panjang di antara garis miring tetap rahasia", () => {
+    const hex = "0123456789abcdef0123456789abcdef01234567";
+    expect(findSecret(`/x/${hex}/y`)).toBe("string acak panjang");
+  });
+
   test("jalur relatif panjang lolos", () => {
     const jalur = "src/server/memory/session-summary/session-summary-helper";
     expect(findSecret(`Berkas diubah: ${jalur}`)).toBeNull();
