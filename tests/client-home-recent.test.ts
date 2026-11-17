@@ -115,6 +115,18 @@ describe("RecentSessions", () => {
     const teks = teksVNode(baris?.props.children as ComponentChild);
     expect(teks).toContain("Refactor beranda");
     expect(teks).toContain("jejak");
+    const waktu = cariVNode(vnode, (n) => n.type === "time");
+    expect(waktu).toHaveLength(1);
+    expect(teksVNode(waktu[0]?.props.children as ComponentChild)).not.toBe("");
+  });
+
+  test("folder tidak lagi memakai kelas jk-mono", () => {
+    const vnode = RecentSessions({ sessions: [sesi(1)] }) as VNode;
+    const folder = cariVNode(vnode, (n) =>
+      String(propVNode(n)["class"] ?? "").includes("jk-home-recent-folder"),
+    );
+    expect(folder).toHaveLength(1);
+    expect(String(propVNode(folder[0])["class"])).not.toContain("jk-mono");
   });
 });
 

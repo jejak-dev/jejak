@@ -90,10 +90,10 @@ describe("komposer di layar HP", () => {
     const blok = blokMedia(SENTUH_SEMPIT, ".jk-comp-meta .jk-chip");
     expect(blok).not.toBe("");
     const meta = isiAturan(blok, ".jk-comp-meta") ?? "";
-    expect(meta).toMatch(/gap:\s*6px/);
+    expect(meta).toMatch(/gap:\s*4px/);
     const chip = isiAturan(blok, ".jk-comp-meta .jk-chip") ?? "";
-    expect(chip).toMatch(/height:\s*34px/);
-    expect(chip).toMatch(/min-height:\s*34px/);
+    expect(chip).toMatch(/height:\s*40px/);
+    expect(chip).toMatch(/min-height:\s*40px/);
   });
 
   test("chip folder kerja memakai satu baris penuh", () => {

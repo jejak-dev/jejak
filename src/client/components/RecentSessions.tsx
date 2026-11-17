@@ -69,7 +69,7 @@ export function RecentSessions({ sessions, limit = 4, variant = "home" }: Recent
                   aria-hidden={label === undefined ? "true" : undefined}
                 />
                 <span class="jk-home-recent-name">{session.title}</span>
-                <span class="jk-home-recent-folder jk-mono">{folderName(session.cwd)}</span>
+                <span class="jk-home-recent-folder">{folderName(session.cwd)}</span>
                 <time class="jk-home-recent-time" dateTime={session.updatedAt}>
                   {formatAgo(session.updatedAt, now)}
                 </time>
