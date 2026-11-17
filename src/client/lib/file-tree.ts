@@ -87,3 +87,28 @@ export function toggleExpanded(expanded: ReadonlySet<string>, path: string): Set
   else next.add(path);
   return next;
 }
+
+export const FILE_TREE_HIDDEN_KEY = "jejak.fileTreeHidden";
+
+/** Baca nilai tersimpan: hanya "1" yang berarti tersembunyi. */
+export function parseTreeHidden(raw: string | null | undefined): boolean {
+  return raw === "1";
+}
+
+/** Muat pilihan sembunyikan pohon; penyimpanan rusak berarti tetap tampil. */
+export function loadTreeHidden(storage?: Pick<Storage, "getItem">): boolean {
+  try {
+    return parseTreeHidden(storage?.getItem(FILE_TREE_HIDDEN_KEY));
+  } catch {
+    return false;
+  }
+}
+
+/** Simpan pilihan sembunyikan pohon; penyimpanan diblokir diabaikan. */
+export function saveTreeHidden(storage: Pick<Storage, "setItem">, hidden: boolean): void {
+  try {
+    storage.setItem(FILE_TREE_HIDDEN_KEY, hidden ? "1" : "0");
+  } catch {
+    // penyimpanan tidak tersedia
+  }
+}

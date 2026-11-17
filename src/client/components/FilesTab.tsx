@@ -6,7 +6,14 @@ import {
   type FileContent,
   type SearchResult,
 } from "../lib/api";
-import { breadcrumbs, formatSize, joinPath, parentPath, splitLines } from "../lib/files";
+import { breadcrumbs, formatSize, joinPath, parentPath } from "../lib/files";
+import {
+  ancestorDirs,
+  isMarkdownPath,
+  loadTreeHidden,
+  saveTreeHidden,
+  toggleExpanded,
+} from "../lib/file-tree";
 import {
   describeSaveError,
   segmentByRanges,
@@ -14,7 +21,10 @@ import {
   isEditable,
 } from "../lib/editor";
 import { formatCount } from "../lib/format";
+import { CodeView } from "./CodeView";
+import { FileTree } from "./FileTree";
 import { Icon } from "./Icon";
+import { Markdown } from "./Markdown";
 
 export interface FilesTabProps {
   api: ApiClient;
@@ -97,6 +107,13 @@ export function FilesTab({
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [savedNote, setSavedNote] = useState(false);
   const [highlightLine, setHighlightLine] = useState<number | undefined>(undefined);
+  const [codeMode, setCodeMode] = useState(false);
+  const [treeHidden, setTreeHidden] = useState(() =>
+    loadTreeHidden(typeof localStorage === "undefined" ? undefined : localStorage),
+  );
+  const [treeListings, setTreeListings] = useState<Record<string, DirEntry[]>>({});
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
+  const [treeFilter, setTreeFilter] = useState("");
 
   const requestRef = useRef(0);
   const searchRef = useRef(0);
@@ -142,8 +159,7 @@ export function FilesTab({
     }
   };
 
-  const resetEditor = (): void => {
-    setEditing(false);
+  const resetEditor = (): void => {    setEditing(false);
     setDraft("");
     setSaveError(undefined);
     setConflict(false);
@@ -317,6 +333,7 @@ export function FilesTab({
   const openFile = (path: string, line?: number): void => {
     leave(() => {
       resetEditor();
+      setCodeMode(false);
       setDir(parentPath(path));
       void run(path, "file", line);
     });
@@ -328,6 +345,74 @@ export function FilesTab({
       setDir(dir);
       void run(dir, "list");
     });
+  };
+
+  /** Muat isi satu folder pohon bila belum ada di cache. */
+  const loadTreeDir = async (path: string): Promise<void> => {
+    try {
+      const payload = await api.getFiles(sessionId, path === "" ? undefined : path, repo);
+      setTreeListings((current) => ({ ...current, [path]: payload.entries }));
+    } catch {
+      // pohon hanya pelengkap; kegagalan muat tidak mengganggu penampil
+    }
+  };
+
+  const toggleTreeDir = (path: string): void => {
+    const willExpand = !treeExpanded.has(path);
+    setTreeExpanded((current) => toggleExpanded(current, path));
+    if (willExpand && treeListings[path] === undefined) void loadTreeDir(path);
+  };
+
+  // Pohon: reset cache saat repo/sesi/refresh berganti, lalu muat akar dan
+  // folder induk berkas yang sedang dibuka.
+  useEffect(() => {
+    if (!open) return;
+    setTreeListings({});
+    setTreeExpanded(new Set());
+    setTreeFilter("");
+    void loadTreeDir("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, sessionId, refreshToken, repo]);
+
+  useEffect(() => {
+    if (!open || file === undefined) return;
+    const dirs = ancestorDirs(file.path);
+    setTreeExpanded((current) => {
+      const next = new Set(current);
+      for (const path of dirs) next.add(path);
+      return next;
+    });
+    for (const path of dirs) {
+      if (treeListings[path] === undefined) void loadTreeDir(path);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, file?.path, sessionId, repo]);
+
+  const toggleTree = (): void => {
+    setTreeHidden((current) => {
+      const next = !current;
+      if (typeof localStorage !== "undefined") saveTreeHidden(localStorage, next);
+      return next;
+    });
+  };
+
+  /** Tautan relatif di pratinjau Markdown -> berkas di repo. */
+  const openRelativeLink = (href: string): boolean => {
+    if (file === undefined) return false;
+    if (href.startsWith("#") || /^[A-Za-z][A-Za-z0-9+.-]*:/.test(href)) return false;
+    const clean = href.split("#")[0]?.split("?")[0] ?? "";
+    if (clean === "") return false;
+    const base = parentPath(file.path);
+    const segments = (clean.startsWith("/") ? clean.slice(1) : joinPath(base, clean)).split("/");
+    const resolved: string[] = [];
+    for (const segment of segments) {
+      if (segment === "" || segment === ".") continue;
+      if (segment === "..") resolved.pop();
+      else resolved.push(segment);
+    }
+    if (resolved.length === 0) return false;
+    openFile(resolved.join("/"));
+    return true;
   };
 
   const startEdit = (): void => {
@@ -415,6 +500,9 @@ export function FilesTab({
   const crumbs = breadcrumbs(dir);
   const query = searchInput.trim();
   const showResults = query !== "";
+  const isMarkdown = file !== undefined && isMarkdownPath(file.path);
+  const showPreview = isMarkdown && !codeMode;
+  const showTree = !treeHidden;
 
   return (
     <div class="jk-panel-body">
@@ -471,126 +559,155 @@ export function FilesTab({
 
       {file !== undefined ? (
         <div class="jk-panel-file-view">
-          <div class="jk-panel-file-head">
-            <button
-              ref={backRef}
-              type="button"
-              class="jk-link-btn"
-              onClick={goBack}
-            >
-              ← Kembali
-            </button>
-            <span class="jk-panel-name" title={file.path}>
-              {file.path}
-            </span>
-            {dirty && <span class="jk-dirty-mark">Belum disimpan</span>}
-            {!dirty && savedNote && <span class="jk-saved-mark" role="status">Tersimpan</span>}
-            <span class="jk-panel-size">{formatSize(file.size)}</span>
-            {!editing && !editDisabled && isEditable(file) && (
+          <div class={showTree ? "jk-file-split" : undefined}>
+            <div class="jk-file-main">
+            <div class="jk-panel-file-head">
               <button
+                ref={backRef}
                 type="button"
-                class="jk-button jk-button-secondary jk-panel-edit-btn"
-                disabled={sessionRunning}
-                title={sessionRunning ? "Tunggu sesi selesai" : undefined}
-                onClick={startEdit}
+                class="jk-link-btn"
+                onClick={goBack}
               >
-                Sunting
+                ← Kembali
               </button>
-            )}
-            {editing && (
-              <>
+              <span class="jk-panel-name" title={file.path}>
+                {file.path}
+              </span>
+              {dirty && <span class="jk-dirty-mark">Belum disimpan</span>}
+              {!dirty && savedNote && <span class="jk-saved-mark" role="status">Tersimpan</span>}
+              <span class="jk-panel-size">{formatSize(file.size)}</span>
+              {!editing && isMarkdown && (
                 <button
                   type="button"
-                  class="jk-button jk-button-primary jk-panel-edit-btn"
-                  disabled={!dirty || saving}
-                  onClick={() => void save()}
+                  class="jk-icon-btn jk-panel-tool-btn"
+                  aria-label={codeMode ? "Tampilkan pratinjau" : "Tampilkan kode"}
+                  aria-pressed={codeMode}
+                  title={codeMode ? "Tampilkan pratinjau" : "Tampilkan kode"}
+                  onClick={() => setCodeMode((value) => !value)}
                 >
-                  {saving ? "Menyimpan…" : "Simpan"}
+                  <Icon name={codeMode ? "eye" : "code"} />
                 </button>
+              )}
+              <button
+                type="button"
+                class="jk-icon-btn jk-panel-tool-btn"
+                aria-label={treeHidden ? "Tampilkan pohon berkas" : "Sembunyikan pohon berkas"}
+                aria-pressed={!treeHidden}
+                title={treeHidden ? "Tampilkan pohon berkas" : "Sembunyikan pohon berkas"}
+                onClick={toggleTree}
+              >
+                <Icon name="list" />
+              </button>
+              {!editing && !editDisabled && isEditable(file) && (
                 <button
                   type="button"
                   class="jk-button jk-button-secondary jk-panel-edit-btn"
-                  onClick={cancelEdit}
+                  disabled={sessionRunning}
+                  title={sessionRunning ? "Tunggu sesi selesai" : undefined}
+                  onClick={startEdit}
                 >
-                  Batal
+                  Sunting
                 </button>
+              )}
+              {editing && (
+                <>
+                  <button
+                    type="button"
+                    class="jk-button jk-button-primary jk-panel-edit-btn"
+                    disabled={!dirty || saving}
+                    onClick={() => void save()}
+                  >
+                    {saving ? "Menyimpan…" : "Simpan"}
+                  </button>
+                  <button
+                    type="button"
+                    class="jk-button jk-button-secondary jk-panel-edit-btn"
+                    onClick={cancelEdit}
+                  >
+                    Batal
+                  </button>
+                </>
+              )}
+            </div>
+
+            {editDisabled && !editing && (
+              <p class="jk-panel-note">Penyuntingan berkas dimatikan di server.</p>
+            )}
+            {sessionRunning && !editing && !editDisabled && isEditable(file) && (
+              <p class="jk-panel-note">Tunggu sesi selesai untuk menyunting berkas ini.</p>
+            )}
+
+            {saveError !== undefined && (
+              <div class="jk-panel-error">
+                <p class="jk-error-line" role="alert">
+                  {saveError}
+                </p>
+                {conflict && (
+                  <div class="jk-save-actions">
+                    {confirmReload ? (
+                      <>
+                        <span class="jk-panel-note">Buang perubahan?</span>
+                        <button type="button" class="jk-link-btn" onClick={() => void reloadFromDisk()}>
+                          Buang
+                        </button>
+                        <button type="button" class="jk-link-btn" onClick={() => setConfirmReload(false)}>
+                          Tetap di sini
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button type="button" class="jk-link-btn" onClick={() => setConfirmReload(true)}>
+                          Muat ulang dari disk
+                        </button>
+                        <button type="button" class="jk-link-btn" onClick={keepEditingAfterConflict}>
+                          Tetap sunting
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {file.binary ? (
+              <p class="jk-panel-note">Berkas biner tidak ditampilkan.</p>
+            ) : editing ? (
+              <textarea
+                class="jk-editor"
+                aria-label={`Sunting ${file.path}`}
+                spellcheck={false}
+                value={draft}
+                onInput={(event) => setDraft((event.currentTarget as HTMLTextAreaElement).value)}
+                onKeyDown={onEditorKeyDown}
+              />
+            ) : showPreview ? (
+              <div class="jk-file-preview">
+                <Markdown text={file.content ?? ""} onLink={openRelativeLink} />
+              </div>
+            ) : (
+              <>
+                <CodeView
+                  content={file.content ?? ""}
+                  path={file.path}
+                  highlightLine={highlightLine}
+                  viewRef={codeRef}
+                />
+                {file.truncated && <p class="jk-panel-note">Hanya 256 KB pertama yang ditampilkan.</p>}
               </>
             )}
           </div>
-
-          {editDisabled && !editing && (
-            <p class="jk-panel-note">Penyuntingan berkas dimatikan di server.</p>
-          )}
-          {sessionRunning && !editing && !editDisabled && isEditable(file) && (
-            <p class="jk-panel-note">Tunggu sesi selesai untuk menyunting berkas ini.</p>
-          )}
-
-          {saveError !== undefined && (
-            <div class="jk-panel-error">
-              <p class="jk-error-line" role="alert">
-                {saveError}
-              </p>
-              {conflict && (
-                <div class="jk-save-actions">
-                  {confirmReload ? (
-                    <>
-                      <span class="jk-panel-note">Buang perubahan?</span>
-                      <button type="button" class="jk-link-btn" onClick={() => void reloadFromDisk()}>
-                        Buang
-                      </button>
-                      <button type="button" class="jk-link-btn" onClick={() => setConfirmReload(false)}>
-                        Tetap di sini
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button type="button" class="jk-link-btn" onClick={() => setConfirmReload(true)}>
-                        Muat ulang dari disk
-                      </button>
-                      <button type="button" class="jk-link-btn" onClick={keepEditingAfterConflict}>
-                        Tetap sunting
-                      </button>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          {file.binary ? (
-            <p class="jk-panel-note">Berkas biner tidak ditampilkan.</p>
-          ) : editing ? (
-            <textarea
-              class="jk-editor"
-              aria-label={`Sunting ${file.path}`}
-              spellcheck={false}
-              value={draft}
-              onInput={(event) => setDraft((event.currentTarget as HTMLTextAreaElement).value)}
-              onKeyDown={onEditorKeyDown}
+          {showTree && (
+            <FileTree
+              listings={treeListings}
+              expanded={treeExpanded}
+              activePath={file.path}
+              filter={treeFilter}
+              onFilterChange={setTreeFilter}
+              onToggle={toggleTreeDir}
+              onOpen={openFile}
             />
-          ) : (
-            <>
-              <div
-                ref={codeRef}
-                class="jk-perm-code jk-panel-code"
-                tabIndex={0}
-                role="region"
-                aria-label={`Isi ${file.path}`}
-              >
-                {splitLines(file.content ?? "").map((line, index) => (
-                  <div
-                    class={`jk-perm-line${index + 1 === highlightLine ? " jk-line-hit" : ""}`}
-                    key={index}
-                    data-line={highlightLine === index + 1 ? index + 1 : undefined}
-                  >
-                    <i aria-hidden="true">{index + 1}</i>
-                    <span>{line === "" ? " " : line}</span>
-                  </div>
-                ))}
-              </div>
-              {file.truncated && <p class="jk-panel-note">Hanya 256 KB pertama yang ditampilkan.</p>}
-            </>
           )}
+          </div>
         </div>
       ) : (
         <>
