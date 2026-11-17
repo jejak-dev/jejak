@@ -113,6 +113,25 @@ administrator.
 
 Data disimpan di `%USERPROFILE%\.jejak`.
 
+## Pemasangan di Android (beta)
+
+Aplikasi Android adalah klien tipis: ia membuka server Jejak di komputer Anda
+lewat WebView. Tidak ada yang berjalan di ponsel, jadi APK jarang perlu
+diperbarui; tampilan dimuat dari server.
+
+1. Di komputer, aktifkan akses jaringan di pengaturan Jejak dan setel sandi
+   akses. Server hanya menerima host jaringan privat (`192.168.x.x`, `.local`,
+   `.ts.net`).
+2. Unduh `Jejak-<versi>.apk` dari
+   [GitHub Releases](https://github.com/jejak-dev/jejak/releases) lalu buka.
+   Izinkan pemasangan dari sumber ini saat Android menanyakan.
+3. Isi alamat server, misalnya `http://192.168.1.24:4747`, lalu masuk dengan
+   sandi akses.
+
+`http://` biasa di jaringan lokal berfungsi, tetapi dikte suara butuh HTTPS
+(misalnya lewat Tailscale). Pembaruan terpasang di atas aplikasi yang ada
+selama berasal dari tanda tangan rilis yang sama.
+
 ## Pembaruan otomatis
 
 Jejak memperbarui dirinya sendiri. Aplikasi memeriksa rilis baru sekitar

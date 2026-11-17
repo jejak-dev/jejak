@@ -110,6 +110,25 @@ administrator rights.
 
 Data is stored in `%USERPROFILE%\.jejak`.
 
+## Install on Android (beta)
+
+The Android app is a thin client: it opens the Jejak server running on your
+computer in a WebView. Nothing runs on the phone, so the APK rarely needs an
+update; the interface is loaded from the server.
+
+1. On the computer, turn on network access in Jejak settings and set an access
+   password. The server only accepts private-network hosts (`192.168.x.x`,
+   `.local`, `.ts.net`).
+2. Download `Jejak-<version>.apk` from
+   [GitHub Releases](https://github.com/jejak-dev/jejak/releases) and open it.
+   Allow installs from this source when Android asks.
+3. Enter the server address, for example `http://192.168.1.24:4747`, then sign
+   in with the access password.
+
+Plain `http://` on a local network works, but voice dictation needs HTTPS
+(for example through Tailscale). Updates are installed over the existing app
+as long as they come from the same release signature.
+
 ## Automatic updates
 
 Jejak updates itself. The app checks for a new release about every six hours,
