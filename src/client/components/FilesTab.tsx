@@ -21,6 +21,7 @@ import {
   isEditable,
 } from "../lib/editor";
 import { formatCount } from "../lib/format";
+import { CodeEditor } from "./CodeEditor";
 import { CodeView } from "./CodeView";
 import { FileTree } from "./FileTree";
 import { Icon } from "./Icon";
@@ -672,13 +673,12 @@ export function FilesTab({
             {file.binary ? (
               <p class="jk-panel-note">Berkas biner tidak ditampilkan.</p>
             ) : editing ? (
-              <textarea
-                class="jk-editor"
-                aria-label={`Sunting ${file.path}`}
-                spellcheck={false}
+              <CodeEditor
+                path={file.path}
                 value={draft}
-                onInput={(event) => setDraft((event.currentTarget as HTMLTextAreaElement).value)}
+                onInput={setDraft}
                 onKeyDown={onEditorKeyDown}
+                ariaLabel={`Sunting ${file.path}`}
               />
             ) : showPreview ? (
               <div class="jk-file-preview">

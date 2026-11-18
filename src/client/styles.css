@@ -36,6 +36,7 @@
   --vs-fg: #1f1f1f;
   --vs-gutter: #6e7681;
   --vs-line-hit: rgba(0, 0, 0, 0.06);
+  --vs-selection: #add6ff;
   --vs-comment: #008000;
   --vs-string: #a31515;
   --vs-number: #098658;
@@ -83,6 +84,7 @@
     --vs-fg: #d4d4d4;
     --vs-gutter: #858585;
     --vs-line-hit: rgba(255, 255, 255, 0.07);
+    --vs-selection: #264f78;
     --vs-comment: #6a9955;
     --vs-string: #ce9178;
     --vs-number: #b5cea8;
@@ -130,6 +132,7 @@
   --vs-fg: #d4d4d4;
   --vs-gutter: #858585;
   --vs-line-hit: rgba(255, 255, 255, 0.07);
+  --vs-selection: #264f78;
   --vs-comment: #6a9955;
   --vs-string: #ce9178;
   --vs-number: #b5cea8;
@@ -4138,6 +4141,84 @@ h2.jk-md-heading {
 
 .jk-editor:focus {
   border-color: var(--t3);
+}
+
+/* Penyunting kode berlapis: textarea transparan di atas pre bertoken. */
+
+.jk-code-editor {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  height: clamp(320px, 60vh, 900px);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--vs-bg);
+  color: var(--vs-fg);
+  padding: 0;
+  overflow: hidden;
+}
+
+.jk-code-editor:focus-within {
+  border-color: var(--t3);
+}
+
+.jk-ce-gutter {
+  overflow: hidden;
+  padding: 8px 10px 8px 0;
+  min-width: 44px;
+  text-align: right;
+  color: var(--vs-gutter);
+  font: 13px/1.6 var(--mono);
+  tab-size: 2;
+  user-select: none;
+}
+
+.jk-ce-gutter pre {
+  margin: 0;
+  font: inherit;
+  white-space: pre;
+}
+
+.jk-ce-stack {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.jk-ce-hl,
+.jk-ce-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  font: 13px/1.6 var(--mono);
+  tab-size: 2;
+  letter-spacing: normal;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.jk-ce-hl {
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--vs-fg);
+}
+
+.jk-ce-hl code {
+  font: inherit;
+}
+
+.jk-ce-input {
+  color: transparent;
+  background: transparent;
+  caret-color: var(--vs-fg);
+  resize: none;
+  overflow: auto;
+  outline: 0;
+}
+
+.jk-ce-input::selection {
+  background: var(--vs-selection);
 }
 
 .jk-save-actions,

@@ -1,4 +1,21 @@
-import { highlight, languageForPath } from "../lib/highlight";
+import type { ComponentChild } from "preact";
+import { highlight, languageForPath, type Token } from "../lib/highlight";
+
+/**
+ * Render token satu baris. Token `plain` menjadi teks biasa agar tidak ada
+ * span berlebih. Dipakai bersama oleh penampil dan penyunting kode.
+ */
+export function TokenSpans({ tokens }: { tokens: readonly Token[] }): ComponentChild {
+  return tokens.map((token, at) =>
+    token.kind === "plain" ? (
+      token.text
+    ) : (
+      <span class={`tok-${token.kind}`} key={at}>
+        {token.text}
+      </span>
+    ),
+  );
+}
 
 export interface CodeViewProps {
   content: string;
@@ -31,17 +48,7 @@ export function CodeView({ content, path, highlightLine, viewRef }: CodeViewProp
         >
           <i aria-hidden="true">{index + 1}</i>
           <span>
-            {tokens.length === 0
-              ? " "
-              : tokens.map((token, at) =>
-                  token.kind === "plain" ? (
-                    token.text
-                  ) : (
-                    <span class={`tok-${token.kind}`} key={at}>
-                      {token.text}
-                    </span>
-                  ),
-                )}
+            {tokens.length === 0 ? " " : <TokenSpans tokens={tokens} />}
           </span>
         </div>
       ))}

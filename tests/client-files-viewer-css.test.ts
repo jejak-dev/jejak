@@ -19,6 +19,19 @@ function isiAturan(selektor: string): string | undefined {
   return undefined;
 }
 
+/** Gabungan isi semua blok aturan dengan selektor persis. */
+function semuaAturan(selektor: string): string {
+  const pola = /([^{}]+)\{([^{}]*)\}/g;
+  let hasil = "";
+  let cocok = pola.exec(css);
+  while (cocok !== null) {
+    const sel = cocok[1]?.trim() ?? "";
+    if (sel.split(",").some((s) => s.trim() === selektor)) hasil += cocok[2] ?? "";
+    cocok = pola.exec(css);
+  }
+  return hasil;
+}
+
 /** Isi blok `@container (min-width: 560px)`. */
 function blokContainer(): string {
   const penanda = "@container (min-width: 560px)";
@@ -63,5 +76,27 @@ describe("penampil berkas ala VS Code", () => {
     const aturan = isiAturan(".jk-perm-code") ?? "";
     expect(aturan).toContain("max-height: 220px");
     expect(aturan).not.toContain("--vs-bg");
+  });
+
+  test("penyunting berlapis: textarea transparan dengan caret berwarna", () => {
+    const input = semuaAturan(".jk-ce-input");
+    expect(input).toContain("color: transparent");
+    expect(input).toContain("caret-color: var(--vs-fg)");
+    expect(input).toContain("background: transparent");
+  });
+
+  test("--vs-selection ada di tema terang dan gelap", () => {
+    expect(isiAturan(":root") ?? "").toContain("--vs-selection: #add6ff");
+    expect(isiAturan(':root[data-theme="dark"]') ?? "").toContain("--vs-selection: #264f78");
+  });
+
+  test("pre sorotan dan textarea memakai font serta line-height sama", () => {
+    const hl = semuaAturan(".jk-ce-hl");
+    const input = semuaAturan(".jk-ce-input");
+    const font = /font:\s*13px\/1\.6 var\(--mono\)/;
+    expect(hl).toMatch(font);
+    expect(input).toMatch(font);
+    expect(hl).toContain("tab-size: 2");
+    expect(input).toContain("tab-size: 2");
   });
 });
