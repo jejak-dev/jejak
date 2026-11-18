@@ -1154,6 +1154,7 @@ export function App() {
                   running={selected.status === "berjalan"}
                   sandboxed={selected.sandbox === "standar"}
                   cwd={selected.cwd}
+                  sessionId={selected.id}
                   onDecide={onDecide}
                   rewindableSeqs={rewindable}
                   onRewind={onRewind}

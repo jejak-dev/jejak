@@ -10711,3 +10711,130 @@ h2.jk-md-heading {
 .jk-app[data-mobile] .jk-notify-row {
   min-height: 44px;
 }
+
+/* Media buatan agent di timeline: thumbnail kecil, pratinjau layar penuh. */
+.jk-media-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.jk-media-step {
+  margin-top: 8px;
+}
+
+.jk-media-thumb {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--code);
+  overflow: hidden;
+  cursor: zoom-in;
+}
+
+.jk-media-thumb:hover,
+.jk-media-thumb:focus-visible {
+  border-color: var(--line-2);
+}
+
+.jk-media-thumb-img {
+  display: block;
+  height: 120px;
+  max-width: 240px;
+  object-fit: cover;
+}
+
+.jk-media-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+}
+
+.jk-media-fallback {
+  display: inline-flex;
+  align-items: center;
+  max-width: 240px;
+  padding: 8px 10px;
+  color: var(--t2);
+  font: var(--fs-small) var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.jk-media-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 320;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.82);
+}
+
+.jk-media-lightbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  color: #f2f0ea;
+  font-size: var(--fs-small);
+}
+
+.jk-media-lightbox-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-media-lightbox-count {
+  margin-left: auto;
+  color: rgba(242, 240, 234, 0.7);
+}
+
+.jk-media-lightbox-close,
+.jk-media-lightbox-nav {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  color: #f2f0ea;
+  cursor: pointer;
+}
+
+.jk-media-lightbox-close {
+  margin-left: auto;
+}
+
+.jk-media-lightbox-count + .jk-media-lightbox-close {
+  margin-left: 0;
+}
+
+.jk-media-lightbox-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  padding: 0 14px 18px;
+}
+
+.jk-media-lightbox-view {
+  max-width: 100%;
+  max-height: 100%;
+  border-radius: 8px;
+  object-fit: contain;
+}

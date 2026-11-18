@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambahkan
+
+- Gambar dan video buatan agent di folder kerja sesi (png, jpg, gif, webp, mp4, webm, mov) tampil sebagai thumbnail di timeline, termasuk berkas yang dibaca lewat Read; klik membuka pratinjau besar dengan navigasi, video bisa diputar. URL luar tidak dirender.
+
 ### Diperbaiki
 
 - Menu "/" di komposer langsung memuat ulang daftar perintah setelah pengaturan Claude, skill, atau plugin diubah (sebelumnya basi sampai halaman dimuat ulang).

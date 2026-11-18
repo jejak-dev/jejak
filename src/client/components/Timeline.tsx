@@ -8,10 +8,12 @@ import { foldWork, groupSteps, stepsStatus, summarizeSteps, workTitle, type Step
 import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-view";
 import { formatCost, formatCount } from "../lib/format";
 import { attachmentUrl, splitAttachments } from "../lib/attachments";
+import { extractMedia, mediaFromToolInput } from "../lib/media";
 import { CopyButton } from "./CopyButton";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
+import { MediaStrip } from "./MediaStrip";
 import { PermissionCard } from "./PermissionCard";
 
 export interface TimelineProps {
@@ -22,6 +24,8 @@ export interface TimelineProps {
   /** Bash berjalan dalam sandbox (diizinkan otomatis di dalam batasnya). */
   sandboxed?: boolean;
   cwd: string;
+  /** Sesi aktif; tanpa id, media folder kerja tidak dirender. */
+  sessionId?: string;
   onDecide: (
     requestId: string,
     decision: "allow" | "deny",
@@ -287,6 +291,7 @@ export function Timeline({
   running,
   sandboxed,
   cwd,
+  sessionId,
   onDecide,
   rewindableSeqs,
   onRewind,
@@ -439,6 +444,8 @@ export function Timeline({
               if (item.name === "AskUserQuestion" || item.name === "ExitPlanMode") return null;
               const view = toolView(item.name, item.input);
               const input = prettyInput(item.input);
+              const media =
+                sessionId === undefined ? undefined : mediaFromToolInput(cwd, item.name, item.input);
               return (
                 <details
                   class={`jk-step${hasDescription(view) ? " jk-step-has-desc" : ""}`}
@@ -494,21 +501,33 @@ export function Timeline({
                         <pre class="jk-pre jk-pre-output">{clip(item.output, MAX_OUTPUT_CHARS)}</pre>
                       </section>
                     )}
+                    {sessionId !== undefined && media !== undefined && (
+                      <div class="jk-media-step">
+                        <MediaStrip sessionId={sessionId} items={[media]} />
+                      </div>
+                    )}
                   </div>
                 </details>
               );
   };
 
   /** Teks agen, dipakai di luar blok "Bekerja" maupun di dalamnya. */
-  const renderText = (item: TextItem, index: number) => (
-    <div
-      class={`jk-text${item.streaming === true ? " jk-text-streaming" : ""}`}
-      key={index}
-      style={depthStyle(item.depth)}
-    >
-      <Markdown text={item.text} />
-    </div>
-  );
+  const renderText = (item: TextItem, index: number) => {
+    const media =
+      sessionId !== undefined && item.streaming !== true ? extractMedia(item.text, cwd) : [];
+    return (
+      <div
+        class={`jk-text${item.streaming === true ? " jk-text-streaming" : ""}`}
+        key={index}
+        style={depthStyle(item.depth)}
+      >
+        <Markdown text={item.text} />
+        {sessionId !== undefined && media.length > 0 && (
+          <MediaStrip sessionId={sessionId} items={media} />
+        )}
+      </div>
+    );
+  };
 
   return (
     <div class="jk-timeline">
