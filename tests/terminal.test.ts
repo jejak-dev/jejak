@@ -75,7 +75,8 @@ describe("TerminalManager (PTY nyata)", () => {
     let text = "";
     m.subscribe(info.id, { onData: (b) => (text += new TextDecoder().decode(b)), onExit: () => {} });
     m.write(info.id, "pwd; echo kunci=[$JEJAK_API_KEY]\n");
-    await waitFor(() => text.includes("kunci=["));
+    // Gema perintah memuat "kunci=[$JEJAK_API_KEY]"; tunggu hasil sebenarnya, bukan gema.
+    await waitFor(() => text.replace(/\r/g, "").includes("kunci=[]"));
     expect(text.replace(/\r/g, "")).toContain("kunci=[]");
     expect(text).not.toContain("rahasia-uji");
   });
