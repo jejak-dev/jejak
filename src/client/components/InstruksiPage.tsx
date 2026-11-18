@@ -52,6 +52,9 @@ const DISABLED_NOTE = "Pengaturan Claude dimatikan (JEJAK_CLAUDE_CONFIG=0).";
 
 const PENDING_ACTION_NOTE = "Draf belum disimpan.";
 
+const SKILLS_USER_OFF_NOTE =
+  'Skill berlabel "Pengguna" (dari ~/.claude) belum dipakai sesi dan tak muncul di menu "/" komposer: nyalakan "Muat pengaturan pengguna" di atas.';
+
 const USER_OFF_NOTE =
   'CLAUDE.md pengguna hanya dipakai sesi bila "Muat pengaturan pengguna" nyala';
 
@@ -818,6 +821,9 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
             </ul>
           )}
 
+          {config?.userSettings === false && skills.some((skill) => skill.scope === "user") && (
+            <p class="jk-note jk-instruksi-warn">{SKILLS_USER_OFF_NOTE}</p>
+          )}
           <p class="jk-note jk-instruksi-note">{SKILLS_NOTE}</p>
         </div>
       )}

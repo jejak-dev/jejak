@@ -8,6 +8,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ### Diperbaiki
 
+- Tab Skills memperingatkan bila skill pengguna (~/.claude) belum dipakai sesi karena "Muat pengaturan pengguna" mati (penyebab skill tak muncul di menu "/").
 - Nama folder di sidebar dan label path di Windows kini hanya nama foldernya (bukan path penuh `C:\...`).
 - Pilihan Proyek di halaman Instruksi dan skills kini mengutamakan folder sesi, bukan folder data aplikasi.
 - Halaman Instruksi dan skills (CLAUDE.md, Skills, Subagent, Hooks) di Windows tidak lagi menolak cwd bergaya `C:\...` dengan "cwd harus berupa path absolut".
