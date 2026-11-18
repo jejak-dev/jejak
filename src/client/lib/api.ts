@@ -794,7 +794,11 @@ export interface ApiClient {
     repo?: string,
   ): Promise<{ ok: true; updated: number }>;
   /** Buat perancah `design/` bila belum ada. */
-  initDesign(id: string, repo?: string): Promise<{ ok: true; created: string[] }>;
+  initDesign(
+    id: string,
+    repo?: string,
+    options?: { tracked?: boolean },
+  ): Promise<{ ok: true; created: string[] }>;
   searchFiles(
     id: string,
     query: string,
@@ -2455,13 +2459,13 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       return { ok: true, updated };
     },
 
-    async initDesign(id, repo) {
+    async initDesign(id, repo, options) {
       const query = queryString([["repo", repo]]);
       const data = await request(
         "POST",
         `/api/sessions/${encodeURIComponent(id)}/design/init${query}`,
         // Penjaga server menolak POST tanpa content-type JSON; body kosong cukup.
-        {},
+        options?.tracked === true ? { tracked: true } : {},
       );
       const created = field(data, "created");
       if (!Array.isArray(created)) throw invalidResponse();

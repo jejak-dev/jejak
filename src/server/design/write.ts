@@ -283,11 +283,71 @@ function isEexist(error: unknown): boolean {
   );
 }
 
+const MAX_GITIGNORE_BYTES = 256 * 1024;
+const DESIGN_IGNORE_LINES = new Set(["design/", "/design/", "design", "/design"]);
+
+function ignoresDesign(line: string): boolean {
+  return DESIGN_IGNORE_LINES.has(line.trim());
+}
+
+/**
+ * Menambahkan `design/` ke `.gitignore` bila root adalah repo git dan entri
+ * itu belum ada. Mengembalikan true bila `.gitignore` dibuat atau diubah.
+ * Semua kegagalan (bukan repo, berkas aneh, gagal tulis) diam saja.
+ */
+async function ensureDesignIgnored(root: string): Promise<boolean> {
+  try {
+    let gitInfo;
+    try {
+      gitInfo = await lstat(join(root, ".git"));
+    } catch {
+      return false;
+    }
+    if (!gitInfo.isDirectory() && !gitInfo.isFile()) return false;
+
+    const ignorePath = join(root, ".gitignore");
+    let ignoreInfo;
+    try {
+      ignoreInfo = await lstat(ignorePath);
+    } catch {
+      ignoreInfo = undefined;
+    }
+    // Symlink (atau apa pun selain berkas biasa) dilewati: jangan menulis lewatnya.
+    if (ignoreInfo !== undefined && !ignoreInfo.isFile()) return false;
+
+    let text = "";
+    let mode: number | undefined;
+    if (ignoreInfo !== undefined) {
+      if (ignoreInfo.size > MAX_GITIGNORE_BYTES) return false;
+      text = await readFile(ignorePath, "utf8");
+      mode = ignoreInfo.mode & 0o777;
+    }
+    if (text.split(/\r?\n/).some(ignoresDesign)) return false;
+
+    const next = text === "" || text.endsWith("\n") ? `${text}design/\n` : `${text}\ndesign/\n`;
+    const tempPath = join(root, `.jejak-gitignore-${randomUUID()}.tmp`);
+    try {
+      await writeFile(tempPath, next, mode === undefined ? {} : { mode });
+      await rename(tempPath, ignorePath);
+    } catch {
+      await rm(tempPath, { force: true });
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Membuat perancah `design/` bila belum ada. Tidak pernah menimpa berkas yang
  * sudah ada: berkas yang sudah ada dilewati dan hanya yang belum dibuat.
+ * Kecuali `tracked: true`, folder `design/` diabaikan lewat `.gitignore`.
  */
-export async function initDesign(root: string): Promise<{ created: string[] }> {
+export async function initDesign(
+  root: string,
+  options: { tracked?: boolean } = {},
+): Promise<{ created: string[] }> {
   let realRoot: string;
   try {
     realRoot = await realpath(root);
@@ -345,6 +405,11 @@ export async function initDesign(root: string): Promise<{ created: string[] }> {
       if (isEexist(error)) continue;
       throw new DesignWriteError("Perancah desain tidak dapat dibuat.", 400);
     }
+  }
+
+  // Terakhir: pastikan folder diabaikan git kecuali pengguna memilih ikut git.
+  if (options.tracked !== true) {
+    if (await ensureDesignIgnored(realRoot)) created.push(".gitignore");
   }
   return { created };
 }

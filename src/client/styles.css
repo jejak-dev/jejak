@@ -3673,6 +3673,13 @@ h2.jk-md-heading {
   padding: 12px 14px 40px;
 }
 
+/* Kotak centang kecil di badan panel; sejajar dengan tombol formulir. */
+.jk-panel-body > .jk-bypass-check {
+  margin-top: 0;
+  color: var(--t2);
+  font-size: 12.5px;
+}
+
 /* Wadah tampilan berkas: kolom penuh tinggi, anak-anaknya mengatur gulir sendiri. */
 .jk-panel-body:has(.jk-panel-file-view) {
   flex: 1;

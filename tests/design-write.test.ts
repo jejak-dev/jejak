@@ -218,3 +218,87 @@ describe("initDesign dan symlink subfolder", () => {
     expect(await readdir(outside)).toEqual([]);
   });
 });
+
+describe("initDesign dan .gitignore", () => {
+  async function gitignoreOf(root: string): Promise<string | undefined> {
+    try {
+      return await readFile(join(root, ".gitignore"), "utf8");
+    } catch {
+      return undefined;
+    }
+  }
+
+  test("repo git tanpa .gitignore membuat berisi design/", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    const result = await initDesign(dir);
+    expect(result.created).toContain(".gitignore");
+    expect(await gitignoreOf(dir)).toBe("design/\n");
+    expect(result.created).toHaveLength(5);
+  });
+
+  test(".git berkas (bukan folder) juga dianggap repo", async () => {
+    await writeFile(join(dir, ".git"), "gitdir: ../lain/.git\n", "utf8");
+    const result = await initDesign(dir);
+    expect(result.created).toContain(".gitignore");
+    expect(await gitignoreOf(dir)).toBe("design/\n");
+  });
+
+  test(".gitignore tanpa newline akhir diberi pemisah baru", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    await writeFile(join(dir, ".gitignore"), "node_modules", "utf8");
+    const result = await initDesign(dir);
+    expect(result.created).toContain(".gitignore");
+    expect(await gitignoreOf(dir)).toBe("node_modules\ndesign/\n");
+  });
+
+  test(".gitignore berakhiran newline ditambah satu baris", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    await writeFile(join(dir, ".gitignore"), "node_modules\n", "utf8");
+    await initDesign(dir);
+    expect(await gitignoreOf(dir)).toBe("node_modules\ndesign/\n");
+  });
+
+  test("baris /design/ yang sudah ada tidak mengubah apa pun", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    const original = "node_modules\n/design/\n";
+    await writeFile(join(dir, ".gitignore"), original, "utf8");
+    const result = await initDesign(dir);
+    expect(result.created).not.toContain(".gitignore");
+    expect(await gitignoreOf(dir)).toBe(original);
+    expect(result.created).toHaveLength(4);
+  });
+
+  test("tracked true membiarkan .gitignore tak tersentuh", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    const result = await initDesign(dir, { tracked: true });
+    expect(result.created).not.toContain(".gitignore");
+    expect(await gitignoreOf(dir)).toBeUndefined();
+    expect(result.created).toHaveLength(4);
+  });
+
+  test("bukan repo git tidak membuat .gitignore", async () => {
+    const result = await initDesign(dir);
+    expect(result.created).not.toContain(".gitignore");
+    expect(await gitignoreOf(dir)).toBeUndefined();
+  });
+
+  test(".gitignore berupa symlink dilewati tanpa galat", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    const luar = join(outside, "gitignore");
+    await writeFile(luar, "lama\n", "utf8");
+    await symlink(luar, join(dir, ".gitignore"));
+    const result = await initDesign(dir);
+    expect(result.created).not.toContain(".gitignore");
+    expect(result.created).toHaveLength(4);
+    expect(await readFile(luar, "utf8")).toBe("lama\n");
+  });
+
+  test(".gitignore terlalu besar dilewati", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    const besar = "x".repeat(256 * 1024 + 1);
+    await writeFile(join(dir, ".gitignore"), besar, "utf8");
+    const result = await initDesign(dir);
+    expect(result.created).not.toContain(".gitignore");
+    expect(await gitignoreOf(dir)).toBe(besar);
+  });
+});

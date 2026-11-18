@@ -36,12 +36,13 @@ export function DesignTab(props: DesignTabProps) {
   const { design, loading, error, refresh } = useDesign(api, sessionId, repo, active);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
+  const [tracked, setTracked] = useState(false);
 
   const mulai = async (): Promise<void> => {
     setBusy(true);
     setActionError(undefined);
     try {
-      await api.initDesign(sessionId, repo);
+      await api.initDesign(sessionId, repo, { tracked });
       await refresh();
       onQuote(SAMPLE_PROMPT);
     } catch (caught) {
@@ -91,6 +92,15 @@ export function DesignTab(props: DesignTabProps) {
         >
           Mulai desain
         </button>
+        <label class="jk-bypass-check">
+          <input
+            type="checkbox"
+            checked={tracked}
+            disabled={busy}
+            onChange={(event) => setTracked((event.currentTarget as HTMLInputElement).checked)}
+          />
+          <span>Ikut git (jangan abaikan design/)</span>
+        </label>
       </div>
     );
   }

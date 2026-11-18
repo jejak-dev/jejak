@@ -64,6 +64,25 @@ function parseJsonBody(body: unknown): unknown {
   }
 }
 
+/** Body init opsional: kosong berarti default; `tracked` harus boolean. */
+function parseInitBody(body: unknown): { tracked?: boolean } {
+  if (body === undefined || body === null) return {};
+  let input: unknown = body;
+  if (typeof body === "string") {
+    if (body.trim() === "") return {};
+    input = parseJsonBody(body);
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new DesignWriteError("Pilihan tidak valid.", 400);
+  }
+  const record = input as Record<string, unknown>;
+  if (record.tracked === undefined) return {};
+  if (typeof record.tracked !== "boolean") {
+    throw new DesignWriteError("Pilihan tidak valid.", 400);
+  }
+  return { tracked: record.tracked };
+}
+
 /**
  * Rute model desain. Semua di bawah `/api/` sehingga otomatis dilindungi
  * autentikasi. Hanya `PUT layout` dan `POST init` yang menulis ke disk.
@@ -166,31 +185,36 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
       },
       { parse: "text" },
     )
-    .post("/api/sessions/:id/design/init", async ({ params, query }) => {
-      const session = manager.get(params.id);
-      if (session === undefined) {
-        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
-      }
-      if (!editEnabled) {
-        return jsonResponse(403, { error: EDIT_DISABLED });
-      }
-      if (session.status === "berjalan") {
-        return runningResponse();
-      }
-      try {
-        const root = await resolveRepoRoot(session, query.repo, workspaces);
-        const result = await initDesign(root);
-        auditEntry({
-          kind: "berkas",
-          sessionId: session.id,
-          summary: "Perancah desain dibuat",
-          meta: { aksi: "design-init", dibuat: result.created.length },
-        });
-        return jsonResponse(201, { ok: true, created: result.created });
-      } catch (error) {
-        return errorResponse(error);
-      }
-    });
+    .post(
+      "/api/sessions/:id/design/init",
+      async ({ params, query, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        if (session.status === "berjalan") {
+          return runningResponse();
+        }
+        try {
+          const input = parseInitBody(body);
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          const result = await initDesign(root, input);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Perancah desain dibuat",
+            meta: { aksi: "design-init", dibuat: result.created.length },
+          });
+          return jsonResponse(201, { ok: true, created: result.created });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    );
 
   return plugin as unknown as Elysia;
 }

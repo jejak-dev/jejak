@@ -155,6 +155,28 @@ describe("klien API desain", () => {
     expect(calls[0]?.init.body).toBe("{}");
   });
 
+  test("initDesign meneruskan tracked true di body", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ ok: true, created: ["design/design.json"] }, 201),
+    );
+    const api = createApiClient({ fetch });
+
+    await api.initDesign("s1", "web", { tracked: true });
+    expect(calls[0]?.url).toBe("/api/sessions/s1/design/init?repo=web");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ tracked: true });
+  });
+
+  test("initDesign dengan tracked false mengirim body kosong", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ ok: true, created: [] }, 201),
+    );
+    const api = createApiClient({ fetch });
+
+    await api.initDesign("s1", undefined, { tracked: false });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({});
+  });
+
   test("galat server dilempar dengan pesan dan status", async () => {
     for (const [status, message] of [
       [403, "Penyuntingan berkas dimatikan."],

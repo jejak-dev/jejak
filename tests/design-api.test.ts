@@ -438,6 +438,44 @@ describe("POST /api/sessions/:id/design/init", () => {
     expect(res.status).toBe(403);
   });
 
+  test("{tracked:true} tidak menyentuh .gitignore", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const res = await reqBody(server, "POST", `/api/sessions/${id}/design/init`, {
+      tracked: true,
+    });
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { created: string[] };
+    expect(body.created).not.toContain(".gitignore");
+    await expect(readFile(join(dir, ".gitignore"), "utf8")).rejects.toBeDefined();
+  });
+
+  test("default (body kosong) menambahkan design/ ke .gitignore repo", async () => {
+    await mkdir(join(dir, ".git"), { recursive: true });
+    const server = makeApp();
+    const id = await createSession(server);
+
+    // Body kosong: guard tetap menuntut content-type JSON, jadi kirim string kosong.
+    const res = await reqBody(server, "POST", `/api/sessions/${id}/design/init`, "");
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { created: string[] };
+    expect(body.created).toContain(".gitignore");
+    expect(await readFile(join(dir, ".gitignore"), "utf8")).toBe("design/\n");
+  });
+
+  test("tracked bukan boolean -> 400 Pilihan tidak valid.", async () => {
+    const server = makeApp();
+    const id = await createSession(server);
+
+    for (const tracked of ["ya", 1, null]) {
+      const res = await reqBody(server, "POST", `/api/sessions/${id}/design/init`, { tracked });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as ErrorBody).error).toBe("Pilihan tidak valid.");
+    }
+  });
+
   test("401 tanpa cookie untuk PUT dan POST", async () => {
     const app = createApp({
       providersPath: providersFile,
