@@ -8893,6 +8893,20 @@ h2.jk-md-heading {
   object-fit: cover;
 }
 
+.jk-att-thumb-btn {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.jk-att-thumb-btn:focus-visible {
+  outline: 2px solid var(--t2);
+  outline-offset: 1px;
+}
+
 .jk-att-icon {
   display: inline-grid;
   place-items: center;
@@ -8981,6 +8995,20 @@ h2.jk-md-heading {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
+}
+
+.jk-user-att-btn {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: zoom-in;
+}
+
+.jk-user-att-btn:focus-visible {
+  outline: 2px solid var(--t2);
+  outline-offset: 2px;
 }
 
 .jk-user-att-img {

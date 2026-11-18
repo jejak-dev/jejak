@@ -9,6 +9,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 ### Ditambahkan
 
 - Gambar dan video buatan agent di folder kerja sesi (png, jpg, gif, webp, mp4, webm, mov) tampil sebagai thumbnail di timeline, termasuk berkas yang dibaca lewat Read; klik membuka pratinjau besar dengan navigasi, video bisa diputar. URL luar tidak dirender.
+- Gambar lampiran di komposer dan pesan terkirim bisa dipratinjau (lightbox).
 
 ### Diperbaiki
 

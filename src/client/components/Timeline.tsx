@@ -9,6 +9,7 @@ import { clipContent, diffCopyText, toolView, type ToolView } from "../lib/tool-
 import { formatCost, formatCount } from "../lib/format";
 import { attachmentUrl, splitAttachments } from "../lib/attachments";
 import { extractMedia, mediaFromToolInput } from "../lib/media";
+import { AttachmentImages } from "./AttachmentParts";
 import { CopyButton } from "./CopyButton";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Icon } from "./Icon";
@@ -217,12 +218,10 @@ export function UserItem({
       {parsed.body}
       {parsed.files.length > 0 && (
         <div class="jk-user-atts">
-          {parsed.files.map((file) =>
-            file.image ? (
-              <a key={file.path} href={attachmentUrl(file)} target="_blank" rel="noreferrer">
-                <img class="jk-user-att-img" src={attachmentUrl(file)} alt={file.name} />
-              </a>
-            ) : (
+          <AttachmentImages files={parsed.files} />
+          {parsed.files
+            .filter((file) => !file.image)
+            .map((file) => (
               <a
                 key={file.path}
                 class="jk-user-att-file"
@@ -233,8 +232,7 @@ export function UserItem({
                 <Icon name="file" />
                 {file.name}
               </a>
-            ),
-          )}
+            ))}
         </div>
       )}
       {canRewind && seq !== undefined && (

@@ -3,11 +3,14 @@ import { mediaUrl, type MediaRef } from "../lib/media";
 import { Icon } from "./Icon";
 
 export interface MediaLightboxProps {
-  sessionId: string;
+  /** Sesi media; boleh kosong bila `urlFor` diberikan (mis. lampiran). */
+  sessionId?: string;
   items: readonly MediaRef[];
   index: number;
   onClose: () => void;
   onNavigate: (index: number) => void;
+  /** URL kustom per item; bawaannya endpoint media sesi. */
+  urlFor?: (item: MediaRef) => string;
 }
 
 /** Pratinjau besar media sesi: Esc menutup, panah berpindah item. */
@@ -17,9 +20,12 @@ export function MediaLightbox({
   index,
   onClose,
   onNavigate,
+  urlFor,
 }: MediaLightboxProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const item = items[index];
+  const srcOf = (media: MediaRef): string =>
+    urlFor !== undefined ? urlFor(media) : mediaUrl(sessionId ?? "", media.rel);
 
   // Hentikan pemutaran saat pindah item atau menutup.
   useEffect(() => {
@@ -90,7 +96,7 @@ export function MediaLightbox({
           <video
             ref={videoRef}
             class="jk-media-lightbox-view"
-            src={mediaUrl(sessionId, item.rel)}
+            src={srcOf(item)}
             controls
             autoplay
             playsInline
@@ -98,7 +104,7 @@ export function MediaLightbox({
         ) : (
           <img
             class="jk-media-lightbox-view"
-            src={mediaUrl(sessionId, item.rel)}
+            src={srcOf(item)}
             alt={item.name}
           />
         )}
