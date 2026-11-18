@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import type { AuditMeta, AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
 import {
@@ -117,7 +118,7 @@ function queryCwd(query: unknown, required: boolean): string | undefined {
   if (typeof value !== "string") {
     throw new RequestError("Parameter cwd tidak valid.");
   }
-  if (!value.startsWith("/")) {
+  if (!isAbsolute(value)) {
     throw new RequestError("cwd harus berupa path absolut.");
   }
   if (required) {

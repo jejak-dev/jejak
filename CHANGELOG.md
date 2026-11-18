@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Diperbaiki
+
+- Halaman Instruksi dan skills (CLAUDE.md, Skills, Subagent, Hooks) di Windows tidak lagi menolak cwd bergaya `C:\...` dengan "cwd harus berupa path absolut".
+
 ## [0.1.0-beta.13] - 2026-11-18
 
 ### Diperbaiki
