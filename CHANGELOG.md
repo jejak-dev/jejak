@@ -6,6 +6,14 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambah
+
+- Windows: tombol "Pilih folder" membuka dialog folder Explorer (lewat PowerShell), seperti Finder di macOS.
+
+### Diperbaiki
+
+- Windows: sesi baru tanpa pilihan sandbox eksplisit dibuat tanpa sandbox, sehingga prompt pertama tidak lagi gagal dengan "Sandbox required but unavailable".
+
 ## [0.1.0-beta.10] - 2026-11-18
 
 ### Diperbaiki
