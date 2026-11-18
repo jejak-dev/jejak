@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.11] - 2026-11-18
+
 ### Ditambah
 
 - Windows: tombol "Pilih folder" membuka dialog folder Explorer (lewat PowerShell), seperti Finder di macOS.
