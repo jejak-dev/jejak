@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.10] - 2026-11-18
+
 ### Diperbaiki
 
 - Tes PTY env tersaring tidak lagi balapan dengan gema perintah (menggagalkan gerbang rilis beta.9; beta.9 tidak terbit).
