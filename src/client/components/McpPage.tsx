@@ -5,8 +5,14 @@ import {
   type McpServerItem,
   type McpTestOutcome,
 } from "../lib/api";
-import { buildCreateInput, buildUpdateInput, type McpFormValues } from "../lib/mcp";
+import {
+  buildCreateInput,
+  buildUpdateInput,
+  type McpFormValues,
+  type McpJsonEntry,
+} from "../lib/mcp";
 import { McpForm } from "./McpForm";
+import { McpImportForm } from "./McpImportForm";
 import { McpRow } from "./McpRow";
 
 export interface McpPageProps {
@@ -40,6 +46,9 @@ export function McpPage({ api }: McpPageProps) {
   const [adding, setAdding] = useState(false);
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | undefined>(undefined);
+  const [importing, setImporting] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importFailures, setImportFailures] = useState<Record<string, string | undefined>>({});
   const [editingId, setEditingId] = useState<string | undefined>(undefined);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>(undefined);
   const [busyId, setBusyId] = useState<string | undefined>(undefined);
@@ -123,6 +132,29 @@ export function McpPage({ api }: McpPageProps) {
     }
   };
 
+  const submitImport = async (entries: McpJsonEntry[]): Promise<void> => {
+    if (importBusy) return;
+    setImportBusy(true);
+    setImportFailures({});
+    const failures: Record<string, string | undefined> = {};
+    for (const entry of entries) {
+      try {
+        await api.createMcpServer(entry.input);
+      } catch (caught) {
+        failures[entry.name] = errorMessage(caught);
+      }
+    }
+    setImportBusy(false);
+    if (Object.keys(failures).length === 0) {
+      setImporting(false);
+      pendingFocusRef.current = true;
+      await load();
+      return;
+    }
+    setImportFailures(failures);
+    await load();
+  };
+
   const submitEdit = async (id: string, form: McpFormValues): Promise<void> => {
     const original = items.find((entry) => entry.id === id);
     if (original === undefined) return;
@@ -155,20 +187,53 @@ export function McpPage({ api }: McpPageProps) {
           </p>
         </div>
         {!disabled && (
-          <button
-            type="button"
-            class="jk-button jk-head-action"
-            aria-expanded={adding}
-            onClick={() => {
-              setAdding((value) => !value);
-              setAddError(undefined);
-              setEditingId(undefined);
-            }}
-          >
-            Tambah server
-          </button>
+          <div class="jk-mcp-head-actions">
+            <button
+              type="button"
+              class="jk-button jk-head-action"
+              aria-expanded={importing}
+              onClick={() => {
+                setImporting((value) => !value);
+                setImportFailures({});
+                setAdding(false);
+                setAddError(undefined);
+                setEditingId(undefined);
+              }}
+            >
+              Tempel JSON
+            </button>
+            <button
+              type="button"
+              class="jk-button jk-head-action"
+              aria-expanded={adding}
+              onClick={() => {
+                setAdding((value) => !value);
+                setAddError(undefined);
+                setImporting(false);
+                setImportFailures({});
+                setEditingId(undefined);
+              }}
+            >
+              Tambah server
+            </button>
+          </div>
         )}
       </header>
+
+      {importing && !disabled && (
+        <div class="jk-mcp-form-wrap">
+          <McpImportForm
+            existingNames={items.map((entry) => entry.name)}
+            busy={importBusy}
+            failures={importFailures}
+            onSubmit={(entries) => void submitImport(entries)}
+            onCancel={() => {
+              setImporting(false);
+              setImportFailures({});
+            }}
+          />
+        </div>
+      )}
 
       {adding && !disabled && (
         <div class="jk-mcp-form-wrap">
@@ -219,7 +284,7 @@ export function McpPage({ api }: McpPageProps) {
       {!loading && !disabled && loadError === undefined && (
         <div class="jk-mcp-list">
           {items.length === 0 ? (
-            adding ? null : <p class="jk-empty-state">Belum ada server MCP. Pakai tombol Tambah server untuk menghubungkan tool eksternal.</p>
+            adding || importing ? null : <p class="jk-empty-state">Belum ada server MCP. Pakai tombol Tambah server untuk menghubungkan tool eksternal.</p>
           ) : (
             items.map((mcp) => (
               <McpRow
@@ -238,6 +303,7 @@ export function McpPage({ api }: McpPageProps) {
                 onStartEdit={() => {
                   setConfirmDeleteId(undefined);
                   setAdding(false);
+                  setImporting(false);
                   setEditingId(mcp.id);
                 }}
                 onCancelEdit={() => setEditingId(undefined)}

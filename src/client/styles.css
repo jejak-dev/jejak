@@ -6204,6 +6204,70 @@ h2.jk-md-heading {
   margin-top: 18px;
 }
 
+.jk-mcp-head-actions {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.jk-mcp-import-input {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+
+.jk-mcp-import-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-mcp-import-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.jk-mcp-import-name {
+  font-weight: 600;
+}
+
+.jk-mcp-import-secret,
+.jk-mcp-import-skip,
+.jk-mcp-import-warn {
+  flex-basis: 100%;
+  color: var(--t3);
+  font-size: 12px;
+}
+
+.jk-mcp-import-row .jk-error-line {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .jk-mcp-head-actions {
+    flex-direction: column;
+  }
+
+  .jk-mcp-head-actions .jk-button {
+    min-height: 40px;
+  }
+
+  .jk-mcp-import-row {
+    min-height: 40px;
+  }
+}
+
 /* Sempit: sidebar menjadi laci */
 
 @media (max-width: 760px) {
