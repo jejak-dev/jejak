@@ -4117,17 +4117,151 @@ h2.jk-md-heading {
 }
 
 .jk-file-preview .jk-md .jk-md-table-wrap {
+  margin: 1em 0;
+}
+
+/* Tabel ala Claude: lebar alami, kolom tak ditekan, scroll horizontal bila lebar. */
+.jk-md-table-view {
+  position: relative;
+}
+
+.jk-md-table-view .jk-md-table-scroll {
   overflow-x: auto;
-}
-
-.jk-file-preview .jk-md th {
-  background: var(--hover);
-}
-
-.jk-file-preview .jk-md th,
-.jk-file-preview .jk-md td {
-  padding: 8px 12px;
   border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.jk-md-table-view table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font: 14px/1.55 var(--sans);
+}
+
+.jk-md-table-view th,
+.jk-md-table-view td {
+  min-width: 80px;
+  max-width: 420px;
+  padding: 8px 12px;
+  vertical-align: top;
+  overflow-wrap: normal;
+  word-break: normal;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.jk-md-table-view tr:last-child td,
+.jk-md-table-view tr:last-child th {
+  border-bottom: 0;
+}
+
+.jk-md-table-view th {
+  background: var(--hover);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.jk-md-table-view td {
+  white-space: normal;
+}
+
+/* Kode inline di dalam tabel tidak boleh terpecah di tengah kata. */
+.jk-md-table-view th .jk-md-code,
+.jk-md-table-view td .jk-md-code {
+  white-space: nowrap;
+}
+
+.jk-md-table-expand {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--t2);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.jk-md-table-view:hover .jk-md-table-expand,
+.jk-md-table-view:focus-within .jk-md-table-expand {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (pointer: coarse) {
+  .jk-md-table-expand {
+    width: 40px;
+    height: 40px;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Modal perbesar tabel (di luar .jk-file-preview karena lapisan tetap). */
+.jk-md-table-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.jk-md-table-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(96vw, 1400px);
+  max-height: 90vh;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+}
+
+.jk-md-table-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.jk-md-table-modal-title {
+  font: 600 15px var(--sans);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.jk-md-table-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--t2);
+  cursor: pointer;
+}
+
+.jk-md-table-modal-body {
+  min-height: 0;
+  overflow: auto;
 }
 
 .jk-file-preview .jk-md .jk-md-rule {

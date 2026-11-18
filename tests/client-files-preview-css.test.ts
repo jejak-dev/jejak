@@ -54,4 +54,33 @@ describe("pratinjau Markdown berkas", () => {
     const aturan = isiAturan(".jk-file-preview .jk-md p") ?? "";
     expect(aturan).toContain("color: var(--ink)");
   });
+
+  test("tabel pratinjau memakai lebar alami dan scroll", () => {
+    const tabel = isiAturan(".jk-md-table-view table") ?? "";
+    expect(tabel).toContain("width: max-content");
+    expect(tabel).toContain("min-width: 100%");
+    const scroll = isiAturan(".jk-md-table-view .jk-md-table-scroll") ?? "";
+    expect(scroll).toContain("overflow-x: auto");
+  });
+
+  test("sel tabel tidak memecah kata di tengah", () => {
+    const sel = isiAturan(".jk-md-table-view th") ?? "";
+    expect(sel).not.toContain("overflow-wrap: anywhere");
+    expect(sel).toContain("overflow-wrap: normal");
+    expect(sel).toContain("word-break: normal");
+    expect(sel).toContain("max-width: 420px");
+  });
+
+  test("tombol perbesar tabel ada", () => {
+    const aturan = isiAturan(".jk-md-table-expand") ?? "";
+    expect(aturan).toContain("position: absolute");
+    expect(aturan).toContain("width: 28px");
+  });
+
+  test("modal perbesar tabel adalah lapisan tetap", () => {
+    const aturan = isiAturan(".jk-md-table-modal-backdrop") ?? "";
+    expect(aturan).toContain("position: fixed");
+    expect(aturan).toContain("z-index: 300");
+    expect(aturan).toContain("rgba(0, 0, 0, 0.45)");
+  });
 });
