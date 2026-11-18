@@ -9,6 +9,16 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 ### Ditambah
 
 - Akses dari mana saja lewat Cloudflare Tunnel: hostname, token, dan saklar di Pengaturan, Jejak menjalankan `cloudflared` sendiri. Token tersimpan 0600, perubahan hanya dari komputer server.
+- Tempel JSON konfigurasi (`mcpServers`) untuk menambah server MCP sekaligus, dengan pratinjau sebelum disimpan; nilai rahasia tidak ditampilkan.
+- Tab Terminal bergaya Claude: permukaan polos, langsung terbuka, kursor blok berkedip.
+
+### Diubah
+
+- Pratinjau Markdown berkas dan dokumen Rencana/PRD dirapikan seperti Claude: tipografi, warna, tabel berlebar alami dengan scroll, dan tombol perbesar ke modal.
+
+### Diperbaiki
+
+- Warna seleksi di penyunting berkas kini transparan sehingga teks yang diblok tetap terbaca.
 
 ## [0.1.0-beta.7] - 2026-11-17
 
