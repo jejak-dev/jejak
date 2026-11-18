@@ -4,6 +4,7 @@ export type PanelTab =
   | "files"
   | "git"
   | "checkpoints"
+  | "design"
   | "rahasia"
   | "wiki"
   | "commands"
@@ -26,6 +27,7 @@ export const PANEL_TAB_IDS: readonly PanelTab[] = [
   "files",
   "git",
   "checkpoints",
+  "design",
   "rahasia",
   "wiki",
   "commands",

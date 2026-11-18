@@ -20,6 +20,11 @@ import type { SearchResult } from "../../server/files/search";
 import type { GitCommit, GitStatus } from "../../server/git/git-read";
 import type { GitCommitResult } from "../../server/git/git-write";
 import type { WorktreeInfo, WorktreeInspect } from "../../server/git/worktree-service";
+import type {
+  DesignPage,
+  DesignResult,
+  DeviceId,
+} from "../../server/design/manifest";
 import type { McpProblem, McpServerView, McpTransport } from "../../server/mcp/mcp-config";
 import type { McpTestResult } from "../../server/mcp/mcp-tester";
 import type { MemoryCounts, MemoryProblem } from "../../server/memory/memory-index";
@@ -408,6 +413,24 @@ export interface SaveFileResult {
   size: number;
 }
 
+export type { DesignPage, DesignResult, DeviceId };
+
+/** Halaman desain yang sudah dirakit server menjadi dokumen aman. */
+export interface DesignPageDoc {
+  slug: string;
+  html: string;
+  mtime: number;
+  warnings: string[];
+}
+
+/** Satu entri tata letak yang dikirim ke `PUT design/layout`. */
+export interface DesignLayoutPage {
+  slug: string;
+  x: number;
+  y: number;
+  device?: DeviceId;
+}
+
 export interface RejectChangeInput {
   path: string;
   scope: RejectScope;
@@ -756,6 +779,20 @@ export interface ApiClient {
   }): Promise<{ id: string; name: string; path: string; size: number; image: boolean }>;
   getFiles(id: string, path?: string, repo?: string): Promise<DirectoryListing>;
   getFile(id: string, path: string, repo?: string): Promise<FileContent>;
+  /** Model desain satu sesi: manifest, halaman, dan peringatan. */
+  getDesign(id: string, repo?: string): Promise<DesignResult>;
+  /** Cap perubahan folder `design/` untuk polling murah. */
+  getDesignStamp(id: string, repo?: string): Promise<{ stamp: string }>;
+  /** Satu halaman desain yang sudah dirakit untuk frame. */
+  getDesignPage(id: string, slug: string, repo?: string): Promise<DesignPageDoc>;
+  /** Simpan posisi (dan perangkat) halaman yang sudah terdaftar. */
+  saveDesignLayout(
+    id: string,
+    pages: DesignLayoutPage[],
+    repo?: string,
+  ): Promise<{ ok: true; updated: number }>;
+  /** Buat perancah `design/` bila belum ada. */
+  initDesign(id: string, repo?: string): Promise<{ ok: true; created: string[] }>;
   searchFiles(
     id: string,
     query: string,
@@ -2341,6 +2378,68 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         "GET",
         `/api/sessions/${encodeURIComponent(id)}/file${query}`,
       )) as FileContent;
+    },
+
+    async getDesign(id, repo) {
+      const query = queryString([["repo", repo]]);
+      return (await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/design${query}`,
+      )) as DesignResult;
+    },
+
+    async getDesignStamp(id, repo) {
+      const query = queryString([["repo", repo]]);
+      const data = await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/design/stamp${query}`,
+      );
+      const stamp = field(data, "stamp");
+      if (typeof stamp !== "string") throw invalidResponse();
+      return { stamp };
+    },
+
+    async getDesignPage(id, slug, repo) {
+      const query = queryString([
+        ["slug", slug],
+        ["repo", repo],
+      ]);
+      const data = await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/design/page${query}`,
+      );
+      if (!isRecord(data) || typeof data.html !== "string") throw invalidResponse();
+      return {
+        slug: typeof data.slug === "string" ? data.slug : slug,
+        html: data.html,
+        mtime: typeof data.mtime === "number" ? data.mtime : 0,
+        warnings: stringListFrom(data.warnings),
+      };
+    },
+
+    async saveDesignLayout(id, pages, repo) {
+      const body: { pages: DesignLayoutPage[]; repo?: string } = { pages };
+      if (repo !== undefined) body.repo = repo;
+      const query = queryString([["repo", repo]]);
+      const data = await request(
+        "PUT",
+        `/api/sessions/${encodeURIComponent(id)}/design/layout${query}`,
+        body,
+      );
+      const updated = field(data, "updated");
+      if (typeof updated !== "number" || !Number.isFinite(updated)) throw invalidResponse();
+      return { ok: true, updated };
+    },
+
+    async initDesign(id, repo) {
+      const query = queryString([["repo", repo]]);
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/design/init${query}`,
+      );
+      const created = field(data, "created");
+      if (!Array.isArray(created)) throw invalidResponse();
+      return { ok: true, created: stringListFrom(created) };
     },
 
     async searchFiles(id, query, options) {

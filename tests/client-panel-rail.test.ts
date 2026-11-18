@@ -22,7 +22,7 @@ describe("rel ikon panel", () => {
       "pengetahuan",
     ]);
     expect(PANEL_RAIL_GROUPS.map((group) => group.tabs.map((tab) => tab.id))).toEqual([
-      ["changes", "git", "files", "checkpoints"],
+      ["changes", "git", "files", "checkpoints", "design"],
       ["plan", "todos", "context", "commands", "terminal", "browser"],
       ["wiki", "rahasia"],
     ]);
@@ -40,6 +40,7 @@ describe("rel ikon panel", () => {
       "git",
       "files",
       "checkpoints",
+      "design",
       "plan",
       "todos",
       "context",
@@ -57,6 +58,7 @@ describe("rel ikon panel", () => {
     expect(panelTabLabel("files")).toBe("Berkas");
     expect(panelTabLabel("git")).toBe("Git");
     expect(panelTabLabel("checkpoints")).toBe("Checkpoint");
+    expect(panelTabLabel("design")).toBe("Desain");
     expect(panelTabLabel("rahasia")).toBe("Rahasia");
     expect(panelTabLabel("wiki")).toBe("Wiki");
     expect(panelTabLabel("commands")).toBe("Perintah");

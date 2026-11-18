@@ -47,6 +47,7 @@ import { ChangesTab } from "./ChangesTab";
 import { BrowserTab } from "./BrowserTab";
 import { CheckpointsTab } from "./CheckpointsTab";
 import { ContextTab } from "./ContextTab";
+import { DesignTab } from "./DesignTab";
 import { FilesTab } from "./FilesTab";
 import { GitTab } from "./GitTab";
 import { PanelRail } from "./PanelRail";
@@ -90,6 +91,8 @@ export interface PanelProps {
   onQuote?: (text: string) => void;
   /** Mode lebar: panel mengambil sisa jendela, batas lebar CSS dilepas. */
   wide?: boolean;
+  /** Nyalakan atau matikan mode lebar dari tab Desain. */
+  onWideChange?: (on: boolean) => void;
 }
 
 const PANEL_LABEL =
@@ -135,6 +138,10 @@ interface PanelTabBodyProps {
   onToggleMaximize?: () => void;
   /** Jendela panel sedang diperbesar? */
   maximized?: boolean;
+  /** Mode lebar sedang aktif. */
+  wide?: boolean;
+  /** Nyalakan atau matikan mode lebar dari tab Desain. */
+  onWideChange?: (on: boolean) => void;
 }
 
 /** Badan tab yang aktif; hanya tab aktif yang dipasang di jendela. */
@@ -168,6 +175,8 @@ function PanelTabBody(props: PanelTabBodyProps) {
     onQuote,
     onToggleMaximize,
     maximized,
+    wide,
+    onWideChange,
   } = props;
 
   if (tab === "changes") {
@@ -235,6 +244,19 @@ function PanelTabBody(props: PanelTabBodyProps) {
     );
   }
   if (tab === "rahasia") return <SecretsTab api={api} sessionId={sessionId} />;
+  if (tab === "design") {
+    return (
+      <DesignTab
+        api={api}
+        sessionId={sessionId}
+        repo={repo}
+        active={open}
+        wide={wide === true}
+        onWideChange={onWideChange ?? ((): void => {})}
+        onQuote={onQuote ?? ((): void => {})}
+      />
+    );
+  }
   if (tab === "wiki") {
     return <WikiTab api={api} cwd={session?.cwd ?? ""} onQuote={onQuote} />;
   }
@@ -278,6 +300,7 @@ export function Panel({
   onSessionChanged,
   onQuote,
   wide,
+  onWideChange,
 }: PanelProps) {
   const [layout, setLayout] = useState<PaneLayout>(() => readPaneLayout());
   // Jendela yang terakhir difokuskan; menentukan tab aktif pada rel ikon.
@@ -586,6 +609,8 @@ export function Panel({
                   onQuote={onQuote}
                   onToggleMaximize={sempit ? undefined : () => perbesar(pane.id)}
                   maximized={layout.maximized === pane.id}
+                  wide={wide}
+                  onWideChange={onWideChange}
                 />
               </PaneWindow>
             </Fragment>

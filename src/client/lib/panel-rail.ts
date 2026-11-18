@@ -31,6 +31,7 @@ export const PANEL_RAIL_GROUPS: readonly PanelRailGroup[] = [
       { id: "git", label: "Git", icon: "branch" },
       { id: "files", label: "Berkas", icon: "file" },
       { id: "checkpoints", label: "Checkpoint", icon: "clock" },
+      { id: "design", label: "Desain", icon: "design" },
     ],
   },
   {

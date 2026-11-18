@@ -541,6 +541,14 @@ export function App() {
     setPanelTabRequest((current) => ({ tab: "rahasia", nonce: (current?.nonce ?? 0) + 1 }));
   }, []);
 
+  // Mode lebar dari tab Desain atau palet: membuka juga meminta tab Desain.
+  const openDesignWide = useCallback((on: boolean): void => {
+    setDesignWide(on);
+    if (!on) return;
+    // Panel dianggap terbuka selama mode lebar; preferensi panel tak diubah.
+    setPanelTabRequest((current) => ({ tab: "design", nonce: (current?.nonce ?? 0) + 1 }));
+  }, []);
+
   // Buka tab Rencana pada sebuah rencana (dari kartu ringkas di chat).
   const openPlanTab = useCallback((id: string): void => {
     setPlanFocus(id);
@@ -741,7 +749,7 @@ export function App() {
           else if (!mobile) toggleSidebar();
           return;
         case "toggle-design-wide":
-          if (wideMungkin) setDesignWide((on) => !on);
+          if (wideMungkin) openDesignWide(!wideActive);
           return;
         case "open-git":
           openGitPanel();
@@ -762,7 +770,7 @@ export function App() {
           return;
       }
     },
-    [api, mobile, wideMungkin, wideActive, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToSchedules, navigateToUsage, openGitPanel, openSecretsTab, togglePanel, toggleSidebar],
+    [api, mobile, wideMungkin, wideActive, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToSchedules, navigateToUsage, openGitPanel, openSecretsTab, openDesignWide, togglePanel, toggleSidebar],
   );
 
   const commands = useMemo(
@@ -1320,6 +1328,7 @@ export function App() {
                   onQuote={onQuote}
                   width={panelNow}
                   wide={wideActive}
+                  onWideChange={openDesignWide}
                 />
               )}
               {panelOpenNow && !sempit && (
