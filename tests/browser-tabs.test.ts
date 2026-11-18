@@ -210,6 +210,35 @@ describe("siklus hidup tab", () => {
     await manager.close();
   });
 
+  test("popup yang musnah sebelum diaktifkan tidak menjatuhkan proses", async () => {
+    const galat: unknown[] = [];
+    const tangkap = (alasan: unknown): void => {
+      galat.push(alasan);
+    };
+    process.on("unhandledRejection", tangkap);
+    try {
+      const { manager, koneksi } = setup();
+      await manager.ensure();
+      // Geser saat target musnah terhadap peristiwa dibuat, supaya salah satunya
+      // jatuh di antara pemeriksaan tab dan aktivasi di dalam antrean.
+      for (let jeda = 0; jeda < 12; jeda++) {
+        const id = `TFANA${jeda}`;
+        koneksi.addTarget(id, "https://fana.test", "Fana");
+        koneksi.emit("Target.targetCreated", {
+          targetInfo: { targetId: id, type: "page", url: "https://fana.test", title: "Fana" },
+        });
+        for (let i = 0; i < jeda; i++) await Promise.resolve();
+        koneksi.emit("Target.targetDestroyed", { targetId: id });
+        await Bun.sleep(5);
+      }
+      await Bun.sleep(30);
+      expect(galat).toEqual([]);
+      await manager.close();
+    } finally {
+      process.off("unhandledRejection", tangkap);
+    }
+  });
+
   test("target non-halaman diabaikan", async () => {
     const { manager, koneksi } = setup();
     await manager.ensure();

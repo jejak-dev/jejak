@@ -1569,7 +1569,9 @@ export class BrowserManager {
     // Peristiwa target dibaca dari event (bukan polling): popup, perubahan
     // judul, dan target yang ditutup.
     client.on("Target.targetCreated", (params) => {
-      void this.onTargetCreated(params);
+      // Popup yang tertutup sebelum sempat diaktifkan melempar "Tab tidak
+      // ditemukan"; tanpa tangkapan ini jadi unhandled rejection dan server mati.
+      this.onTargetCreated(params).catch(() => undefined);
     });
     client.on("Target.targetInfoChanged", (params) => {
       this.onTargetInfoChanged(params);
@@ -1817,7 +1819,7 @@ export class BrowserManager {
     for (const unsubscribe of tab.unsubscribe) unsubscribe();
     this.tabRecords.delete(targetId);
     if (this.activeId === targetId) this.activeId = undefined;
-    void this.antri(() => this.surelAktif(tetangga));
+    this.antri(() => this.surelAktif(tetangga)).catch(() => undefined);
     this.notifyState();
   }
 
