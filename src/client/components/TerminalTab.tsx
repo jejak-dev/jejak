@@ -1,15 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import "@xterm/xterm/css/xterm.css";
 import { ApiError, type ApiClient } from "../lib/api";
 import { featureOffHint, openFeatureSettings, type FeatureState } from "../lib/features";
-import { parseSse } from "../lib/sse";
+import { connectTerminal, terminalWsUrl, type TerminalSocket } from "../lib/terminal-socket";
 import {
-  applyOutput,
-  base64ToText,
-  emptyScreen,
-  keyToInput,
-  screenText,
-  type Screen,
-} from "../lib/terminal";
+  createXtermEngine,
+  type TerminalEngine,
+  type TerminalEngineFactory,
+} from "../lib/xterm-engine";
 
 export interface TerminalTabProps {
   api: ApiClient;
@@ -17,105 +15,111 @@ export interface TerminalTabProps {
   cwd: string;
   /** Terminal yang sudah ada (mis. dibuat peluncur perintah) untuk ditempel. */
   attachId?: string;
+  /** Pabrik mesin terminal; bisa diganti di tes. */
+  engineFactory?: TerminalEngineFactory;
+  /** Pembuat soket; bisa diganti di tes. */
+  connect?: typeof connectTerminal;
 }
 
 const NOTE =
-  "Terminal ini memberi akses shell penuh dengan hak akunmu dan TIDAK disandbox. Env dibersihkan dari kunci Jejak. Ketikan tidak dicatat; pembukaan dan penutupan tercatat di Log audit. Terminal sederhana: program layar penuh (vim, htop) belum didukung. Tutup otomatis setelah 30 menit tanpa aktivitas.";
+  "Terminal ini memberi akses shell penuh dengan hak akunmu dan TIDAK disandbox. Env dibersihkan dari kunci Jejak. Ketikan tidak dicatat; pembukaan dan penutupan tercatat di Log audit. Mendukung program layar penuh (vim, htop). Sambungan terputus disambung ulang otomatis dengan layar dipulihkan dari riwayat terbaru (±256 KB). Tutup otomatis setelah 30 menit tanpa aktivitas.";
 
 type State = "siap" | "membuka" | "aktif" | "selesai" | "mati";
+type Conn = "menyambung" | "tersambung" | "terputus";
 
 function errorMessage(caught: unknown): string {
   if (caught instanceof ApiError) return caught.message;
   return caught instanceof Error ? caught.message : "Permintaan gagal.";
 }
 
-export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
+export function TerminalTab({
+  api,
+  cwd,
+  attachId,
+  engineFactory = createXtermEngine,
+  connect = connectTerminal,
+}: TerminalTabProps) {
   const [state, setState] = useState<State>("siap");
+  const [conn, setConn] = useState<Conn | undefined>(undefined);
   const [error, setError] = useState<string | undefined>();
   const [fitur, setFitur] = useState<FeatureState | undefined>(undefined);
-  const [screen, setScreen] = useState<Screen>(emptyScreen);
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const engineRef = useRef<TerminalEngine | undefined>(undefined);
+  const socketRef = useRef<TerminalSocket | undefined>(undefined);
   const idRef = useRef<string | undefined>(undefined);
   // Terminal yang ditempel (bukan dibuat tab ini); tidak ditutup saat tab dilepas.
   const attachedRef = useRef<string | undefined>(undefined);
-  const abortRef = useRef<AbortController | undefined>(undefined);
-  const logRef = useRef<HTMLPreElement | null>(null);
-  const screenRef = useRef<Screen>(emptyScreen());
-  // Ketikan digabung dan dikirim berurutan agar urutan tombol tidak tertukar.
-  const queueRef = useRef<string>("");
-  const flushingRef = useRef(false);
+  // Id yang sedang ditempel pada pembukaan berikutnya.
+  const attachRef = useRef<string | undefined>(undefined);
+  const startingRef = useRef(false);
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // Buka otomatis hanya sekali per mount; setelah ditutup pengguna tetap lewat tombol.
   const autoOpenedRef = useRef(false);
-
-  const stopStream = useCallback((): void => {
-    abortRef.current?.abort();
-    abortRef.current = undefined;
-  }, []);
 
   // Tutup terminal saat tab dilepas supaya tidak ada shell yatim.
   // Terminal yang ditempel (dari peluncur perintah) bukan milik tab ini.
   useEffect(
     () => () => {
-      stopStream();
+      socketRef.current?.close();
+      socketRef.current = undefined;
+      engineRef.current?.dispose();
+      engineRef.current = undefined;
       const id = idRef.current;
       if (id !== undefined && attachedRef.current !== id) {
         void api.closeTerminal(id).catch(() => undefined);
       }
     },
-    [api, stopStream],
+    [api],
   );
 
-  useEffect(() => {
-    const element = logRef.current;
-    if (element !== null) element.scrollTop = element.scrollHeight;
-  }, [screen]);
-
-  const follow = useCallback(async (id: string): Promise<void> => {
-    const controller = new AbortController();
-    abortRef.current = controller;
+  const start = useCallback(async (): Promise<void> => {
+    const host = hostRef.current;
+    if (host === null) return;
     try {
-      const response = await fetch(`/api/terminal/${encodeURIComponent(id)}/output`, {
-        signal: controller.signal,
-      });
-      if (!response.ok || response.body === null) throw new ApiError("Keluaran terminal tidak tersedia.", response.status);
-      for await (const frame of parseSse(response.body)) {
-        if (frame.event === "exit") {
-          setState("selesai");
-          continue;
-        }
-        screenRef.current = applyOutput(screenRef.current, base64ToText(frame.data));
-        setScreen(screenRef.current);
+      let engine = engineRef.current;
+      if (engine === undefined) {
+        engine = await engineFactory(host);
+        engineRef.current = engine;
+        engine.onData((text) => socketRef.current?.sendInput(text));
+      } else {
+        engine.reset();
       }
-    } catch (caught) {
-      if (!controller.signal.aborted) setError(errorMessage(caught));
-    }
-  }, []);
+      engine.fit();
 
-  // Tempel ke terminal yang sudah ada (dibuat peluncur perintah).
-  useEffect(() => {
-    if (attachId === undefined || attachId === "") return;
-    if (attachedRef.current === attachId && idRef.current === attachId) return;
-    stopStream();
-    attachedRef.current = attachId;
-    idRef.current = attachId;
-    setState("aktif");
-    setError(undefined);
-    screenRef.current = emptyScreen();
-    setScreen(screenRef.current);
-    void follow(attachId);
-  }, [attachId, follow, stopStream]);
+      let id: string;
+      const attach = attachRef.current;
+      if (attach !== undefined) {
+        id = attach;
+        attachedRef.current = attach;
+      } else {
+        const info = await api.createTerminal(cwd, { cols: engine.cols, rows: engine.rows });
+        id = info.id;
+      }
+      idRef.current = id;
 
-  const open = async (): Promise<void> => {
-    if (state === "membuka" || cwd === "") return;
-    setState("membuka");
-    setError(undefined);
-    screenRef.current = emptyScreen();
-    setScreen(screenRef.current);
-    attachedRef.current = undefined;
-    try {
-      const info = await api.createTerminal(cwd, { cols: 100, rows: 28 });
-      idRef.current = info.id;
+      const socket = connect({
+        url: terminalWsUrl(id),
+        onReset: () => engineRef.current?.reset(),
+        onOutput: (bytes) => engineRef.current?.write(bytes),
+        onExit: () => {
+          setConn(undefined);
+          setState("selesai");
+        },
+        onError: (message) => setError(message),
+        onStatus: (status) => {
+          setConn(status);
+          if (status === "tersambung") {
+            const current = engineRef.current;
+            if (current !== undefined) {
+              current.fit();
+              socketRef.current?.resize(current.cols, current.rows);
+            }
+          }
+        },
+      });
+      socketRef.current = socket;
       setState("aktif");
-      void follow(info.id);
+      engine.focus();
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 503) {
         setState("mati");
@@ -129,67 +133,88 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
         setError(errorMessage(caught));
       }
     }
+  }, [api, connect, cwd, engineFactory]);
+
+  // Mulai sesi setelah host ter-render (state "membuka").
+  useEffect(() => {
+    if (state !== "membuka" || startingRef.current) return;
+    startingRef.current = true;
+    void start().finally(() => {
+      startingRef.current = false;
+    });
+  }, [state, start]);
+
+  // Ukuran terminal mengikuti host; resize dikirim setelah fit.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (host === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (resizeTimerRef.current !== undefined) clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = setTimeout(() => {
+        resizeTimerRef.current = undefined;
+        const engine = engineRef.current;
+        if (engine === undefined) return;
+        engine.fit();
+        socketRef.current?.resize(engine.cols, engine.rows);
+      }, 100);
+    });
+    observer.observe(host);
+    return () => {
+      observer.disconnect();
+      if (resizeTimerRef.current !== undefined) {
+        clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = undefined;
+      }
+    };
+  }, [state]);
+
+  // Permukaan terminal langsung siap diketik saat aktif.
+  useEffect(() => {
+    if (state === "aktif") engineRef.current?.focus();
+  }, [state]);
+
+  const open = (): void => {
+    if (state === "membuka" || cwd === "") return;
+    setError(undefined);
+    setConn(undefined);
+    attachedRef.current = undefined;
+    attachRef.current = undefined;
+    setState("membuka");
   };
 
   const close = async (): Promise<void> => {
     const id = idRef.current;
-    stopStream();
+    socketRef.current?.close();
+    socketRef.current = undefined;
     idRef.current = undefined;
     attachedRef.current = undefined;
-    queueRef.current = "";
+    attachRef.current = undefined;
+    setConn(undefined);
     setState("siap");
     if (id !== undefined) await api.closeTerminal(id).catch(() => undefined);
   };
+
+  // Tempel ke terminal yang sudah ada (dibuat peluncur perintah).
+  useEffect(() => {
+    if (attachId === undefined || attachId === "") return;
+    if (attachedRef.current === attachId && idRef.current === attachId) return;
+    setError(undefined);
+    setConn(undefined);
+    attachRef.current = attachId;
+    setState("membuka");
+  }, [attachId]);
 
   // Buka sendiri saat tab muncul (sekali per mount); lewat tombol setelahnya.
   useEffect(() => {
     if (autoOpenedRef.current) return;
     if (state !== "siap" || cwd === "" || (attachId !== undefined && attachId !== "")) return;
     autoOpenedRef.current = true;
-    void open();
+    open();
   }, [state, cwd, attachId]);
 
-  // Permukaan terminal langsung siap diketik saat aktif.
-  useEffect(() => {
-    if (state === "aktif") logRef.current?.focus();
-  }, [state]);
-
-  const flush = async (): Promise<void> => {
-    if (flushingRef.current) return;
-    flushingRef.current = true;
-    try {
-      while (queueRef.current !== "") {
-        const id = idRef.current;
-        const data = queueRef.current;
-        queueRef.current = "";
-        if (id === undefined) return;
-        await api.sendTerminalInput(id, data);
-      }
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      flushingRef.current = false;
-    }
-  };
-
   const send = (data: string): void => {
-    if (idRef.current === undefined || state !== "aktif") return;
-    queueRef.current += data;
-    void flush();
-  };
-
-  const onKeyDown = (event: KeyboardEvent): void => {
-    const data = keyToInput(event);
-    if (data === undefined) return;
-    event.preventDefault();
-    send(data);
-  };
-
-  const onPaste = (event: ClipboardEvent): void => {
-    const text = event.clipboardData?.getData("text");
-    if (text === undefined || text === "") return;
-    event.preventDefault();
-    send(text.replace(/\r?\n/g, "\r"));
+    if (state !== "aktif") return;
+    socketRef.current?.sendInput(data);
   };
 
   if (state === "mati") {
@@ -219,13 +244,21 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
   }
 
   const statusText =
-    state === "membuka" ? "Membuka…" : state === "aktif" ? "Aktif" : state === "selesai" ? "Selesai" : "";
+    state === "membuka"
+      ? "Membuka…"
+      : state === "aktif"
+        ? conn === "terputus"
+          ? "Menyambung ulang…"
+          : "Aktif"
+        : state === "selesai"
+          ? "Selesai"
+          : "";
 
   return (
-    <div class="jk-terminal" onClick={() => logRef.current?.focus()}>
+    <div class="jk-terminal">
       <div class="jk-terminal-bar">
         <span class="jk-terminal-status" role="status">
-          {state === "aktif" && <span class="jk-terminal-dot" aria-hidden="true" />}
+          {state === "aktif" && conn !== "terputus" && <span class="jk-terminal-dot" aria-hidden="true" />}
           {statusText}
         </span>
         <span class="jk-terminal-actions">
@@ -244,7 +277,7 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
               Tutup
             </button>
           ) : (
-            <button type="button" class="jk-link-btn" disabled={cwd === ""} onClick={() => void open()}>
+            <button type="button" class="jk-link-btn" disabled={cwd === ""} onClick={() => open()}>
               {state === "selesai" ? "Buka lagi" : "Buka terminal"}
             </button>
           )}
@@ -255,20 +288,15 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
           {error}
         </p>
       )}
-      {(state === "aktif" || state === "selesai") && (
-        <pre
-          ref={logRef}
-          class="jk-terminal-screen"
-          tabIndex={0}
-          role="log"
-          aria-label="Terminal; ketik di sini"
-          aria-live="off"
-          onKeyDown={onKeyDown}
-          onPaste={onPaste}
-        >
-          {screenText(screen)}
-        </pre>
-      )}
+      <div
+        ref={hostRef}
+        class="jk-terminal-host"
+        hidden={state === "siap"}
+        role="log"
+        aria-label="Terminal; ketik di sini"
+        aria-live="off"
+        onClick={() => engineRef.current?.focus()}
+      />
       <details class="jk-terminal-info">
         <summary>Tentang terminal ini</summary>
         <p class="jk-note">{NOTE}</p>
