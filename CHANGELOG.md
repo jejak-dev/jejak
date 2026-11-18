@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Diperbaiki
+
+- Tes kode QR tidak lagi gagal acak di CI lambat (menunggu tombol muncul, bukan jeda tetap 60 ms); ini yang menggagalkan gerbang rilis beta.12.
+
 ## [0.1.0-beta.12] - 2026-11-18
 
 ### Diperbaiki

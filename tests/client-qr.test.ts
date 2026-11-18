@@ -183,6 +183,13 @@ function apiDengan(statusAkhir: NetworkStatus): ApiClient {
   } as unknown as ApiClient;
 }
 
+/** Tunggu sampai tombol QR muncul (status dimuat async; 60 ms tetap tidak cukup di CI lambat). */
+async function tungguTombolQr(root: FakeNode, jumlah: number): Promise<void> {
+  for (let i = 0; i < 100 && tombolQr(root).length < jumlah; i += 1) {
+    await flushEffects();
+  }
+}
+
 function tombolQr(root: FakeNode): FakeNode[] {
   return findAll(
     root,
@@ -213,7 +220,7 @@ describe("kode QR di pengaturan akses jaringan", () => {
         ),
       }),
     );
-    await flushEffects();
+    await tungguTombolQr(root, 2);
     const tombol = tombolQr(root);
     expect(tombol.length).toBe(2);
     expect(tombol[0]?.getAttribute("aria-label")).toBe(
@@ -244,6 +251,7 @@ describe("kode QR di pengaturan akses jaringan", () => {
     );
     await flushEffects();
 
+    await tungguTombolQr(root, 1);
     const tombol = tombolQr(root)[0]!;
     fire(tombol, "click");
     await flushEffects();
@@ -265,6 +273,7 @@ describe("kode QR di pengaturan akses jaringan", () => {
     );
     await flushEffects();
 
+    await tungguTombolQr(root, 2);
     const tombol = tombolQr(root);
     fire(tombol[0]!, "click");
     await flushEffects();
@@ -293,7 +302,7 @@ describe("kode QR di pengaturan akses jaringan", () => {
         ),
       }),
     );
-    await flushEffects();
+    await tungguTombolQr(root, 1);
     fire(tombolQr(root)[0]!, "click");
     await flushEffects();
     expect(root.textContent).toContain("Pindai dari HP di jaringan yang sama.");
