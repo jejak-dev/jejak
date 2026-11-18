@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.14] - 2026-11-18
+
 ### Ditambahkan
 
 - Gambar dan video buatan agent di folder kerja sesi (png, jpg, gif, webp, mp4, webm, mov) tampil sebagai thumbnail di timeline, termasuk berkas yang dibaca lewat Read; klik membuka pratinjau besar dengan navigasi, video bisa diputar. URL luar tidak dirender.
