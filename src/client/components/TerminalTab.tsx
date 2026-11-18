@@ -43,6 +43,8 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
   // Ketikan digabung dan dikirim berurutan agar urutan tombol tidak tertukar.
   const queueRef = useRef<string>("");
   const flushingRef = useRef(false);
+  // Buka otomatis hanya sekali per mount; setelah ditutup pengguna tetap lewat tombol.
+  const autoOpenedRef = useRef(false);
 
   const stopStream = useCallback((): void => {
     abortRef.current?.abort();
@@ -139,6 +141,19 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
     if (id !== undefined) await api.closeTerminal(id).catch(() => undefined);
   };
 
+  // Buka sendiri saat tab muncul (sekali per mount); lewat tombol setelahnya.
+  useEffect(() => {
+    if (autoOpenedRef.current) return;
+    if (state !== "siap" || cwd === "" || (attachId !== undefined && attachId !== "")) return;
+    autoOpenedRef.current = true;
+    void open();
+  }, [state, cwd, attachId]);
+
+  // Permukaan terminal langsung siap diketik saat aktif.
+  useEffect(() => {
+    if (state === "aktif") logRef.current?.focus();
+  }, [state]);
+
   const flush = async (): Promise<void> => {
     if (flushingRef.current) return;
     flushingRef.current = true;
@@ -203,30 +218,36 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
     );
   }
 
+  const statusText =
+    state === "membuka" ? "Membuka…" : state === "aktif" ? "Aktif" : state === "selesai" ? "Selesai" : "";
+
   return (
-    <div class="jk-terminal">
+    <div class="jk-terminal" onClick={() => logRef.current?.focus()}>
       <div class="jk-terminal-bar">
-        {state === "siap" || state === "selesai" ? (
-          <button type="button" class="jk-button" disabled={cwd === ""} onClick={() => void open()}>
-            {state === "selesai" ? "Buka lagi" : "Buka terminal"}
-          </button>
-        ) : (
-          <button type="button" class="jk-button" onClick={() => void close()}>
-            Tutup terminal
-          </button>
-        )}
-        {state === "aktif" && (
-          <>
-            <button type="button" class="jk-link-btn" onClick={() => send("\x03")}>
-              Ctrl+C
+        <span class="jk-terminal-status" role="status">
+          {state === "aktif" && <span class="jk-terminal-dot" aria-hidden="true" />}
+          {statusText}
+        </span>
+        <span class="jk-terminal-actions">
+          {state === "aktif" && (
+            <>
+              <button type="button" class="jk-link-btn" onClick={() => send("\x03")}>
+                Ctrl+C
+              </button>
+              <button type="button" class="jk-link-btn" onClick={() => send("\x04")}>
+                Ctrl+D
+              </button>
+            </>
+          )}
+          {state === "aktif" || state === "membuka" ? (
+            <button type="button" class="jk-link-btn" aria-label="Tutup terminal" onClick={() => void close()}>
+              Tutup
             </button>
-            <button type="button" class="jk-link-btn" onClick={() => send("\x04")}>
-              Ctrl+D
+          ) : (
+            <button type="button" class="jk-link-btn" disabled={cwd === ""} onClick={() => void open()}>
+              {state === "selesai" ? "Buka lagi" : "Buka terminal"}
             </button>
-          </>
-        )}
-        <span class="jk-help" role="status">
-          {state === "membuka" ? "Membuka…" : state === "aktif" ? "Aktif" : state === "selesai" ? "Selesai" : ""}
+          )}
         </span>
       </div>
       {error !== undefined && (
@@ -248,7 +269,10 @@ export function TerminalTab({ api, cwd, attachId }: TerminalTabProps) {
           {screenText(screen)}
         </pre>
       )}
-      <p class="jk-note jk-terminal-note">{NOTE}</p>
+      <details class="jk-terminal-info">
+        <summary>Tentang terminal ini</summary>
+        <p class="jk-note">{NOTE}</p>
+      </details>
     </div>
   );
 }
