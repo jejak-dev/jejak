@@ -90,47 +90,6 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
       },
       { parse: "text" },
     )
-    .get("/api/terminal/:id/output", ({ params, request }) => {
-      const manager = resolve();
-      if (manager === undefined) return off();
-      let handle: ReturnType<typeof manager.subscribe>;
-      const encoder = new TextEncoder();
-      const b64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
-      try {
-        let controllerRef: ReadableStreamDefaultController<Uint8Array> | undefined;
-        const stream = new ReadableStream<Uint8Array>({
-          start(controller) {
-            controllerRef = controller;
-          },
-          cancel() {
-            handle?.unsubscribe();
-          },
-        });
-        const send = (text: string): void => {
-          try {
-            controllerRef?.enqueue(encoder.encode(text));
-          } catch {
-            handle?.unsubscribe();
-          }
-        };
-        handle = manager.subscribe(params.id, {
-          onData: (bytes) => send(`data: ${b64(bytes)}\n\n`),
-          onExit: (code) => send(`event: exit\ndata: ${code ?? ""}\n\n`),
-        });
-        if (handle.replay.length > 0) send(`data: ${b64(handle.replay)}\n\n`);
-        if (handle.exited) send("event: exit\ndata: \n\n");
-        request.signal.addEventListener("abort", () => handle.unsubscribe());
-        return new Response(stream, {
-          headers: {
-            "content-type": "text/event-stream; charset=utf-8",
-            "cache-control": "no-cache",
-            connection: "keep-alive",
-          },
-        });
-      } catch (error) {
-        return errorResponse(error);
-      }
-    })
     .get("/api/terminal/:id/ws", ({ params, request }) => {
       const manager = resolve();
       if (manager === undefined) return off();
@@ -157,35 +116,6 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
         headers: { [TERMINAL_UPGRADE_HEADER]: params.id },
       });
     })
-    .post(
-      "/api/terminal/:id/input",
-      ({ params, body }) => {
-        const manager = resolve();
-        if (manager === undefined) return off();
-        try {
-          const input = parse(body, ["data"]);
-          manager.write(params.id, input.data);
-          return { ok: true };
-        } catch (error) {
-          return errorResponse(error);
-        }
-      },
-      { parse: "text" },
-    )
-    .post(
-      "/api/terminal/:id/resize",
-      ({ params, body }) => {
-        const manager = resolve();
-        if (manager === undefined) return off();
-        try {
-          const input = parse(body, ["cols", "rows"]);
-          return manager.resize(params.id, input.cols, input.rows);
-        } catch (error) {
-          return errorResponse(error);
-        }
-      },
-      { parse: "text" },
-    )
     .delete("/api/terminal/:id", ({ params }) => {
       const manager = resolve();
       if (manager === undefined) return off();

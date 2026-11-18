@@ -805,8 +805,6 @@ export interface ApiClient {
   createMemory(input: MemoryCreateInput): Promise<MemoryItem>;
   updateMemory(id: string, input: MemoryUpdateInput): Promise<MemoryItem>;
   createTerminal(cwd: string, size?: { cols: number; rows: number }): Promise<TerminalItem>;
-  sendTerminalInput(id: string, data: string): Promise<void>;
-  resizeTerminal(id: string, cols: number, rows: number): Promise<void>;
   closeTerminal(id: string): Promise<void>;
   /** Daftar perintah folder sesi (script package + perintah kustom). */
   listRunner(cwd: string): Promise<{ commands: RunnerCommand[] }>;
@@ -2686,14 +2684,6 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const data = await request("POST", "/api/terminal", { cwd, ...(size ?? {}) });
       if (!isRecord(data) || typeof data.id !== "string") throw invalidResponse();
       return data as unknown as TerminalItem;
-    },
-
-    async sendTerminalInput(id, data) {
-      await request("POST", `/api/terminal/${encodeURIComponent(id)}/input`, { data });
-    },
-
-    async resizeTerminal(id, cols, rows) {
-      await request("POST", `/api/terminal/${encodeURIComponent(id)}/resize`, { cols, rows });
     },
 
     async closeTerminal(id) {

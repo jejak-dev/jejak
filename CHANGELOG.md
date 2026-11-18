@@ -8,7 +8,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ### Diubah
 
-- Terminal: jalur WebSocket dua arah dengan buffer replay dan penggabungan keluaran (tahap server; klien menyusul). Pemeriksaan autentikasi dan Origin lewat rute HTTP sebelum upgrade.
+- Terminal memakai emulator xterm.js (mendukung vim, htop, kursor, warna penuh, seleksi/salin) dan soket WebSocket dua arah yang menyambung ulang otomatis dengan layar dipulihkan dari riwayat terbaru; memperbaiki layar terminal yang kadang gantung tanpa prompt. Menambah dependensi @xterm/xterm dan @xterm/addon-fit.
 
 ## [0.1.0-beta.14] - 2026-11-18
 

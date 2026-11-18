@@ -133,35 +133,23 @@ describe("rute", () => {
       }
       return app.handle(new Request(`http://127.0.0.1:3000${path}`, init));
     };
-    return { req, audit };
+    return { req, audit, term };
   }
 
-  test("alur: buka, kirim input, baca SSE, ubah ukuran, tutup, audit", async () => {
-    const { req, audit } = setup();
+  test("alur: buka, tulis dan baca lewat manager, ubah ukuran, tutup, audit", async () => {
+    const { req, audit, term } = setup();
     const created = await req("POST", "/api/terminal", { cwd: dir });
     expect(created.status).toBe(201);
     const { id } = (await created.json()) as { id: string };
-    const controller = new AbortController();
-    const out = await req("GET", `/api/terminal/${id}/output`, undefined, controller.signal);
-    expect(out.headers.get("content-type")).toContain("text/event-stream");
-    expect((await req("POST", `/api/terminal/${id}/input`, { data: "echo sse-ok\n" })).status).toBe(200);
-    const reader = out.body!.getReader();
-    let collected = "";
-    const decoder = new TextDecoder();
-    const deadline = Date.now() + 5000;
-    while (!collected.includes("c3NlLW9r") && !Buffer.from(collected.replace(/data: |\n/g, ""), "base64").toString().includes("sse-ok")) {
-      if (Date.now() > deadline) throw new Error("tidak ada keluaran SSE");
-      const { value, done } = await reader.read();
-      if (done) break;
-      collected += decoder.decode(value);
-      const joined = [...collected.matchAll(/data: ([A-Za-z0-9+/=]+)/g)]
-        .map((m) => Buffer.from(m[1]!, "base64").toString())
-        .join("");
-      if (joined.includes("sse-ok")) break;
-    }
-    controller.abort();
-    await reader.cancel().catch(() => undefined);
-    expect(((await (await req("POST", `/api/terminal/${id}/resize`, { cols: 90, rows: 30 })).json()) as { cols: number }).cols).toBe(90);
+    let text = "";
+    const sub = term!.subscribe(id, {
+      onData: (bytes) => (text += new TextDecoder().decode(bytes)),
+      onExit: () => {},
+    });
+    term!.write(id, "echo sse-ok\n");
+    await waitFor(() => text.includes("sse-ok"));
+    sub.unsubscribe();
+    expect(term!.resize(id, 90, 30)).toMatchObject({ cols: 90, rows: 30 });
     expect((await req("DELETE", `/api/terminal/${id}`, {})).status).toBe(200);
     expect((await req("DELETE", `/api/terminal/${id}`, {})).status).toBe(404);
     const summaries = audit.list({ kind: "pengaturan", limit: 10 }).map((e) => e.summary);
@@ -176,8 +164,7 @@ describe("rute", () => {
     const { req, audit } = setup();
     expect((await req("POST", "/api/terminal", { cwd: "relatif" })).status).toBe(400);
     expect((await req("POST", "/api/terminal", { cwd: dir, x: 1 })).status).toBe(400);
-    expect((await req("POST", "/api/terminal/nihil/input", { data: "a" })).status).toBe(404);
-    expect((await req("GET", "/api/terminal/nihil/output")).status).toBe(404);
+    expect((await req("GET", "/api/terminal/nihil/ws")).status).toBe(404);
     audit.close();
     const off = setup(false);
     expect((await off.req("GET", "/api/terminal")).status).toBe(503);
