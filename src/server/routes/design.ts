@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import type { SessionManager, WorkspaceResolver } from "../sessions/session-manager";
+import { DesignError, assemblePage } from "../design/assemble";
 import { designStamp, readDesign } from "../design/manifest";
 import { FileError } from "../files/path";
 import { resolveRepoRoot } from "../files/repo-root";
@@ -8,6 +9,8 @@ export interface DesignRoutesOptions {
   manager: SessionManager;
   /** Dipakai untuk mencari repo workspace dari query `repo`. */
   workspaces?: WorkspaceResolver;
+  /** Sakelar "Izinkan Google Fonts" (default mati). */
+  allowGoogleFonts?: boolean;
 }
 
 function jsonResponse(status: number, payload: unknown): Response {
@@ -19,6 +22,9 @@ function jsonResponse(status: number, payload: unknown): Response {
 
 /** Pemetaan galat yang sama dengan rute berkas. */
 function errorResponse(error: unknown): Response {
+  if (error instanceof DesignError) {
+    return jsonResponse(error.status, { error: error.message });
+  }
   if (error instanceof FileError) {
     return jsonResponse(error.code === "tidak-ditemukan" ? 404 : 400, { error: error.message });
   }
@@ -32,6 +38,7 @@ function errorResponse(error: unknown): Response {
 export function designRoutes(options: DesignRoutesOptions): Elysia {
   const manager = options.manager;
   const workspaces = options.workspaces;
+  const allowGoogleFonts = options.allowGoogleFonts === true;
 
   const plugin = new Elysia({ name: "jejak-design-routes" })
     .get("/api/sessions/:id/design", async ({ params, query }) => {
@@ -42,6 +49,19 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
       try {
         const root = await resolveRepoRoot(session, query.repo, workspaces);
         return await readDesign(root);
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .get("/api/sessions/:id/design/page", async ({ params, query }) => {
+      const session = manager.get(params.id);
+      if (session === undefined) {
+        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+      }
+      try {
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        const slug = typeof query.slug === "string" ? query.slug : "";
+        return await assemblePage(root, slug, { allowGoogleFonts });
       } catch (error) {
         return errorResponse(error);
       }

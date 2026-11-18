@@ -202,7 +202,7 @@ async function isDirectory(path: string): Promise<boolean> {
 }
 
 /** Folder `design/` yang sudah di-realpath; undefined bila tidak ada atau keluar root. */
-async function resolveDesignDir(root: string): Promise<string | undefined> {
+export async function resolveDesignDir(root: string): Promise<string | undefined> {
   let resolved;
   try {
     resolved = await resolveInside(root, "design");

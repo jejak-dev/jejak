@@ -158,6 +158,54 @@ describe("GET /api/sessions/:id/design/stamp", () => {
   });
 });
 
+describe("GET /api/sessions/:id/design/page", () => {
+  test("sesi tak dikenal 404", async () => {
+    const server = makeApp();
+    const res = await req(server, "GET", "/api/sessions/s_tidakada/design/page?slug=beranda");
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as ErrorBody).error).toBe('Sesi "s_tidakada" tidak ditemukan.');
+  });
+
+  test("halaman dirakit 200 dengan CSP dan runtime", async () => {
+    await mkdir(join(dir, "design", "pages"), { recursive: true });
+    await writeFile(
+      join(dir, "design", "pages", "beranda.html"),
+      "<html><head></head><body><p>Halo</p></body></html>",
+      "utf8",
+    );
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const res = await req(server, "GET", `/api/sessions/${id}/design/page?slug=beranda`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { slug: string; html: string; mtime: number; warnings: string[] };
+    expect(body.slug).toBe("beranda");
+    expect(body.html).toContain("Content-Security-Policy");
+    expect(body.html).toContain("<script data-jejak-design-runtime></script>");
+    expect(body.mtime).toBeGreaterThan(0);
+    expect(body.warnings).toEqual([]);
+  });
+
+  test("slug tak sah 400, halaman tak ada 404, melebihi batas 413", async () => {
+    await mkdir(join(dir, "design", "pages"), { recursive: true });
+    await writeFile(join(dir, "design", "pages", "besar.html"), "a".repeat(512 * 1024 + 1), "utf8");
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const invalid = await req(server, "GET", `/api/sessions/${id}/design/page?slug=../x`);
+    expect(invalid.status).toBe(400);
+    expect(((await invalid.json()) as ErrorBody).error).toBe("Slug halaman tidak valid.");
+
+    const missing = await req(server, "GET", `/api/sessions/${id}/design/page?slug=hilang`);
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as ErrorBody).error).toBe("Halaman tidak ditemukan.");
+
+    const tooLarge = await req(server, "GET", `/api/sessions/${id}/design/page?slug=besar`);
+    expect(tooLarge.status).toBe(413);
+    expect(((await tooLarge.json()) as ErrorBody).error).toBe("Halaman melebihi 512 KB.");
+  });
+});
+
 describe("rute design dan autentikasi", () => {
   test("tanpa cookie ditolak 401, dengan cookie lolos ke pemeriksaan sesi", async () => {
     const app = createApp({
@@ -169,7 +217,11 @@ describe("rute design dan autentikasi", () => {
     const get = (path: string, headers: Record<string, string> = {}): Promise<Response> =>
       app.handle(new Request(`http://127.0.0.1:3000${path}`, { headers: { ...host, ...headers } }));
 
-    for (const path of ["/api/sessions/x/design", "/api/sessions/x/design/stamp"]) {
+    for (const path of [
+      "/api/sessions/x/design",
+      "/api/sessions/x/design/stamp",
+      "/api/sessions/x/design/page?slug=beranda",
+    ]) {
       const tanpa = await get(path);
       expect(tanpa.status).toBe(401);
     }

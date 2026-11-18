@@ -909,7 +909,13 @@ export function createApp(options: CreateAppOptions = {}) {
   // TypeScript, jadi pemasangan ini dibiarkan di luar rantai.
   (app as unknown as Elysia).use(scheduleRoutes({ service: scheduledTasks }));
   // Rute desain dipasang di luar rantai demi alasan yang sama.
-  (app as unknown as Elysia).use(designRoutes({ manager, workspaces: workspaceResolver }));
+  (app as unknown as Elysia).use(
+    designRoutes({
+      manager,
+      workspaces: workspaceResolver,
+      allowGoogleFonts: env.JEJAK_DESIGN_GOOGLE_FONTS?.trim() === "1",
+    }),
+  );
   // Rute tunnel dipasang di luar rantai demi alasan yang sama.
   (app as unknown as Elysia).use(
     tunnelRoutes({ tunnel: options.tunnel, audit: options.audit }),
