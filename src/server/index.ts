@@ -63,6 +63,7 @@ import { authRoutes } from "./routes/auth";
 import { checkpointRoutes } from "./routes/checkpoints";
 import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
+import { designRoutes } from "./routes/design";
 import { fileRoutes } from "./routes/files";
 import { fsRoutes } from "./routes/fs";
 import { goalRoutes } from "./routes/goal";
@@ -907,6 +908,8 @@ export function createApp(options: CreateAppOptions = {}) {
   // terlalu panjang membuat tipe Elysia terlalu dalam untuk dihitung
   // TypeScript, jadi pemasangan ini dibiarkan di luar rantai.
   (app as unknown as Elysia).use(scheduleRoutes({ service: scheduledTasks }));
+  // Rute desain dipasang di luar rantai demi alasan yang sama.
+  (app as unknown as Elysia).use(designRoutes({ manager, workspaces: workspaceResolver }));
   // Rute tunnel dipasang di luar rantai demi alasan yang sama.
   (app as unknown as Elysia).use(
     tunnelRoutes({ tunnel: options.tunnel, audit: options.audit }),
