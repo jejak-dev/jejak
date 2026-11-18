@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.9] - 2026-11-18
+
 ### Diperbaiki
 
 - Windows: CLI `claude` yang ditemukan sebagai shim npm (`claude.cmd`) diganti target aslinya (`claude.exe` atau `cli.js`), sehingga sesi tidak lagi gagal dengan `spawn ... EINVAL`.
