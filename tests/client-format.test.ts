@@ -155,6 +155,13 @@ describe("folderName", () => {
     expect(folderName("/Users/boy/Developer/jejak/")).toBe("jejak");
     expect(folderName("/")).toBe("/");
   });
+
+  test("path Windows memakai backslash", () => {
+    expect(folderName("C:\\Development\\pine-energy\\web-portal-be-transaction")).toBe(
+      "web-portal-be-transaction",
+    );
+    expect(folderName("C:\\Development\\app\\")).toBe("app");
+  });
 });
 
 describe("formatAgo", () => {

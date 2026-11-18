@@ -8,7 +8,7 @@ export function shortenPath(path: string, max: number): string {
   if (path.length <= max) return path;
   if (max === 1) return "…";
 
-  const segments = path.split("/").filter((segment) => segment !== "");
+  const segments = path.split(/[\\/]/).filter((segment) => segment !== "");
   const last = segments[segments.length - 1] ?? path;
   const suffix = `…/${last}`;
 

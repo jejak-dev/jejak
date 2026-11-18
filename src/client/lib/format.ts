@@ -45,7 +45,7 @@ export function formatRelative(iso: string, now: Date): string {
 }
 
 export function folderName(cwd: string): string {
-  const segments = cwd.split("/").filter((segment) => segment !== "");
+  const segments = cwd.split(/[\\/]/).filter((segment) => segment !== "");
   return segments[segments.length - 1] ?? "/";
 }
 
@@ -110,17 +110,18 @@ export function shortPath(path: string, max = 36): string {
     return path;
   }
 
-  const segments = path.split("/").filter((segment) => segment !== "");
+  const sep = path.includes("\\") && !path.includes("/") ? "\\" : "/";
+  const segments = path.split(/[\\/]/).filter((segment) => segment !== "");
   const last = segments[segments.length - 1] ?? path;
   let tail = last;
 
   for (let index = segments.length - 2; index >= 0; index -= 1) {
-    const candidate = `${segments[index]}/${tail}`;
+    const candidate = `${segments[index]}${sep}${tail}`;
     if (candidate.length + 2 > max) break;
     tail = candidate;
   }
 
-  return `…/${tail}`;
+  return `…${sep}${tail}`;
 }
 
 const SESSION_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
