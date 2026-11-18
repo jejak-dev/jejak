@@ -16,6 +16,7 @@
   --ok: #2e7a4d;
   --warn: #9e5c0c;
   --bad: #b3402f;
+  --link: #1d5fb3;
   --code: #f4f2ed;
   --add: rgba(47, 125, 79, 0.12);
   --del: rgba(179, 64, 47, 0.11);
@@ -36,7 +37,7 @@
   --vs-fg: #1f1f1f;
   --vs-gutter: #6e7681;
   --vs-line-hit: rgba(0, 0, 0, 0.06);
-  --vs-selection: #add6ff;
+  --vs-selection: rgba(173, 214, 255, 0.55);
   --vs-comment: #008000;
   --vs-string: #a31515;
   --vs-number: #098658;
@@ -72,6 +73,7 @@
     --ok: #6cc08b;
     --warn: #e0a24a;
     --bad: #f08a7a;
+    --link: #7ab3f0;
     --code: #151412;
     --add: rgba(108, 192, 139, 0.14);
     --del: rgba(240, 138, 122, 0.13);
@@ -84,7 +86,7 @@
     --vs-fg: #d4d4d4;
     --vs-gutter: #858585;
     --vs-line-hit: rgba(255, 255, 255, 0.07);
-    --vs-selection: #264f78;
+    --vs-selection: rgba(38, 79, 120, 0.6);
     --vs-comment: #6a9955;
     --vs-string: #ce9178;
     --vs-number: #b5cea8;
@@ -120,6 +122,7 @@
   --ok: #6cc08b;
   --warn: #e0a24a;
   --bad: #f08a7a;
+  --link: #7ab3f0;
   --code: #151412;
   --add: rgba(108, 192, 139, 0.14);
   --del: rgba(240, 138, 122, 0.13);
@@ -132,7 +135,7 @@
   --vs-fg: #d4d4d4;
   --vs-gutter: #858585;
   --vs-line-hit: rgba(255, 255, 255, 0.07);
-  --vs-selection: #264f78;
+  --vs-selection: rgba(38, 79, 120, 0.6);
   --vs-comment: #6a9955;
   --vs-string: #ce9178;
   --vs-number: #b5cea8;
@@ -3999,6 +4002,158 @@ h2.jk-md-heading {
   flex: none;
   width: 26px;
   height: 26px;
+}
+
+/* Pratinjau Markdown berkas ala Claude: lega, warna teks penuh, tautan biru. */
+
+.jk-file-preview {
+  padding: 20px 24px 40px;
+  max-width: 760px;
+  margin: 0 auto;
+  font: 15px/1.75 var(--sans);
+  color: var(--ink);
+}
+
+.jk-file-preview .jk-md > * {
+  margin-bottom: 1em;
+}
+
+.jk-file-preview .jk-md > *:last-child {
+  margin-bottom: 0;
+}
+
+.jk-file-preview .jk-md ul,
+.jk-file-preview .jk-md ol {
+  padding-left: 1.6em;
+}
+
+.jk-file-preview .jk-md li {
+  margin-bottom: 0.4em;
+}
+
+.jk-file-preview .jk-md li > * {
+  margin: 0 0 0.4em;
+}
+
+.jk-file-preview .jk-md li::marker {
+  color: var(--t3);
+}
+
+.jk-file-preview .jk-md p {
+  color: var(--ink);
+}
+
+.jk-file-preview .jk-md strong {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.jk-file-preview .jk-md-heading {
+  color: var(--ink);
+  line-height: 1.3;
+}
+
+.jk-file-preview .jk-md > .jk-md-heading:first-child {
+  margin-top: 0;
+}
+
+.jk-file-preview .jk-md h1.jk-md-heading {
+  margin: 1.4em 0 0.5em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--line);
+  font-size: 1.7em;
+  font-weight: 600;
+}
+
+.jk-file-preview .jk-md h2.jk-md-heading {
+  margin: 1.5em 0 0.5em;
+  font-size: 1.35em;
+  font-weight: 600;
+}
+
+.jk-file-preview .jk-md h3.jk-md-heading {
+  font-size: 1.12em;
+  font-weight: 600;
+}
+
+.jk-file-preview .jk-md h4.jk-md-heading,
+.jk-file-preview .jk-md h5.jk-md-heading,
+.jk-file-preview .jk-md h6.jk-md-heading {
+  font-size: 1em;
+  font-weight: 600;
+}
+
+.jk-file-preview .jk-md a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+}
+
+.jk-file-preview .jk-md a:hover {
+  text-decoration-color: currentColor;
+}
+
+.jk-file-preview .jk-md .jk-md-code {
+  padding: 0.15em 0.4em;
+  border-radius: 5px;
+  background: var(--hover);
+  font: 0.88em var(--mono);
+  color: var(--ink);
+}
+
+.jk-file-preview .jk-md .jk-md-pre {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--hover);
+  font: 13px/1.6 var(--mono);
+  overflow-x: auto;
+}
+
+.jk-file-preview .jk-md .jk-md-quote {
+  padding-left: 14px;
+  border-left: 3px solid var(--line-2);
+  color: var(--t2);
+}
+
+.jk-file-preview .jk-md .jk-md-table-wrap {
+  overflow-x: auto;
+}
+
+.jk-file-preview .jk-md th {
+  background: var(--hover);
+}
+
+.jk-file-preview .jk-md th,
+.jk-file-preview .jk-md td {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+}
+
+.jk-file-preview .jk-md .jk-md-rule {
+  margin: 1.8em 0;
+}
+
+.jk-md-img {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 2px 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--hover);
+  color: var(--ink);
+  font: 0.95em var(--sans);
+}
+
+.jk-md-img .jk-icon {
+  color: var(--t2);
+}
+
+@media (max-width: 640px) {
+  .jk-file-preview {
+    padding: 14px 16px;
+  }
 }
 
 .jk-vs-code,

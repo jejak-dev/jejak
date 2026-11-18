@@ -86,8 +86,8 @@ describe("penampil berkas ala VS Code", () => {
   });
 
   test("--vs-selection ada di tema terang dan gelap", () => {
-    expect(isiAturan(":root") ?? "").toContain("--vs-selection: #add6ff");
-    expect(isiAturan(':root[data-theme="dark"]') ?? "").toContain("--vs-selection: #264f78");
+    expect(isiAturan(":root") ?? "").toContain("--vs-selection: rgba(173, 214, 255, 0.55)");
+    expect(isiAturan(':root[data-theme="dark"]') ?? "").toContain("--vs-selection: rgba(38, 79, 120, 0.6)");
   });
 
   test("pre sorotan dan textarea memakai font serta line-height sama", () => {
