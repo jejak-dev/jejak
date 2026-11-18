@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../src/server";
-import { createMockRunner } from "../src/server/agent";
+import { createMockRunner, type AgentRunner } from "../src/server/agent";
+import { SqliteAuditStore, type AuditStore } from "../src/server/audit/audit-store";
 
 let dir: string;
 let providersFile: string;
@@ -37,8 +38,13 @@ afterEach(async () => {
 
 type App = ReturnType<typeof createApp>;
 
-function makeApp(): App {
-  return createApp({ providersPath: providersFile, env: { MOCK: "true" }, runner: createMockRunner() });
+function makeApp(extra: Record<string, string> = {}, audit?: AuditStore): App {
+  return createApp({
+    providersPath: providersFile,
+    env: { MOCK: "true", JEJAK_HOME: join(dir, "home"), ...extra },
+    runner: createMockRunner(),
+    ...(audit === undefined ? {} : { audit }),
+  });
 }
 
 function req(server: App, method: string, path: string): Promise<Response> {
@@ -46,6 +52,16 @@ function req(server: App, method: string, path: string): Promise<Response> {
     new Request(`http://127.0.0.1:3000${path}`, {
       method,
       headers: { host: "127.0.0.1:3000" },
+    }),
+  );
+}
+
+function reqBody(server: App, method: string, path: string, body: unknown): Promise<Response> {
+  return server.handle(
+    new Request(`http://127.0.0.1:3000${path}`, {
+      method,
+      headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
     }),
   );
 }
@@ -60,7 +76,15 @@ async function createSession(server: App, cwd = dir): Promise<string> {
   );
   expect(created.status).toBe(201);
   const data = (await created.json()) as { session: { id: string } };
-  return data.session.id;
+  const id = data.session.id;
+  // Tunggu runner selesai agar sesi tidak berstatus "berjalan".
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const detail = await req(server, "GET", `/api/sessions/${id}`);
+    const status = ((await detail.json()) as { session: { status: string } }).session.status;
+    if (status !== "berjalan") break;
+    await Bun.sleep(5);
+  }
+  return id;
 }
 
 interface DesignBody {
@@ -236,5 +260,142 @@ describe("rute design dan autentikasi", () => {
     const cookie = (login.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
     const dengan = await get("/api/sessions/x/design", { cookie });
     expect(dengan.status).toBe(404);
+  });
+});
+
+describe("PUT /api/sessions/:id/design/layout", () => {
+  test("200 dan isi design.json berubah", async () => {
+    await mkdir(join(dir, "design"), { recursive: true });
+    await writeFile(
+      join(dir, "design", "design.json"),
+      JSON.stringify({
+        version: 1,
+        pages: [{ slug: "beranda", title: "Beranda", device: "desktop", x: 0, y: 0 }],
+      }),
+      "utf8",
+    );
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const res = await reqBody(server, "PUT", `/api/sessions/${id}/design/layout`, {
+      pages: [{ slug: "beranda", x: 24, y: 16, device: "mobile" }],
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, updated: 1 });
+
+    const manifest = JSON.parse(
+      await readFile(join(dir, "design", "design.json"), "utf8"),
+    ) as { pages: Array<Record<string, unknown>> };
+    expect(manifest.pages[0]).toEqual({
+      slug: "beranda",
+      title: "Beranda",
+      device: "mobile",
+      x: 24,
+      y: 16,
+    });
+  });
+
+  test("JEJAK_FILE_EDIT=0 -> 403", async () => {
+    const server = makeApp({ JEJAK_FILE_EDIT: "0" });
+    const id = await createSession(server);
+    const res = await reqBody(server, "PUT", `/api/sessions/${id}/design/layout`, { pages: [] });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as ErrorBody).error).toBe("Penyuntingan berkas dimatikan.");
+  });
+
+  test("sesi berjalan ditolak 409", async () => {
+    const hanging: AgentRunner = {
+      async *run() {
+        await new Promise<void>(() => {});
+      },
+    };
+    const server = createApp({
+      providersPath: providersFile,
+      env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
+      runner: hanging,
+    });
+    const created = await reqBody(server, "POST", "/api/sessions", { prompt: "Halo", cwd: dir });
+    const id = ((await created.json()) as { session: { id: string } }).session.id;
+
+    const res = await reqBody(server, "PUT", `/api/sessions/${id}/design/layout`, { pages: [] });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as ErrorBody).error).toBe(
+      "Sesi sedang berjalan. Tunggu selesai atau hentikan dulu.",
+    );
+    await reqBody(server, "POST", `/api/sessions/${id}/interrupt`, {});
+  });
+
+  test("sesi tak dikenal 404 dan body bukan JSON 400", async () => {
+    const server = makeApp();
+    const id = await createSession(server);
+    expect(
+      (await reqBody(server, "PUT", "/api/sessions/tidak-ada/design/layout", { pages: [] })).status,
+    ).toBe(404);
+    expect(
+      (await reqBody(server, "PUT", `/api/sessions/${id}/design/layout`, "{rusak")).status,
+    ).toBe(400);
+  });
+
+  test("entri audit tercatat", async () => {
+    await mkdir(join(dir, "design"), { recursive: true });
+    await writeFile(
+      join(dir, "design", "design.json"),
+      JSON.stringify({ version: 1, pages: [{ slug: "beranda", x: 0, y: 0 }] }),
+      "utf8",
+    );
+    const audit = new SqliteAuditStore(":memory:");
+    const server = makeApp({}, audit);
+    const id = await createSession(server);
+
+    await reqBody(server, "PUT", `/api/sessions/${id}/design/layout`, {
+      pages: [{ slug: "beranda", x: 8, y: 8 }],
+    });
+    const entries = audit.list({ kind: "berkas", limit: 50 });
+    const entry = entries.find((item) => item.meta.aksi === "design-layout");
+    expect(entry?.summary).toBe("Tata letak desain disimpan");
+    expect(entry?.meta.halaman).toBe(1);
+    audit.close();
+  });
+});
+
+describe("POST /api/sessions/:id/design/init", () => {
+  test("201 lalu 409", async () => {
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const first = await reqBody(server, "POST", `/api/sessions/${id}/design/init`, {});
+    expect(first.status).toBe(201);
+    const body = (await first.json()) as { ok: boolean; created: string[] };
+    expect(body.ok).toBe(true);
+    expect(body.created).toHaveLength(4);
+
+    const second = await reqBody(server, "POST", `/api/sessions/${id}/design/init`, {});
+    expect(second.status).toBe(409);
+  });
+
+  test("JEJAK_FILE_EDIT=0 -> 403", async () => {
+    const server = makeApp({ JEJAK_FILE_EDIT: "0" });
+    const id = await createSession(server);
+    const res = await reqBody(server, "POST", `/api/sessions/${id}/design/init`, {});
+    expect(res.status).toBe(403);
+  });
+
+  test("401 tanpa cookie untuk PUT dan POST", async () => {
+    const app = createApp({
+      providersPath: providersFile,
+      env: { MOCK: "true", JEJAK_HOME: join(dir, "home") },
+      auth: { password: "sandi-uji-123", port: 3000 },
+    });
+    const host = { host: "127.0.0.1:3000" };
+    const send = (method: string, path: string): Promise<Response> =>
+      app.handle(
+        new Request(`http://127.0.0.1:3000${path}`, {
+          method,
+          headers: { ...host, "content-type": "application/json" },
+          body: JSON.stringify({ pages: [] }),
+        }),
+      );
+    expect((await send("PUT", "/api/sessions/x/design/layout")).status).toBe(401);
+    expect((await send("POST", "/api/sessions/x/design/init")).status).toBe(401);
   });
 });

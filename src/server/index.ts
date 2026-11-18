@@ -914,6 +914,8 @@ export function createApp(options: CreateAppOptions = {}) {
       manager,
       workspaces: workspaceResolver,
       allowGoogleFonts: env.JEJAK_DESIGN_GOOGLE_FONTS?.trim() === "1",
+      editEnabled: env.JEJAK_FILE_EDIT?.trim() !== "0",
+      audit: options.audit,
     }),
   );
   // Rute tunnel dipasang di luar rantai demi alasan yang sama.
