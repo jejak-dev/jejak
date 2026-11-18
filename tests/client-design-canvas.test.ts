@@ -291,8 +291,9 @@ describe("sumber iframe", () => {
     expect(source).not.toContain("allow-same-origin");
   });
 
-  test("memakai srcdoc dan referrerpolicy no-referrer", () => {
-    expect(source).toContain("srcdoc={html}");
+  test("memuat lewat src dan referrerpolicy no-referrer", () => {
+    expect(source).toContain("src={src}");
+    expect(source).not.toContain("srcdoc");
     expect(source).toContain('referrerpolicy="no-referrer"');
   });
 });

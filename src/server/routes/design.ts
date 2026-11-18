@@ -1,6 +1,6 @@
 import { Elysia } from "elysia";
 import type { SessionManager, WorkspaceResolver } from "../sessions/session-manager";
-import { DesignError, assemblePage } from "../design/assemble";
+import { DesignError, assemblePage, buildCsp } from "../design/assemble";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignWriteError, initDesign, saveLayout } from "../design/write";
 import { REVERT_MESSAGES } from "../files/revert";
@@ -98,6 +98,28 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
         const root = await resolveRepoRoot(session, query.repo, workspaces);
         const slug = typeof query.slug === "string" ? query.slug : "";
         return await assemblePage(root, slug, { allowGoogleFonts });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .get("/api/sessions/:id/design/frame", async ({ params, query }) => {
+      const session = manager.get(params.id);
+      if (session === undefined) {
+        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+      }
+      try {
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        const slug = typeof query.slug === "string" ? query.slug : "";
+        const page = await assemblePage(root, slug, { allowGoogleFonts });
+        return new Response(page.html, {
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "content-security-policy": buildCsp(allowGoogleFonts),
+            "x-content-type-options": "nosniff",
+            "cache-control": "no-store",
+            "referrer-policy": "no-referrer",
+          },
+        });
       } catch (error) {
         return errorResponse(error);
       }

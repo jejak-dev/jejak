@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../src/server";
+import { buildCsp } from "../src/server/design/assemble";
 import { createMockRunner, type AgentRunner } from "../src/server/agent";
 import { SqliteAuditStore, type AuditStore } from "../src/server/audit/audit-store";
 
@@ -231,6 +232,61 @@ describe("GET /api/sessions/:id/design/page", () => {
   });
 });
 
+describe("GET /api/sessions/:id/design/frame", () => {
+  test("sesi tak dikenal 404", async () => {
+    const server = makeApp();
+    const res = await req(server, "GET", "/api/sessions/s_tidakada/design/frame?slug=beranda");
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as ErrorBody).error).toBe('Sesi "s_tidakada" tidak ditemukan.');
+  });
+
+  test("200 HTML dengan CSP, nosniff, dan no-store", async () => {
+    await mkdir(join(dir, "design", "pages"), { recursive: true });
+    await writeFile(
+      join(dir, "design", "pages", "beranda.html"),
+      "<html><head></head><body><p>Halo</p></body></html>",
+      "utf8",
+    );
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const res = await req(server, "GET", `/api/sessions/${id}/design/frame?slug=beranda&v=1`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(res.headers.get("content-security-policy")).toBe(buildCsp(false));
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    const html = await res.text();
+    expect(html).toContain("<script data-jejak-design-runtime>");
+  });
+
+  test("CSP mengikuti sakelar Google Fonts", async () => {
+    await mkdir(join(dir, "design", "pages"), { recursive: true });
+    await writeFile(join(dir, "design", "pages", "beranda.html"), "<html></html>", "utf8");
+    const server = makeApp({ JEJAK_DESIGN_GOOGLE_FONTS: "1" });
+    const id = await createSession(server);
+
+    const res = await req(server, "GET", `/api/sessions/${id}/design/frame?slug=beranda`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-security-policy")).toBe(buildCsp(true));
+  });
+
+  test("slug tak sah 400, halaman tak ada 404", async () => {
+    await mkdir(join(dir, "design", "pages"), { recursive: true });
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const invalid = await req(server, "GET", `/api/sessions/${id}/design/frame?slug=../x`);
+    expect(invalid.status).toBe(400);
+    expect(((await invalid.json()) as ErrorBody).error).toBe("Slug halaman tidak valid.");
+
+    const missing = await req(server, "GET", `/api/sessions/${id}/design/frame?slug=hilang`);
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as ErrorBody).error).toBe("Halaman tidak ditemukan.");
+  });
+});
+
 describe("rute design dan autentikasi", () => {
   test("tanpa cookie ditolak 401, dengan cookie lolos ke pemeriksaan sesi", async () => {
     const app = createApp({
@@ -246,6 +302,7 @@ describe("rute design dan autentikasi", () => {
       "/api/sessions/x/design",
       "/api/sessions/x/design/stamp",
       "/api/sessions/x/design/page?slug=beranda",
+      "/api/sessions/x/design/frame?slug=beranda",
     ]) {
       const tanpa = await get(path);
       expect(tanpa.status).toBe(401);

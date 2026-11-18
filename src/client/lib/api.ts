@@ -785,6 +785,8 @@ export interface ApiClient {
   getDesignStamp(id: string, repo?: string): Promise<{ stamp: string }>;
   /** Satu halaman desain yang sudah dirakit untuk frame. */
   getDesignPage(id: string, slug: string, repo?: string): Promise<DesignPageDoc>;
+  /** URL frame desain; `version` (mtime) membuat iframe memuat ulang. */
+  designFrameUrl(id: string, slug: string, version: number, repo?: string): string;
   /** Simpan posisi (dan perangkat) halaman yang sudah terdaftar. */
   saveDesignLayout(
     id: string,
@@ -1438,6 +1440,24 @@ function memoryQuery(params: MemoryQuery | undefined): string {  if (params === 
 }
 
 /** Query string dari pasangan yang diberikan; nilai undefined dilewati. */
+/**
+ * URL rute frame desain; semua nilai di-encode. `version` (mtime halaman)
+ * membedakan URL supaya iframe memuat ulang saat berkas berubah.
+ */
+export function designFrameUrl(
+  id: string,
+  slug: string,
+  version: number,
+  repo?: string,
+): string {
+  const query = queryString([
+    ["slug", slug],
+    ["v", String(version)],
+    ["repo", repo],
+  ]);
+  return `/api/sessions/${encodeURIComponent(id)}/design/frame${query}`;
+}
+
 function queryString(parts: Array<[string, string | undefined]>): string {
   const pairs: string[] = [];
   for (const [key, value] of parts) {
@@ -2415,6 +2435,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         mtime: typeof data.mtime === "number" ? data.mtime : 0,
         warnings: stringListFrom(data.warnings),
       };
+    },
+
+    designFrameUrl(id, slug, version, repo) {
+      return designFrameUrl(id, slug, version, repo);
     },
 
     async saveDesignLayout(id, pages, repo) {

@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { ApiError, type ApiClient, type DesignResult, type DeviceId } from "../lib/api";
+import {
+  ApiError,
+  designFrameUrl,
+  type ApiClient,
+  type DesignResult,
+  type DeviceId,
+} from "../lib/api";
 import {
   centerOn,
   fitView,
@@ -56,9 +62,21 @@ interface Override {
 }
 
 interface Doc {
-  html: string;
   mtime: number;
   warnings: number;
+}
+
+/** URL frame dari klien, atau fungsi mandiri bila klien tak menyediakannya. */
+function frameUrl(
+  api: ApiClient,
+  id: string,
+  slug: string,
+  version: number,
+  repo: string | undefined,
+): string {
+  return typeof api.designFrameUrl === "function"
+    ? api.designFrameUrl(id, slug, version, repo)
+    : designFrameUrl(id, slug, version, repo);
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -196,7 +214,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
         .then((result) => {
           setDocs((prev) => ({
             ...prev,
-            [slug]: { html: result.html, mtime: result.mtime, warnings: result.warnings.length },
+            [slug]: { mtime: result.mtime, warnings: result.warnings.length },
           }));
         })
         .catch(() => {
@@ -689,6 +707,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
           const page = pageBySlug.get(rect.slug);
           if (page === undefined) return null;
           const doc = docs[rect.slug];
+          const src =
+            doc === undefined
+              ? undefined
+              : frameUrl(api, sessionId, page.slug, doc.mtime, repo);
           return (
             <DesignFrame
               key={rect.slug}
@@ -699,7 +721,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
               zoom={view.zoom}
               live={liveSet.has(rect.slug)}
               missing={page.missing}
-              html={doc?.html}
+              src={src}
               warnings={doc?.warnings ?? 0}
               onLabelPointerDown={(event) => onLabelDown(rect.slug, event)}
               onLabelPointerMove={onLabelMove}

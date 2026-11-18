@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ApiError, createApiClient, type DesignResult } from "../src/client/lib/api";
+import { ApiError, createApiClient, designFrameUrl, type DesignResult } from "../src/client/lib/api";
 
 interface Call {
   url: string;
@@ -95,6 +95,23 @@ describe("klien API desain", () => {
     const api = createApiClient({ fetch });
 
     await expect(api.getDesignPage("s1", "x")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("designFrameUrl meng-encode id, slug, versi, dan repo", () => {
+    expect(designFrameUrl("a/b c", "beranda", 12, "repo satu")).toBe(
+      "/api/sessions/a%2Fb%20c/design/frame?slug=beranda&v=12&repo=repo%20satu",
+    );
+    expect(designFrameUrl("s1", "x y", 0)).toBe(
+      "/api/sessions/s1/design/frame?slug=x%20y&v=0",
+    );
+  });
+
+  test("klien menyediakan designFrameUrl yang sama", () => {
+    const { fetch } = fakeFetch(() => jsonResponse({}));
+    const api = createApiClient({ fetch });
+    expect(api.designFrameUrl("s1", "beranda", 3, "web")).toBe(
+      "/api/sessions/s1/design/frame?slug=beranda&v=3&repo=web",
+    );
   });
 
   test("saveDesignLayout PUT body pages dan repo", async () => {

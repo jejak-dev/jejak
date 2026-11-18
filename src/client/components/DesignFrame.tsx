@@ -13,8 +13,8 @@ export interface DesignFrameProps {
   live: boolean;
   /** Berkas halaman belum ada di disk. */
   missing: boolean;
-  /** Dokumen terakit; undefined selama belum dimuat. */
-  html?: string;
+  /** URL dokumen frame; undefined selama belum dimuat. */
+  src?: string;
   /** Jumlah peringatan perakitan halaman. */
   warnings: number;
   onLabelPointerDown: (event: PointerEvent) => void;
@@ -37,7 +37,7 @@ function isDeviceId(value: string): value is DeviceId {
  * saat hidup; selain itu kotak penampung berjudul.
  */
 export function DesignFrame(props: DesignFrameProps) {
-  const { title, route, device, rect, zoom, live, missing, html, warnings } = props;
+  const { title, route, device, rect, zoom, live, missing, src, warnings } = props;
 
   return (
     <>
@@ -98,11 +98,11 @@ export function DesignFrame(props: DesignFrameProps) {
       >
         {missing ? (
           <div class="jk-design-frame-empty">Berkas belum ada</div>
-        ) : live && html !== undefined ? (
+        ) : live && src !== undefined ? (
           <iframe
             ref={props.setFrameRef}
             sandbox="allow-scripts"
-            srcdoc={html}
+            src={src}
             title={`Halaman ${title}`}
             referrerpolicy="no-referrer"
           />
