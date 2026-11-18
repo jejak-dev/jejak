@@ -1,0 +1,707 @@
+import { useEffect, useRef, useState } from "preact/hooks";
+import { ApiError, type ApiClient, type DesignResult, type DeviceId } from "../lib/api";
+import {
+  centerOn,
+  fitView,
+  frameRects,
+  panBy,
+  pickLive,
+  snap,
+  stepZoom,
+  visibleSlugs,
+  wheelAction,
+  worldToScreen,
+  zoomAt,
+  zoomBy,
+  type Rect,
+  type Size,
+  type View,
+} from "../lib/design-canvas";
+import { isFromFrame, modeMessage, parseFrameMessage } from "../lib/design-protocol";
+import { targetKindOf } from "../lib/shortcuts";
+import { DesignFrame } from "./DesignFrame";
+
+export interface DesignCanvasProps {
+  api: ApiClient;
+  sessionId: string;
+  /** Nama repo workspace; undefined berarti repo utama (cwd sesi). */
+  repo?: string;
+  design: DesignResult;
+  refresh: () => Promise<void>;
+  onExit: () => void;
+}
+
+interface Override {
+  x: number;
+  y: number;
+  device?: DeviceId;
+}
+
+interface Doc {
+  html: string;
+  mtime: number;
+  warnings: number;
+}
+
+const SAVE_DEBOUNCE_MS = 500;
+const EMPTY_TEXT = "Belum ada halaman. Minta agent merancang halaman pertama.";
+
+function errorMessage(caught: unknown): string {
+  return caught instanceof ApiError ? caught.message : "tata letak tidak dapat disimpan";
+}
+
+/**
+ * Kanvas desain: dunia tak terbatas berisi frame halaman, zoom/geser, dan
+ * penyimpanan posisi. Chrome melayang di atas kanvas dan tidak mengubah
+ * ukuran dunia.
+ */
+export function DesignCanvas(props: DesignCanvasProps) {
+  const { api, sessionId, repo, design, refresh, onExit } = props;
+
+  const containerRef = useRef<HTMLElement | null>(null);
+  const frameEls = useRef(new Map<string, HTMLIFrameElement>());
+  const refCallbacks = useRef(new Map<string, (el: HTMLIFrameElement | null) => void>());
+  const loadingRef = useRef(new Set<string>());
+  const pendingRef = useRef(new Map<string, Override>());
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const fitDone = useRef(false);
+  const panDrag = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null);
+  const frameDrag = useRef<{
+    slug: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 });
+  const [tool, setTool] = useState<"pan" | "preview">("pan");
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
+  const [contentHeights, setContentHeights] = useState<Record<string, number>>({});
+  const [overrides, setOverrides] = useState<Record<string, Override>>({});
+  const [docs, setDocs] = useState<Record<string, Doc>>({});
+  const [error, setError] = useState<string | undefined>(undefined);
+  const [pagesOpen, setPagesOpen] = useState(false);
+
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const viewportRef = useRef(viewport);
+  viewportRef.current = viewport;
+  const overridesRef = useRef(overrides);
+  overridesRef.current = overrides;
+
+  const pages = design.pages.map((page) => {
+    const override = overrides[page.slug];
+    if (override === undefined) return page;
+    return {
+      ...page,
+      x: override.x,
+      y: override.y,
+      device: override.device ?? page.device,
+    };
+  });
+  const rects = frameRects(pages, contentHeights);
+  const rectsRef = useRef(rects);
+  rectsRef.current = rects;
+
+  const visible = visibleSlugs(rects, view, viewport);
+  const live = pickLive(visible, rects, view, viewport);
+  const liveSet = new Set(live);
+  const liveKey = live.join(",");
+
+  const pageBySlug = new Map(pages.map((page) => [page.slug, page]));
+
+  const frameRefFor = (slug: string): ((el: HTMLIFrameElement | null) => void) => {
+    let callback = refCallbacks.current.get(slug);
+    if (callback === undefined) {
+      callback = (el) => {
+        if (el === null) frameEls.current.delete(slug);
+        else frameEls.current.set(slug, el);
+      };
+      refCallbacks.current.set(slug, callback);
+    }
+    return callback;
+  };
+
+  // Ukuran viewport diamati supaya fit dan pemusatan memakai ukuran nyata.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el === null) return;
+    const update = (): void => {
+      setViewport({ width: el.clientWidth, height: el.clientHeight });
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  // Fit sekali per pemasangan, bukan tiap polling.
+  useEffect(() => {
+    if (fitDone.current) return;
+    if (rects.length === 0) return;
+    if (viewport.width <= 0 || viewport.height <= 0) return;
+    fitDone.current = true;
+    setView(fitView(rects, viewport));
+  }, [rects, viewport]);
+
+  // Muat HTML halaman untuk frame yang hidup; pertahankan hasil per slug.
+  useEffect(() => {
+    const bySlug = new Map(design.pages.map((page) => [page.slug, page]));
+    for (const slug of live) {
+      const page = bySlug.get(slug);
+      if (page === undefined || page.missing) continue;
+      const doc = docs[slug];
+      if (doc !== undefined && doc.mtime === page.mtime) continue;
+      if (loadingRef.current.has(slug)) continue;
+      loadingRef.current.add(slug);
+      void api
+        .getDesignPage(sessionId, slug, repo)
+        .then((result) => {
+          setDocs((prev) => ({
+            ...prev,
+            [slug]: { html: result.html, mtime: result.mtime, warnings: result.warnings.length },
+          }));
+        })
+        .catch(() => {
+          // Gagal memuat satu halaman tidak menghentikan kanvas.
+        })
+        .finally(() => {
+          loadingRef.current.delete(slug);
+        });
+    }
+  }, [liveKey, design, api, sessionId, repo, docs]);
+
+  // Buang override yang sudah sama dengan data server.
+  useEffect(() => {
+    setOverrides((prev) => {
+      let changed = false;
+      const next: Record<string, Override> = { ...prev };
+      for (const [slug, override] of Object.entries(prev)) {
+        const page = design.pages.find((item) => item.slug === slug);
+        if (page === undefined) continue;
+        const deviceSama = override.device === undefined || override.device === page.device;
+        if (page.x === override.x && page.y === override.y && deviceSama) {
+          delete next[slug];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [design]);
+
+  // Pesan dari frame: satu pendengar untuk semua iframe.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent): void => {
+      let slug: string | undefined;
+      let element: HTMLIFrameElement | undefined;
+      for (const [key, el] of frameEls.current) {
+        if (isFromFrame(event, el.contentWindow)) {
+          slug = key;
+          element = el;
+          break;
+        }
+      }
+      if (slug === undefined || element === undefined) return;
+      const message = parseFrameMessage(event.data);
+      if (message === undefined) return;
+      switch (message.type) {
+        case "ready":
+          element.contentWindow?.postMessage(modeMessage("preview"), "*");
+          return;
+        case "size":
+          setContentHeights((prev) =>
+            prev[slug] === message.height ? prev : { ...prev, [slug]: message.height },
+          );
+          return;
+        case "wheel": {
+          const rect = rectsRef.current.find((item) => item.slug === slug);
+          if (rect === undefined) return;
+          const action = wheelAction({
+            ctrlKey: message.ctrlKey,
+            metaKey: false,
+            deltaX: message.deltaX,
+            deltaY: message.deltaY,
+            deltaMode: 0,
+          });
+          setView((current) => {
+            if (action.kind === "zoom") {
+              const anchor = worldToScreen(current, {
+                x: rect.x + message.clientX,
+                y: rect.y + message.clientY,
+              });
+              return zoomBy(current, action.factor, anchor);
+            }
+            return panBy(current, action.dx * current.zoom, action.dy * current.zoom);
+          });
+          return;
+        }
+        case "pan":
+          setView((current) =>
+            panBy(current, message.dx * current.zoom, message.dy * current.zoom),
+          );
+          return;
+        default:
+          // `route`, `hover`, dan `select` belum ditangani di komit ini.
+          return;
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
+
+  // Roda mouse di wadah: zoom ke arah kursor atau geser.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el === null) return;
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      const action = wheelAction(event);
+      const box = el.getBoundingClientRect();
+      const anchor = { x: event.clientX - box.left, y: event.clientY - box.top };
+      setView((current) =>
+        action.kind === "zoom"
+          ? zoomBy(current, action.factor, anchor)
+          : panBy(current, action.dx, action.dy),
+      );
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== undefined) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const flush = async (): Promise<void> => {
+    const entries = [...pendingRef.current.entries()].map(([slug, value]) => ({
+      slug,
+      x: value.x,
+      y: value.y,
+      ...(value.device === undefined ? {} : { device: value.device }),
+    }));
+    pendingRef.current.clear();
+    if (entries.length === 0) return;
+    try {
+      await api.saveDesignLayout(sessionId, entries, repo);
+      await refresh();
+    } catch (caught) {
+      setError(errorMessage(caught));
+      setOverrides({});
+    }
+  };
+
+  const scheduleSave = (slug: string, patch: Override): void => {
+    const prev = pendingRef.current.get(slug);
+    pendingRef.current.set(slug, { ...prev, ...patch });
+    if (timerRef.current !== undefined) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = undefined;
+      void flush();
+    }, SAVE_DEBOUNCE_MS);
+  };
+
+  const startPan = (event: PointerEvent): void => {
+    panDrag.current = { pointerId: event.pointerId, lastX: event.clientX, lastY: event.clientY };
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    setDragging(true);
+  };
+
+  const movePan = (event: PointerEvent): void => {
+    const drag = panDrag.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    const dx = event.clientX - drag.lastX;
+    const dy = event.clientY - drag.lastY;
+    drag.lastX = event.clientX;
+    drag.lastY = event.clientY;
+    setView((current) => panBy(current, dx, dy));
+  };
+
+  const endPan = (event: PointerEvent): void => {
+    if (panDrag.current === null || panDrag.current.pointerId !== event.pointerId) return;
+    panDrag.current = null;
+    setDragging(false);
+  };
+
+  const onOverlayDown = (event: PointerEvent): void => {
+    if (event.button !== 0 && event.button !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    containerRef.current?.focus();
+    startPan(event);
+  };
+
+  const onContainerDown = (event: PointerEvent): void => {
+    if (event.button === 1) {
+      event.preventDefault();
+      startPan(event);
+      return;
+    }
+    // Fokus ke wadah agar pintasan aktif, kecuali pointer mengenai kontrol.
+    const target = event.target;
+    const interaktif =
+      target instanceof Element &&
+      target.closest("button, a, input, select, textarea, [role='menu']") !== null;
+    if (!interaktif) containerRef.current?.focus();
+  };
+
+  const onLabelDown = (slug: string, event: PointerEvent): void => {
+    if (event.button !== 0) return;
+    const target = event.target;
+    if (target instanceof Element && target.closest(".jk-dd") !== null) return;
+    const page = pageBySlug.get(slug);
+    if (page === undefined) return;
+    event.preventDefault();
+    event.stopPropagation();
+    frameDrag.current = {
+      slug,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: page.x,
+      originY: page.y,
+      x: page.x,
+      y: page.y,
+    };
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    setDragging(true);
+  };
+
+  const onLabelMove = (event: PointerEvent): void => {
+    const drag = frameDrag.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    const zoom = viewRef.current.zoom;
+    drag.x = drag.originX + (event.clientX - drag.startX) / zoom;
+    drag.y = drag.originY + (event.clientY - drag.startY) / zoom;
+    const { slug } = drag;
+    const x = drag.x;
+    const y = drag.y;
+    setOverrides((prev) => {
+      const base = prev[slug];
+      return { ...prev, [slug]: { x, y, ...(base?.device === undefined ? {} : { device: base.device }) } };
+    });
+  };
+
+  const onLabelUp = (event: PointerEvent): void => {
+    const drag = frameDrag.current;
+    if (drag === null || drag.pointerId !== event.pointerId) return;
+    frameDrag.current = null;
+    setDragging(false);
+    if (drag.x === drag.originX && drag.y === drag.originY) return;
+    const x = snap(drag.x, 8);
+    const y = snap(drag.y, 8);
+    const device = overridesRef.current[drag.slug]?.device;
+    setOverrides((prev) => ({
+      ...prev,
+      [drag.slug]: { x, y, ...(device === undefined ? {} : { device }) },
+    }));
+    scheduleSave(drag.slug, { x, y });
+  };
+
+  const onDevice = (slug: string, device: DeviceId): void => {
+    const page = pageBySlug.get(slug);
+    if (page === undefined) return;
+    const override = overridesRef.current[slug];
+    const x = override?.x ?? page.x;
+    const y = override?.y ?? page.y;
+    setOverrides((prev) => ({ ...prev, [slug]: { x, y, device } }));
+    scheduleSave(slug, { x, y, device });
+  };
+
+  const reloadFrame = (slug: string): void => {
+    setDocs((prev) => {
+      const next = { ...prev };
+      delete next[slug];
+      return next;
+    });
+  };
+
+  const refreshAll = (): void => {
+    setDocs({});
+    void refresh();
+  };
+
+  const zoomTo = (zoom: number): void => {
+    const size = viewportRef.current;
+    setView((current) => zoomAt(current, zoom, { x: size.width / 2, y: size.height / 2 }));
+  };
+
+  const step = (dir: 1 | -1): void => {
+    const size = viewportRef.current;
+    setView((current) =>
+      zoomAt(current, stepZoom(current.zoom, dir), { x: size.width / 2, y: size.height / 2 }),
+    );
+  };
+
+  const fit = (): void => {
+    setView(fitView(rectsRef.current, viewportRef.current));
+  };
+
+  const onKeyDown = (event: KeyboardEvent): void => {
+    if (event.isComposing) return;
+    if (targetKindOf(event.target) === "input") return;
+    if (event.ctrlKey || event.metaKey || event.altKey) return;
+    const target = event.target;
+    const interaktif =
+      target instanceof Element &&
+      target.closest("button, a, [role='menu'], [role='menuitem'], [role='menuitemradio']") !== null;
+    // Jangan telan Space pada tombol dan Esc saat menu frame terbuka.
+    if (interaktif && (event.key === " " || event.key === "Escape")) return;
+    switch (event.key) {
+      case "h":
+      case "H":
+        event.preventDefault();
+        event.stopPropagation();
+        setTool("pan");
+        return;
+      case "p":
+      case "P":
+        event.preventDefault();
+        event.stopPropagation();
+        setTool("preview");
+        return;
+      case "0":
+        event.preventDefault();
+        event.stopPropagation();
+        zoomTo(1);
+        return;
+      case "1":
+        event.preventDefault();
+        event.stopPropagation();
+        fit();
+        return;
+      case "+":
+      case "=":
+        event.preventDefault();
+        event.stopPropagation();
+        step(1);
+        return;
+      case "-":
+        event.preventDefault();
+        event.stopPropagation();
+        step(-1);
+        return;
+      case " ":
+        event.preventDefault();
+        event.stopPropagation();
+        setSpaceHeld(true);
+        return;
+      case "Escape":
+        event.preventDefault();
+        event.stopPropagation();
+        onExit();
+        return;
+      default:
+        return;
+    }
+  };
+
+  const onKeyUp = (event: KeyboardEvent): void => {
+    if (event.key === " ") setSpaceHeld(false);
+  };
+
+  const panMode = tool === "pan" || spaceHeld;
+  const classes = [
+    "jk-design-canvas",
+    panMode ? "jk-design-pan" : "",
+    dragging ? "jk-design-dragging" : "",
+  ]
+    .filter((item) => item !== "")
+    .join(" ");
+
+  return (
+    <section
+      ref={containerRef}
+      class={classes}
+      tabIndex={0}
+      role="application"
+      aria-label="Kanvas desain"
+      onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
+      onPointerDown={onContainerDown}
+      onPointerMove={movePan}
+      onPointerUp={endPan}
+      onPointerCancel={endPan}
+    >
+      <div
+        class="jk-design-world"
+        style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}
+      >
+        {panMode && (
+          <div
+            class="jk-design-overlay"
+            style={{
+              left: `${-view.x / view.zoom}px`,
+              top: `${-view.y / view.zoom}px`,
+              width: `${Math.max(1, viewport.width) / view.zoom}px`,
+              height: `${Math.max(1, viewport.height) / view.zoom}px`,
+            }}
+            onPointerDown={onOverlayDown}
+          />
+        )}
+
+        {rects.map((rect) => {
+          const page = pageBySlug.get(rect.slug);
+          if (page === undefined) return null;
+          const doc = docs[rect.slug];
+          return (
+            <DesignFrame
+              key={rect.slug}
+              title={page.title}
+              route={page.route}
+              device={page.device}
+              rect={rect as Rect}
+              zoom={view.zoom}
+              live={liveSet.has(rect.slug)}
+              missing={page.missing}
+              html={doc?.html}
+              warnings={doc?.warnings ?? 0}
+              onLabelPointerDown={(event) => onLabelDown(rect.slug, event)}
+              onLabelPointerMove={onLabelMove}
+              onLabelPointerUp={onLabelUp}
+              onDevice={(device) => onDevice(rect.slug, device)}
+              onReload={() => reloadFrame(rect.slug)}
+              setFrameRef={frameRefFor(rect.slug)}
+            />
+          );
+        })}
+      </div>
+
+      {design.pages.length === 0 && <div class="jk-design-empty">{EMPTY_TEXT}</div>}
+
+      <div class="jk-design-toolbar" role="toolbar" aria-label="Alat kanvas">
+        <button
+          type="button"
+          class="jk-design-tool"
+          aria-pressed={tool === "pan"}
+          aria-label="Geser (H)"
+          title="Geser (H)"
+          onClick={() => setTool("pan")}
+        >
+          Geser
+        </button>
+        <button
+          type="button"
+          class="jk-design-tool"
+          aria-pressed={tool === "preview"}
+          aria-label="Pratinjau (P)"
+          title="Pratinjau (P)"
+          onClick={() => setTool("preview")}
+        >
+          Pratinjau
+        </button>
+      </div>
+
+      <div class="jk-design-pages">
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-haspopup="menu"
+          aria-expanded={pagesOpen}
+          aria-label="Daftar halaman"
+          title="Daftar halaman"
+          onClick={() => setPagesOpen((open) => !open)}
+        >
+          Halaman
+        </button>
+        {pagesOpen && (
+          <ul class="jk-design-pages-menu" role="menu" aria-label="Daftar halaman">
+            {pages.map((page) => (
+              <li key={page.slug}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-design-pages-item"
+                  onClick={() => {
+                    const rect = rectsRef.current.find((item) => item.slug === page.slug);
+                    if (rect !== undefined) {
+                      setView((current) => centerOn(current, rect, viewportRef.current));
+                    }
+                    setPagesOpen(false);
+                  }}
+                >
+                  {page.title}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div class="jk-design-zoom" role="group" aria-label="Zoom kanvas">
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-label="Perkecil"
+          title="Perkecil"
+          onClick={() => step(-1)}
+        >
+          −
+        </button>
+        <span class="jk-design-zoom-value">{Math.round(view.zoom * 100)}%</span>
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-label="Perbesar"
+          title="Perbesar"
+          onClick={() => step(1)}
+        >
+          +
+        </button>
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-label="Zoom 100%"
+          title="Zoom 100%"
+          onClick={() => zoomTo(1)}
+        >
+          100%
+        </button>
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-label="Muat semua"
+          title="Muat semua"
+          onClick={fit}
+        >
+          Muat semua
+        </button>
+      </div>
+
+      <div class="jk-design-actions">
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-label="Segarkan"
+          title="Segarkan"
+          onClick={refreshAll}
+        >
+          Segarkan
+        </button>
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-label="Keluar dari mode lebar"
+          title="Keluar dari mode lebar"
+          onClick={onExit}
+        >
+          Keluar dari mode lebar
+        </button>
+      </div>
+
+      {error !== undefined && (
+        <p class="jk-design-error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}

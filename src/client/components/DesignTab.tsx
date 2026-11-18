@@ -2,6 +2,7 @@ import { useState } from "preact/hooks";
 import { ApiError, type ApiClient } from "../lib/api";
 import { SAMPLE_PROMPT, pageRows } from "../lib/design-ui";
 import { useDesign } from "../lib/use-design";
+import { DesignCanvas } from "./DesignCanvas";
 
 export interface DesignTabProps {
   api: ApiClient;
@@ -97,6 +98,22 @@ export function DesignTab(props: DesignTabProps) {
   const rows = pageRows(design.pages);
   const peringatan = [...design.warnings];
   if (design.manifestError !== undefined) peringatan.unshift(design.manifestError);
+
+  // Mode lebar: kanvas mengisi badan tab; daftar tetap untuk panel biasa.
+  if (wide && design.exists) {
+    return (
+      <div class="jk-panel-body jk-panel-body-canvas">
+        <DesignCanvas
+          api={api}
+          sessionId={sessionId}
+          repo={repo}
+          design={design}
+          refresh={refresh}
+          onExit={() => onWideChange(false)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div class="jk-panel-body">

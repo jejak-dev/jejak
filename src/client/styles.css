@@ -10863,3 +10863,283 @@ h2.jk-md-heading {
   border-radius: 8px;
   object-fit: contain;
 }
+
+/* Kanvas desain: dunia tak terbatas, chrome melayang di atasnya. */
+.jk-pane-body:has(> .jk-panel-body-canvas) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.jk-panel-body-canvas {
+  padding: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.jk-design-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  outline: none;
+  background-color: color-mix(in srgb, var(--bg) 88%, var(--t1));
+  background-image: radial-gradient(var(--line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  touch-action: none;
+  user-select: none;
+}
+
+.jk-design-canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--link);
+}
+
+.jk-design-world {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.jk-design-frame {
+  position: absolute;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.jk-design-frame iframe {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #ffffff;
+}
+
+.jk-design-frame-empty {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  color: var(--t3);
+  font-size: 12px;
+  text-align: center;
+}
+
+.jk-design-frame-label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transform-origin: 0 0;
+  padding-bottom: 4px;
+  color: var(--t3);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: grab;
+}
+
+.jk-design-frame-title {
+  color: var(--t2);
+}
+
+.jk-design-frame-meta {
+  color: var(--t3);
+}
+
+.jk-design-frame-warn {
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--line-2);
+  color: var(--warn);
+  font-size: 12px;
+}
+
+.jk-design-frame-label .jk-dd-btn {
+  height: 20px;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.jk-design-overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  cursor: grab;
+}
+
+/* Alat Geser: frame tidak menangkap pointer, label tetap bisa diseret. */
+.jk-design-pan .jk-design-frame {
+  pointer-events: none;
+}
+
+.jk-design-dragging,
+.jk-design-dragging .jk-design-overlay {
+  cursor: grabbing;
+}
+
+.jk-design-dragging iframe {
+  pointer-events: none;
+}
+
+.jk-design-toolbar {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.jk-design-tool {
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.jk-design-tool:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-design-tool[aria-pressed="true"] {
+  background: var(--hover-2);
+  color: var(--t1);
+}
+
+.jk-design-tool:focus-visible,
+.jk-design-chip:focus-visible,
+.jk-design-pages-item:focus-visible {
+  outline: 2px solid var(--link);
+  outline-offset: 1px;
+}
+
+.jk-design-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--t2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.jk-design-chip:hover {
+  background: var(--hover);
+  color: var(--t1);
+}
+
+.jk-design-zoom {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.jk-design-zoom-value {
+  min-width: 40px;
+  color: var(--t2);
+  font-size: 12px;
+  text-align: center;
+}
+
+.jk-design-pages {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+}
+
+.jk-design-pages-menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  min-width: 180px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.jk-design-pages-item {
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t1);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jk-design-pages-item:hover {
+  background: var(--hover);
+}
+
+.jk-design-actions {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  display: flex;
+  gap: 4px;
+}
+
+.jk-design-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  color: var(--t3);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.jk-design-error {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--bad);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+}

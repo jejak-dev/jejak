@@ -31,6 +31,13 @@ export const SHORTCUT_LIST: readonly { label: string; keys: string }[] = [
   { label: "Sesi sebelumnya", keys: "Alt ↑" },
   { label: "Sesi berikutnya", keys: "Alt ↓" },
   { label: "Tutup overlay", keys: "Esc" },
+  { label: "Kanvas desain: alat Geser", keys: "H" },
+  { label: "Kanvas desain: alat Pratinjau", keys: "P" },
+  { label: "Kanvas desain: zoom 100%", keys: "0" },
+  { label: "Kanvas desain: muat semua", keys: "1" },
+  { label: "Kanvas desain: perbesar/perkecil", keys: "+ / −" },
+  { label: "Kanvas desain: geser sementara", keys: "Space" },
+  { label: "Kanvas desain: keluar mode lebar", keys: "Esc" },
 ];
 
 interface ElementLike {

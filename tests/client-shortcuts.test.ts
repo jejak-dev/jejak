@@ -164,4 +164,13 @@ describe("SHORTCUT_LIST", () => {
     expect(SHORTCUT_LIST.length).toBeGreaterThanOrEqual(7);
     expect(SHORTCUT_LIST.every((item) => item.label !== "" && item.keys !== "")).toBe(true);
   });
+
+  test("memuat pintasan kanvas desain", () => {
+    const labels = SHORTCUT_LIST.map((item) => item.label);
+    expect(labels).toContain("Kanvas desain: alat Geser");
+    expect(labels).toContain("Kanvas desain: alat Pratinjau");
+    expect(labels).toContain("Kanvas desain: zoom 100%");
+    expect(labels).toContain("Kanvas desain: muat semua");
+    expect(labels).toContain("Kanvas desain: geser sementara");
+  });
 });
