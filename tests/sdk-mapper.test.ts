@@ -278,6 +278,54 @@ test("result berisi galat kompaksi dianggap gagal", () => {
   }
 });
 
+test("result sukses kosong setelah compact tetap sukses", () => {
+  expect(
+    mapSdkMessage(
+      {
+        type: "result",
+        subtype: "success",
+        result: "",
+        num_turns: 0,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+      { compacted: true },
+    ),
+  ).toEqual([{ type: "result", ok: true, inputTokens: 0, outputTokens: 0, numTurns: 0 }]);
+});
+
+test("result sukses kosong tanpa opts compacted tetap dianggap gagal", () => {
+  const [event] = mapSdkMessage({
+    type: "result",
+    subtype: "success",
+    result: "",
+    num_turns: 0,
+    usage: { input_tokens: 0, output_tokens: 0 },
+  });
+  expect(event?.type).toBe("result");
+  if (event?.type === "result") {
+    expect(event.ok).toBe(false);
+    expect(event.error).toContain("Giliran kosong");
+  }
+});
+
+test("galat kompaksi tetap gagal walau compacted true", () => {
+  const [event] = mapSdkMessage(
+    {
+      type: "result",
+      subtype: "success",
+      result: "Error during compaction: API Error: 503 Service Unavailable",
+      num_turns: 1,
+      usage: { output_tokens: 10 },
+    },
+    { compacted: true },
+  );
+  expect(event?.type).toBe("result");
+  if (event?.type === "result") {
+    expect(event.ok).toBe(false);
+    expect(event.error).toContain("Error during compaction: API Error: 503");
+  }
+});
+
 test("result gagal error_max_turns memakai errors bila ada", () => {
   expect(
     mapSdkMessage({

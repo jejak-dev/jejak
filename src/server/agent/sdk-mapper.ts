@@ -165,7 +165,10 @@ const COMPACTION_ERROR_PREFIX = "error during compaction";
 /** Panjang maksimum teks galat kompaksi yang diteruskan. */
 const MAX_COMPACTION_ERROR = 500;
 
-function mapResult(message: Record<string, unknown>): AgentEvent[] {
+function mapResult(
+  message: Record<string, unknown>,
+  opts?: { compacted?: boolean },
+): AgentEvent[] {
   const subtype = typeof message.subtype === "string" ? message.subtype : "";
   const resultText = typeof message.result === "string" ? message.result : undefined;
   const numTurns = typeof message.num_turns === "number" ? message.num_turns : undefined;
@@ -185,6 +188,7 @@ function mapResult(message: Record<string, unknown>): AgentEvent[] {
       ok = false;
       forcedError = (resultText ?? "").slice(0, MAX_COMPACTION_ERROR);
     } else if (
+      opts?.compacted !== true &&
       trimmed === "" &&
       (numTurns === undefined || numTurns === 0) &&
       (outputTokens === undefined || outputTokens === 0)
@@ -197,7 +201,7 @@ function mapResult(message: Record<string, unknown>): AgentEvent[] {
 
   const event: Extract<AgentEvent, { type: "result" }> = { type: "result", ok };
 
-  if (ok && resultText !== undefined) {
+  if (ok && resultText !== undefined && resultText.trim() !== "") {
     event.summary = resultText;
   }
 
@@ -243,7 +247,10 @@ function mapPromptSuggestion(message: Record<string, unknown>): AgentEvent[] {
   return [{ type: "suggestion", text: text.slice(0, MAX_SUGGESTION) }];
 }
 
-export function mapSdkMessage(message: unknown): AgentEvent[] {
+export function mapSdkMessage(
+  message: unknown,
+  opts?: { compacted?: boolean },
+): AgentEvent[] {
   if (!isRecord(message)) return [];
 
   switch (message.type) {
@@ -263,7 +270,7 @@ export function mapSdkMessage(message: unknown): AgentEvent[] {
     case "user":
       return mapUser(message);
     case "result":
-      return mapResult(message);
+      return mapResult(message, opts);
     case "prompt_suggestion":
       return mapPromptSuggestion(message);
     default:

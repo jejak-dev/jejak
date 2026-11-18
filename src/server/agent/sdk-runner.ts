@@ -831,12 +831,17 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         let contextTokens: number | undefined;
         // Jangkar percakapan: uuid pesan assistant terakhir giliran ini.
         let anchorUuid: string | undefined;
+        // `/compact` menghasilkan result kosong; itu bukan giliran kosong.
+        let compacted = false;
         for await (const message of query) {
+          if (isRecord(message) && message.type === "system" && message.subtype === "compact_boundary") {
+            compacted = true;
+          }
           const callContext = contextTokensOf(message);
           contextTokens = callContext ?? contextTokens;
           const messageUuid = assistantUuidOf(message);
           if (messageUuid !== undefined) anchorUuid = messageUuid;
-          for (const event of mapSdkMessage(message)) {
+          for (const event of mapSdkMessage(message, { compacted })) {
             if (event.type === "text_delta") {
               if (pendingParent !== event.parentToolUseId && pendingDelta !== "") {
                 pendingDelta = "";
