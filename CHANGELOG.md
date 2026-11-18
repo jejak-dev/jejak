@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Diubah
+
+- Terminal: jalur WebSocket dua arah dengan buffer replay dan penggabungan keluaran (tahap server; klien menyusul). Pemeriksaan autentikasi dan Origin lewat rute HTTP sebelum upgrade.
+
 ## [0.1.0-beta.14] - 2026-11-18
 
 ### Ditambahkan

@@ -2,6 +2,7 @@ import { Elysia } from "elysia";
 import type { AuditStore } from "../audit/audit-store";
 import { recordAudit } from "../audit/record";
 import { TerminalError, type TerminalManager } from "../terminal/terminal-manager";
+import { TERMINAL_UPGRADE_HEADER } from "../terminal/terminal-ws";
 
 export interface TerminalRoutesOptions {
   /**
@@ -129,6 +130,32 @@ export function terminalRoutes(options: TerminalRoutesOptions = {}): Elysia {
       } catch (error) {
         return errorResponse(error);
       }
+    })
+    .get("/api/terminal/:id/ws", ({ params, request }) => {
+      const manager = resolve();
+      if (manager === undefined) return off();
+      const origin = request.headers.get("origin");
+      if (origin !== null) {
+        let originHost: string | undefined;
+        try {
+          originHost = new URL(origin).host;
+        } catch {
+          originHost = undefined;
+        }
+        if (originHost === undefined || originHost !== request.headers.get("host")) {
+          return json(403, { error: "Origin tidak diizinkan." });
+        }
+      }
+      if (!manager.list().some((terminal) => terminal.id === params.id)) {
+        return json(404, { error: "Terminal tidak ditemukan." });
+      }
+      if ((request.headers.get("upgrade") ?? "").toLowerCase() !== "websocket") {
+        return json(426, { error: "Butuh upgrade WebSocket." });
+      }
+      return new Response(null, {
+        status: 204,
+        headers: { [TERMINAL_UPGRADE_HEADER]: params.id },
+      });
     })
     .post(
       "/api/terminal/:id/input",

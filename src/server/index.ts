@@ -100,6 +100,7 @@ import {
 import { featuresRoutes } from "./routes/features";
 import { terminalRoutes } from "./routes/terminal";
 import { TerminalManager } from "./terminal/terminal-manager";
+import { maybeUpgradeTerminal, terminalWebsocket } from "./terminal/terminal-ws";
 import { browserRoutes } from "./routes/browser";
 import { BrowserManager } from "./browser/browser-manager";
 import { runnerRoutes } from "./routes/runner";
@@ -1012,6 +1013,11 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   // port acak dari OS). Aplikasi dirakit sesudah port diketahui, sehingga nama
   // cookie sesi, URL MCP, dan pesan log memakai port yang benar.
   const holder: { app?: ReturnType<typeof createApp> } = {};
+  // Manajer terminal dibaca per soket dari gerbang fitur aplikasi; aplikasi
+  // baru dirakit setelah port diketahui.
+  const terminalManager = (): TerminalManager | undefined =>
+    (holder.app as unknown as { featureGates?: FeatureGates } | undefined)?.featureGates
+      ?.terminal.get();
   // Penyimpanan sandi dan jaringan dipakai bersama oleh aplikasi dan manajer.
   const passwordStore = defaultPasswordStore(process.env);
   const networkStore = defaultNetworkStore(process.env);
@@ -1051,7 +1057,9 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
             hostname: opts.hostname,
             port: opts.port,
             idleTimeout: 30,
-            fetch: (request, srv) => opts.fetch(request, srv),
+            websocket: terminalWebsocket(terminalManager),
+            fetch: async (request, srv) =>
+              maybeUpgradeTerminal(request, await opts.fetch(request, srv), srv),
           }),
         networkInterfaces: localNetworkInterfaces,
         passwordStore,
@@ -1094,7 +1102,9 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
     // Sama dengan bawaan `.listen` Elysia (30 dtk); bawaan Bun (10 dtk) lebih pendek
     // dari jeda ping SSE (15 dtk) sehingga aliran sesi bisa terputus.
     idleTimeout: 30,
-    fetch: (request, srv) => mainHandler(request, srv),
+    websocket: terminalWebsocket(terminalManager),
+    fetch: async (request, srv) =>
+      maybeUpgradeTerminal(request, await mainHandler(request, srv), srv),
     ...(options.tls === undefined ? {} : { tls: options.tls }),
   });
   const port = server.port ?? requestedPort;
