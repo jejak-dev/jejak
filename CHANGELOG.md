@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.15] - 2026-11-18
+
 ### Diubah
 
 - Terminal memakai emulator xterm.js (mendukung vim, htop, kursor, warna penuh, seleksi/salin) dan soket WebSocket dua arah yang menyambung ulang otomatis dengan layar dipulihkan dari riwayat terbaru; memperbaiki layar terminal yang kadang gantung tanpa prompt. Menambah dependensi @xterm/xterm dan @xterm/addon-fit.
