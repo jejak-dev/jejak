@@ -133,6 +133,9 @@ describe("klien API desain", () => {
     });
     expect(calls[0]?.url).toBe("/api/sessions/s1/design/init?repo=web");
     expect(calls[0]?.init.method).toBe("POST");
+    // Penjaga server menolak POST tanpa content-type JSON (415).
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(calls[0]?.init.body).toBe("{}");
   });
 
   test("galat server dilempar dengan pesan dan status", async () => {

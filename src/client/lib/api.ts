@@ -2436,6 +2436,8 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const data = await request(
         "POST",
         `/api/sessions/${encodeURIComponent(id)}/design/init${query}`,
+        // Penjaga server menolak POST tanpa content-type JSON; body kosong cukup.
+        {},
       );
       const created = field(data, "created");
       if (!Array.isArray(created)) throw invalidResponse();
