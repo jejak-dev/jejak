@@ -16,12 +16,13 @@ export const panelWidth = paneWidth({
 
 /**
  * Batas atas efektif panel: batas statis dijepit ruang yang tersisa di
- * jendela, supaya kolom chat tak pernah lebih sempit dari `PANEL_CHAT_MIN`.
+ * jendela, supaya kolom chat tak pernah lebih sempit dari `chatMin`
+ * (bawaan `PANEL_CHAT_MIN`; mode lebar memakai batas chat sendiri).
  * Hasilnya tak pernah di bawah `PANEL_MIN`.
  */
-export function effectiveMax(viewport: number, sidebar: number): number {
+export function effectiveMax(viewport: number, sidebar: number, chatMin = PANEL_CHAT_MIN): number {
   if (!Number.isFinite(viewport) || !Number.isFinite(sidebar)) return PANEL_MAX;
-  const batas = Math.round(viewport - sidebar - PANEL_CHAT_MIN);
+  const batas = Math.round(viewport - sidebar - chatMin);
   return Math.max(PANEL_MIN, Math.min(PANEL_MAX, batas));
 }
 

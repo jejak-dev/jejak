@@ -49,6 +49,12 @@ import { readNotifyPrefs, writeNotifyPrefs, type NotifyPrefs } from "./lib/notif
 import { readPanelPrefs, writePanelPrefs, type PanelTab } from "./lib/panel-prefs";
 import { extractPlans } from "./lib/plans";
 import { effectiveMax, effectiveMaxNarrow, panelWidth } from "./lib/panel-width";
+import {
+  chatFromPanel,
+  chatWidth,
+  wideAvailable,
+  wideLayout,
+} from "./lib/design-wide";
 import { NARROW_VIEWPORT_QUERY, useNarrowViewport } from "./lib/pane-narrow";
 import { mobileScreen, useMobile } from "./lib/mobile";
 import {
@@ -237,6 +243,15 @@ export function App() {
       return loadSidebarWidth(undefined);
     }
   });
+  // Mode lebar (kanvas desain): tidak disimpan, mulai mati tiap muat halaman.
+  const [designWide, setDesignWide] = useState(false);
+  const [chatW, setChatW] = useState(() => {
+    try {
+      return chatWidth.load(window.localStorage);
+    } catch {
+      return chatWidth.load(undefined);
+    }
+  });
   const [viewportW, setViewportW] = useState(() =>
     typeof window === "undefined" ? 1280 : window.innerWidth
   );
@@ -303,29 +318,90 @@ export function App() {
   const sempit = useNarrowViewport();
   // Ponsel: tata letak satu kolom dengan layar terpisah (sesi, chat, panel).
   const mobile = useMobile();
-  const panelMax = sempit ? effectiveMaxNarrow(viewportW) : effectiveMax(viewportW, sideWidth);
+  // Mode lebar hanya tersedia di desktop; jendela menyempit mematikan efeknya.
+  const wideMungkin = wideAvailable({ narrow: sempit, mobile });
+  const wideActive = designWide && wideMungkin;
+  useEffect(() => {
+    if (!wideMungkin) setDesignWide(false);
+  }, [wideMungkin]);
+  // Sidebar dianggap tersembunyi selama mode lebar tanpa mengubah pilihan pengguna.
+  const sideHiddenNow = sideHidden || wideActive;
+  const sideWidthNow = wideActive ? 0 : sideWidth;
+  // Panel dianggap terbuka selama mode lebar tanpa mengubah preferensi pengguna.
+  const panelOpenNow = panelOpen || wideActive;
+  const wide = useMemo(
+    () => wideLayout({ viewport: viewportW, chat: chatW }),
+    [chatW, viewportW],
+  );
+  const panelMax = sempit ? effectiveMaxNarrow(viewportW) : effectiveMax(viewportW, sideWidthNow);
 
   // Panel menyusut bila jendela mengecil, tapi nilai tersimpan pengguna tak
   // ditimpa: panelW adalah preferensi, lebar yang tampil dihitung dari
-  // jepitan panelNow di bawah.
+  // jepitan panelNow di bawah. Mode lebar menjepit lewat lebar chat.
   const clampPanel = useMemo(
     () => (value: number): number => {
       if (!Number.isFinite(value)) return panelWidth.spec.def;
+      if (wideActive) {
+        return wideLayout({ viewport: viewportW, chat: chatFromPanel(viewportW, value) }).panel;
+      }
       return Math.min(panelMax, Math.max(panelWidth.spec.min, Math.round(value)));
     },
-    [panelMax]
+    [panelMax, viewportW, wideActive]
   );
 
   const panelKeyFor = useMemo(
     () => (current: number, key: string): number | undefined => {
+      if (wideActive) {
+        const next = chatWidth.forKey(chatFromPanel(viewportW, current), key, "ArrowRight");
+        return next === undefined
+          ? undefined
+          : wideLayout({ viewport: viewportW, chat: next }).panel;
+      }
       const next = panelWidth.forKey(current, key, "ArrowLeft");
       return next === undefined ? undefined : clampPanel(next);
     },
-    [clampPanel]
+    [clampPanel, viewportW, wideActive]
   );
 
   /** Lebar panel yang benar-benar tampil; tak pernah melebihi batas efektif. */
-  const panelNow = Math.min(panelW, panelMax);
+  const panelNow = wideActive ? wide.panel : Math.min(panelW, panelMax);
+  const panelMinNow = wideActive ? wide.panelMin : panelWidth.spec.min;
+  const panelMaxNow = wideActive ? wide.panelMax : panelMax;
+  const panelDefNow = wideActive
+    ? wideLayout({ viewport: viewportW, chat: chatWidth.spec.def }).panel
+    : panelWidth.spec.def;
+  // Geser resizer saat mode lebar mengubah lebar chat, bukan preferensi panel.
+  const onPanelWidth = useCallback(
+    (width: number): void => {
+      if (wideActive) {
+        setChatW(chatFromPanel(viewportW, width));
+        return;
+      }
+      setPanelW(width);
+    },
+    [viewportW, wideActive]
+  );
+  const onPanelWidthCommit = useCallback(
+    (width: number): void => {
+      if (wideActive) {
+        const chat = chatFromPanel(viewportW, width);
+        setChatW(chat);
+        try {
+          chatWidth.save(window.localStorage, chat);
+        } catch {
+          // penyimpanan tidak tersedia
+        }
+        return;
+      }
+      setPanelW(width);
+      try {
+        panelWidth.save(window.localStorage, width);
+      } catch {
+        // penyimpanan tidak tersedia
+      }
+    },
+    [viewportW, wideActive]
+  );
 
   // Ganti sesi: status tujuan lokal (override) tidak berlaku untuk sesi lain.
   useEffect(() => {
@@ -389,9 +465,14 @@ export function App() {
   }, []);
 
   const onPanelOpenChange = useCallback((open: boolean): void => {
+    // Mode lebar: menutup panel berarti keluar dari mode lebar saja.
+    if (wideActive && !open) {
+      setDesignWide(false);
+      return;
+    }
     setPanelOpen(open);
     writePanelPrefs({ open });
-  }, []);
+  }, [wideActive]);
 
   // Kutipan wiki ditempel ke kolom pesan; tidak ada yang dikirim otomatis.
   const onQuote = useCallback(
@@ -408,10 +489,15 @@ export function App() {
     [selected],
   );
   const togglePanel = useCallback((): void => {
+    // Mode lebar: tombol panel menutup mode lebar, preferensi panel tak disentuh.
+    if (wideActive) {
+      setDesignWide(false);
+      return;
+    }
     const next = !panelOpen;
     setPanelOpen(next);
     writePanelPrefs({ open: next });
-  }, [panelOpen]);
+  }, [panelOpen, wideActive]);
 
   // Ponsel: panel tampil layar penuh, jadi tombol Back menutupnya. Satu entri
   // riwayat ditambah saat panel dibuka; desktop tak menyentuh history.
@@ -649,7 +735,13 @@ export function App() {
           togglePanel();
           return;
         case "toggle-sidebar":
-          if (!mobile) toggleSidebar();
+          // Mode lebar: sidebar tersembunyi; aksi ini keluar dari mode lebar
+          // agar preferensi sidebar tak berubah diam-diam.
+          if (wideActive) setDesignWide(false);
+          else if (!mobile) toggleSidebar();
+          return;
+        case "toggle-design-wide":
+          if (wideMungkin) setDesignWide((on) => !on);
           return;
         case "open-git":
           openGitPanel();
@@ -670,7 +762,7 @@ export function App() {
           return;
       }
     },
-    [api, mobile, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToSchedules, navigateToUsage, openGitPanel, openSecretsTab, togglePanel, toggleSidebar],
+    [api, mobile, wideMungkin, wideActive, selected, refresh, navigate, navigateToMcp, navigateToMemory, navigateToProviders, navigateToWorkspaces, navigateToAudit, navigateToInstruksi, navigateToSchedules, navigateToUsage, openGitPanel, openSecretsTab, togglePanel, toggleSidebar],
   );
 
   const commands = useMemo(
@@ -679,8 +771,10 @@ export function App() {
         sessions,
         hasSession: selected !== undefined,
         panelOpen,
+        designWide: wideActive,
+        wideAvailable: wideMungkin,
       }),
-    [panelOpen, selected, sessions],
+    [panelOpen, selected, sessions, wideActive, wideMungkin],
   );
 
   const onSelect = useCallback(
@@ -962,9 +1056,9 @@ export function App() {
 
   return (
     <div
-      class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}${sideHidden && !mobile ? " jk-app-side-hidden" : ""}`}
+      class={`jk-app${drawerOpen ? " jk-drawer-open" : ""}${sideHiddenNow && !mobile ? " jk-app-side-hidden" : ""}`}
       data-mobile={mobile ? "1" : undefined}
-      style={{ "--side-w": `${sideWidth}px` }}
+      style={{ "--side-w": `${sideWidthNow}px` }}
     >
       <Sidebar
         info={info}
@@ -1002,7 +1096,7 @@ export function App() {
         onHideSidebar={mobile ? undefined : toggleSidebar}
       />
       <div class="jk-scrim" onClick={closeDrawer} aria-hidden="true" />
-      {!mobile && !sideHidden && (
+      {!mobile && !sideHiddenNow && (
         <PaneResizer
           width={sideWidth}
           min={SIDEBAR_MIN}
@@ -1026,13 +1120,19 @@ export function App() {
       )}
 
       <main class={mainClass}>
-        {sideHidden && !mobile && (
+        {sideHiddenNow && !mobile && (
           <button
             type="button"
             class="jk-icon-btn jk-side-reveal"
             aria-label="Tampilkan sidebar"
             title="Tampilkan sidebar"
-            onClick={toggleSidebar}
+            onClick={() => {
+              if (wideActive) {
+                setDesignWide(false);
+                return;
+              }
+              toggleSidebar();
+            }}
           >
             <Icon name="sidebar" />
           </button>
@@ -1129,7 +1229,7 @@ export function App() {
               onMenu={openDrawer}
               mobile={mobile}
               onBack={onNew}
-              panelOpen={panelOpen}
+              panelOpen={panelOpenNow}
               onTogglePanel={togglePanel}
               error={headerError}
             />
@@ -1201,7 +1301,7 @@ export function App() {
                   interrupting={interrupting}
                 />
               </div>
-              {panelOpen && (
+              {panelOpenNow && (
                 <Panel
                   key={selected.id}
                   api={api}
@@ -1211,7 +1311,7 @@ export function App() {
                   status={timeline.status ?? selected.status}
                   timelineItems={timeline.items}
                   timelineEvents={timeline.events}
-                  open={panelOpen}
+                  open={panelOpenNow}
                   onOpenChange={onPanelOpenChange}
                   focusedPlanId={planFocus}
                   onDecide={onDecide}
@@ -1219,28 +1319,22 @@ export function App() {
                   onSessionChanged={() => void refresh()}
                   onQuote={onQuote}
                   width={panelNow}
+                  wide={wideActive}
                 />
               )}
-              {panelOpen && !sempit && (
+              {panelOpenNow && !sempit && (
                 <PaneResizer
                   width={panelNow}
-                  min={panelWidth.spec.min}
-                  max={panelMax}
-                  def={panelWidth.spec.def}
+                  min={panelMinNow}
+                  max={panelMaxNow}
+                  def={panelDefNow}
                   label="Lebar panel"
                   edge="start"
                   style={{ right: `${panelNow - 3}px` }}
                   clamp={clampPanel}
                   keyFor={panelKeyFor}
-                  onChange={setPanelW}
-                  onCommit={(width) => {
-                    setPanelW(width);
-                    try {
-                      panelWidth.save(window.localStorage, width);
-                    } catch {
-                      // penyimpanan tidak tersedia
-                    }
-                  }}
+                  onChange={onPanelWidth}
+                  onCommit={onPanelWidthCommit}
                 />
               )}
             </div>

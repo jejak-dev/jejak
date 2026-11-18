@@ -3270,6 +3270,16 @@ h2.jk-md-heading {
   background: var(--bg);
 }
 
+/* Mode lebar: panel mengambil sisa jendela, batas 80% dilepas. */
+.jk-panel.jk-panel-wide {
+  max-width: none;
+}
+
+/* Saat resizer digeser, iframe tak boleh menelan peristiwa pointer. */
+.jk-resizing iframe {
+  pointer-events: none;
+}
+
 /* Tumpukan jendela bertumpuk; tinggi tiap jendela mengikuti layout. */
 .jk-pane-stack {
   grid-area: stack;

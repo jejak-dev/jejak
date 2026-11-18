@@ -88,6 +88,8 @@ export interface PanelProps {
   onSessionChanged?: () => void;
   /** Kutipan wiki yang ditempel ke kolom pesan; tidak mengirim apa pun. */
   onQuote?: (text: string) => void;
+  /** Mode lebar: panel mengambil sisa jendela, batas lebar CSS dilepas. */
+  wide?: boolean;
 }
 
 const PANEL_LABEL =
@@ -275,6 +277,7 @@ export function Panel({
   tabRequest,
   onSessionChanged,
   onQuote,
+  wide,
 }: PanelProps) {
   const [layout, setLayout] = useState<PaneLayout>(() => readPaneLayout());
   // Jendela yang terakhir difokuskan; menentukan tab aktif pada rel ikon.
@@ -507,7 +510,7 @@ export function Panel({
     // lebar (inline width akan menimpanya dan membuat panel hanya memakai
     // sebagian sisi).
     <aside
-      class="jk-panel"
+      class={`jk-panel${wide ? " jk-panel-wide" : ""}`}
       style={sempit || width === undefined ? undefined : { width: `${width}px` }}
       aria-label={PANEL_LABEL}>
       <div class="jk-pane-stack">

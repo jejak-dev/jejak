@@ -1,4 +1,4 @@
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 export interface PaneResizerProps {
   width: number;
@@ -23,6 +23,13 @@ export function PaneResizer(props: PaneResizerProps) {
   const [dragging, setDragging] = useState(false);
   const startRef = useRef({ x: 0, width });
   const sign = edge === "end" ? 1 : -1;
+  // Selama menggeser, iframe (mis. kanvas desain) dimatikan pointer-events-nya
+  // supaya tak menelan peristiwa pointer.
+  useEffect(() => {
+    if (!dragging) return;
+    document.body.classList.add("jk-resizing");
+    return () => document.body.classList.remove("jk-resizing");
+  }, [dragging]);
   const widthAt = (clientX: number): number =>
     clamp(startRef.current.width + sign * (clientX - startRef.current.x));
 

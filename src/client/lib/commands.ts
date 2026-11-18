@@ -64,6 +64,7 @@ export type CommandId =
   | "open-secrets-tab"
   | "focus-search"
   | "toggle-sidebar"
+  | "toggle-design-wide"
   | "show-shortcuts"
   | "compact";
 
@@ -89,10 +90,20 @@ export interface BuildCommandsInput {
   }[];
   hasSession: boolean;
   panelOpen: boolean;
+  /** Mode lebar sedang menyala; menentukan label baris. */
+  designWide?: boolean;
+  /** Mode lebar mungkin di layar ini (desktop); bawaan false. */
+  wideAvailable?: boolean;
 }
 
 /** Aksi tetap dulu, lalu sesi tidak terarsip terbaru (maks 50). */
-export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommandsInput): Command[] {
+export function buildCommands({
+  sessions,
+  hasSession,
+  panelOpen,
+  designWide = false,
+  wideAvailable = false,
+}: BuildCommandsInput): Command[] {
   const commands: Command[] = [
     { id: "new-session", label: "Sesi baru", group: "aksi", run: "new-session" },
     { id: "open-workspace", label: "Buka Workspace", group: "aksi", run: "open-workspace" },
@@ -131,6 +142,14 @@ export function buildCommands({ sessions, hasSession, panelOpen }: BuildCommands
       group: "aksi",
       run: "open-secrets-tab",
     });
+    if (wideAvailable) {
+      commands.push({
+        id: "toggle-design-wide",
+        label: designWide ? "Keluar dari mode lebar" : "Buka kanvas desain",
+        group: "aksi",
+        run: "toggle-design-wide",
+      });
+    }
   }
 
   commands.push({

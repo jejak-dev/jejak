@@ -44,7 +44,7 @@ const blokSempit = blokMedia("max-width: 959px").filter((b) =>
 
 describe("panel di layar sempit: lapisan penuh", () => {
   test("Panel.tsx tidak memasang inline width tanpa syarat sempit", () => {
-    const posisi = panelSrc.indexOf('class="jk-panel"');
+    const posisi = panelSrc.indexOf("jk-panel${");
     expect(posisi).toBeGreaterThan(-1);
     const segmen = panelSrc
       .slice(posisi, posisi + 200)
@@ -56,7 +56,7 @@ describe("panel di layar sempit: lapisan penuh", () => {
 
   test("flag sempit dihitung sebelum dipakai pada JSX panel", () => {
     const definisi = panelSrc.indexOf("const sempit");
-    const pemakaian = panelSrc.indexOf('class="jk-panel"');
+    const pemakaian = panelSrc.indexOf("jk-panel${");
     expect(definisi).toBeGreaterThan(-1);
     expect(definisi).toBeLessThan(pemakaian);
   });
@@ -114,6 +114,6 @@ describe("pegangan geser panel di layar sempit", () => {
     const posisi = appSrc.indexOf('label="Lebar panel"');
     expect(posisi).toBeGreaterThan(-1);
     const segmen = appSrc.slice(Math.max(0, posisi - 400), posisi);
-    expect(segmen).toMatch(/panelOpen\s*&&\s*!\s*sempit/);
+    expect(segmen).toMatch(/panelOpen(?:Now)?\s*&&\s*!\s*sempit/);
   });
 });

@@ -104,6 +104,13 @@ describe("lebar panel: batas efektif jendela", () => {
     expect(effectiveMaxNarrow(100)).toBe(PANEL_MIN);
     expect(effectiveMaxNarrow(4000)).toBe(PANEL_MAX);
   });
+
+  test("chatMin kustom (mode lebar) mengubah batas", () => {
+    expect(effectiveMax(1440, 0, 320)).toBe(1120);
+    expect(effectiveMax(1440, 0, 720)).toBe(720);
+    // Tanpa argumen ketiga perilaku lama tetap.
+    expect(effectiveMax(1440, 0)).toBe(effectiveMax(1440, 0, PANEL_CHAT_MIN));
+  });
 });
 
 describe("lebar panel: preferensi pengguna tak ditimpa jendela", () => {

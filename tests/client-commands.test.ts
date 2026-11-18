@@ -112,8 +112,48 @@ describe("buildCommands", () => {
     expect(withoutSession.some((c) => c.id === "open-secrets-tab")).toBe(false);
   });
 
-  test("sesi terarsip tidak ikut termasuk", () => {
-    const active = makeSession({ id: "a", title: "Aktif" });
+  test("perintah mode lebar hanya bila ada sesi dan layar lebar", () => {
+    const aktif = buildCommands({
+      sessions: [makeSession()],
+      hasSession: true,
+      panelOpen: false,
+      wideAvailable: true,
+    });
+    const baris = aktif.find((c) => c.id === "toggle-design-wide");
+    expect(baris?.label).toBe("Buka kanvas desain");
+    expect(baris?.run).toBe("toggle-design-wide");
+    expect(baris?.group).toBe("aksi");
+
+    const tanpaSesi = buildCommands({
+      sessions: [],
+      hasSession: false,
+      panelOpen: false,
+      wideAvailable: true,
+    });
+    expect(tanpaSesi.some((c) => c.id === "toggle-design-wide")).toBe(false);
+
+    const layarSempit = buildCommands({
+      sessions: [makeSession()],
+      hasSession: true,
+      panelOpen: false,
+    });
+    expect(layarSempit.some((c) => c.id === "toggle-design-wide")).toBe(false);
+  });
+
+  test("label mode lebar berganti saat menyala", () => {
+    const menyala = buildCommands({
+      sessions: [makeSession()],
+      hasSession: true,
+      panelOpen: false,
+      wideAvailable: true,
+      designWide: true,
+    });
+    expect(menyala.find((c) => c.id === "toggle-design-wide")?.label).toBe(
+      "Keluar dari mode lebar",
+    );
+  });
+
+  test("sesi terarsip tidak ikut termasuk", () => {    const active = makeSession({ id: "a", title: "Aktif" });
     const arch = makeSession({ id: "b", title: "Arsip", archivedAt: "2026-01-01T00:00:00.000Z" });
     const cmds = buildCommands({ sessions: [active, arch], hasSession: true, panelOpen: false });
     const labels = cmds.filter((c) => c.group === "sesi").map((c) => c.label);
