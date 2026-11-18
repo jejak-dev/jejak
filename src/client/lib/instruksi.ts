@@ -20,7 +20,8 @@ export function projectChoices(
   defaultCwd?: string,
 ): ProjectChoice[] {
   const seen: string[] = [];
-  for (const cwd of [defaultCwd, ...sessions.map((session) => session.cwd)]) {
+  // Folder sesi lebih dulu; cwd bawaan server hanya cadangan (di desktop itu folder data aplikasi).
+  for (const cwd of [...sessions.map((session) => session.cwd), defaultCwd]) {
     if (cwd === undefined || cwd === "" || seen.includes(cwd)) continue;
     seen.push(cwd);
   }

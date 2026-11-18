@@ -15,15 +15,15 @@ import {
 } from "../src/client/lib/instruksi";
 
 describe("projectChoices", () => {
-  test("cwd bawaan dulu, lalu folder sesi unik terurut kemunculan", () => {
+  test("folder sesi unik terurut kemunculan, cwd bawaan terakhir sebagai cadangan", () => {
     const choices = projectChoices(
       [{ cwd: "/kerja/a" }, { cwd: "/kerja/b" }, { cwd: "/kerja/a" }],
       "/kerja/default",
     );
     expect(choices.map((choice) => choice.cwd)).toEqual([
-      "/kerja/default",
       "/kerja/a",
       "/kerja/b",
+      "/kerja/default",
     ]);
   });
 
