@@ -1,3 +1,4 @@
+import { agentsMdNote } from "../claude-config/agents-md";
 import { toSdkEnv, type ResolvedProvider } from "../provider";
 import {
   cachedClaude,
@@ -656,6 +657,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       // Mode plan: dokumen rencana ditulis penuh di ExitPlanMode, chat ringkas.
       if (input.permissionMode === "plan") {
         append = `${append} ${PLAN_MODE_APPEND_NOTE}`;
+      }
+
+      // SDK hanya memuat CLAUDE.md; AGENTS.md ditambahkan di sini bila perlu.
+      const agentsNote = agentsMdNote(input.cwd);
+      if (agentsNote !== undefined) {
+        append = `${append}\n\n${agentsNote}`;
       }
 
       const sdkOptions: Record<string, unknown> = {
