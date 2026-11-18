@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { SessionManager, WorkspaceResolver } from "../sessions/session-manager";
 import { getChanges, type GitOptions } from "../files/changes";
 import { listDirectory } from "../files/list";
+import { openMedia } from "../files/media";
 import { FileError } from "../files/path";
 import { readTextFile } from "../files/read";
 import { repoFieldFromBody, repoSnapshotName, resolveRepoRoot } from "../files/repo-root";
@@ -162,6 +163,19 @@ export function fileRoutes(options: FileRoutesOptions): Elysia {
       try {
         const root = await resolveRepoRoot(session, query.repo, workspaces);
         return await readTextFile(root, pathParam(query.path));
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .get("/api/sessions/:id/media", async ({ params, query, request }) => {
+      const session = manager.get(params.id);
+      if (session === undefined) {
+        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+      }
+      try {
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        const media = await openMedia(root, pathParam(query.path), request.headers.get("range"));
+        return new Response(media.body, { status: media.status, headers: media.headers });
       } catch (error) {
         return errorResponse(error);
       }
