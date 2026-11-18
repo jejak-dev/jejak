@@ -1,0 +1,250 @@
+/**
+ * Protokol pesan antara frame desain dan klien. Murni: tanpa DOM, tanpa
+ * jaringan. Semua pesan dari frame dianggap tidak tepercaya, jadi setiap
+ * bidang divalidasi dan dipotong sebelum dipakai.
+ */
+
+export const DESIGN_CHANNEL = "jejak-design-v1";
+export const MAX_MESSAGE_BYTES = 64 * 1024;
+export const MIN_FRAME_HEIGHT = 200;
+export const MAX_FRAME_HEIGHT = 6000;
+export const MAX_HTML_CHARS = 2048;
+
+const MAX_TEXT_CHARS = 200;
+const MAX_SELECTOR_CHARS = 500;
+const MAX_HASH_CHARS = 200;
+const MAX_LABEL_CHARS = 64;
+const MAX_STYLE_VALUE_CHARS = 200;
+const MAX_COORD = 1e6;
+
+/** Kotak elemen dalam koordinat viewport frame. */
+export interface FrameBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Subset gaya terhitung yang dikirim bersama pilihan. */
+export interface FrameStyle {
+  color?: string;
+  backgroundColor?: string;
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: string;
+  padding?: string;
+  margin?: string;
+  borderRadius?: string;
+  display?: string;
+}
+
+export type FrameMessage =
+  | { channel: typeof DESIGN_CHANNEL; type: "ready"; slug: string }
+  | { channel: typeof DESIGN_CHANNEL; type: "size"; height: number }
+  | {
+      channel: typeof DESIGN_CHANNEL;
+      type: "hover";
+      bounds: FrameBounds;
+      tag: string;
+      label: string;
+    }
+  | {
+      channel: typeof DESIGN_CHANNEL;
+      type: "select";
+      selector: string;
+      tag: string;
+      text: string;
+      html: string;
+      bounds: FrameBounds;
+      style: FrameStyle;
+    }
+  | { channel: typeof DESIGN_CHANNEL; type: "route"; hash: string }
+  | {
+      channel: typeof DESIGN_CHANNEL;
+      type: "wheel";
+      deltaX: number;
+      deltaY: number;
+      ctrlKey: boolean;
+      clientX: number;
+      clientY: number;
+    }
+  | { channel: typeof DESIGN_CHANNEL; type: "pan"; dx: number; dy: number };
+
+export type HostMessage =
+  | { channel: typeof DESIGN_CHANNEL; type: "mode"; tool: "preview" | "select" }
+  | { channel: typeof DESIGN_CHANNEL; type: "clear-selection" }
+  | { channel: typeof DESIGN_CHANNEL; type: "highlight"; selector: string };
+
+const STYLE_KEYS = [
+  "color",
+  "backgroundColor",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "padding",
+  "margin",
+  "borderRadius",
+  "display",
+] as const;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function angka(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value < -MAX_COORD || value > MAX_COORD) return undefined;
+  return value;
+}
+
+function teks(value: unknown, maks: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.slice(0, maks);
+}
+
+function bounds(value: unknown): FrameBounds | undefined {
+  if (!isRecord(value)) return undefined;
+  const x = angka(value.x);
+  const y = angka(value.y);
+  const width = angka(value.width);
+  const height = angka(value.height);
+  if (x === undefined || y === undefined || width === undefined || height === undefined) {
+    return undefined;
+  }
+  return { x, y, width, height };
+}
+
+function style(value: unknown): FrameStyle {
+  const hasil: FrameStyle = {};
+  if (!isRecord(value)) return hasil;
+  for (const kunci of STYLE_KEYS) {
+    const nilai = value[kunci];
+    if (typeof nilai === "string") hasil[kunci] = nilai.slice(0, MAX_STYLE_VALUE_CHARS);
+  }
+  return hasil;
+}
+
+/**
+ * Memvalidasi satu pesan dari frame. Mengembalikan `undefined` untuk apa pun
+ * yang tidak dikenal, terlalu besar, atau berbentuk salah; tidak pernah
+ * melempar.
+ */
+export function parseFrameMessage(data: unknown): FrameMessage | undefined {
+  if (!isRecord(data)) return undefined;
+  if (data.channel !== DESIGN_CHANNEL) return undefined;
+  if (typeof data.type !== "string") return undefined;
+  let ukuran: number;
+  try {
+    ukuran = JSON.stringify(data).length;
+  } catch {
+    return undefined;
+  }
+  if (ukuran > MAX_MESSAGE_BYTES) return undefined;
+
+  switch (data.type) {
+    case "ready": {
+      const slug = teks(data.slug, MAX_LABEL_CHARS);
+      if (slug === undefined) return undefined;
+      return { channel: DESIGN_CHANNEL, type: "ready", slug };
+    }
+    case "size": {
+      const tinggi = angka(data.height);
+      if (tinggi === undefined) return undefined;
+      const height = Math.min(
+        MAX_FRAME_HEIGHT,
+        Math.max(MIN_FRAME_HEIGHT, Math.round(tinggi)),
+      );
+      return { channel: DESIGN_CHANNEL, type: "size", height };
+    }
+    case "hover": {
+      const kotak = bounds(data.bounds);
+      const tag = teks(data.tag, MAX_LABEL_CHARS);
+      const label = teks(data.label, MAX_LABEL_CHARS);
+      if (kotak === undefined || tag === undefined || label === undefined) return undefined;
+      return { channel: DESIGN_CHANNEL, type: "hover", bounds: kotak, tag, label };
+    }
+    case "select": {
+      const kotak = bounds(data.bounds);
+      const selector = teks(data.selector, MAX_SELECTOR_CHARS);
+      const tag = teks(data.tag, MAX_LABEL_CHARS);
+      const text = teks(data.text, MAX_TEXT_CHARS);
+      const html = teks(data.html, MAX_HTML_CHARS);
+      if (
+        kotak === undefined ||
+        selector === undefined ||
+        tag === undefined ||
+        text === undefined ||
+        html === undefined
+      ) {
+        return undefined;
+      }
+      return {
+        channel: DESIGN_CHANNEL,
+        type: "select",
+        selector,
+        tag,
+        text,
+        html,
+        bounds: kotak,
+        style: style(data.style),
+      };
+    }
+    case "route": {
+      const hash = teks(data.hash, MAX_HASH_CHARS);
+      if (hash === undefined) return undefined;
+      return { channel: DESIGN_CHANNEL, type: "route", hash };
+    }
+    case "wheel": {
+      const deltaX = angka(data.deltaX);
+      const deltaY = angka(data.deltaY);
+      const clientX = angka(data.clientX);
+      const clientY = angka(data.clientY);
+      if (
+        deltaX === undefined ||
+        deltaY === undefined ||
+        clientX === undefined ||
+        clientY === undefined ||
+        typeof data.ctrlKey !== "boolean"
+      ) {
+        return undefined;
+      }
+      return {
+        channel: DESIGN_CHANNEL,
+        type: "wheel",
+        deltaX,
+        deltaY,
+        ctrlKey: data.ctrlKey,
+        clientX,
+        clientY,
+      };
+    }
+    case "pan": {
+      const dx = angka(data.dx);
+      const dy = angka(data.dy);
+      if (dx === undefined || dy === undefined) return undefined;
+      return { channel: DESIGN_CHANNEL, type: "pan", dx, dy };
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Benar bila peristiwa `message` berasal dari jendela frame yang dikenal. */
+export function isFromFrame(event: { source: unknown }, frameWindow: unknown): boolean {
+  return frameWindow != null && event.source === frameWindow;
+}
+
+/** Pesan untuk mengganti alat di frame. */
+export function modeMessage(tool: "preview" | "select"): HostMessage {
+  return { channel: DESIGN_CHANNEL, type: "mode", tool };
+}
+
+/** Pesan untuk menghapus sorotan pilihan. */
+export function clearSelectionMessage(): HostMessage {
+  return { channel: DESIGN_CHANNEL, type: "clear-selection" };
+}
+
+/** Pesan untuk menyorot elemen lewat selector (dipakai D2). */
+export function highlightMessage(selector: string): HostMessage {
+  return { channel: DESIGN_CHANNEL, type: "highlight", selector: selector.slice(0, MAX_SELECTOR_CHARS) };
+}

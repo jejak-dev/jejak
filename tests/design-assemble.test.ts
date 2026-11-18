@@ -260,13 +260,16 @@ describe("runtime dan galat", () => {
   test("runtime disisipkan sebelum </body> terakhir", async () => {
     await page("a", "<html><body><p>x</p></body></html>");
     const result = await assemblePage(dir, "a");
-    expect(result.html).toContain("<script data-jejak-design-runtime></script></body>");
+    expect(result.html).toContain('<script data-jejak-design-runtime>');
+    expect(result.html).toContain('"a"');
+    expect(result.html).toContain("</script></body>");
   });
 
   test("runtime di akhir dokumen bila tak ada </body>", async () => {
     await page("a", "<html><p>x</p></html>");
     const result = await assemblePage(dir, "a");
-    expect(result.html.endsWith("<script data-jejak-design-runtime></script>")).toBe(true);
+    expect(result.html).toContain('<script data-jejak-design-runtime>');
+    expect(result.html.endsWith("</script>")).toBe(true);
   });
 
   test("slug tak sah 400, halaman tak ada 404, melebihi 512 KB 413", async () => {

@@ -531,7 +531,7 @@ export async function assemblePage(
 
   let html = applyEdits(source, edits);
   html = insertCsp(html, scanTags(html), allowGoogleFonts);
-  html = insertRuntime(html, frameRuntimeScript());
+  html = insertRuntime(html, frameRuntimeScript(slug));
 
   return { slug, html, mtime: Math.round(info.mtimeMs), warnings: ctx.warnings };
 }

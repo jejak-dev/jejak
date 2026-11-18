@@ -205,7 +205,8 @@ describe("GET /api/sessions/:id/design/page", () => {
     const body = (await res.json()) as { slug: string; html: string; mtime: number; warnings: string[] };
     expect(body.slug).toBe("beranda");
     expect(body.html).toContain("Content-Security-Policy");
-    expect(body.html).toContain("<script data-jejak-design-runtime></script>");
+    expect(body.html).toContain("<script data-jejak-design-runtime>");
+    expect(body.html).toContain('"beranda"');
     expect(body.mtime).toBeGreaterThan(0);
     expect(body.warnings).toEqual([]);
   });
