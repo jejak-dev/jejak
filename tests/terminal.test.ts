@@ -104,14 +104,45 @@ describe("TerminalManager (PTY nyata)", () => {
     expect(() => m.create({ cwd: join(dir, "nihil") })).toThrow(TerminalError);
     expect(() => m.create({ cwd: dir, cols: 5 })).toThrow(TerminalError);
     const a = m.create({ cwd: dir });
-    m.create({ cwd: dir });
+    const b = m.create({ cwd: dir });
+    const listener = { onData() {}, onExit() {} };
+    const subA = m.subscribe(a.id, listener);
+    const subB = m.subscribe(b.id, listener);
     expect(() => m.create({ cwd: dir })).toThrow(/Batas 2/);
     expect(() => m.write(a.id, "")).toThrow(TerminalError);
     expect(() => m.write(a.id, "x".repeat(64 * 1024 + 1))).toThrow(/terlalu besar/);
     expect(() => m.write("nihil", "x")).toThrow(/tidak ditemukan/);
+    subA.unsubscribe();
+    subB.unsubscribe();
     now += 61_000;
     m.sweep();
     expect(m.list()).toHaveLength(0);
+  });
+});
+
+describe("terminal yatim", () => {
+  test("batas tercapai: terminal tanpa penonton diusir, yang ditonton aman", () => {
+    let now = 1_000_000;
+    const m = newManager({ maxTerminals: 2, idleMs: 60_000, now: () => now });
+    const watched = m.create({ cwd: dir });
+    m.subscribe(watched.id, { onData() {}, onExit() {} });
+    now += 1000;
+    const orphan = m.create({ cwd: dir });
+    now += 1000;
+    const fresh = m.create({ cwd: dir });
+    const ids = m.list().map((t) => t.id);
+    expect(ids).toContain(watched.id);
+    expect(ids).toContain(fresh.id);
+    expect(ids).not.toContain(orphan.id);
+  });
+
+  test("close memberi tahu penonton yang masih tersambung", () => {
+    const m = newManager();
+    const t = m.create({ cwd: dir });
+    const codes: (number | null)[] = [];
+    m.subscribe(t.id, { onData() {}, onExit: (c) => codes.push(c) });
+    m.close(t.id);
+    expect(codes).toEqual([null]);
   });
 });
 

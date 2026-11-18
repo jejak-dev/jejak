@@ -200,7 +200,17 @@ export class TerminalManager {
     if (!isDirectory) throw invalid("cwd tidak ditemukan atau bukan direktori.");
     const cols = clampInt(input.cols, 20, 300, 80);
     const rows = clampInt(input.rows, 5, 100, 24);
-    const active = [...this.entries.values()].filter((entry) => !entry.info.exited).length;
+    let active = [...this.entries.values()].filter((entry) => !entry.info.exited).length;
+    if (active >= this.max) {
+      // Terminal yatim (tab ditutup/di-reload tanpa DELETE) tak boleh memblokir yang baru.
+      const orphan = [...this.entries.values()]
+        .filter((entry) => !entry.info.exited && entry.listeners.size === 0)
+        .sort((a, b) => a.lastActivity - b.lastActivity)[0];
+      if (orphan !== undefined) {
+        this.close(orphan.info.id);
+        active -= 1;
+      }
+    }
     if (active >= this.max) {
       throw new TerminalError(`Batas ${this.max} terminal aktif tercapai.`, "batas");
     }
@@ -314,6 +324,16 @@ export class TerminalManager {
   close(id: string): void {
     const entry = this.entry(id);
     this.entries.delete(id);
+    // Beri tahu penonton yang masih tersambung agar tidak menggantung.
+    if (!entry.info.exited) {
+      for (const listener of entry.listeners) {
+        try {
+          listener.onExit(null);
+        } catch {
+          // Abaikan.
+        }
+      }
+    }
     entry.listeners.clear();
     try {
       (entry.proc as unknown as { terminal?: { close(): void } }).terminal?.close();
