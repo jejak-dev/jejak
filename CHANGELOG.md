@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.12] - 2026-11-18
+
 ### Diperbaiki
 
 - Browser: popup atau tab yang tertutup sebelum sempat diaktifkan tidak lagi mematikan server ("Server Jejak berhenti", `Tab tidak ditemukan`).
