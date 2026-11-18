@@ -48,13 +48,20 @@ const PATHS = {
   sidebar: "M2.5 3.5h11v9h-11zM6 3.5v9",
   code: "M5.5 4 2 8l3.5 4M10.5 4 14 8l-3.5 4",
   list: "M6 4h7.5M6 8h7.5M6 12h7.5M2.5 4h.01M2.5 8h.01M2.5 12h.01",
+  image: "M2.5 3.5h11v9h-11zM2.5 10.5l3-3 2.5 2.5 2-2 3.5 3.5M10.2 6.4a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
 } as const;
 
 export type IconName = keyof typeof PATHS;
 
-export function Icon({ name }: { name: IconName }) {
+export function Icon({ name, size }: { name: IconName; size?: number }) {
   return (
-    <svg class="jk-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+    <svg
+      class="jk-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      focusable="false"
+      style={size === undefined ? undefined : { width: `${size}px`, height: `${size}px` }}
+    >
       <path d={PATHS[name]} />
     </svg>
   );

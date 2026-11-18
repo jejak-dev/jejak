@@ -300,6 +300,20 @@ describe("parseMarkdown: gambar tidak menghasilkan node gambar", () => {
   });
 });
 
+describe("parseMarkdown: opsi images", () => {
+  test("images:true menghasilkan simpul image tanpa src", () => {
+    expect(inlinesOf(parseMarkdown("![gambar](https://img.test/a.png)", { images: true })[0])).toEqual([
+      { type: "image", alt: "gambar" },
+    ]);
+  });
+
+  test("images:true juga berlaku untuk alt kosong", () => {
+    expect(inlinesOf(parseMarkdown("![](x.png)", { images: true })[0])).toEqual([
+      { type: "image", alt: "" },
+    ]);
+  });
+});
+
 describe("parseMarkdown: batas dan ketahanan", () => {
   const hostile = [
     ["*", 100_000],
@@ -432,6 +446,22 @@ describe("Markdown: render Preact", () => {
     const vnode = render("![alt](https://img.test/a.png)");
     expect(byTag(vnode, "img")).toHaveLength(0);
     expect(textOf(vnode)).toBe("alt");
+  });
+
+  test("rich: gambar menjadi chip jk-md-img dengan teks alt", () => {
+    const vnode = Markdown({ text: "![Logo](a.png)", rich: true }) as VNode;
+    const chip = byTag(vnode, "span").filter((node) => propsOf(node).class === "jk-md-img");
+    expect(chip).toHaveLength(1);
+    expect(textOf(chip[0] as VNode)).toContain("Logo");
+    expect(byTag(vnode, "img")).toHaveLength(0);
+    expect(byTag(vnode, "svg").length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("tanpa rich tidak ada chip gambar", () => {
+    const vnode = render("![Logo](a.png)");
+    const chip = byTag(vnode, "span").filter((node) => propsOf(node).class === "jk-md-img");
+    expect(chip).toHaveLength(0);
+    expect(textOf(vnode)).toContain("Logo");
   });
 
   test("teks > 200k dirender sebagai pre polos", () => {

@@ -2,6 +2,7 @@ import { h, type ComponentChild, type VNode } from "preact";
 import { parseMarkdown, safeHref, type MdBlock, type MdInline } from "../lib/markdown";
 import { isMermaidLang } from "../lib/mermaid";
 import { CopyButton } from "./CopyButton";
+import { Icon } from "./Icon";
 import { MermaidBlock } from "./MermaidBlock";
 
 /** Penanganan tautan: `true` berarti tautan sudah ditangani pemanggil. */
@@ -46,6 +47,13 @@ function renderInlines(nodes: readonly MdInline[], onLink?: LinkHandler): Compon
           </a>
         );
       }
+      case "image":
+        return (
+          <span class="jk-md-img" key={index}>
+            <Icon name="image" size={16} />
+            {node.alt === "" ? "Gambar" : node.alt}
+          </span>
+        );
       case "break":
         return <br key={index} />;
     }
@@ -137,10 +145,15 @@ export interface MarkdownProps {
    * `true` berarti tautan sudah ditangani dan navigasi bawaan dibatalkan.
    */
   onLink?: LinkHandler;
+  /** Pratinjau berkas: gambar menjadi chip (tanpa memuat gambar dari luar). */
+  rich?: boolean;
 }
 
-export function Markdown({ text, onLink }: MarkdownProps): VNode {
-  const blocks = parseMarkdown(text, { relativeLinks: onLink !== undefined });
+export function Markdown({ text, onLink, rich }: MarkdownProps): VNode {
+  const blocks = parseMarkdown(text, {
+    relativeLinks: onLink !== undefined,
+    images: rich === true,
+  });
   return (
     <div class="jk-md">
       {renderBlocks(blocks, onLink)}

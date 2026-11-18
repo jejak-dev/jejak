@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
   ApiError,
   type ApiClient,
@@ -21,6 +21,7 @@ import {
   isEditable,
 } from "../lib/editor";
 import { formatCount } from "../lib/format";
+import { prepareMarkdownPreview } from "../lib/md-preview";
 import { CodeEditor } from "./CodeEditor";
 import { CodeView } from "./CodeView";
 import { FileTree } from "./FileTree";
@@ -504,6 +505,10 @@ export function FilesTab({
   const isMarkdown = file !== undefined && isMarkdownPath(file.path);
   const showPreview = isMarkdown && !codeMode;
   const showTree = !treeHidden;
+  const previewText = useMemo(
+    () => prepareMarkdownPreview(file?.content ?? ""),
+    [file?.content],
+  );
 
   return (
     <div class="jk-panel-body">
@@ -682,7 +687,7 @@ export function FilesTab({
               />
             ) : showPreview ? (
               <div class="jk-file-preview">
-                <Markdown text={file.content ?? ""} onLink={openRelativeLink} />
+                <Markdown text={previewText} onLink={openRelativeLink} rich />
               </div>
             ) : (
               <>

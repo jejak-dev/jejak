@@ -12,6 +12,7 @@ export type MdInline =
   | { type: "em"; children: MdInline[] }
   | { type: "code"; text: string }
   | { type: "link"; href: string; children: MdInline[] }
+  | { type: "image"; alt: string }
   | { type: "break" };
 
 export type MdBlock =
@@ -34,6 +35,8 @@ const MAX_LINK_URL_SPAN = 2_048;
 export interface MarkdownOptions {
   /** Izinkan tautan relatif (tanpa skema) tetap dirender sebagai tautan. */
   relativeLinks?: boolean;
+  /** Gambar `![alt](src)` menjadi simpul `image` (teks alt saja bila false). */
+  images?: boolean;
 }
 
 export function parseMarkdown(source: string, options?: MarkdownOptions): MdBlock[] {
@@ -43,7 +46,12 @@ export function parseMarkdown(source: string, options?: MarkdownOptions): MdBloc
     return [{ type: "code", text: source }];
   }
   const normalized = source.replace(/\r\n?/g, "\n");
-  return parseBlocks(normalized.split("\n"), 0, options?.relativeLinks === true);
+  return parseBlocks(
+    normalized.split("\n"),
+    0,
+    options?.relativeLinks === true,
+    options?.images === true,
+  );
 }
 
 export function safeHref(url: string, allowRelative = false): string | undefined {
@@ -208,7 +216,12 @@ function startsBlock(lines: string[], index: number): boolean {
   return false;
 }
 
-function parseBlocks(lines: string[], depth: number, relative: boolean): MdBlock[] {
+function parseBlocks(
+  lines: string[],
+  depth: number,
+  relative: boolean,
+  images: boolean,
+): MdBlock[] {
   const blocks: MdBlock[] = [];
   let i = 0;
   while (i < lines.length) {
@@ -229,7 +242,7 @@ function parseBlocks(lines: string[], depth: number, relative: boolean): MdBlock
       blocks.push({
         type: "heading",
         level: heading.level,
-        children: parseInline(heading.content, 0, false, relative),
+        children: parseInline(heading.content, 0, false, relative, images),
       });
       i += 1;
       continue;
@@ -245,23 +258,23 @@ function parseBlocks(lines: string[], depth: number, relative: boolean): MdBlock
       const header = splitTableRow(line);
       const delimiter = splitTableRow(lines[i + 1]!);
       if (header.length === delimiter.length && isDelimiterRow(lines[i + 1]!)) {
-        i = parseTable(lines, i, header, delimiter, blocks, relative);
+        i = parseTable(lines, i, header, delimiter, blocks, relative, images);
         continue;
       }
     }
 
     if (isQuoteLine(line)) {
-      i = parseQuote(lines, i, depth, blocks, relative);
+      i = parseQuote(lines, i, depth, blocks, relative, images);
       continue;
     }
 
     const marker = matchListMarker(line);
     if (marker !== undefined) {
-      i = parseList(lines, i, marker, depth, blocks, relative);
+      i = parseList(lines, i, marker, depth, blocks, relative, images);
       continue;
     }
 
-    i = parseParagraph(lines, i, blocks, relative);
+    i = parseParagraph(lines, i, blocks, relative, images);
   }
   return blocks;
 }
@@ -295,6 +308,7 @@ function parseQuote(
   depth: number,
   blocks: MdBlock[],
   relative: boolean,
+  images: boolean,
 ): number {
   const inner: string[] = [];
   let i = start;
@@ -321,7 +335,7 @@ function parseQuote(
       children: [{ type: "text", text: joined.replace(/^ {0,3}> ?/gm, "") }],
     });
   } else {
-    blocks.push({ type: "quote", children: parseBlocks(inner, depth + 1, relative) });
+    blocks.push({ type: "quote", children: parseBlocks(inner, depth + 1, relative, images) });
   }
   return i;
 }
@@ -333,6 +347,7 @@ function parseList(
   depth: number,
   blocks: MdBlock[],
   relative: boolean,
+  images: boolean,
 ): number {
   if (depth >= MAX_NESTING) {
     // Terlalu dalam: semua baris daftar menjadi satu paragraf teks.
@@ -411,7 +426,7 @@ function parseList(
   }
   flush();
 
-  const items = itemLines.map((item) => parseBlocks(item, depth + 1, relative));
+  const items = itemLines.map((item) => parseBlocks(item, depth + 1, relative, images));
   blocks.push(
     marker.ordered
       ? { type: "list", ordered: true, start: marker.start, items }
@@ -427,6 +442,7 @@ function parseTable(
   delimiterCells: string[],
   blocks: MdBlock[],
   relative: boolean,
+  images: boolean,
 ): number {
   const aligns = delimiterCells.map(alignmentOf);
   const rows: MdInline[][][] = [];
@@ -437,14 +453,14 @@ function parseTable(
     const cells = splitTableRow(line);
     const row: MdInline[][] = [];
     for (let column = 0; column < headerCells.length; column += 1) {
-      row.push(parseInline(cells[column] ?? "", 0, false, relative));
+      row.push(parseInline(cells[column] ?? "", 0, false, relative, images));
     }
     rows.push(row);
     i += 1;
   }
   const table: MdBlock = {
     type: "table",
-    header: headerCells.map((cell) => parseInline(cell, 0, false, relative)),
+    header: headerCells.map((cell) => parseInline(cell, 0, false, relative, images)),
     aligns,
     rows,
   };
@@ -457,6 +473,7 @@ function parseParagraph(
   start: number,
   blocks: MdBlock[],
   relative: boolean,
+  images: boolean,
 ): number {
   const parts: string[] = [];
   let hardBreak = false;
@@ -483,7 +500,7 @@ function parseParagraph(
   }
   blocks.push({
     type: "paragraph",
-    children: parseInline(parts.join(""), 0, false, relative),
+    children: parseInline(parts.join(""), 0, false, relative, images),
   });
   return i;
 }
@@ -574,6 +591,7 @@ function parseInline(
   depth: number,
   insideLink: boolean,
   relative: boolean,
+  images: boolean,
 ): MdInline[] {
   if (source === "") return [];
   if (depth > MAX_INLINE_DEPTH) return [{ type: "text", text: source }];
@@ -654,8 +672,8 @@ function parseInline(
         flush();
         out.push(
           double
-            ? { type: "strong", children: parseInline(emphasis.content, depth + 1, insideLink, relative) }
-            : { type: "em", children: parseInline(emphasis.content, depth + 1, insideLink, relative) },
+            ? { type: "strong", children: parseInline(emphasis.content, depth + 1, insideLink, relative, images) }
+            : { type: "em", children: parseInline(emphasis.content, depth + 1, insideLink, relative, images) },
         );
         i = emphasis.end;
         continue;
@@ -670,8 +688,14 @@ function parseInline(
       if (open !== -1) {
         const close = findClosingParen(source, open + 2);
         if (close !== -1) {
-          // Gambar tidak pernah dirender sebagai <img>: hanya teks alt.
-          buffer += source.slice(i + 2, open);
+          const alt = source.slice(i + 2, open);
+          // Gambar tidak pernah dirender sebagai <img>: teks alt atau chip.
+          if (images) {
+            flush();
+            out.push({ type: "image", alt });
+          } else {
+            buffer += alt;
+          }
           i = close + 1;
           continue;
         }
@@ -700,7 +724,7 @@ function parseInline(
       if (href === undefined) {
         out.push({ type: "text", text: source.slice(i, close + 1) });
       } else {
-        out.push({ type: "link", href, children: parseInline(label, depth + 1, true, relative) });
+        out.push({ type: "link", href, children: parseInline(label, depth + 1, true, relative, images) });
       }
       i = close + 1;
       continue;
