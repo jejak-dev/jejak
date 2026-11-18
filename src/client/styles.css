@@ -9055,6 +9055,8 @@ h2.jk-md-heading {
 }
 
 .jk-comp-meta {
+  /* Induk bagi popover pemilih folder (.jk-picker memakai position: absolute). */
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
