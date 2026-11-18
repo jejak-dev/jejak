@@ -167,6 +167,7 @@ describe("SHORTCUT_LIST", () => {
 
   test("memuat pintasan kanvas desain", () => {
     const labels = SHORTCUT_LIST.map((item) => item.label);
+    expect(labels).toContain("Kanvas desain: alat Pilih");
     expect(labels).toContain("Kanvas desain: alat Geser");
     expect(labels).toContain("Kanvas desain: alat Pratinjau");
     expect(labels).toContain("Kanvas desain: zoom 100%");

@@ -110,6 +110,7 @@ export function DesignTab(props: DesignTabProps) {
           design={design}
           refresh={refresh}
           onExit={() => onWideChange(false)}
+          onQuote={onQuote}
         />
       </div>
     );

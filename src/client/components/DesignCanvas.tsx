@@ -17,8 +17,24 @@ import {
   type Size,
   type View,
 } from "../lib/design-canvas";
-import { isFromFrame, modeMessage, parseFrameMessage } from "../lib/design-protocol";
+import {
+  clearSelectionMessage,
+  isFromFrame,
+  modeMessage,
+  parseFrameMessage,
+} from "../lib/design-protocol";
+import {
+  chipText,
+  elementContext,
+  overlayBorder,
+  overlayRect,
+  pageFile,
+  styleRows,
+  type Hover,
+  type Selection,
+} from "../lib/design-select";
 import { targetKindOf } from "../lib/shortcuts";
+import { CopyButton } from "./CopyButton";
 import { DesignFrame } from "./DesignFrame";
 
 export interface DesignCanvasProps {
@@ -29,6 +45,8 @@ export interface DesignCanvasProps {
   design: DesignResult;
   refresh: () => Promise<void>;
   onExit: () => void;
+  /** Tempel teks ke kolom pesan; tidak mengirim apa pun. */
+  onQuote: (text: string) => void;
 }
 
 interface Override {
@@ -78,7 +96,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
   } | null>(null);
 
   const [view, setView] = useState<View>({ x: 0, y: 0, zoom: 1 });
-  const [tool, setTool] = useState<"pan" | "preview">("pan");
+  const [tool, setTool] = useState<"select" | "pan" | "preview">("pan");
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [viewport, setViewport] = useState<Size>({ width: 0, height: 0 });
@@ -87,6 +105,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const [docs, setDocs] = useState<Record<string, Doc>>({});
   const [error, setError] = useState<string | undefined>(undefined);
   const [pagesOpen, setPagesOpen] = useState(false);
+  const [hover, setHover] = useState<Hover | undefined>(undefined);
+  const [selection, setSelection] = useState<Selection | undefined>(undefined);
+  const [selectionLabel, setSelectionLabel] = useState("");
+  const [infoOpen, setInfoOpen] = useState(true);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -94,6 +116,12 @@ export function DesignCanvas(props: DesignCanvasProps) {
   viewportRef.current = viewport;
   const overridesRef = useRef(overrides);
   overridesRef.current = overrides;
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const selectionMtimeRef = useRef<number | undefined>(undefined);
+  const lastHoverRef = useRef<{ slug: string; label: string } | undefined>(undefined);
 
   const pages = design.pages.map((page) => {
     const override = overrides[page.slug];
@@ -115,6 +143,8 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const liveKey = live.join(",");
 
   const pageBySlug = new Map(pages.map((page) => [page.slug, page]));
+  const pageBySlugRef = useRef(pageBySlug);
+  pageBySlugRef.current = pageBySlug;
 
   const frameRefFor = (slug: string): ((el: HTMLIFrameElement | null) => void) => {
     let callback = refCallbacks.current.get(slug);
@@ -213,13 +243,53 @@ export function DesignCanvas(props: DesignCanvasProps) {
       if (message === undefined) return;
       switch (message.type) {
         case "ready":
-          element.contentWindow?.postMessage(modeMessage("preview"), "*");
+          element.contentWindow?.postMessage(
+            modeMessage(toolRef.current === "select" ? "select" : "preview"),
+            "*",
+          );
           return;
         case "size":
           setContentHeights((prev) =>
             prev[slug] === message.height ? prev : { ...prev, [slug]: message.height },
           );
           return;
+        case "hover": {
+          if (toolRef.current !== "select") return;
+          lastHoverRef.current = { slug, label: message.label };
+          setHover({
+            slug,
+            tag: message.tag,
+            label: message.label,
+            bounds: message.bounds,
+          });
+          return;
+        }
+        case "select": {
+          if (toolRef.current !== "select") return;
+          const page = pageBySlugRef.current.get(slug);
+          const sebelumnya = selectionRef.current;
+          if (sebelumnya !== undefined && sebelumnya.slug !== slug) {
+            const frameLama = frameEls.current.get(sebelumnya.slug);
+            frameLama?.contentWindow?.postMessage(clearSelectionMessage(), "*");
+          }
+          setHover(undefined);
+          selectionMtimeRef.current = page?.mtime;
+          const labelHover = lastHoverRef.current;
+          setSelectionLabel(
+            labelHover !== undefined && labelHover.slug === slug ? labelHover.label : message.tag,
+          );
+          setSelection({
+            slug,
+            title: page?.title ?? slug,
+            selector: message.selector,
+            tag: message.tag,
+            text: message.text,
+            html: message.html,
+            bounds: message.bounds,
+            style: message.style,
+          });
+          return;
+        }
         case "wheel": {
           const rect = rectsRef.current.find((item) => item.slug === slug);
           if (rect === undefined) return;
@@ -248,13 +318,44 @@ export function DesignCanvas(props: DesignCanvasProps) {
           );
           return;
         default:
-          // `route`, `hover`, dan `select` belum ditangani di komit ini.
+          // `route` belum ditangani di komit ini.
           return;
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, []);
+
+  // Sebarkan mode alat ke semua frame hidup saat alat berganti atau frame
+  // baru menjadi hidup; frame yang baru siap meminta ulang lewat `ready`.
+  useEffect(() => {
+    const pesan = modeMessage(tool === "select" ? "select" : "preview");
+    for (const el of frameEls.current.values()) {
+      el.contentWindow?.postMessage(pesan, "*");
+    }
+  }, [tool, liveKey]);
+
+  // Ganti alat membuang hover; meninggalkan alat Pilih membuang pilihan.
+  useEffect(() => {
+    setHover(undefined);
+    if (tool !== "select") setSelection(undefined);
+  }, [tool]);
+
+  // Pilihan dibuang saat halaman terpilih hilang dari desain atau HTML-nya
+  // dimuat ulang (mtime berubah).
+  const selectionSlug = selection?.slug;
+  useEffect(() => {
+    if (selectionSlug === undefined) return;
+    const page = design.pages.find((item) => item.slug === selectionSlug);
+    if (page === undefined || page.missing) {
+      setSelection(undefined);
+      return;
+    }
+    const doc = docs[selectionSlug];
+    if (doc !== undefined && doc.mtime !== selectionMtimeRef.current) {
+      setSelection(undefined);
+    }
+  }, [selectionSlug, design, docs]);
 
   // Roda mouse di wadah: zoom ke arah kursor atau geser.
   useEffect(() => {
@@ -351,6 +452,13 @@ export function DesignCanvas(props: DesignCanvasProps) {
       target instanceof Element &&
       target.closest("button, a, input, select, textarea, [role='menu']") !== null;
     if (!interaktif) containerRef.current?.focus();
+    // Klik ruang kosong kanvas (di luar frame dan chrome) membuang pilihan.
+    if (toolRef.current === "select" && target instanceof Element) {
+      const diChrome = target.closest(
+        ".jk-design-frame, .jk-design-frame-label, .jk-design-toolbar, .jk-design-pages, .jk-design-zoom, .jk-design-actions, .jk-design-info",
+      );
+      if (diChrome === null) setSelection(undefined);
+    }
   };
 
   const onLabelDown = (slug: string, event: PointerEvent): void => {
@@ -417,6 +525,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
   };
 
   const reloadFrame = (slug: string): void => {
+    if (selectionRef.current?.slug === slug) setSelection(undefined);
     setDocs((prev) => {
       const next = { ...prev };
       delete next[slug];
@@ -425,6 +534,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
   };
 
   const refreshAll = (): void => {
+    setSelection(undefined);
     setDocs({});
     void refresh();
   };
@@ -456,6 +566,12 @@ export function DesignCanvas(props: DesignCanvasProps) {
     // Jangan telan Space pada tombol dan Esc saat menu frame terbuka.
     if (interaktif && (event.key === " " || event.key === "Escape")) return;
     switch (event.key) {
+      case "v":
+      case "V":
+        event.preventDefault();
+        event.stopPropagation();
+        setTool("select");
+        return;
       case "h":
       case "H":
         event.preventDefault();
@@ -497,6 +613,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
       case "Escape":
         event.preventDefault();
         event.stopPropagation();
+        if (selectionRef.current !== undefined) {
+          setSelection(undefined);
+          return;
+        }
         onExit();
         return;
       default:
@@ -516,6 +636,23 @@ export function DesignCanvas(props: DesignCanvasProps) {
   ]
     .filter((item) => item !== "")
     .join(" ");
+
+  const selectionRect =
+    selection === undefined
+      ? undefined
+      : rects.find((item) => item.slug === selection.slug);
+  const hoverRect = hover === undefined ? undefined : rects.find((item) => item.slug === hover.slug);
+  const hoverSama =
+    hover !== undefined &&
+    selection !== undefined &&
+    hover.slug === selection.slug &&
+    hover.bounds.x === selection.bounds.x &&
+    hover.bounds.y === selection.bounds.y &&
+    hover.bounds.width === selection.bounds.width &&
+    hover.bounds.height === selection.bounds.height;
+  const border = overlayBorder(view.zoom);
+  const selectionPage =
+    selection === undefined ? undefined : pageBySlug.get(selection.slug);
 
   return (
     <section
@@ -569,15 +706,64 @@ export function DesignCanvas(props: DesignCanvasProps) {
               onLabelPointerUp={onLabelUp}
               onDevice={(device) => onDevice(rect.slug, device)}
               onReload={() => reloadFrame(rect.slug)}
+              onPointerLeave={() => setHover(undefined)}
               setFrameRef={frameRefFor(rect.slug)}
             />
           );
         })}
+
+        {hover !== undefined && hoverRect !== undefined && !hoverSama && (
+          <div
+            class="jk-design-overlay-hover"
+            style={{
+              left: `${overlayRect(hoverRect, hover.bounds).x}px`,
+              top: `${overlayRect(hoverRect, hover.bounds).y}px`,
+              width: `${hover.bounds.width}px`,
+              height: `${hover.bounds.height}px`,
+              borderWidth: `${border}px`,
+            }}
+          />
+        )}
+
+        {selection !== undefined && selectionRect !== undefined && (
+          <>
+            <div
+              class="jk-design-overlay-select"
+              style={{
+                left: `${overlayRect(selectionRect, selection.bounds).x}px`,
+                top: `${overlayRect(selectionRect, selection.bounds).y}px`,
+                width: `${selection.bounds.width}px`,
+                height: `${selection.bounds.height}px`,
+                borderWidth: `${border}px`,
+              }}
+            />
+            <div
+              class="jk-design-chip"
+              style={{
+                left: `${overlayRect(selectionRect, selection.bounds).x}px`,
+                top: `${overlayRect(selectionRect, selection.bounds).y}px`,
+                transform: `scale(${1 / view.zoom}) translateY(-100%)`,
+              }}
+            >
+              {chipText(selection.tag, selectionLabel === "" ? selection.tag : selectionLabel)}
+            </div>
+          </>
+        )}
       </div>
 
       {design.pages.length === 0 && <div class="jk-design-empty">{EMPTY_TEXT}</div>}
 
       <div class="jk-design-toolbar" role="toolbar" aria-label="Alat kanvas">
+        <button
+          type="button"
+          class="jk-design-tool"
+          aria-pressed={tool === "select"}
+          aria-label="Pilih elemen (V)"
+          title="Pilih elemen (V)"
+          onClick={() => setTool("select")}
+        >
+          Pilih
+        </button>
         <button
           type="button"
           class="jk-design-tool"
@@ -696,6 +882,65 @@ export function DesignCanvas(props: DesignCanvasProps) {
           Keluar dari mode lebar
         </button>
       </div>
+
+      {selection !== undefined && (
+        <aside class="jk-design-info" aria-label="Elemen terpilih">
+          <div class="jk-design-info-head">
+            <span class="jk-design-info-chip">
+              {chipText(selection.tag, selectionLabel === "" ? selection.tag : selectionLabel)}
+            </span>
+            <button
+              type="button"
+              class="jk-design-chip"
+              aria-expanded={infoOpen}
+              aria-label={infoOpen ? "Lipat info elemen" : "Buka info elemen"}
+              title={infoOpen ? "Lipat info elemen" : "Buka info elemen"}
+              onClick={() => setInfoOpen((open) => !open)}
+            >
+              {infoOpen ? "Lipat" : "Buka"}
+            </button>
+          </div>
+          {infoOpen && (
+            <div class="jk-design-info-body">
+              <p class="jk-design-info-title">{selectionPage?.title ?? selection.title}</p>
+              <code class="jk-design-info-selector">{selection.selector}</code>
+              {selection.text.trim() !== "" && (
+                <p class="jk-design-info-text">{selection.text.slice(0, 200)}</p>
+              )}
+              <p class="jk-design-info-size">
+                {Math.round(selection.bounds.width)} x {Math.round(selection.bounds.height)}
+              </p>
+              {styleRows(selection.style).length > 0 && (
+                <dl class="jk-design-info-styles">
+                  {styleRows(selection.style).map((row) => (
+                    <div class="jk-design-info-row" key={row.label}>
+                      <dt>{row.label}</dt>
+                      <dd>{row.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              <div class="jk-design-info-actions">
+                <CopyButton text={selection.selector} label="Salin selector" />
+                <CopyButton text={selection.html} label="Salin HTML" />
+                <button
+                  type="button"
+                  class="jk-design-chip"
+                  onClick={() =>
+                    props.onQuote(elementContext(selection, pageFile(selection.slug)))
+                  }
+                >
+                  Sisipkan ke pesan
+                </button>
+              </div>
+            </div>
+          )}
+        </aside>
+      )}
+
+      <p class="jk-visually-hidden" aria-live="polite">
+        {selection === undefined ? "" : `Elemen terpilih: ${selection.tag}`}
+      </p>
 
       {error !== undefined && (
         <p class="jk-design-error" role="alert">

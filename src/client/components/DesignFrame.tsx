@@ -22,6 +22,8 @@ export interface DesignFrameProps {
   onLabelPointerUp: (event: PointerEvent) => void;
   onDevice: (device: DeviceId) => void;
   onReload: () => void;
+  /** Pointer meninggalkan pembungkus frame; dipakai alat Pilih. */
+  onPointerLeave?: () => void;
   setFrameRef: (element: HTMLIFrameElement | null) => void;
 }
 
@@ -92,6 +94,7 @@ export function DesignFrame(props: DesignFrameProps) {
           width: `${rect.width}px`,
           height: `${rect.height}px`,
         }}
+        onPointerLeave={props.onPointerLeave}
       >
         {missing ? (
           <div class="jk-design-frame-empty">Berkas belum ada</div>
