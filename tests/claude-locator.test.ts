@@ -14,6 +14,7 @@ import {
   validateClaudePath,
   writeClaudeSetting,
   type LocateOptions,
+  resolveWindowsShim,
 } from "../src/server/sdk/claude-locator";
 
 let dir: string;
@@ -390,5 +391,29 @@ describe("locateClaude dengan CLI bawaan SDK", () => {
       }),
     );
     expect(lokasi?.source).toBe("path");
+  });
+});
+
+describe("resolveWindowsShim", () => {
+  const shim = "C:\\Users\\boyku\\AppData\\Roaming\\npm\\claude.cmd";
+  const exe = "C:\\Users\\boyku\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe";
+  const js = "C:\\Users\\boyku\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js";
+
+  test("memilih claude.exe di samping shim", async () => {
+    const hasil = await resolveWindowsShim(shim, async (p) => p === exe || p === js, "win32");
+    expect(hasil).toBe(exe);
+  });
+
+  test("jatuh ke cli.js bila exe tak ada", async () => {
+    expect(await resolveWindowsShim(shim, async (p) => p === js, "win32")).toBe(js);
+  });
+
+  test("tanpa target, jalur asli dikembalikan", async () => {
+    expect(await resolveWindowsShim(shim, async () => false, "win32")).toBe(shim);
+  });
+
+  test("bukan Windows atau bukan .cmd tak diubah", async () => {
+    expect(await resolveWindowsShim(shim, async () => true, "darwin")).toBe(shim);
+    expect(await resolveWindowsShim("C:\\x\\claude.exe", async () => true, "win32")).toBe("C:\\x\\claude.exe");
   });
 });

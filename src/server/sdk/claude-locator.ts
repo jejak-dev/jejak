@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join, win32 } from "node:path";
 import { jejakHome } from "../provider-store";
 import { resolveManagedCli } from "./cli-store";
 import { sdkRoot } from "./sdk-store";
@@ -153,6 +153,32 @@ export function validateClaudePath(path: unknown): ClaudePathCheck {
   }
   if (!isAbsolute(path)) return { ok: false, reason: "bukan-absolut" };
   return { ok: true };
+}
+
+/**
+ * Ganti shim npm Windows (`claude.cmd`/`.bat`) dengan target aslinya.
+ *
+ * SDK menjalankan `pathToClaudeCodeExecutable` tanpa shell, dan Windows
+ * menolak men-spawn `.cmd` secara langsung (`spawn ... EINVAL`). Shim npm
+ * berdampingan dengan `node_modules\@anthropic-ai\claude-code`; pakai
+ * `bin\claude.exe` bila ada, lalu `cli.js`. Tanpa target yang ditemukan,
+ * jalur asli dikembalikan.
+ */
+export async function resolveWindowsShim(
+  path: string,
+  exists: (path: string) => Promise<boolean>,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string> {
+  if (platform !== "win32" || !/\.(cmd|bat)$/i.test(path)) return path;
+  const base = win32.join(win32.dirname(path), "node_modules", "@anthropic-ai", "claude-code");
+  for (const target of [win32.join(base, "bin", "claude.exe"), win32.join(base, "cli.js")]) {
+    try {
+      if (await exists(target)) return target;
+    } catch {
+      // Lanjut ke kandidat berikutnya.
+    }
+  }
+  return path;
 }
 
 /** Lokasi umum CLI `claude` milik pengguna. */
@@ -331,7 +357,8 @@ export async function locateClaude(
       continue;
     }
     if (version === null) continue;
-    return { path: candidate.path, version, source: candidate.source };
+    const resolved = await resolveWindowsShim(candidate.path, exists, platform);
+    return { path: resolved, version, source: candidate.source };
   }
   return null;
 }
