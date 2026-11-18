@@ -767,6 +767,14 @@ function cacheOf(api: ApiClient): Map<string, CommandListResult> {
   return cache;
 }
 
+/**
+ * Buang daftar perintah yang tersimpan. Dipanggil saat pengaturan Claude, skill,
+ * atau plugin berubah, supaya menu "/" tak menampilkan daftar basi sampai muat ulang.
+ */
+export function invalidateCommands(api: ApiClient): void {
+  commandCache.delete(api);
+}
+
 function pendingOf(api: ApiClient): Map<string, Promise<CommandListResult>> {
   let pending = commandPending.get(api);
   if (pending === undefined) {

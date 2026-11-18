@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { invalidateCommands } from "../hooks";
 import { ApiError, type ApiClient, type ClaudePluginItem } from "../lib/api";
 import {
   pluginAvatarTone,
@@ -77,6 +78,7 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
     );
     try {
       await api.setPluginEnabled(plugin.id, enabled);
+      invalidateCommands(api);
     } catch (caught) {
       // Kembalikan saklar ke posisi semula bila server menolak.
       setPlugins((current) =>

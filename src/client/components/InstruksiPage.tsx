@@ -1,6 +1,7 @@
 import { AgentsPanel } from "./AgentsPanel";
 import { PluginsPanel } from "./PluginsPanel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { invalidateCommands } from "../hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import {
   ApiError,
@@ -167,6 +168,7 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
     setConfigError(undefined);
     try {
       const next = await api.putClaudeConfig(patch);
+      invalidateCommands(api);
       setConfig(next);
     } catch (caught) {
       setConfigError(errorMessage(caught));
@@ -331,6 +333,7 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
     setSkillsError(undefined);
     try {
       await api.setSkillEnabled(skill.scope, skill.name, !skill.enabled, cwd);
+      invalidateCommands(api);
       pendingFocusRef.current = true;
       await loadSkills();
     } catch (caught) {
@@ -393,6 +396,7 @@ export function InstruksiPage({ api, sessions, defaultCwd }: InstruksiPageProps)
     setEditorError(undefined);
     try {
       await api.putSkill(editor.scope, editor.name, editor.content, cwd);
+      invalidateCommands(api);
       pendingFocusRef.current = true;
       setEditor({
         ...editor,
