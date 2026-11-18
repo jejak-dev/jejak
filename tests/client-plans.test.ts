@@ -456,4 +456,14 @@ describe("tab Rencana", () => {
     expect(textOf(tab)).toContain("Sesi terputus");
     expect(textOf(tab)).not.toContain("Sesi sempat terputus.");
   });
+
+  test("dokumen memakai gaya pratinjau berkas", () => {
+    const tab = PlanTabView({
+      plans: [plan("p1", DOKUMEN)],
+      selectedId: "p1",
+      remaining: null,
+      ...DECISION,
+    });
+    expect(byClass(tab, "jk-file-preview")).toHaveLength(1);
+  });
 });

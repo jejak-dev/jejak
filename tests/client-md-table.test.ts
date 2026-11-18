@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import type { VNode } from "preact";
 import { Markdown } from "../src/client/components/Markdown";
+import { PlanTabView } from "../src/client/components/PlanTab";
 import {
   activeElement,
   findAll,
@@ -83,5 +84,26 @@ describe("tabel pratinjau berkas (rich)", () => {
     fire(backdrop, "pointerdown");
     await flushEffects();
     expect(findByAttr(root, "role", "dialog")).toBeUndefined();
+  });
+
+  test("dokumen tab Rencana memakai Markdown rich: kelas pratinjau dan tombol Perbesar", () => {
+    const dokumen = `${tabel}\n\n| Lagi | Satu |\n| --- | --- |\n| a | b |`;
+    const root = mount(
+      PlanTabView({
+        plans: [{ id: "p1", title: "Rencana", plan: dokumen, status: "menunggu" }],
+        selectedId: "p1",
+        remaining: null,
+        busy: false,
+        reviseOpen: false,
+        feedback: "",
+        onFeedbackChange: () => undefined,
+        onToggleRevise: () => undefined,
+        onCancelRevise: () => undefined,
+        onApprove: () => undefined,
+        onSubmitRevise: () => undefined,
+      }),
+    );
+    expect(findAll(root, (node) => node.className.includes("jk-file-preview"))).toHaveLength(1);
+    expect(tombolPerbesar(root)).toBeDefined();
   });
 });

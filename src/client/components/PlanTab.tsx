@@ -79,8 +79,8 @@ export function PlanTabView(props: PlanTabViewProps) {
         )}
       </div>
 
-      <div class="jk-plan-body jk-plan-doc">
-        <Markdown text={aktif.plan} />
+      <div class="jk-plan-body jk-plan-doc jk-file-preview">
+        <Markdown text={aktif.plan} rich />
       </div>
 
       {lanjut && <InterruptedNote />}

@@ -83,4 +83,14 @@ describe("pratinjau Markdown berkas", () => {
     expect(aturan).toContain("z-index: 300");
     expect(aturan).toContain("rgba(0, 0, 0, 0.45)");
   });
+
+  test("dokumen tab Rencana memakai pratinjau tanpa kotak abu dan tanpa gulir ganda", () => {
+    const aturan = isiAturan(".jk-plan-doc.jk-file-preview") ?? "";
+    expect(aturan).toContain("background: transparent");
+    expect(aturan).toContain("max-height: none");
+    expect(aturan).toContain("overflow: visible");
+    expect(aturan).toContain("border-radius: 0");
+    expect(aturan).toContain("max-width: 820px");
+    expect(aturan).toContain("margin: 10px 0 0");
+  });
 });

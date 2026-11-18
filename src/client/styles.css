@@ -8478,6 +8478,18 @@ h2.jk-md-heading {
   max-height: 60vh;
 }
 
+/* Dokumen rencana memakai gaya pratinjau berkas: tanpa kotak abu, tanpa gulir ganda. */
+.jk-plan-doc.jk-file-preview {
+  max-width: 820px;
+  margin: 10px 0 0;
+  padding: 8px 4px 32px;
+  background: transparent;
+  border-radius: 0;
+  max-height: none;
+  overflow: visible;
+  line-height: 1.75;
+}
+
 .jk-ask-answer { color: var(--t1); }
 
 .jk-advanced { margin-top: 4px; }
