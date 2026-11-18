@@ -7880,40 +7880,95 @@ h2.jk-md-heading {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  column-gap: 28px;
 }
 
-.jk-plugin-card {
+.jk-plugin-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: start;
+  gap: 14px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.jk-plugin-row > .jk-plugin-confirm,
+.jk-plugin-row > .jk-plugin-status {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+
+.jk-plugin-confirm {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 8px;
+  background: var(--hover);
 }
 
-.jk-plugin-head {
+.jk-plugin-avatar {
+  --tone-hue: 210;
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: color-mix(in srgb, hsl(var(--tone-hue) 62% 50%) 16%, transparent);
+  color: color-mix(in srgb, hsl(var(--tone-hue) 68% 52%) 76%, var(--t1));
+}
+
+.jk-plugin-avatar[data-tone="1"] {
+  --tone-hue: 265;
+}
+
+.jk-plugin-avatar[data-tone="2"] {
+  --tone-hue: 330;
+}
+
+.jk-plugin-avatar[data-tone="3"] {
+  --tone-hue: 18;
+}
+
+.jk-plugin-avatar[data-tone="4"] {
+  --tone-hue: 145;
+}
+
+.jk-plugin-avatar[data-tone="5"] {
+  --tone-hue: 188;
+}
+
+.jk-plugin-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.jk-plugin-name-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .jk-plugin-name {
   font-weight: 600;
+  font-size: 14px;
   color: var(--t1);
 }
 
 .jk-plugin-switch {
   flex: none;
-  margin-left: auto;
 }
 
 .jk-plugin-desc {
   margin: 0;
   color: var(--t3);
-  font-size: 12.5px;
+  font-size: 13px;
+  line-height: 1.45;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -7923,9 +7978,9 @@ h2.jk-md-heading {
 .jk-plugin-meta {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  color: var(--t2);
+  align-items: baseline;
+  gap: 4px 10px;
+  color: var(--t3);
   font-size: 12px;
 }
 
@@ -7936,6 +7991,29 @@ h2.jk-md-heading {
 .jk-plugin-empty-note code {
   font-family: var(--mono);
   font-size: 12px;
+}
+
+.jk-plugin-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 22px 12px;
+  text-align: center;
+}
+
+.jk-plugin-empty-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--hover);
+  color: var(--t3);
+}
+
+.jk-plugin-empty .jk-note {
+  max-width: 420px;
 }
 
 /* Panel plugin: jelajahi marketplace */
@@ -7954,25 +8032,111 @@ h2.jk-md-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+.jk-plugin-searchbox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 160px;
+  color: var(--t3);
+}
+
+.jk-plugin-searchbox .jk-icon {
+  position: absolute;
+  left: 11px;
+  pointer-events: none;
 }
 
 .jk-plugin-search {
   flex: 1;
-  min-width: 160px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0 10px;
-  font-size: 12.5px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px 0 31px;
+  border-color: transparent;
+  border-radius: 10px;
+  background: var(--hover);
+  font-size: 13px;
+}
+
+.jk-plugin-search:focus {
+  border-color: var(--line-2);
+}
+
+.jk-plugin-search:focus-visible {
+  outline: 1px solid var(--line-2);
+  outline-offset: 1px;
 }
 
 .jk-plugin-filter {
   min-width: 140px;
 }
 
-.jk-plugin-category {
-  color: var(--t3);
+.jk-plugin-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.jk-plugin-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.jk-plugin-chip {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--t2);
+  font: inherit;
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.jk-plugin-chip:hover {
+  color: var(--t1);
+  border-color: var(--line-2);
+}
+
+.jk-plugin-chip-on {
+  border-color: var(--t1);
+  background: var(--t1);
+  color: var(--bg);
+}
+
+.jk-plugin-chip:focus-visible,
+.jk-plugin-link:focus-visible,
+.jk-plugin-installed:focus-visible {
+  outline: 1px solid var(--line-2);
+  outline-offset: 2px;
+}
+
+.jk-plugin-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 4px 0;
+}
+
+.jk-plugin-section-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--t1);
+}
+
+.jk-plugin-section-count {
   font-size: 12px;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
 }
 
 .jk-plugin-link {
@@ -7995,17 +8159,26 @@ h2.jk-md-heading {
 
 .jk-plugin-actions {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-end;
   gap: 6px;
 }
 
-.jk-plugin-confirm {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--line-2);
-  border-radius: 10px;
+.jk-plugin-actions .jk-button {
+  height: 30px;
+  padding: 0 12px;
+}
+
+.jk-plugin-installed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--t3);
+  font: inherit;
+  font-size: 12.5px;
 }
 
 .jk-plugin-confirm-text {
@@ -8035,14 +8208,50 @@ h2.jk-md-heading {
 .jk-plugin-pager {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: center;
+  gap: 12px;
+}
+
+.jk-plugin-pager .jk-button {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
 }
 
 .jk-plugin-pager-label {
   color: var(--t3);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
+}
+
+.jk-plugin-info-note {
+  margin-top: 10px;
+}
+
+.jk-plugin-info-note summary {
+  color: var(--t3);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.jk-plugin-info-note[open] summary {
+  margin-bottom: 4px;
+}
+
+@media (max-width: 480px) {
+  .jk-plugin-list {
+    grid-template-columns: 1fr;
+  }
+
+  .jk-plugin-avatar {
+    width: 36px;
+    height: 36px;
+  }
+
+  .jk-plugin-row {
+    grid-template-columns: 36px 1fr auto;
+    gap: 10px;
+  }
 }
 
 /* Halaman Tugas terjadwal */

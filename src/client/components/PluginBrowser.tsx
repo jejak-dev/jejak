@@ -5,7 +5,8 @@ import {
   type MarketplaceInfoItem,
   type MarketplacePluginItem,
 } from "../lib/api";
-import { installConfirmText, marketplaceSourceNote, searchPageLabel } from "../lib/plugins";
+import { installConfirmText, marketplaceSourceNote, pluginAvatarTone, pluginIconName, searchPageLabel } from "../lib/plugins";
+import { Icon } from "./Icon";
 import { Select } from "./Select";
 
 /** Pesan yang sama dengan halaman Instruksi saat pengaturan Claude dimatikan. */
@@ -264,17 +265,20 @@ export function PluginBrowser({ api, onChanged }: PluginBrowserProps) {
   return (
     <div class="jk-plugin-browser">
       <div class="jk-plugin-toolbar">
-        <input
-          type="search"
-          class="jk-input jk-plugin-search"
-          placeholder="Cari plugin…"
-          aria-label="Cari plugin di marketplace"
-          maxLength={100}
-          value={queryInput}
-          onInput={(event) =>
-            setQueryInput((event.currentTarget as HTMLInputElement).value)
-          }
-        />
+        <span class="jk-plugin-searchbox">
+          <Icon name="search" size={14} />
+          <input
+            type="search"
+            class="jk-input jk-plugin-search"
+            placeholder="Cari plugin…"
+            aria-label="Cari plugin di marketplace"
+            maxLength={100}
+            value={queryInput}
+            onInput={(event) =>
+              setQueryInput((event.currentTarget as HTMLInputElement).value)
+            }
+          />
+        </span>
         {marketplaces.length > 1 && (
           <Select
             class="jk-plugin-filter"
@@ -292,20 +296,32 @@ export function PluginBrowser({ api, onChanged }: PluginBrowserProps) {
           />
         )}
         {adaKategori && (
-          <Select
-            class="jk-plugin-filter"
-            size="compact"
-            ariaLabel="Kategori"
-            value={category}
-            options={[
-              { value: "", label: "Semua kategori" },
-              ...categories.map((item) => ({ value: item, label: item })),
-            ]}
-            onChange={(value) => {
-              setCategory(value);
-              setOffset(0);
-            }}
-          />
+          <div class="jk-plugin-chips" role="group" aria-label="Kategori">
+            <button
+              type="button"
+              class={`jk-plugin-chip${category === "" ? " jk-plugin-chip-on" : ""}`}
+              aria-pressed={category === ""}
+              onClick={() => {
+                setCategory("");
+                setOffset(0);
+              }}
+            >
+              Semua
+            </button>
+            {categories.map((item) => (
+              <button
+                type="button"
+                class={`jk-plugin-chip${category === item ? " jk-plugin-chip-on" : ""}`}
+                aria-pressed={category === item}
+                onClick={() => {
+                  setCategory(item);
+                  setOffset(0);
+                }}
+              >
+                {item}
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
@@ -348,67 +364,79 @@ export function PluginBrowser({ api, onChanged }: PluginBrowserProps) {
       )}
 
       {!loading && error === undefined && items.length > 0 && (
+        <div class="jk-plugin-section-head">
+          <span class="jk-plugin-section-title">{query === "" ? "Plugin" : "Hasil"}</span>
+          <span class="jk-plugin-section-count">
+            {total} {query === "" ? "plugin" : "hasil"}
+          </span>
+        </div>
+      )}
+
+      {!loading && error === undefined && items.length > 0 && (
         <ul class="jk-plugin-list">
           {items.map((plugin) => {
             const nama = plugin.displayName !== "" ? plugin.displayName : plugin.name;
             const statusPlugin = status[plugin.id];
             const sedangPasang = sedang === plugin.id;
             const terkunci = sedang !== undefined;
+            const meta = [plugin.category, plugin.author !== "" ? `Oleh ${plugin.author}` : "", plugin.marketplace]
+              .filter((bagian) => bagian !== "")
+              .join(" · ");
             return (
-              <li class="jk-plugin-card jk-plugin-market-card" key={plugin.id}>
-                <div class="jk-plugin-head">
-                  <span class="jk-plugin-name">{nama}</span>
-                  {plugin.version !== "" && (
-                    <span class="jk-badge jk-badge-muted">{plugin.version}</span>
+              <li class="jk-plugin-row" key={plugin.id}>
+                <span class="jk-plugin-avatar" aria-hidden="true" data-tone={pluginAvatarTone(nama)}>
+                  <Icon name={pluginIconName(plugin.category)} size={20} />
+                </span>
+
+                <div class="jk-plugin-body">
+                  <div class="jk-plugin-name-line">
+                    <span class="jk-plugin-name">{nama}</span>
+                    {plugin.version !== "" && (
+                      <span class="jk-badge jk-badge-muted">{plugin.version}</span>
+                    )}
+                  </div>
+
+                  {plugin.description !== "" && (
+                    <p class="jk-plugin-desc" title={plugin.description}>
+                      {plugin.description}
+                    </p>
                   )}
-                  <span class="jk-badge jk-badge-muted">{plugin.marketplace}</span>
-                </div>
 
-                {plugin.category !== "" && (
-                  <span class="jk-plugin-category">{plugin.category}</span>
-                )}
+                  <div class="jk-plugin-meta">
+                    {meta !== "" && <span class="jk-plugin-meta-line">{meta}</span>}
+                    {plugin.homepage !== "" && (
+                      <a
+                        class="jk-plugin-link"
+                        href={plugin.homepage}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Beranda
+                      </a>
+                    )}
+                  </div>
 
-                {plugin.description !== "" && (
-                  <p class="jk-plugin-desc" title={plugin.description}>
-                    {plugin.description}
+                  <p
+                    class={
+                      plugin.sourceKind === "command"
+                        ? "jk-plugin-warn"
+                        : "jk-plugin-source"
+                    }
+                  >
+                    {marketplaceSourceNote(plugin.sourceKind)}
                   </p>
-                )}
-
-                <div class="jk-plugin-meta">
-                  {plugin.author !== "" && (
-                    <span class="jk-plugin-author">{plugin.author}</span>
-                  )}
-                  {plugin.homepage !== "" && (
-                    <a
-                      class="jk-plugin-link"
-                      href={plugin.homepage}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Beranda
-                    </a>
-                  )}
                 </div>
-
-                <p
-                  class={
-                    plugin.sourceKind === "command"
-                      ? "jk-plugin-warn"
-                      : "jk-plugin-source"
-                  }
-                >
-                  {marketplaceSourceNote(plugin.sourceKind)}
-                </p>
 
                 <div class="jk-plugin-actions">
                   {plugin.installed ? (
                     <>
-                      <button type="button" class="jk-button" disabled={terkunci}>
+                      <button type="button" class="jk-plugin-installed" disabled={terkunci}>
+                        <Icon name="check" size={13} />
                         Terpasang
                       </button>
                       <button
                         type="button"
-                        class="jk-button"
+                        class="jk-link-btn"
                         disabled={terkunci}
                         onClick={() => setKonfirmasi({ id: plugin.id, mode: "copot" })}
                       >
@@ -459,10 +487,10 @@ export function PluginBrowser({ api, onChanged }: PluginBrowserProps) {
                   <p
                     class={
                       statusPlugin.nada === "galat"
-                        ? "jk-error-line"
+                        ? "jk-error-line jk-plugin-status"
                         : statusPlugin.nada === "ok"
-                          ? "jk-plugin-ok"
-                          : "jk-plugin-info"
+                          ? "jk-plugin-ok jk-plugin-status"
+                          : "jk-plugin-info jk-plugin-status"
                     }
                     role={statusPlugin.nada === "galat" ? "alert" : undefined}
                   >

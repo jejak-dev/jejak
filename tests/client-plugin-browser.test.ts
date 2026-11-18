@@ -182,6 +182,54 @@ describe("penjelajahan marketplace", () => {
 
     expect(node.textContent).toContain("Tak ada plugin yang cocok.");
   });
+
+  test("tiap plugin menjadi baris dengan avatar ikon, nama, deskripsi, dan meta", async () => {
+    const { api } = apiPalsu();
+    const node = mount(h(PluginBrowser, { api }));
+    await flushEffects();
+
+    const baris = find(node, (item) => item.getAttribute("class") === "jk-plugin-row");
+    expect(baris?.localName).toBe("li");
+
+    const avatar = find(
+      baris!,
+      (item) => item.getAttribute("class") === "jk-plugin-avatar",
+    );
+    expect(avatar?.getAttribute("aria-hidden")).toBe("true");
+    expect(find(avatar!, (item) => item.localName === "svg")).toBeDefined();
+
+    expect(baris?.textContent).toContain("Alpa");
+    expect(baris?.textContent).toContain("Plugin contoh untuk menguji penelusuran");
+    expect(baris?.textContent).toContain("Oleh Penulis");
+  });
+
+  test("chip kategori menandai pilihan dan memicu pencarian kategori", async () => {
+    const { api, panggilan } = apiPalsu();
+    const node = mount(h(PluginBrowser, { api }));
+    await flushEffects();
+
+    const grup = find(node, (item) => item.getAttribute("role") === "group");
+    expect(grup?.getAttribute("aria-label")).toBe("Kategori");
+
+    const semua = find(
+      grup!,
+      (item) => item.localName === "button" && item.textContent?.trim() === "Semua",
+    );
+    const alat = find(
+      grup!,
+      (item) => item.localName === "button" && item.textContent?.trim() === "Alat",
+    );
+    expect(semua?.getAttribute("aria-pressed")).toBe("true");
+    expect(alat?.getAttribute("aria-pressed")).toBe("false");
+
+    fire(alat!, "click");
+    await flushEffects();
+
+    expect(alat?.getAttribute("aria-pressed")).toBe("true");
+    expect(semua?.getAttribute("aria-pressed")).toBe("false");
+    const terakhir = panggilan.cari[panggilan.cari.length - 1];
+    expect(terakhir?.category).toBe("Alat");
+  });
 });
 
 /* ---------- Pemasangan ---------- */

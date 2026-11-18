@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { ApiError, type ApiClient, type ClaudePluginItem } from "../lib/api";
-import { pluginLabel, pluginSummary, sortPlugins } from "../lib/plugins";
+import {
+  pluginAvatarTone,
+  pluginIconName,
+  pluginSummary,
+  sortPlugins,
+} from "../lib/plugins";
 import { DISABLED_NOTE, PluginBrowser } from "./PluginBrowser";
+import { Icon } from "./Icon";
 
 const PLUGINS_NOTE =
   'Plugin dibaca dari instalasi Claude Code (~/.claude/plugins). Plugin baru bisa dipasang dari tab Jelajahi atau lewat perintah "claude plugin install" di terminal. Plugin yang dinyalakan dimuat pada sesi berikutnya dan membawa skills, perintah slash /plugin:nama, subagent, serta hooks-nya; hooks plugin mengikuti saklar "Jalankan hooks Claude".';
@@ -142,23 +148,54 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
 
           {!loading && error === undefined && daftar.length === 0 && (
             <div class="jk-plugin-empty">
+              <span class="jk-plugin-empty-icon" aria-hidden="true">
+                <Icon name="plugin" size={22} />
+              </span>
               <p class="jk-note">Belum ada plugin terpasang.</p>
               <p class="jk-note jk-plugin-empty-note">
                 Pasang dari tab Jelajahi, atau lewat terminal:{" "}
                 <code>{PLUGINS_EMPTY_NOTE}</code>
               </p>
+              <button
+                type="button"
+                class="jk-link-btn"
+                onClick={() => setTab("jelajahi")}
+              >
+                Jelajahi plugin
+              </button>
             </div>
           )}
 
           {!loading && error === undefined && daftar.length > 0 && (
             <ul class="jk-plugin-list">
               {daftar.map((plugin) => (
-                <li class="jk-plugin-card" key={plugin.id}>
-                  <div class="jk-plugin-head">
-                    <span class="jk-plugin-name">{pluginLabel(plugin)}</span>
-                    {plugin.marketplace !== "" && (
-                      <span class="jk-badge jk-badge-muted">{plugin.marketplace}</span>
+                <li class="jk-plugin-row" key={plugin.id}>
+                  <span class="jk-plugin-avatar" aria-hidden="true" data-tone={pluginAvatarTone(plugin.name)}>
+                    <Icon name={pluginIconName("")} size={20} />
+                  </span>
+                  <div class="jk-plugin-body">
+                    <div class="jk-plugin-name-line">
+                      <span class="jk-plugin-name">{plugin.name}</span>{" "}
+                      {plugin.version !== "" && (
+                        <span class="jk-badge jk-badge-muted">{plugin.version}</span>
+                      )}
+                    </div>
+                    {plugin.description !== "" && (
+                      <p class="jk-plugin-desc" title={plugin.description}>
+                        {plugin.description}
+                      </p>
                     )}
+                    <div class="jk-plugin-meta">
+                      <span class="jk-plugin-summary">{pluginSummary(plugin)}</span>
+                      {plugin.author !== "" && (
+                        <span class="jk-plugin-author">{plugin.author}</span>
+                      )}
+                      {plugin.marketplace !== "" && (
+                        <span class="jk-plugin-market">{plugin.marketplace}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div class="jk-plugin-actions">
                     <input
                       type="checkbox"
                       class="jk-plugin-switch"
@@ -168,17 +205,6 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
                       onChange={(event) => void toggle(plugin, event.currentTarget.checked)}
                     />
                   </div>
-                  {plugin.description !== "" && (
-                    <p class="jk-plugin-desc" title={plugin.description}>
-                      {plugin.description}
-                    </p>
-                  )}
-                  <div class="jk-plugin-meta">
-                    <span class="jk-plugin-summary">{pluginSummary(plugin)}</span>
-                    {plugin.author !== "" && (
-                      <span class="jk-plugin-author">{plugin.author}</span>
-                    )}
-                  </div>
                 </li>
               ))}
             </ul>
@@ -186,7 +212,10 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
         </>
       )}
 
-      <p class="jk-note jk-instruksi-note">{PLUGINS_NOTE}</p>
+      <details class="jk-plugin-info-note">
+        <summary>Tentang plugin</summary>
+        <p class="jk-note jk-instruksi-note">{PLUGINS_NOTE}</p>
+      </details>
     </div>
   );
 }

@@ -115,6 +115,16 @@ describe("panel plugin", () => {
     expect(node.textContent).toContain("claude plugin install <nama>@<marketplace>");
   });
 
+  test("baris terpasang memakai baris plugin dengan saklar", async () => {
+    const { api } = apiPalsu([plugin()]);
+    const node = mount(h(PluginsPanel, { api }));
+    await flushEffects();
+
+    const baris = find(node, (item) => item.getAttribute("class") === "jk-plugin-row");
+    expect(baris?.localName).toBe("li");
+    expect(find(baris!, (item) => item.getAttribute("class") === "jk-plugin-switch")).toBeDefined();
+  });
+
   test("galat memuat menampilkan pesan dan tombol coba lagi", async () => {
     const { api } = apiPalsu([], { galatMuat: new ApiError("jaringan mati", 0) });
     const node = mount(h(PluginsPanel, { api }));

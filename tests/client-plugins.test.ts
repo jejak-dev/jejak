@@ -3,6 +3,8 @@ import type { ClaudePluginItem, MarketplacePluginItem } from "../src/client/lib/
 import {
   installConfirmText,
   marketplaceSourceNote,
+  pluginAvatarTone,
+  pluginIconName,
   pluginLabel,
   pluginSummary,
   searchPageLabel,
@@ -150,5 +152,46 @@ describe("label halaman pencarian", () => {
 
   test("katalog kosong", () => {
     expect(searchPageLabel(0, 50, 0)).toBe("0 dari 0");
+  });
+});
+
+describe("ikon avatar plugin", () => {
+  test("tiap kategori memetakan ke ikonnya sendiri", () => {
+    expect(pluginIconName("development")).toBe("code");
+    expect(pluginIconName("productivity")).toBe("checklist");
+    expect(pluginIconName("database")).toBe("database");
+    expect(pluginIconName("monitoring")).toBe("chart");
+    expect(pluginIconName("security")).toBe("shield");
+    expect(pluginIconName("design")).toBe("brush");
+    expect(pluginIconName("deployment")).toBe("rocket");
+    expect(pluginIconName("automation")).toBe("bolt");
+    expect(pluginIconName("learning")).toBe("book");
+    expect(pluginIconName("testing")).toBe("flask");
+    expect(pluginIconName("location")).toBe("pin");
+  });
+
+  test("huruf besar/kecil diabaikan", () => {
+    expect(pluginIconName("Development")).toBe("code");
+    expect(pluginIconName("  SECURITY ")).toBe("shield");
+  });
+
+  test("kategori kosong atau tak dikenal memakai ikon plugin", () => {
+    expect(pluginIconName("")).toBe("plugin");
+    expect(pluginIconName("lainnya")).toBe("plugin");
+  });
+});
+
+describe("warna avatar plugin", () => {
+  test("deterministik dan dalam rentang 0..5", () => {
+    for (const nama of ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"]) {
+      const tone = pluginAvatarTone(nama);
+      expect(tone).toBe(pluginAvatarTone(nama));
+      expect(tone).toBeGreaterThanOrEqual(0);
+      expect(tone).toBeLessThanOrEqual(5);
+    }
+  });
+
+  test("nama kosong tidak melempar", () => {
+    expect(pluginAvatarTone("")).toBe(0);
   });
 });

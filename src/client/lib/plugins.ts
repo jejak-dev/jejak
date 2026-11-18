@@ -1,3 +1,4 @@
+import type { IconName } from "../components/Icon";
 import type {
   ClaudePluginItem,
   MarketplacePluginItem,
@@ -85,4 +86,43 @@ export function searchPageLabel(offset: number, limit: number, total: number): s
   const mulai = Math.min(Math.max(offset, 0) + 1, total);
   const selesai = Math.min(Math.max(offset, 0) + Math.max(limit, 0), total);
   return `${mulai}–${selesai} dari ${total}`;
+}
+
+/** Ikon avatar plugin menurut kategori; kategori tak dikenal memakai "plugin". */
+export function pluginIconName(category: string): IconName {
+  switch (category.trim().toLowerCase()) {
+    case "development":
+      return "code";
+    case "productivity":
+      return "checklist";
+    case "database":
+      return "database";
+    case "monitoring":
+      return "chart";
+    case "security":
+      return "shield";
+    case "design":
+      return "brush";
+    case "deployment":
+      return "rocket";
+    case "automation":
+      return "bolt";
+    case "learning":
+      return "book";
+    case "testing":
+      return "flask";
+    case "location":
+      return "pin";
+    default:
+      return "plugin";
+  }
+}
+
+/** Warna avatar plugin (0..5), deterministik dari nama. */
+export function pluginAvatarTone(nama: string): number {
+  let hash = 0;
+  for (const huruf of nama) {
+    hash = (hash * 31 + huruf.codePointAt(0)!) >>> 0;
+  }
+  return hash % 6;
 }
