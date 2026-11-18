@@ -3648,8 +3648,29 @@ h2.jk-md-heading {
   overflow-y: auto;
 }
 
+/* Tampilan berkas mengisi tinggi jendela; kolom kiri dan pohon bergulir sendiri. */
+.jk-pane-body:has(.jk-panel-file-view) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .jk-panel-body {
   padding: 12px 14px 40px;
+}
+
+/* Wadah tampilan berkas: kolom penuh tinggi, anak-anaknya mengatur gulir sendiri. */
+.jk-panel-body:has(.jk-panel-file-view) {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.jk-panel-body:has(.jk-panel-file-view) > .jk-panel-crumbs,
+.jk-panel-body:has(.jk-panel-file-view) > .jk-panel-note,
+.jk-panel-body:has(.jk-panel-file-view) > .jk-panel-error {
+  flex: none;
 }
 
 .jk-panel-summary,
@@ -3941,18 +3962,37 @@ h2.jk-md-heading {
 .jk-panel-file-view {
   min-width: 0;
   container-type: inline-size;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .jk-file-split {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 .jk-file-split .jk-file-tree {
   display: none;
 }
 
+/* Kolom kiri: toolbar tetap di atas, kode/pratinjau/penyunting bergulir sendiri. */
 .jk-file-main {
+  flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.jk-file-main > .jk-panel-file-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0 0 6px;
+  background: var(--bg);
 }
 
 .jk-panel-tool-btn {
@@ -4013,6 +4053,8 @@ h2.jk-md-heading {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   border-left: 1px solid var(--line);
   padding-left: 10px;
   overflow-y: auto;
@@ -4020,11 +4062,15 @@ h2.jk-md-heading {
 }
 
 .jk-file-tree-filter {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   flex: none;
   height: 26px;
   min-height: 26px;
   margin-bottom: 6px;
   font-size: 12px;
+  background: var(--bg);
 }
 
 .jk-file-tree-rows {
@@ -4082,7 +4128,10 @@ h2.jk-md-heading {
   .jk-file-split {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 240px;
+    grid-template-rows: minmax(0, 1fr);
     align-items: stretch;
+    flex: 1;
+    min-height: 0;
   }
 
   .jk-file-split .jk-file-tree {
@@ -4102,6 +4151,21 @@ h2.jk-md-heading {
 
 .jk-app[data-mobile] .jk-file-split {
   display: block;
+}
+
+/* Mobile: panel tetap tergulir seperti biasa, bukan kolom tinggi penuh. */
+.jk-app[data-mobile] .jk-pane-body:has(.jk-panel-file-view) {
+  display: block;
+  overflow-y: auto;
+}
+
+.jk-app[data-mobile] .jk-panel-body:has(.jk-panel-file-view),
+.jk-app[data-mobile] .jk-panel-file-view {
+  display: block;
+}
+
+.jk-app[data-mobile] .jk-file-main {
+  overflow-y: visible;
 }
 
 /* Penyunting berkas dan pencarian teks */
@@ -4155,6 +4219,18 @@ h2.jk-md-heading {
   color: var(--vs-fg);
   padding: 0;
   overflow: hidden;
+}
+
+/* Saat menyunting di tampilan berkas, kolom kiri flex agar editor mengisi sisa tinggi. */
+.jk-file-main:has(.jk-code-editor) {
+  display: flex;
+  flex-direction: column;
+}
+
+.jk-file-main .jk-code-editor {
+  flex: 1;
+  min-height: 320px;
+  height: auto;
 }
 
 .jk-code-editor:focus-within {

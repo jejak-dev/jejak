@@ -99,4 +99,37 @@ describe("penampil berkas ala VS Code", () => {
     expect(hl).toContain("tab-size: 2");
     expect(input).toContain("tab-size: 2");
   });
+
+  test("panel tidak tergulir saat tampilan berkas terbuka", () => {
+    const pane = isiAturan(".jk-pane-body:has(.jk-panel-file-view)") ?? "";
+    expect(pane).toContain("display: flex");
+    expect(pane).toContain("flex-direction: column");
+    expect(pane).toContain("overflow: hidden");
+    const body = isiAturan(".jk-panel-body:has(.jk-panel-file-view)") ?? "";
+    expect(body).toContain("flex: 1");
+    expect(body).toContain("min-height: 0");
+    expect(body).toContain("display: flex");
+  });
+
+  test(".jk-pane-body global tetap tergulir", () => {
+    const aturan = isiAturan(".jk-pane-body") ?? "";
+    expect(aturan).toContain("overflow-y: auto");
+    expect(aturan).not.toContain("overflow: hidden");
+  });
+
+  test("kolom kiri dan pohon berkas bergulir sendiri", () => {
+    const main = isiAturan(".jk-file-main") ?? "";
+    expect(main).toContain("overflow-y: auto");
+    expect(main).toContain("min-height: 0");
+    const tree = isiAturan(".jk-file-tree") ?? "";
+    expect(tree).toContain("overflow-y: auto");
+    expect(tree).toContain("min-height: 0");
+    expect(tree).toContain("height: 100%");
+  });
+
+  test("pemisah berkas mengisi tinggi dan baris grid dibatasi", () => {
+    const blok = blokContainer();
+    expect(blok).toMatch(/grid-template-rows:\s*minmax\(0,\s*1fr\)/);
+    expect(blok).toContain("min-height: 0");
+  });
 });
