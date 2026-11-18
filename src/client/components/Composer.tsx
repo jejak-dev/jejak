@@ -645,7 +645,7 @@ export function Composer({
                 type="button"
                 class="jk-chip jk-chip-btn"
                 aria-label="Pilih folder"
-                title={nativePicker ? "Pilih folder (Finder)" : "Browse…"}
+                title={nativePicker ? "Pilih folder (dialog sistem)" : "Browse…"}
                 data-folder-opener
                 disabled={busy || picking}
                 onClick={() => {

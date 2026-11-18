@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { collectChecks, type Check, type DoctorContext } from "../src/cli/doctor";
 import { runShadowGit } from "../src/server/checkpoints/shadow-git";
-import { nativePickerAvailable } from "../src/server/files/native-picker";
+import { nativePickerAvailable, pickFolderNative } from "../src/server/files/native-picker";
 import { nullDevice } from "../src/server/platform";
 import { terminalRoutes } from "../src/server/routes/terminal";
 import {
@@ -224,10 +224,35 @@ describe("fitur yang tak ada di Windows", () => {
     });
   });
 
-  test("folder picker native hanya di macOS", () => {
-    expect(nativePickerAvailable("win32")).toBe(false);
+  test("folder picker native hanya di macOS dan Windows", () => {
+    expect(nativePickerAvailable("win32")).toBe(true);
     expect(nativePickerAvailable("linux")).toBe(false);
     expect(nativePickerAvailable("darwin")).toBe(true);
+  });
+});
+
+describe("dialog folder native Windows", () => {
+  test("memanggil PowerShell dengan folder awal lewat env, bukan skrip", async () => {
+    let seen: { cmd: string[]; env?: Record<string, string> } | undefined;
+    const hasil = await pickFolderNative("C:\\Development\\proyek", {
+      platform: "win32",
+      run: async (cmd, env) => {
+        seen = { cmd, ...(env === undefined ? {} : { env }) };
+        return { code: 0, stdout: "C:\\Development\\pilihan\r\n" };
+      },
+    });
+    expect(hasil).toEqual({ path: "C:\\Development\\pilihan" });
+    expect(seen?.cmd[0]).toBe("powershell.exe");
+    expect(seen?.cmd.join(" ")).not.toContain("Development");
+    expect(seen?.env).toEqual({ JEJAK_PICK_START: "C:\\Development\\proyek" });
+  });
+
+  test("dibatalkan (kode keluar bukan 0) mengembalikan objek kosong", async () => {
+    const hasil = await pickFolderNative(undefined, {
+      platform: "win32",
+      run: async () => ({ code: 1, stdout: "" }),
+    });
+    expect(hasil).toEqual({});
   });
 });
 
