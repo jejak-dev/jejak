@@ -2353,6 +2353,10 @@ export class SessionManager {
         } catch {
           sandbox = "standar";
         }
+        // Sandbox tak ada di Windows: bawaan "standar" membuat prompt pertama
+        // selalu gagal. Tanpa pilihan eksplisit, sesi dibuat tanpa sandbox
+        // (lencana "Tanpa sandbox" tampil; tak ada yang bisa disandbox di sana).
+        if (sandbox === "standar" && process.platform === "win32") sandbox = "mati";
       }
     }
 

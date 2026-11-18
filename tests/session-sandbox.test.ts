@@ -133,6 +133,23 @@ describe("SessionManager + sandbox", () => {
     expect(sandbox.network.allowedDomains).toContain("api.provider.test");
   });
 
+  test("di Windows tanpa pilihan eksplisit sesi dibuat tanpa sandbox", async () => {
+    const asli = Object.getOwnPropertyDescriptor(process, "platform")!;
+    Object.defineProperty(process, "platform", { value: "win32" });
+    try {
+      const capture = captureRunner();
+      const mgr = manager(capture.runner, {
+        sandbox: { store: sandboxStore(), home: HOME },
+      });
+      const info = await mgr.create({ prompt: "Halo", cwd: project });
+      await mgr.done(info.id);
+      expect(info.sandbox).toBe("mati");
+      expect(capture.inputs[0]?.sandbox).toBeUndefined();
+    } finally {
+      Object.defineProperty(process, "platform", asli);
+    }
+  });
+
   test("sesi bermode mati tidak mengisi input.sandbox", async () => {
     const capture = captureRunner();
     const mgr = manager(capture.runner, {
