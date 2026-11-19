@@ -93,6 +93,10 @@ export interface PanelProps {
   wide?: boolean;
   /** Nyalakan atau matikan mode lebar dari tab Desain. */
   onWideChange?: (on: boolean) => void;
+  /** Mode fokus: kanvas mengisi seluruh badan, baris pesan melayang. */
+  focus?: boolean;
+  /** Nyalakan atau matikan mode fokus dari tab Desain. */
+  onFocusChange?: (on: boolean) => void;
 }
 
 const PANEL_LABEL =
@@ -142,6 +146,10 @@ interface PanelTabBodyProps {
   wide?: boolean;
   /** Nyalakan atau matikan mode lebar dari tab Desain. */
   onWideChange?: (on: boolean) => void;
+  /** Mode fokus sedang aktif. */
+  focus?: boolean;
+  /** Nyalakan atau matikan mode fokus dari tab Desain. */
+  onFocusChange?: (on: boolean) => void;
 }
 
 /** Badan tab yang aktif; hanya tab aktif yang dipasang di jendela. */
@@ -177,6 +185,8 @@ function PanelTabBody(props: PanelTabBodyProps) {
     maximized,
     wide,
     onWideChange,
+    focus,
+    onFocusChange,
   } = props;
 
   if (tab === "changes") {
@@ -253,6 +263,8 @@ function PanelTabBody(props: PanelTabBodyProps) {
         active={open}
         wide={wide === true}
         onWideChange={onWideChange ?? ((): void => {})}
+        focus={focus === true}
+        onFocusChange={onFocusChange ?? ((): void => {})}
         onQuote={onQuote ?? ((): void => {})}
       />
     );
@@ -301,6 +313,8 @@ export function Panel({
   onQuote,
   wide,
   onWideChange,
+  focus,
+  onFocusChange,
 }: PanelProps) {
   const [layout, setLayout] = useState<PaneLayout>(() => readPaneLayout());
   // Jendela yang terakhir difokuskan; menentukan tab aktif pada rel ikon.
@@ -611,6 +625,8 @@ export function Panel({
                   maximized={layout.maximized === pane.id}
                   wide={wide}
                   onWideChange={onWideChange}
+                  focus={focus}
+                  onFocusChange={onFocusChange}
                 />
               </PaneWindow>
             </Fragment>

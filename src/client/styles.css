@@ -11400,3 +11400,52 @@ h2.jk-md-heading {
   font: inherit;
   font-size: 12px;
 }
+
+/* Mode fokus: kanvas mengisi seluruh badan, baris pesan melayang di bawah. */
+
+.jk-main.is-design-focus > .jk-top {
+  display: none;
+}
+
+/* Tombol sidebar tak punya tempat di kanvas penuh; keluar lewat chip. */
+.jk-main.is-design-focus .jk-side-reveal {
+  display: none;
+}
+
+.jk-main-body.is-design-focus .jk-main-col {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 32px));
+  flex: none;
+  z-index: 30;
+}
+
+/* Hanya baris pesan yang tersisa; linimasa, peringatan, dan pita tujuan disembunyikan. */
+.jk-main-body.is-design-focus .jk-main-col > *:not(.jk-reply) {
+  display: none;
+}
+
+.jk-main-body.is-design-focus .jk-reply {
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+}
+
+.jk-main-body.is-design-focus .jk-reply .jk-comp-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* Panel kanvas memakai seluruh badan; garis pemisah tak diperlukan. */
+.jk-main-body.is-design-focus .jk-panel {
+  flex: 1;
+  width: auto;
+  max-width: none;
+  border-left: 0;
+}

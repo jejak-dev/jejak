@@ -245,6 +245,8 @@ export function App() {
   });
   // Mode lebar (kanvas desain): tidak disimpan, mulai mati tiap muat halaman.
   const [designWide, setDesignWide] = useState(false);
+  // Mode fokus: kanvas mengisi seluruh jendela, baris pesan melayang di atasnya.
+  const [designFocus, setDesignFocus] = useState(false);
   const [chatW, setChatW] = useState(() => {
     try {
       return chatWidth.load(window.localStorage);
@@ -324,6 +326,15 @@ export function App() {
   useEffect(() => {
     if (!wideMungkin) setDesignWide(false);
   }, [wideMungkin]);
+  // Fokus hanya bermakna selama mode lebar; keluar dari mode lebar mematikannya.
+  const focusActive = designFocus && wideActive;
+  useEffect(() => {
+    if (!wideActive) setDesignFocus(false);
+  }, [wideActive]);
+  // Ganti sesi: fokus kanvas tidak berlaku untuk sesi lain.
+  useEffect(() => {
+    setDesignFocus(false);
+  }, [selectedId]);
   // Sidebar dianggap tersembunyi selama mode lebar tanpa mengubah pilihan pengguna.
   const sideHiddenNow = sideHidden || wideActive;
   const sideWidthNow = wideActive ? 0 : sideWidth;
@@ -1014,7 +1025,7 @@ export function App() {
     void refreshMemory();
   }, [refreshMemory]);
 
-  const mainClass =
+  const mainClass = `${
     showingProviders ||
     showingMemory ||
     showingWorkspaces ||
@@ -1024,7 +1035,8 @@ export function App() {
     showingUsage ||
     selected !== undefined
       ? "jk-main"
-      : "jk-main jk-main-home";
+      : "jk-main jk-main-home"
+  }${focusActive ? " is-design-focus" : ""}`;
 
   // Ponsel: satu kolom dengan layar terpisah (daftar sesi, chat, panel).
   const screen = mobileScreen({
@@ -1241,7 +1253,7 @@ export function App() {
               onTogglePanel={togglePanel}
               error={headerError}
             />
-            <div class="jk-main-body">
+            <div class={`jk-main-body${focusActive ? " is-design-focus" : ""}`}>
               <div class="jk-main-col">
                 {worktreeNotice !== undefined && worktreeNotice.sessionId === selected.id && (
                   <div class="jk-worktree-notice" role="status">
@@ -1326,12 +1338,14 @@ export function App() {
                   tabRequest={panelTabRequest}
                   onSessionChanged={() => void refresh()}
                   onQuote={onQuote}
-                  width={panelNow}
+                  width={focusActive ? undefined : panelNow}
                   wide={wideActive}
                   onWideChange={openDesignWide}
+                  focus={focusActive}
+                  onFocusChange={setDesignFocus}
                 />
               )}
-              {panelOpenNow && !sempit && (
+              {panelOpenNow && !sempit && !focusActive && (
                 <PaneResizer
                   width={panelNow}
                   min={panelMinNow}

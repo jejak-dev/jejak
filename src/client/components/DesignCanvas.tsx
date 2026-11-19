@@ -58,6 +58,10 @@ export interface DesignCanvasProps {
   design: DesignResult;
   refresh: () => Promise<void>;
   onExit: () => void;
+  /** Mode fokus sedang aktif: kanvas mengisi seluruh jendela. */
+  focus?: boolean;
+  /** Nyalakan atau matikan mode fokus. */
+  onFocusChange?: (on: boolean) => void;
   /** Tempel teks ke kolom pesan; tidak mengirim apa pun. */
   onQuote: (text: string) => void;
   /** Daftarkan penangkap layar saat kanvas terpasang; lepas saat unmount. */
@@ -115,6 +119,8 @@ function errorMessage(caught: unknown): string {
  */
 export function DesignCanvas(props: DesignCanvasProps) {
   const { api, sessionId, repo, design, refresh, onExit } = props;
+  // Mode fokus: kanvas memenuhi jendela, baris pesan melayang di atasnya.
+  const fokus = props.focus === true;
 
   const containerRef = useRef<HTMLElement | null>(null);
   const frameEls = useRef(new Map<string, HTMLIFrameElement>());
@@ -748,6 +754,12 @@ export function DesignCanvas(props: DesignCanvasProps) {
         event.stopPropagation();
         setTool("preview");
         return;
+      case "f":
+      case "F":
+        event.preventDefault();
+        event.stopPropagation();
+        props.onFocusChange?.(!fokus);
+        return;
       case "0":
         event.preventDefault();
         event.stopPropagation();
@@ -779,6 +791,11 @@ export function DesignCanvas(props: DesignCanvasProps) {
         event.stopPropagation();
         if (selectionRef.current !== undefined) {
           setSelection(undefined);
+          return;
+        }
+        // Esc berlapis: buang pilihan, lalu keluar fokus, baru keluar mode lebar.
+        if (fokus) {
+          props.onFocusChange?.(false);
           return;
         }
         onExit();
@@ -1048,6 +1065,16 @@ export function DesignCanvas(props: DesignCanvasProps) {
           onClick={refreshAll}
         >
           Segarkan
+        </button>
+        <button
+          type="button"
+          class="jk-design-chip"
+          aria-label={fokus ? "Keluar dari fokus" : "Mode fokus"}
+          aria-pressed={fokus}
+          title={fokus ? "Keluar dari fokus (F)" : "Mode fokus (F)"}
+          onClick={() => props.onFocusChange?.(!fokus)}
+        >
+          {fokus ? "Keluar dari fokus" : "Mode fokus"}
         </button>
         <button
           type="button"

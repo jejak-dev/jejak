@@ -17,6 +17,10 @@ export interface DesignTabProps {
   wide: boolean;
   /** Nyalakan atau matikan mode lebar. */
   onWideChange: (on: boolean) => void;
+  /** Mode fokus sedang aktif: kanvas mengisi seluruh jendela. */
+  focus?: boolean;
+  /** Nyalakan atau matikan mode fokus. */
+  onFocusChange?: (on: boolean) => void;
   /** Tempel teks ke kolom pesan; tidak mengirim apa pun. */
   onQuote: (text: string) => void;
 }
@@ -34,7 +38,8 @@ function errorMessage(caught: unknown): string {
  * lebar; kanvasnya sendiri dipasang di komit berikutnya.
  */
 export function DesignTab(props: DesignTabProps) {
-  const { api, sessionId, repo, active, wide, onWideChange, onQuote } = props;
+  const { api, sessionId, repo, active, wide, onWideChange, focus, onFocusChange, onQuote } =
+    props;
   // Penangkap didaftarkan kanvas saat terpasang; mode daftar membuatnya
   // undefined sehingga permintaan dijawab `no-frame`.
   const captureRef = useRef<CaptureFn | undefined>(undefined);
@@ -140,6 +145,8 @@ export function DesignTab(props: DesignTabProps) {
           design={design}
           refresh={refresh}
           onExit={() => onWideChange(false)}
+          focus={focus === true}
+          onFocusChange={onFocusChange}
           onQuote={onQuote}
           registerCapture={(fn) => {
             captureRef.current = fn;
