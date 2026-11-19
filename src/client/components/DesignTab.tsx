@@ -1,5 +1,6 @@
-import { useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
 import { ApiError, type ApiClient } from "../lib/api";
+import { createCaptureRunner, type CaptureFn } from "../lib/design-capture";
 import { SAMPLE_PROMPT, pageRows } from "../lib/design-ui";
 import { useDesign } from "../lib/use-design";
 import { DesignCanvas } from "./DesignCanvas";
@@ -33,7 +34,24 @@ function errorMessage(caught: unknown): string {
  */
 export function DesignTab(props: DesignTabProps) {
   const { api, sessionId, repo, active, wide, onWideChange, onQuote } = props;
-  const { design, loading, error, refresh } = useDesign(api, sessionId, repo, active);
+  // Penangkap didaftarkan kanvas saat terpasang; mode daftar membuatnya
+  // undefined sehingga permintaan dijawab `no-frame`.
+  const captureRef = useRef<CaptureFn | undefined>(undefined);
+  const runner = useMemo(
+    () =>
+      createCaptureRunner({
+        capture: () => captureRef.current,
+        upload: (requestId, body) => api.uploadDesignCapture(sessionId, requestId, body, repo),
+      }),
+    [api, sessionId, repo],
+  );
+  const { design, loading, error, refresh } = useDesign(
+    api,
+    sessionId,
+    repo,
+    active,
+    (requests) => runner.handle(requests),
+  );
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const [tracked, setTracked] = useState(false);
@@ -121,6 +139,9 @@ export function DesignTab(props: DesignTabProps) {
           refresh={refresh}
           onExit={() => onWideChange(false)}
           onQuote={onQuote}
+          registerCapture={(fn) => {
+            captureRef.current = fn;
+          }}
         />
       </div>
     );

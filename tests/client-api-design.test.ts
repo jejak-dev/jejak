@@ -78,6 +78,88 @@ describe("klien API desain", () => {
     await expect(api.getDesignStamp("s1")).rejects.toBeInstanceOf(ApiError);
   });
 
+  test("getDesignStamp meneruskan captures yang sah dan membuang yang tak sah", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({
+        stamp: "abc123",
+        captures: [
+          { id: "k_1", slug: "beranda", scale: 1 },
+          { id: "k_2", slug: "masuk", scale: 2 },
+          { id: "id salah", slug: "beranda", scale: 1 },
+          { id: "k_3", slug: "beranda", scale: 3 },
+          { id: "k_4", scale: 1 },
+          { slug: "masuk", scale: 1 },
+          { id: "k_5", slug: "", scale: 1 },
+          { id: "x".repeat(65), slug: "beranda", scale: 1 },
+          "bukan objek",
+          null,
+          { id: "k_6", slug: "profil", scale: 2 },
+        ],
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    expect(await api.getDesignStamp("s1")).toEqual({
+      stamp: "abc123",
+      captures: [
+        { id: "k_1", slug: "beranda", scale: 1 },
+        { id: "k_2", slug: "masuk", scale: 2 },
+        { id: "k_6", slug: "profil", scale: 2 },
+      ],
+    });
+  });
+
+  test("getDesignStamp membatasi captures maksimal sepuluh", async () => {
+    const captures = Array.from({ length: 15 }, (_, i) => ({
+      id: `k_${i}`,
+      slug: "beranda",
+      scale: 1,
+    }));
+    const { fetch } = fakeFetch(() => jsonResponse({ stamp: "s", captures }));
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.getDesignStamp("s1");
+    expect(hasil.captures).toHaveLength(10);
+    expect(hasil.captures?.[9]?.id).toBe("k_9");
+  });
+
+  test("uploadDesignCapture POST body JSON dengan id ter-encode", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await api.uploadDesignCapture(
+      "s 1",
+      "k/1",
+      { dataUrl: "data:image/png;base64,AAAA" },
+      "repo satu",
+    );
+
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/design/capture/k%2F1?repo=repo%20satu");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      dataUrl: "data:image/png;base64,AAAA",
+    });
+  });
+
+  test("uploadDesignCapture meneruskan alasan gagal tanpa repo", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await api.uploadDesignCapture("s1", "k_1", { error: "no-frame" });
+    expect(calls[0]?.url).toBe("/api/sessions/s1/design/capture/k_1");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ error: "no-frame" });
+  });
+
+  test("uploadDesignCapture melempar galat server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Permintaan tidak ditemukan." }, 404));
+    const api = createApiClient({ fetch });
+
+    await expect(
+      api.uploadDesignCapture("s1", "k_1", { error: "failed" }),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
   test("getDesignPage mengirim slug dan repo ter-encode", async () => {
     const payload = { slug: "beranda", html: "<html></html>", mtime: 5, warnings: ["a"] };
     const { fetch, calls } = fakeFetch(() => jsonResponse(payload));

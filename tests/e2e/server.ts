@@ -12,7 +12,9 @@
 import { rmSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Elysia } from "elysia";
 import { direktoriDataUji } from "./tmp-home";
+import type { MemoryBridge } from "../../src/server/memory/memory-bridge";
 
 /** Port server uji; `playwright.config.ts` memakai nomor yang sama. */
 const PORT = Number(process.env.E2E_PORT ?? "3931");
@@ -58,6 +60,68 @@ const layanan = app as unknown as {
 };
 layanan.heldPrompts?.start();
 layanan.scheduledTasks?.start();
+
+/**
+ * Rute KHUSUS UJI: memanggil tool `design_screenshot` lewat jembatan memory
+ * tanpa agent sungguhan. Hanya ada di server uji ini, tidak di `src/`.
+ * Jawaban tidak memuat gambar, hanya ukuran dan dimensi IHDR-nya.
+ */
+const bridge = (app as unknown as { memoryBridge?: MemoryBridge }).memoryBridge;
+if (bridge !== undefined) {
+  (app as unknown as Elysia).post(
+    "/__uji/design-screenshot",
+    async ({ body }) => {
+      const gagal = (pesan: string, status = 400): Response =>
+        new Response(JSON.stringify({ error: pesan }), {
+          status,
+          headers: { "content-type": "application/json; charset=utf-8" },
+        });
+      let input: unknown;
+      try {
+        input = JSON.parse(typeof body === "string" ? body : "");
+      } catch {
+        return gagal("Body harus JSON.");
+      }
+      if (typeof input !== "object" || input === null) return gagal("Body harus objek.");
+      const record = input as Record<string, unknown>;
+      const { sessionId, cwd, slug } = record;
+      if (typeof sessionId !== "string" || typeof cwd !== "string" || typeof slug !== "string") {
+        return gagal("Field sessionId, cwd, dan slug wajib string.");
+      }
+      const args: { slug: string; scale?: 1 | 2 } = { slug };
+      if (record.scale === 1 || record.scale === 2) args.scale = record.scale;
+      const opened = await bridge.open({ sessionId, cwd });
+      try {
+        const hasil = await opened.memory.call("design_screenshot", args);
+        let imageBytes = 0;
+        let width = 0;
+        let height = 0;
+        if (hasil.image !== undefined) {
+          const png = Buffer.from(hasil.image.data, "base64");
+          imageBytes = png.length;
+          if (png.length >= 24 && png.toString("latin1", 12, 16) === "IHDR") {
+            width = png.readUInt32BE(16);
+            height = png.readUInt32BE(20);
+          }
+        }
+        return new Response(
+          JSON.stringify({
+            isError: hasil.isError,
+            text: hasil.text,
+            imageBytes,
+            width,
+            height,
+            mimeType: hasil.image?.mimeType ?? "",
+          }),
+          { headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+      } finally {
+        opened.close();
+      }
+    },
+    { parse: "text" },
+  );
+}
 
 const server = Bun.serve({
   hostname: "127.0.0.1",

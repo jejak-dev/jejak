@@ -431,6 +431,40 @@ export interface DesignLayoutPage {
   device?: DeviceId;
 }
 
+/** Alasan klien gagal menangkap layar; sama dengan broker server. */
+export type CaptureFailure = "tainted" | "too-large" | "failed" | "no-frame";
+
+/** Permintaan tangkapan layar tertunda dari agent. */
+export interface DesignCaptureRequest {
+  id: string;
+  slug: string;
+  scale: 1 | 2;
+}
+
+/** Batas id permintaan tangkapan; sama dengan protokol frame. */
+const DESIGN_CAPTURE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const MAX_DESIGN_CAPTURES = 10;
+
+/**
+ * Permintaan tangkapan dari respons stamp. Elemen tak sah dibuang diam-diam:
+ * frame akan menolaknya juga, tetapi klien tak perlu mengunggah kegagalan
+ * untuk id yang tak dikenal server.
+ */
+function designCapturesFrom(value: unknown): DesignCaptureRequest[] {
+  if (!Array.isArray(value)) return [];
+  const hasil: DesignCaptureRequest[] = [];
+  for (const item of value) {
+    if (hasil.length >= MAX_DESIGN_CAPTURES) break;
+    if (!isRecord(item)) continue;
+    const { id, slug, scale } = item;
+    if (typeof id !== "string" || !DESIGN_CAPTURE_ID_RE.test(id)) continue;
+    if (typeof slug !== "string" || slug === "") continue;
+    if (scale !== 1 && scale !== 2) continue;
+    hasil.push({ id, slug, scale });
+  }
+  return hasil;
+}
+
 export interface RejectChangeInput {
   path: string;
   scope: RejectScope;
@@ -782,7 +816,17 @@ export interface ApiClient {
   /** Model desain satu sesi: manifest, halaman, dan peringatan. */
   getDesign(id: string, repo?: string): Promise<DesignResult>;
   /** Cap perubahan folder `design/` untuk polling murah. */
-  getDesignStamp(id: string, repo?: string): Promise<{ stamp: string }>;
+  getDesignStamp(
+    id: string,
+    repo?: string,
+  ): Promise<{ stamp: string; captures?: DesignCaptureRequest[] }>;
+  /** Unggah PNG tangkapan layar (atau alasan gagal) untuk satu permintaan. */
+  uploadDesignCapture(
+    id: string,
+    requestId: string,
+    body: { dataUrl: string } | { error: CaptureFailure },
+    repo?: string,
+  ): Promise<void>;
   /** Satu halaman desain yang sudah dirakit untuk frame. */
   getDesignPage(id: string, slug: string, repo?: string): Promise<DesignPageDoc>;
   /** URL frame desain; `version` (mtime) membuat iframe memuat ulang. */
@@ -2420,7 +2464,19 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       );
       const stamp = field(data, "stamp");
       if (typeof stamp !== "string") throw invalidResponse();
-      return { stamp };
+      // Server lama tak mengirim `captures`; bentuk `{stamp}` tetap dipertahankan.
+      const captures = field(data, "captures");
+      if (captures === undefined) return { stamp };
+      return { stamp, captures: designCapturesFrom(captures) };
+    },
+
+    async uploadDesignCapture(id, requestId, body, repo) {
+      const query = queryString([["repo", repo]]);
+      await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/design/capture/${encodeURIComponent(requestId)}${query}`,
+        body,
+      );
     },
 
     async getDesignPage(id, slug, repo) {

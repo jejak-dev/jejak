@@ -215,4 +215,75 @@ describe("createDesignPoller", () => {
     await poller.refresh();
     expect(loads).toBe(2);
   });
+
+  test("onCaptures dipanggil tiap putaran walau stamp tak berubah", async () => {
+    const jam = fakeTimers();
+    const permintaan: string[][] = [];
+    const poller = createDesignPoller({
+      load: async () => DESIGN,
+      stamp: async () => ({
+        stamp: "s1",
+        captures: [{ id: "k_1", slug: "beranda", scale: 1 }],
+      }),
+      onDesign: () => {},
+      onError: () => {},
+      onCaptures: (requests) => permintaan.push(requests.map((item) => item.id)),
+      timers: jam.timers,
+    });
+
+    poller.start();
+    await flush();
+    jam.tick();
+    await flush();
+    jam.tick();
+    await flush();
+
+    // Putaran pertama hanya terjadi lewat interval: `start` memakai refresh.
+    expect(permintaan).toEqual([["k_1"], ["k_1"]]);
+  });
+
+  test("onCaptures tidak dipanggil saat permintaan kosong", async () => {
+    const jam = fakeTimers();
+    let panggilan = 0;
+    const poller = createDesignPoller({
+      load: async () => DESIGN,
+      stamp: async () => ({ stamp: "s1", captures: [] }),
+      onDesign: () => {},
+      onError: () => {},
+      onCaptures: () => {
+        panggilan += 1;
+      },
+      timers: jam.timers,
+    });
+
+    poller.start();
+    await flush();
+    jam.tick();
+    await flush();
+
+    expect(panggilan).toBe(0);
+  });
+
+  test("stamp berbentuk string lama tetap bekerja", async () => {
+    const jam = fakeTimers();
+    const dimuat: DesignResult[] = [];
+    const permintaan: unknown[] = [];
+    const poller = createDesignPoller({
+      load: async () => DESIGN,
+      stamp: async () => "s1",
+      onDesign: (design) => dimuat.push(design),
+      onError: () => {},
+      onCaptures: (requests) => permintaan.push(requests),
+      timers: jam.timers,
+    });
+
+    poller.start();
+    await flush();
+    jam.tick();
+    await flush();
+
+    expect(dimuat).toEqual([DESIGN]);
+    expect(permintaan).toEqual([]);
+    expect(jam.count).toBe(1);
+  });
 });

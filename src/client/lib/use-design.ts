@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
-import type { ApiClient, DesignResult } from "./api";
+import type { ApiClient, DesignCaptureRequest, DesignResult } from "./api";
 import { shouldRefetch } from "./design-ui";
 
 /** Selang polling cap perubahan folder `design/`. */
@@ -11,6 +11,9 @@ export interface DesignTimers {
   clearInterval(handle: unknown): void;
 }
 
+/** Cap polling: bentuk string lama atau objek lengkap dengan permintaan. */
+export type DesignStampResult = string | { stamp: string; captures?: DesignCaptureRequest[] };
+
 const SYSTEM_TIMERS: DesignTimers = {
   setInterval: (callback, ms) => globalThis.setInterval(callback, ms),
   clearInterval: (handle) => globalThis.clearInterval(handle as ReturnType<typeof setInterval>),
@@ -19,12 +22,14 @@ const SYSTEM_TIMERS: DesignTimers = {
 export interface DesignPollerOptions {
   /** Ambil model desain penuh. */
   load: () => Promise<DesignResult>;
-  /** Ambil cap perubahan folder desain. */
-  stamp: () => Promise<string>;
+  /** Ambil cap perubahan folder desain (dan permintaan tangkapan). */
+  stamp: () => Promise<DesignStampResult>;
   /** Dipanggil setiap model desain baru berhasil dimuat. */
   onDesign: (design: DesignResult) => void;
   /** Dipanggil saat jaringan gagal; polling tetap jalan. */
   onError: (message: string) => void;
+  /** Dipanggil tiap putaran polling bila ada permintaan tangkapan. */
+  onCaptures?: (requests: DesignCaptureRequest[]) => void;
   intervalMs?: number;
   timers?: DesignTimers;
 }
@@ -41,6 +46,17 @@ export interface DesignPoller {
 function messageOf(error: unknown): string {
   if (error instanceof Error && error.message !== "") return error.message;
   return "desain tidak dapat dimuat";
+}
+
+/** Cap string dari hasil polling berbentuk apa pun. */
+function stampOf(result: DesignStampResult): string {
+  return typeof result === "string" ? result : result.stamp;
+}
+
+/** Permintaan tangkapan dari hasil polling; kosong untuk bentuk string lama. */
+function capturesOf(result: DesignStampResult): DesignCaptureRequest[] {
+  if (typeof result === "string") return [];
+  return result.captures ?? [];
 }
 
 /**
@@ -75,8 +91,12 @@ export function createDesignPoller(options: DesignPollerOptions): DesignPoller {
     busy = true;
     const gen = generation;
     try {
-      const next = await options.stamp();
+      const result = await options.stamp();
       if (gen !== generation) return;
+      // Permintaan tangkapan diteruskan tiap putaran, walau cap tak berubah.
+      const captures = capturesOf(result);
+      if (captures.length > 0) options.onCaptures?.(captures);
+      const next = stampOf(result);
       if (!shouldRefetch(stamp, next)) return;
       if (await loadInto(gen)) stamp = next;
     } catch (error) {
@@ -90,7 +110,7 @@ export function createDesignPoller(options: DesignPollerOptions): DesignPoller {
   const refresh = async (): Promise<void> => {
     const gen = generation;
     try {
-      const next = await options.stamp();
+      const next = stampOf(await options.stamp());
       if (gen !== generation) return;
       const design = await options.load();
       if (gen !== generation) return;
@@ -134,25 +154,30 @@ export interface DesignState {
 
 /**
  * Model desain satu sesi. Polling hanya berjalan saat tab aktif dan dokumen
- * terlihat; cap berubah memicu muat ulang penuh.
+ * terlihat; cap berubah memicu muat ulang penuh. `onCaptures` dipanggil tiap
+ * putaran polling bila agent menunggu tangkapan layar.
  */
 export function useDesign(
   api: ApiClient,
   sessionId: string,
   repo: string | undefined,
   active: boolean,
+  onCaptures?: (requests: DesignCaptureRequest[]) => void,
 ): DesignState {
   const [design, setDesign] = useState<DesignResult | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
   const pollerRef = useRef<DesignPoller | undefined>(undefined);
+  // Identitas fungsi boleh berubah tiap render tanpa memulai ulang polling.
+  const capturesRef = useRef(onCaptures);
+  capturesRef.current = onCaptures;
 
   useEffect(() => {
     if (!active) return;
 
     const poller = createDesignPoller({
       load: () => api.getDesign(sessionId, repo),
-      stamp: async () => (await api.getDesignStamp(sessionId, repo)).stamp,
+      stamp: () => api.getDesignStamp(sessionId, repo),
       onDesign: (next) => {
         setDesign(next);
         setError(undefined);
@@ -162,6 +187,7 @@ export function useDesign(
         setError(message);
         setLoading(false);
       },
+      onCaptures: (requests) => capturesRef.current?.(requests),
     });
     pollerRef.current = poller;
 

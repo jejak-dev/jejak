@@ -24,11 +24,13 @@ import {
   type View,
 } from "../lib/design-canvas";
 import {
+  captureMessage,
   clearSelectionMessage,
   isFromFrame,
   modeMessage,
   parseFrameMessage,
 } from "../lib/design-protocol";
+import type { CaptureFn, CaptureOutcome } from "../lib/design-capture";
 import {
   chipText,
   elementContext,
@@ -53,6 +55,8 @@ export interface DesignCanvasProps {
   onExit: () => void;
   /** Tempel teks ke kolom pesan; tidak mengirim apa pun. */
   onQuote: (text: string) => void;
+  /** Daftarkan penangkap layar saat kanvas terpasang; lepas saat unmount. */
+  registerCapture?: (fn: CaptureFn | undefined) => void;
 }
 
 interface Override {
@@ -81,6 +85,13 @@ function frameUrl(
 
 const SAVE_DEBOUNCE_MS = 500;
 const EMPTY_TEXT = "Belum ada halaman. Minta agent merancang halaman pertama.";
+/** Batas penunggu balasan tangkapan; yang terlama dibuang lebih dulu. */
+const MAX_SHOT_WAITERS = 20;
+
+interface ShotWaiter {
+  slug: string;
+  resolve: (outcome: CaptureOutcome) => void;
+}
 
 function errorMessage(caught: unknown): string {
   return caught instanceof ApiError ? caught.message : "tata letak tidak dapat disimpan";
@@ -140,6 +151,8 @@ export function DesignCanvas(props: DesignCanvasProps) {
   selectionRef.current = selection;
   const selectionMtimeRef = useRef<number | undefined>(undefined);
   const lastHoverRef = useRef<{ slug: string; label: string } | undefined>(undefined);
+  // Penunggu balasan `shot` per id permintaan; kunci sama dengan pesan frame.
+  const shotWaiters = useRef(new Map<string, ShotWaiter>());
 
   const pages = design.pages.map((page) => {
     const override = overrides[page.slug];
@@ -188,6 +201,39 @@ export function DesignCanvas(props: DesignCanvasProps) {
     const observer = new ResizeObserver(update);
     observer.observe(el);
     return () => observer.disconnect();
+  }, []);
+
+  // Penangkap layar didaftarkan sekali; iframe dibaca lewat ref agar selalu
+  // segar. Saat unmount penunggu yang belum dijawab diselesaikan agar tak bocor.
+  const registerCaptureRef = useRef(props.registerCapture);
+  registerCaptureRef.current = props.registerCapture;
+  useEffect(() => {
+    const waiters = shotWaiters.current;
+    const daftar = registerCaptureRef.current;
+    if (daftar === undefined) return;
+    daftar((slug, scale, requestId): Promise<CaptureOutcome> => {
+      const frame = frameEls.current.get(slug);
+      if (frame === undefined || frame.contentWindow === null) {
+        return Promise.resolve({ error: "no-frame" });
+      }
+      const pesan = captureMessage(requestId, scale);
+      if (pesan === undefined) return Promise.resolve({ error: "failed" });
+      return new Promise<CaptureOutcome>((resolve) => {
+        // Batas entri: penunggu terlama dibuang lebih dulu (timeout runner
+        // sudah melaporkan kegagalannya sendiri).
+        if (waiters.size >= MAX_SHOT_WAITERS) {
+          const tertua = waiters.keys().next().value;
+          if (tertua !== undefined) waiters.delete(tertua);
+        }
+        waiters.set(requestId, { slug, resolve });
+        frame.contentWindow?.postMessage(pesan, "*");
+      });
+    });
+    return () => {
+      daftar(undefined);
+      for (const waiter of waiters.values()) waiter.resolve({ error: "failed" });
+      waiters.clear();
+    };
   }, []);
 
   // Fit sekali per pemasangan, bukan tiap polling.
@@ -335,6 +381,21 @@ export function DesignCanvas(props: DesignCanvasProps) {
             panBy(current, message.dx * current.zoom, message.dy * current.zoom),
           );
           return;
+        case "shot": {
+          const waiter = shotWaiters.current.get(message.id);
+          // Frame lain tak boleh memalsukan balasan untuk slug penunggu.
+          if (waiter === undefined || waiter.slug !== slug) return;
+          shotWaiters.current.delete(message.id);
+          waiter.resolve({ dataUrl: message.dataUrl });
+          return;
+        }
+        case "shot-error": {
+          const waiter = shotWaiters.current.get(message.id);
+          if (waiter === undefined || waiter.slug !== slug) return;
+          shotWaiters.current.delete(message.id);
+          waiter.resolve({ error: message.reason });
+          return;
+        }
         default:
           // `route` belum ditangani di komit ini.
           return;
