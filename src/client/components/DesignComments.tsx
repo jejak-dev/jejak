@@ -1,5 +1,6 @@
 import type { DesignComment, DesignPage } from "../lib/api";
 import { commentsPrompt, isOrphan, sortComments } from "../lib/design-comments";
+import { useEffect, useRef } from "preact/hooks";
 
 export interface DesignCommentsProps {
   comments: DesignComment[];
@@ -13,6 +14,10 @@ export interface DesignCommentsProps {
   onQuote: (text: string) => void;
   onSetStatus: (id: string, status: "open" | "done") => void;
   onRemove: (id: string) => void;
+  /** Nomor pin per id komentar; sama dengan nomor yang tampil di kanvas. */
+  numbers: Map<string, number>;
+  /** Komentar yang disorot (dari klik pin); barisnya ditandai dan digulir. */
+  focusedId?: string;
   /** Galat aksi terakhir; ditampilkan sebagai alert. */
   error?: string;
 }
@@ -25,11 +30,21 @@ const DELETED_PAGE = "(halaman dihapus)";
  * ubah status, hapus, dan "Kirim ke agent" yang hanya menempel teks.
  */
 export function DesignComments(props: DesignCommentsProps) {
-  const { comments, pages, live, error } = props;
+  const { comments, pages, live, error, numbers, focusedId } = props;
   const titles = new Map(pages.map((page) => [page.slug, page.title]));
   const slugs = new Set(pages.map((page) => page.slug));
   const sorted = sortComments(comments);
   const prompt = commentsPrompt(comments);
+  const barisRefs = useRef(new Map<string, HTMLLIElement>());
+
+  // Gulir baris yang disorot ke tampilan bila elemennya ada.
+  useEffect(() => {
+    if (focusedId === undefined) return;
+    const el = barisRefs.current.get(focusedId);
+    if (el === undefined) return;
+    if (typeof el.scrollIntoView !== "function") return;
+    el.scrollIntoView({ block: "nearest" });
+  }, [focusedId, sorted.length]);
 
   return (
     <aside class="jk-design-comments" aria-label="Komentar desain">
@@ -45,14 +60,24 @@ export function DesignComments(props: DesignCommentsProps) {
           {sorted.map((comment) => {
             const yatim = isOrphan(comment, slugs);
             const judul = yatim ? DELETED_PAGE : (titles.get(comment.slug) ?? comment.slug);
+            const nomor = numbers.get(comment.id);
+            const fokus = focusedId === comment.id;
             return (
               <li
                 key={comment.id}
-                class="jk-design-comment"
+                ref={(el) => {
+                  if (el === null) barisRefs.current.delete(comment.id);
+                  else barisRefs.current.set(comment.id, el);
+                }}
+                class={fokus ? "jk-design-comment is-focused" : "jk-design-comment"}
                 data-status={comment.status}
+                aria-current={fokus ? "true" : undefined}
               >
                 <div class="jk-design-comment-head">
-                  <span class="jk-design-comment-page">{judul}</span>
+                  <span class="jk-design-comment-page">
+                    {nomor !== undefined && <span class="jk-design-comment-number">#{nomor}</span>}
+                    {judul}
+                  </span>
                   <code class="jk-design-comment-selector">{comment.selector}</code>
                 </div>
                 <p class="jk-design-comment-text">{comment.text}</p>

@@ -57,6 +57,7 @@ export const RUNTIME_SOURCE = `(function () {
   var hoverBingkai = 0;
   var geser = null;
   var menangkap = false;
+  var daftarPin = [];
 
   function kirim(pesan, batas) {
     pesan.channel = CHANNEL;
@@ -262,11 +263,88 @@ export const RUNTIME_SOURCE = `(function () {
     bingkai = window.requestAnimationFrame(function () {
       bingkai = 0;
       ukur();
+      if (daftarPin.length > 0) gambarPin();
     });
+  }
+
+  // Pin ikut bergeser saat tata letak berubah; cukup sekali per bingkai.
+  function jadwalkanPin() {
+    if (daftarPin.length === 0) return;
+    jadwalkanUkur();
+  }
+
+  function diDalamPin(target) {
+    if (!target || target.nodeType !== 1) return false;
+    if (!target.closest) return false;
+    try {
+      return target.closest("[data-jejak-pin]") !== null;
+    } catch (galat) {
+      return false;
+    }
+  }
+
+  function klikPin(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    kirim({ type: "pin", id: this.getAttribute("data-pin-id") });
+  }
+
+  function gambarPin() {
+    var lama = document.querySelectorAll("[data-jejak-pin]");
+    for (var i = 0; i < lama.length; i += 1) {
+      if (lama[i].parentNode) lama[i].parentNode.removeChild(lama[i]);
+    }
+    var perSelector = {};
+    for (var j = 0; j < daftarPin.length; j += 1) {
+      var pin = daftarPin[j];
+      var el = null;
+      try {
+        el = document.querySelector(pin.selector);
+      } catch (galat) {
+        el = null;
+      }
+      if (!el) continue;
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) continue;
+      var indeks = perSelector[pin.selector] || 0;
+      perSelector[pin.selector] = indeks + 1;
+
+      var kiri = r.right + window.pageXOffset - 12 - indeks * 22;
+      var atas = r.top + window.pageYOffset - 12;
+      if (kiri < 0) kiri = 0;
+      if (atas < 0) atas = 0;
+
+      var elPin = document.createElement("div");
+      elPin.setAttribute("data-jejak-pin", "");
+      elPin.setAttribute("data-pin-id", pin.id);
+      elPin.setAttribute("data-status", pin.done ? "done" : "open");
+      elPin.setAttribute("role", "button");
+      elPin.setAttribute("aria-label", "Komentar " + pin.n);
+      elPin.textContent = String(pin.n);
+      var s = elPin.style;
+      s.position = "absolute";
+      s.left = kiri + "px";
+      s.top = atas + "px";
+      s.width = "20px";
+      s.height = "20px";
+      s.borderRadius = "50%";
+      s.font = "600 11px/20px system-ui,sans-serif";
+      s.textAlign = "center";
+      s.color = "#ffffff";
+      s.background = pin.done ? "#868e96" : "#e8590c";
+      s.boxShadow = "0 1px 3px rgba(0,0,0,.35)";
+      s.cursor = "pointer";
+      s.zIndex = "2147483646";
+      s.boxSizing = "border-box";
+      s.userSelect = "none";
+      elPin.addEventListener("click", klikPin);
+      (document.body || document.documentElement).appendChild(elPin);
+    }
   }
 
   function jadwalkanHover(e) {
     if (mode !== "select" || hoverBingkai) return;
+    if (diDalamPin(e.target)) return;
     var target = e.target;
     hoverBingkai = window.requestAnimationFrame(function () {
       hoverBingkai = 0;
@@ -282,6 +360,8 @@ export const RUNTIME_SOURCE = `(function () {
 
   function pilih(e) {
     if (mode !== "select") return;
+    // Pin punya pendengar klik sendiri; biarkan klik sampai ke sana.
+    if (diDalamPin(e.target)) return;
     var el = e.target;
     if (!el || el.nodeType !== 1) return;
     e.preventDefault();
@@ -431,7 +511,9 @@ export const RUNTIME_SOURCE = `(function () {
         gagal("failed");
         return;
       }
-      var buang = klon.querySelectorAll("script, [data-jejak-sorot], [data-jejak-toast]");
+      var buang = klon.querySelectorAll(
+        "script, [data-jejak-sorot], [data-jejak-toast], [data-jejak-pin]"
+      );
       for (var i = 0; i < buang.length; i += 1) {
         if (buang[i].parentNode) buang[i].parentNode.removeChild(buang[i]);
       }
@@ -527,6 +609,26 @@ export const RUNTIME_SOURCE = `(function () {
       tangkap(data.id, skala);
       return;
     }
+    if (data.type === "pins") {
+      if (!Array.isArray(data.pins)) return;
+      var masuk = data.pins;
+      if (masuk.length > 50) masuk = masuk.slice(0, 50);
+      var bersih = [];
+      for (var k = 0; k < masuk.length; k += 1) {
+        var item = masuk[k];
+        if (!item || typeof item !== "object") continue;
+        if (typeof item.id !== "string" || !ID_TANGKAP.test(item.id)) continue;
+        if (typeof item.selector !== "string" ||
+            item.selector.length < 1 || item.selector.length > BATAS_SELECTOR) continue;
+        if (typeof item.n !== "number" || !isFinite(item.n) ||
+            Math.floor(item.n) !== item.n || item.n < 1 || item.n > 999) continue;
+        if (typeof item.done !== "boolean") continue;
+        bersih.push({ id: item.id, selector: item.selector, n: item.n, done: item.done });
+      }
+      daftarPin = bersih;
+      gambarPin();
+      return;
+    }
     if (data.type === "highlight") {
       if (typeof data.selector !== "string" || data.selector.length > BATAS_SELECTOR) return;
       var el = null;
@@ -550,6 +652,11 @@ export const RUNTIME_SOURCE = `(function () {
   }
 
   window.addEventListener("load", jadwalkanUkur);
+  window.addEventListener("resize", jadwalkanUkur);
+
+  // Pin digambar ulang saat halaman selesai dimuat atau ukuran berubah.
+  window.addEventListener("load", jadwalkanPin);
+  window.addEventListener("resize", jadwalkanPin);
 
   if (typeof window.ResizeObserver === "function") {
     var pengamat = new window.ResizeObserver(function () {

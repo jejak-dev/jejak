@@ -117,6 +117,12 @@ test("komentar desain: tambah, status, kirim ke agent, hapus, Esc berlapis", asy
   await expect(panel.getByText("Perbesar judul")).toBeVisible();
   await expect(chip).toHaveText("Komentar (1)");
 
+  // Pin bernomor 1 muncul di frame, ditempel pada elemen berkomentar.
+  const pin = beranda.locator("[data-jejak-pin]");
+  await expect(pin).toHaveCount(1);
+  await expect(pin).toHaveText("1");
+  await expect(pin).toHaveAttribute("data-status", "open");
+
   // Berkas komentar tersimpan di folder kerja sesi.
   const commentsPath = join(dir, "design", "comments.json");
   await expect
@@ -144,10 +150,21 @@ test("komentar desain: tambah, status, kirim ke agent, hapus, Esc berlapis", asy
   await panel.getByRole("button", { name: "Selesai" }).click();
   await expect(chip).toHaveText("Komentar");
   await expect(panel.locator(".jk-design-comment")).toHaveAttribute("data-status", "done");
+  await expect(pin).toHaveAttribute("data-status", "done");
+
+  // Tutup panel dulu, lalu klik pin: panel harus terbuka ulang dengan baris
+  // komentarnya ditandai.
+  await chip.click();
+  await expect(panel).toHaveCount(0);
+  await pin.click();
+  await expect(panel).toBeVisible();
+  await expect(panel.locator(".jk-design-comment")).toHaveAttribute("aria-current", "true");
+  await expect(panel.locator(".jk-design-comment")).toHaveClass(/is-focused/);
 
   // Buka lagi mengembalikan status open.
   await panel.getByRole("button", { name: "Buka lagi" }).click();
   await expect(chip).toHaveText("Komentar (1)");
+  await expect(pin).toHaveAttribute("data-status", "open");
 
   // Kirim ke agent hanya menempel teks; sesi tidak mengirim apa pun.
   // Composer sudah berisi contoh prompt dari "Mulai desain"; tombol ini
@@ -158,11 +175,12 @@ test("komentar desain: tambah, status, kirim ke agent, hapus, Esc berlapis", asy
   await expect(pesan).toHaveValue(new RegExp(komentarId));
   await expect(page.locator('.jk-state[aria-label="Berjalan"]')).toHaveCount(0);
 
-  // Hapus mengosongkan daftar dan chip kembali "Komentar".
+  // Hapus mengosongkan daftar, chip kembali "Komentar", dan pin hilang.
   await panel.getByRole("button", { name: "Hapus" }).click();
   await expect(panel.getByText("Perbesar judul")).toHaveCount(0);
   await expect(chip).toHaveText("Komentar");
   await expect(panel.getByText("Belum ada komentar.")).toBeVisible();
+  await expect(beranda.locator("[data-jejak-pin]")).toHaveCount(0);
 
   // Esc pertama membuang pilihan; Esc kedua menutup kanvas.
   await kanvas.focus();

@@ -33,6 +33,18 @@ export interface FrameBounds {
   height: number;
 }
 
+/** Satu pin komentar yang digambar di dalam frame. */
+export interface PinSpec {
+  id: string;
+  selector: string;
+  /** Nomor pin 1..999; stabil walau status berubah. */
+  n: number;
+  done: boolean;
+}
+
+/** Batas jumlah pin yang dikirim ke satu frame. */
+export const MAX_PINS = 50;
+
 /** Subset gaya terhitung yang dikirim bersama pilihan. */
 export interface FrameStyle {
   color?: string;
@@ -90,7 +102,8 @@ export type FrameMessage =
       type: "shot-error";
       id: string;
       reason: ShotErrorReason;
-    };
+    }
+  | { channel: typeof DESIGN_CHANNEL; type: "pin"; id: string };
 
 /** Alasan tangkapan layar gagal di dalam frame. */
 export type ShotErrorReason = "tainted" | "too-large" | "failed";
@@ -101,7 +114,8 @@ export type HostMessage =
   | { channel: typeof DESIGN_CHANNEL; type: "mode"; tool: "preview" | "select" }
   | { channel: typeof DESIGN_CHANNEL; type: "clear-selection" }
   | { channel: typeof DESIGN_CHANNEL; type: "highlight"; selector: string }
-  | { channel: typeof DESIGN_CHANNEL; type: "capture"; id: string; scale: 1 | 2 };
+  | { channel: typeof DESIGN_CHANNEL; type: "capture"; id: string; scale: 1 | 2 }
+  | { channel: typeof DESIGN_CHANNEL; type: "pins"; pins: PinSpec[] };
 
 const STYLE_KEYS = [
   "color",
@@ -292,6 +306,11 @@ export function parseFrameMessage(data: unknown): FrameMessage | undefined {
       if (reason === undefined) return undefined;
       return { channel: DESIGN_CHANNEL, type: "shot-error", id, reason };
     }
+    case "pin": {
+      const id = data.id;
+      if (typeof id !== "string" || !MESSAGE_ID_RE.test(id)) return undefined;
+      return { channel: DESIGN_CHANNEL, type: "pin", id };
+    }
     default:
       return undefined;
   }
@@ -324,4 +343,27 @@ export function highlightMessage(selector: string): HostMessage {
 export function captureMessage(id: string, scale: 1 | 2 = 1): HostMessage | undefined {
   if (!MESSAGE_ID_RE.test(id)) return undefined;
   return { channel: DESIGN_CHANNEL, type: "capture", id, scale };
+}
+
+/** Nomor pin tertinggi yang diterima frame. */
+const MAX_PIN_NUMBER = 999;
+
+/**
+ * Pesan untuk menggambar pin komentar di frame. Pin tak sah dibuang; maksimal
+ * `MAX_PINS`. Daftar kosong sah dan menghapus semua pin.
+ */
+export function pinsMessage(pins: PinSpec[]): HostMessage {
+  const hasil: PinSpec[] = [];
+  for (const pin of pins) {
+    if (hasil.length >= MAX_PINS) break;
+    if (!isRecord(pin)) continue;
+    if (typeof pin.id !== "string" || !MESSAGE_ID_RE.test(pin.id)) continue;
+    if (typeof pin.selector !== "string") continue;
+    if (pin.selector.length < 1 || pin.selector.length > MAX_SELECTOR_CHARS) continue;
+    if (typeof pin.n !== "number" || !Number.isInteger(pin.n)) continue;
+    if (pin.n < 1 || pin.n > MAX_PIN_NUMBER) continue;
+    if (typeof pin.done !== "boolean") continue;
+    hasil.push({ id: pin.id, selector: pin.selector, n: pin.n, done: pin.done });
+  }
+  return { channel: DESIGN_CHANNEL, type: "pins", pins: hasil };
 }

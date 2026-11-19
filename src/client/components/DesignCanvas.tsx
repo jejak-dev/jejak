@@ -31,9 +31,10 @@ import {
   isFromFrame,
   modeMessage,
   parseFrameMessage,
+  pinsMessage,
 } from "../lib/design-protocol";
 import type { CaptureFn, CaptureOutcome } from "../lib/design-capture";
-import { commentCountLabel } from "../lib/design-comments";
+import { commentCountLabel, commentNumbers, pinsForSlug } from "../lib/design-comments";
 import {
   chipText,
   elementContext,
@@ -149,6 +150,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const [selectionLabel, setSelectionLabel] = useState("");
   const [infoOpen, setInfoOpen] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [focusedComment, setFocusedComment] = useState<string | undefined>(undefined);
   const [commentText, setCommentText] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentLocalError, setCommentLocalError] = useState<string | undefined>(undefined);
@@ -190,6 +192,20 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const pageBySlug = new Map(pages.map((page) => [page.slug, page]));
   const pageBySlugRef = useRef(pageBySlug);
   pageBySlugRef.current = pageBySlug;
+
+  // Daftar komentar terbaru agar pendengar pesan (dipasang sekali) dan
+  // penyebaran pin selalu membaca data segar.
+  const commentsRef = useRef<DesignComment[]>(props.comments ?? []);
+  commentsRef.current = props.comments ?? [];
+  const slugSetRef = useRef(new Set<string>());
+  slugSetRef.current = new Set(design.pages.map((page) => page.slug));
+
+  /** Kirim pin komentar satu halaman ke frame hidupnya; aman bila frame tak ada. */
+  const kirimPin = (slug: string): void => {
+    const frame = frameEls.current.get(slug);
+    if (frame === undefined) return;
+    frame.contentWindow?.postMessage(pinsMessage(pinsForSlug(commentsRef.current, slug)), "*");
+  };
 
   const frameRefFor = (slug: string): ((el: HTMLIFrameElement | null) => void) => {
     let callback = refCallbacks.current.get(slug);
@@ -325,6 +341,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
             modeMessage(toolRef.current === "select" ? "select" : "preview"),
             "*",
           );
+          kirimPin(slug);
           return;
         case "size":
           setContentHeights((prev) =>
@@ -410,6 +427,14 @@ export function DesignCanvas(props: DesignCanvasProps) {
           waiter.resolve({ error: message.reason });
           return;
         }
+        case "pin": {
+          // Frame tak boleh menunjuk komentar halaman lain.
+          const komentar = commentsRef.current.find((item) => item.id === message.id);
+          if (komentar === undefined || komentar.slug !== slug) return;
+          setCommentsOpen(true);
+          setFocusedComment(message.id);
+          return;
+        }
         default:
           // `route` belum ditangani di komit ini.
           return;
@@ -427,6 +452,25 @@ export function DesignCanvas(props: DesignCanvasProps) {
       el.contentWindow?.postMessage(pesan, "*");
     }
   }, [tool, liveKey]);
+
+  // Pin komentar disebar ulang tiap daftar berubah atau frame baru hidup.
+  useEffect(() => {
+    for (const [slug, el] of frameEls.current) {
+      el.contentWindow?.postMessage(
+        pinsMessage(pinsForSlug(props.comments ?? [], slug)),
+        "*",
+      );
+    }
+  }, [props.comments, liveKey]);
+
+  // Sorotan dibuang saat komentarnya hilang dari daftar (mis. dihapus).
+  useEffect(() => {
+    setFocusedComment((current) => {
+      if (current === undefined) return current;
+      const masihAda = (props.comments ?? []).some((item) => item.id === current);
+      return masihAda ? current : undefined;
+    });
+  }, [props.comments]);
 
   // Ganti alat membuang hover; meninggalkan alat Pilih membuang pilihan.
   useEffect(() => {
@@ -1108,6 +1152,8 @@ export function DesignCanvas(props: DesignCanvasProps) {
           comments={props.comments ?? []}
           pages={pages}
           live={liveSet}
+          numbers={commentNumbers(props.comments ?? [])}
+          focusedId={focusedComment}
           error={props.commentError ?? commentLocalError}
           onLocate={locateComment}
           onQuote={props.onQuote}

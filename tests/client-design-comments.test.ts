@@ -2,9 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { DesignComment } from "../src/client/lib/api";
 import {
   commentCountLabel,
+  commentNumbers,
   commentsPrompt,
   isOrphan,
   openCount,
+  pinsForSlug,
   sortComments,
 } from "../src/client/lib/design-comments";
 
@@ -92,5 +94,43 @@ describe("isOrphan", () => {
     const slugs = new Set(["beranda"]);
     expect(isOrphan(komentar("c_1", "open", 1, "x", "beranda"), slugs)).toBe(false);
     expect(isOrphan(komentar("c_2", "open", 1, "x", "masuk"), slugs)).toBe(true);
+  });
+});
+
+describe("commentNumbers", () => {
+  test("nomor 1-based menurut createdAt naik, seri menurut id", () => {
+    const nomor = commentNumbers([
+      komentar("c_3", "open", 3),
+      komentar("c_2", "open", 1),
+      komentar("c_1", "open", 1),
+    ]);
+    expect(nomor.get("c_1")).toBe(1);
+    expect(nomor.get("c_2")).toBe(2);
+    expect(nomor.get("c_3")).toBe(3);
+  });
+
+  test("stabil saat status berubah", () => {
+    const sebelum = commentNumbers([komentar("c_1", "open", 1), komentar("c_2", "open", 2)]);
+    const sesudah = commentNumbers([komentar("c_1", "done", 1), komentar("c_2", "open", 2)]);
+    expect(sesudah.get("c_1")).toBe(sebelum.get("c_1")!);
+    expect(sesudah.get("c_2")).toBe(sebelum.get("c_2")!);
+  });
+});
+
+describe("pinsForSlug", () => {
+  test("semua komentar halaman itu, urut menurut nomor", () => {
+    const daftar = [
+      komentar("c_1", "open", 1, "satu", "beranda"),
+      komentar("c_2", "done", 2, "dua", "masuk"),
+      komentar("c_3", "done", 3, "tiga", "beranda"),
+    ];
+    expect(pinsForSlug(daftar, "beranda")).toEqual([
+      { id: "c_1", selector: '[id="judul"]', n: 1, done: false },
+      { id: "c_3", selector: '[id="judul"]', n: 3, done: true },
+    ]);
+    expect(pinsForSlug(daftar, "masuk")).toEqual([
+      { id: "c_2", selector: '[id="judul"]', n: 2, done: true },
+    ]);
+    expect(pinsForSlug(daftar, "lain")).toEqual([]);
   });
 });

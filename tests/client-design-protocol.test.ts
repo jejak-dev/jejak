@@ -13,6 +13,7 @@ import {
   isFromFrame,
   modeMessage,
   parseFrameMessage,
+  pinsMessage,
 } from "../src/client/lib/design-protocol";
 
 const BOUNDS = { x: 1, y: 2, width: 3, height: 4 };
@@ -328,5 +329,70 @@ describe("pembuat pesan", () => {
     expect(captureMessage("a".repeat(65))).toBeUndefined();
     expect(captureMessage("ada spasi")).toBeUndefined();
     expect(captureMessage("salah!")).toBeUndefined();
+  });
+});
+
+describe("pinsMessage", () => {
+  const PIN = { id: "c_1", selector: '[id="judul"]', n: 1, done: false };
+
+  test("pin sah diteruskan apa adanya", () => {
+    expect(pinsMessage([PIN])).toEqual({
+      channel: DESIGN_CHANNEL,
+      type: "pins",
+      pins: [{ id: "c_1", selector: '[id="judul"]', n: 1, done: false }],
+    });
+  });
+
+  test("daftar kosong sah", () => {
+    expect(pinsMessage([])).toEqual({ channel: DESIGN_CHANNEL, type: "pins", pins: [] });
+  });
+
+  test("id, selector, n, dan done tak sah dibuang", () => {
+    const hasil = pinsMessage([
+      { ...PIN, id: "ada spasi" },
+      { ...PIN, id: "a".repeat(65) },
+      { ...PIN, selector: "" },
+      { ...PIN, selector: "x".repeat(501) },
+      { ...PIN, n: 0 },
+      { ...PIN, n: 1000 },
+      { ...PIN, n: 1.5 },
+      { ...PIN, done: "ya" as unknown as boolean },
+      PIN,
+    ]);
+    expect(hasil).toEqual({
+      channel: DESIGN_CHANNEL,
+      type: "pins",
+      pins: [{ id: "c_1", selector: '[id="judul"]', n: 1, done: false }],
+    });
+  });
+
+  test("maksimal 50 pin, sisanya dibuang", () => {
+    const banyak = Array.from({ length: 60 }, (_, i) => ({
+      id: `c_${i}`,
+      selector: "#a",
+      n: (i % 999) + 1,
+      done: false,
+    }));
+    const hasil = pinsMessage(banyak);
+    if (hasil.type !== "pins") throw new Error("tipe salah");
+    expect(hasil.pins).toHaveLength(50);
+    expect(hasil.pins[49]!.id).toBe("c_49");
+  });
+});
+
+describe("parseFrameMessage: pin", () => {
+  test("pin sah", () => {
+    expect(parseFrameMessage({ channel: DESIGN_CHANNEL, type: "pin", id: "c_1" })).toEqual({
+      channel: DESIGN_CHANNEL,
+      type: "pin",
+      id: "c_1",
+    });
+  });
+
+  test("pin tak sah ditolak", () => {
+    expect(parseFrameMessage({ channel: DESIGN_CHANNEL, type: "pin", id: "" })).toBeUndefined();
+    expect(parseFrameMessage({ channel: DESIGN_CHANNEL, type: "pin", id: "ada spasi" })).toBeUndefined();
+    expect(parseFrameMessage({ channel: DESIGN_CHANNEL, type: "pin" })).toBeUndefined();
+    expect(parseFrameMessage({ channel: "lain", type: "pin", id: "c_1" })).toBeUndefined();
   });
 });

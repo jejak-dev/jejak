@@ -11328,6 +11328,17 @@ h2.jk-md-heading {
   color: var(--t3);
 }
 
+.jk-design-comment.is-focused {
+  border-color: var(--warn);
+  background: var(--wash-a);
+}
+
+.jk-design-comment-number {
+  margin-right: 4px;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
+}
+
 .jk-design-comment-head {
   display: flex;
   align-items: center;

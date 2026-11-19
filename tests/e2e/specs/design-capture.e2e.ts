@@ -228,3 +228,158 @@ test("decode menggantung dibatalkan batas waktu, capture berikutnya berhasil", a
   expect(String(shot.dataUrl).startsWith("data:image/png;base64,")).toBe(true);
   expect((await pesanBertipe(page, "shot-error")).filter((p) => p.id === "lanjut")).toHaveLength(0);
 });
+
+/** Frame halaman aktif (selain halaman host). */
+function bingkaiHalaman(page: Page) {
+  return page.frameLocator("#frame");
+}
+
+test("pins menggambar pin bernomor di sekitar sudut kanan-atas elemen", async ({ page }) => {
+  await pasangFrame(page, HALAMAN);
+  await kirimKeFrame(page, {
+    channel: CHANNEL,
+    type: "pins",
+    pins: [{ id: "c_1", selector: "#tombol", n: 1, done: false }],
+  });
+
+  const pin = bingkaiHalaman(page).locator("[data-jejak-pin]");
+  await expect(pin).toHaveCount(1);
+  await expect(pin).toHaveText("1");
+  await expect(pin).toHaveAttribute("data-status", "open");
+  await expect(pin).toHaveAttribute("role", "button");
+  await expect(pin).toHaveAttribute("aria-label", "Komentar 1");
+
+  const frame = page.frames().find((f) => f !== page.mainFrame());
+  expect(frame).toBeTruthy();
+  const posisi = await frame!.evaluate(() => {
+    const el = document.getElementById("tombol")!;
+    const p = document.querySelector("[data-jejak-pin]") as HTMLElement;
+    const r = el.getBoundingClientRect();
+    const pr = p.getBoundingClientRect();
+    return {
+      dx: pr.left - r.right,
+      dy: pr.top - r.top,
+      lebar: pr.width,
+      tinggi: pr.height,
+    };
+  });
+  // Pin 20px ditempel perkiraan di sudut kanan-atas (geser -12).
+  expect(posisi.lebar).toBe(20);
+  expect(posisi.tinggi).toBe(20);
+  expect(Math.abs(posisi.dx + 12)).toBeLessThanOrEqual(2);
+  expect(Math.abs(posisi.dy + 12)).toBeLessThanOrEqual(2);
+});
+
+test("pin done berwarna abu dan pin tanpa elemen/selector tak sah dilewati", async ({ page }) => {
+  await pasangFrame(page, HALAMAN);
+  await kirimKeFrame(page, {
+    channel: CHANNEL,
+    type: "pins",
+    pins: [
+      { id: "c_1", selector: "#judul", n: 2, done: true },
+      { id: "c_2", selector: "#tidak-ada", n: 3, done: false },
+      { id: "c_3", selector: "[[[", n: 4, done: false },
+      { id: "c_4", selector: "#paragraf", n: 5, done: "ya" },
+    ],
+  });
+
+  const pin = bingkaiHalaman(page).locator("[data-jejak-pin]");
+  await expect(pin).toHaveCount(1);
+  await expect(pin).toHaveText("2");
+  await expect(pin).toHaveAttribute("data-status", "done");
+  expect(await pesanBertipe(page, "shot-error")).toHaveLength(0);
+});
+
+test("pins kosong menghapus semua pin", async ({ page }) => {
+  await pasangFrame(page, HALAMAN);
+  await kirimKeFrame(page, {
+    channel: CHANNEL,
+    type: "pins",
+    pins: [{ id: "c_1", selector: "#judul", n: 1, done: false }],
+  });
+  const pin = bingkaiHalaman(page).locator("[data-jejak-pin]");
+  await expect(pin).toHaveCount(1);
+
+  await kirimKeFrame(page, { channel: CHANNEL, type: "pins", pins: [] });
+  await expect(pin).toHaveCount(0);
+});
+
+test("klik pin mengirim satu pesan pin tanpa select walau mode select", async ({ page }) => {
+  await pasangFrame(page, HALAMAN);
+  await kirimKeFrame(page, { channel: CHANNEL, type: "mode", tool: "select" });
+  await kirimKeFrame(page, {
+    channel: CHANNEL,
+    type: "pins",
+    pins: [{ id: "c_9", selector: "#judul", n: 1, done: false }],
+  });
+
+  const pin = bingkaiHalaman(page).locator("[data-jejak-pin]");
+  await expect(pin).toHaveCount(1);
+  await pin.click();
+
+  await expect
+    .poll(async () => (await pesanBertipe(page, "pin")).length)
+    .toBe(1);
+  const kirim = await pesanBertipe(page, "pin");
+  expect(kirim[0]!.id).toBe("c_9");
+  expect(await pesanBertipe(page, "select")).toHaveLength(0);
+});
+
+test("dua pin pada elemen sama tidak bertumpuk persis", async ({ page }) => {
+  await pasangFrame(page, HALAMAN);
+  await kirimKeFrame(page, {
+    channel: CHANNEL,
+    type: "pins",
+    pins: [
+      { id: "c_1", selector: "#judul", n: 1, done: false },
+      { id: "c_2", selector: "#judul", n: 2, done: false },
+    ],
+  });
+
+  const pin = bingkaiHalaman(page).locator("[data-jejak-pin]");
+  await expect(pin).toHaveCount(2);
+  const frame = page.frames().find((f) => f !== page.mainFrame());
+  expect(frame).toBeTruthy();
+  const kotak = await frame!.evaluate(() => {
+    const semua = document.querySelectorAll("[data-jejak-pin]");
+    return Array.from(semua).map((el) => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left, top: r.top };
+    });
+  });
+  expect(kotak).toHaveLength(2);
+  expect(kotak[0]!.left).not.toBe(kotak[1]!.left);
+  expect(kotak[0]!.top).toBe(kotak[1]!.top);
+});
+
+test("capture setelah pins tetap sukses dan pin dibuang dari klon", async ({ page }) => {
+  await pasangFrame(page, HALAMAN);
+  await kirimKeFrame(page, {
+    channel: CHANNEL,
+    type: "pins",
+    pins: [{ id: "c_1", selector: "#judul", n: 1, done: false }],
+  });
+  await expect(bingkaiHalaman(page).locator("[data-jejak-pin]")).toHaveCount(1);
+
+  const frame = page.frames().find((f) => f !== page.mainFrame());
+  expect(frame).toBeTruthy();
+  // Bungkus serializer di dalam frame untuk mencatat string yang diserialkan.
+  await frame!.evaluate(() => {
+    const w = window as unknown as { __xml?: string; __asli?: (n: Node) => string };
+    const asli = XMLSerializer.prototype.serializeToString;
+    w.__asli = asli;
+    XMLSerializer.prototype.serializeToString = function (node: Node) {
+      const hasil = asli.call(this, node);
+      w.__xml = hasil;
+      return hasil;
+    };
+  });
+
+  await kirimKeFrame(page, { channel: CHANNEL, type: "capture", id: "satu" });
+  const shot = await tungguShot(page, "satu");
+  expect(String(shot.dataUrl).startsWith("data:image/png;base64,")).toBe(true);
+
+  const xml = await frame!.evaluate(() => (window as unknown as { __xml?: string }).__xml);
+  expect(typeof xml).toBe("string");
+  expect(xml).not.toContain("data-jejak-pin");
+});

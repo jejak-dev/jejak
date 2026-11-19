@@ -46,6 +46,15 @@ describe("frameRuntimeScript", () => {
     expect(() => new Function(sumber)).not.toThrow();
   });
 
+  test("cabang pins dan gambarPin ada di sumber", () => {
+    const sumber = buildRuntimeSource("beranda");
+    expect(sumber).toContain('data.type === "pins"');
+    expect(sumber).toContain("function gambarPin()");
+    expect(sumber).toContain('data-jejak-pin');
+    expect(sumber).toContain('type: "pin"');
+    expect(() => new Function(sumber)).not.toThrow();
+  });
+
   test("slug aneh ter-escape dan tidak menutup tag skrip", () => {
     const jahat = '</script><b>"  ';
     const sumber = buildRuntimeSource(jahat);

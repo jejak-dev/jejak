@@ -1,4 +1,5 @@
 import type { DesignComment } from "./api";
+import type { PinSpec } from "./design-protocol";
 
 /**
  * Logika komentar desain di klien. Murni: tanpa DOM, tanpa jaringan. Teks
@@ -52,4 +53,36 @@ export function commentCountLabel(comments: DesignComment[]): string {
 /** Komentar yatim: halamannya tak ada lagi di desain. */
 export function isOrphan(comment: DesignComment, slugs: Set<string>): boolean {
   return !slugs.has(comment.slug);
+}
+
+/**
+ * Nomor pin 1-based menurut `createdAt` naik (seri diurutkan menurut `id`).
+ * Nomor tidak bergantung pada status, jadi stabil saat komentar diselesaikan.
+ */
+export function commentNumbers(comments: DesignComment[]): Map<string, number> {
+  const urut = comments.slice().sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  const hasil = new Map<string, number>();
+  urut.forEach((comment, index) => {
+    hasil.set(comment.id, index + 1);
+  });
+  return hasil;
+}
+
+/** Pin semua komentar satu halaman (open dan done), urut menurut nomornya. */
+export function pinsForSlug(comments: DesignComment[], slug: string): PinSpec[] {
+  const nomor = commentNumbers(comments);
+  const hasil: PinSpec[] = [];
+  for (const comment of comments) {
+    if (comment.slug !== slug) continue;
+    hasil.push({
+      id: comment.id,
+      selector: comment.selector,
+      n: nomor.get(comment.id) ?? 0,
+      done: comment.status === "done",
+    });
+  }
+  return hasil.sort((a, b) => a.n - b.n);
 }
