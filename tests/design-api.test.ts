@@ -425,7 +425,7 @@ describe("POST /api/sessions/:id/design/init", () => {
     expect(first.status).toBe(201);
     const body = (await first.json()) as { ok: boolean; created: string[] };
     expect(body.ok).toBe(true);
-    expect(body.created).toHaveLength(4);
+    expect(body.created).toHaveLength(5);
 
     const second = await reqBody(server, "POST", `/api/sessions/${id}/design/init`, {});
     expect(second.status).toBe(409);

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, link, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { ANTISLOP_SKILL_MD } from "./antislop-skill";
 import {
   DEVICES,
   GAP,
@@ -798,10 +799,69 @@ async function ensureDesignIgnored(root: string): Promise<boolean> {
   }
 }
 
+/** Komponen folder tempat skill dipasang, dari root ke dalam. */
+const SKILL_DIR_NAMES = [".claude", "skills", "design-antislop"];
+
+/** Path relatif skill pada daftar `created`. */
+const SKILL_RELATIVE_PATH = ".claude/skills/design-antislop/SKILL.md";
+
+/**
+ * Memasang skill `design-antislop` ke `.claude/skills/` folder kerja.
+ *
+ * Setiap komponen folder yang sudah ada diperiksa dengan `lstat`: symlink
+ * atau apa pun selain folder membuat pemasangan dilewati (tidak menulis
+ * lewatnya). Skill yang sudah ada tidak ditimpa. Semua kegagalan ditelan:
+ * pemasangan skill bukan syarat desain, jadi desain tetap berhasil dibuat.
+ *
+ * Mengembalikan path relatif skill bila berhasil ditulis.
+ */
+async function installAntislopSkill(realRoot: string): Promise<string | undefined> {
+  try {
+    let dirPath = realRoot;
+    for (const name of SKILL_DIR_NAMES) {
+      dirPath = join(dirPath, name);
+      let info;
+      try {
+        info = await lstat(dirPath);
+      } catch {
+        info = undefined;
+      }
+      if (info === undefined) {
+        try {
+          await mkdir(dirPath);
+        } catch {
+          // Mungkin balapan dengan proses lain: periksa ulang hasilnya.
+          let after;
+          try {
+            after = await lstat(dirPath);
+          } catch {
+            return undefined;
+          }
+          if (after.isSymbolicLink() || !after.isDirectory()) return undefined;
+        }
+        continue;
+      }
+      // Symlink (atau apa pun selain folder) dilewati: jangan menulis lewatnya.
+      if (info.isSymbolicLink() || !info.isDirectory()) return undefined;
+    }
+
+    try {
+      await writeFile(join(dirPath, "SKILL.md"), ANTISLOP_SKILL_MD, { flag: "wx" });
+    } catch {
+      // EEXIST (skill sudah ada) maupun galat lain: installation dilewati.
+      return undefined;
+    }
+    return SKILL_RELATIVE_PATH;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Membuat perancah `design/` bila belum ada. Tidak pernah menimpa berkas yang
  * sudah ada: berkas yang sudah ada dilewati dan hanya yang belum dibuat.
  * Kecuali `tracked: true`, folder `design/` diabaikan lewat `.gitignore`.
+ * Skill `design-antislop` juga dipasang ke `.claude/skills/` proyek.
  */
 export async function initDesign(
   root: string,
@@ -865,6 +925,10 @@ export async function initDesign(
       throw new DesignWriteError("Perancah desain tidak dapat dibuat.", 400);
     }
   }
+
+  // Pasang skill anti-slop ke `.claude/skills/` proyek (kegagalan diabaikan).
+  const skillPath = await installAntislopSkill(realRoot);
+  if (skillPath !== undefined) created.push(skillPath);
 
   // Terakhir: pastikan folder diabaikan git kecuali pengguna memilih ikut git.
   if (options.tracked !== true) {

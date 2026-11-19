@@ -12,6 +12,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Design (D2): agent mengubah desain dari kanvas. Alat `design_patch` (perubahan terarah per elemen dengan `baseMtime`), `design_screenshot` (tangkapan frame dari kanvas yang terbuka), `design_comments` dan `design_comment_resolve`. Pengguna menambah komentar pada elemen terpilih, pin bernomor tampil di frame, dan daftar komentar bisa dikirim ke agent. Mode Fokus (tombol atau F) membuat kanvas memenuhi jendela dengan baris pesan melayang.
 - Design (D3): sistem desain. Panel Token menyunting variabel `design/tokens.css` (warna, ukuran, font) dan frame memuat ulang setelah disimpan. `design/DESIGN.md` memuat blok otomatis berisi token dan halaman terkini yang dibaca agent. Halaman bisa dibuat varian (mis. gelap, kosong, galat) dan halaman sekelompok digambar dalam satu kotak berlabel. Catatan tempel bebas di kanvas disimpan di `design.json`.
 - Design: `DESIGN.md` bawaan kini memuat bagian "Kualitas visual (anti-slop)" agar agent merancang halaman dari subjek, bukan template (rencana palet/font/tata letak, isi teks nyata, penanda khas generator, tipografi, dan kualitas dasar seperti responsif 390 px serta `prefers-reduced-motion`).
+- Design: skill `design-antislop` dipasang otomatis ke `.claude/skills/` proyek saat Mulai desain, sehingga agent memakainya tanpa langkah tambahan.
 
 ## [0.1.0-beta.15] - 2026-11-18
 

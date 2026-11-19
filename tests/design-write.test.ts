@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assemblePage } from "../src/server/design/assemble";
+import { ANTISLOP_SKILL_MD } from "../src/server/design/antislop-skill";
 import { MAX_PAGES, readDesign } from "../src/server/design/manifest";
 import { DesignWriteError, initDesign, saveLayout } from "../src/server/design/write";
 
@@ -164,9 +165,10 @@ describe("saveLayout", () => {
 });
 
 describe("initDesign", () => {
-  test("membuat 4 berkas dan hasilnya valid", async () => {
+  test("membuat 5 berkas dan hasilnya valid", async () => {
     const result = await initDesign(dir);
     expect(result.created.sort()).toEqual([
+      ".claude/skills/design-antislop/SKILL.md",
       "design/DESIGN.md",
       "design/design.json",
       "design/pages/contoh.html",
@@ -211,7 +213,7 @@ describe("initDesign", () => {
     expect(await readFile(join(dir, "design", "tokens.css"), "utf8")).toBe(
       ":root { --kustom: 1; }\n",
     );
-    expect(result.created).toHaveLength(3);
+    expect(result.created).toHaveLength(4);
   });
 
   test("design berupa symlink 400", async () => {
@@ -232,6 +234,52 @@ describe("initDesign dan symlink subfolder", () => {
   });
 });
 
+describe("initDesign dan skill design-antislop", () => {
+  const SKILL_RELATIVE = ".claude/skills/design-antislop/SKILL.md";
+
+  function skillPath(root: string): string {
+    return join(root, ".claude", "skills", "design-antislop", "SKILL.md");
+  }
+
+  test("memasang skill bawaan dengan isi dan frontmatter yang benar", async () => {
+    const result = await initDesign(dir);
+    expect(result.created).toContain(SKILL_RELATIVE);
+    const isi = await readFile(skillPath(dir), "utf8");
+    expect(isi).toBe(ANTISLOP_SKILL_MD);
+    expect(isi.startsWith("---\nname: design-antislop\n")).toBe(true);
+  });
+
+  test("init kedua tidak menimpa skill yang diubah pengguna", async () => {
+    await initDesign(dir);
+    await writeFile(skillPath(dir), "isi oleh pengguna\n", "utf8");
+    await rm(join(dir, "design"), { recursive: true, force: true });
+
+    const result = await initDesign(dir);
+    expect(result.created).not.toContain(SKILL_RELATIVE);
+    expect(await readFile(skillPath(dir), "utf8")).toBe("isi oleh pengguna\n");
+  });
+
+  test("berkas skill yang sudah ada tidak masuk daftar created", async () => {
+    await mkdir(join(dir, ".claude", "skills", "design-antislop"), { recursive: true });
+    await writeFile(skillPath(dir), "lama\n", "utf8");
+
+    const result = await initDesign(dir);
+    expect(result.created).not.toContain(SKILL_RELATIVE);
+    expect(await readFile(skillPath(dir), "utf8")).toBe("lama\n");
+  });
+
+  test(".claude berupa symlink: desain tetap dibuat dan skill tak dipasang", async () => {
+    const luar = join(outside, "claude");
+    await mkdir(luar, { recursive: true });
+    await symlink(luar, join(dir, ".claude"));
+
+    const result = await initDesign(dir);
+    expect(result.created).not.toContain(SKILL_RELATIVE);
+    expect(await readdir(luar)).toEqual([]);
+    expect(await readFile(join(dir, "design", "design.json"), "utf8")).toContain("contoh");
+  });
+});
+
 describe("initDesign dan .gitignore", () => {
   async function gitignoreOf(root: string): Promise<string | undefined> {
     try {
@@ -246,7 +294,7 @@ describe("initDesign dan .gitignore", () => {
     const result = await initDesign(dir);
     expect(result.created).toContain(".gitignore");
     expect(await gitignoreOf(dir)).toBe("design/\n");
-    expect(result.created).toHaveLength(5);
+    expect(result.created).toHaveLength(6);
   });
 
   test(".git berkas (bukan folder) juga dianggap repo", async () => {
@@ -278,7 +326,7 @@ describe("initDesign dan .gitignore", () => {
     const result = await initDesign(dir);
     expect(result.created).not.toContain(".gitignore");
     expect(await gitignoreOf(dir)).toBe(original);
-    expect(result.created).toHaveLength(4);
+    expect(result.created).toHaveLength(5);
   });
 
   test("tracked true membiarkan .gitignore tak tersentuh", async () => {
@@ -286,7 +334,7 @@ describe("initDesign dan .gitignore", () => {
     const result = await initDesign(dir, { tracked: true });
     expect(result.created).not.toContain(".gitignore");
     expect(await gitignoreOf(dir)).toBeUndefined();
-    expect(result.created).toHaveLength(4);
+    expect(result.created).toHaveLength(5);
   });
 
   test("bukan repo git tidak membuat .gitignore", async () => {
@@ -302,7 +350,7 @@ describe("initDesign dan .gitignore", () => {
     await symlink(luar, join(dir, ".gitignore"));
     const result = await initDesign(dir);
     expect(result.created).not.toContain(".gitignore");
-    expect(result.created).toHaveLength(4);
+    expect(result.created).toHaveLength(5);
     expect(await readFile(luar, "utf8")).toBe("lama\n");
   });
 
