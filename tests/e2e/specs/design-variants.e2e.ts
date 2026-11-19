@@ -81,6 +81,8 @@ test("varian desain: buat varian, kelompok halaman, dan slug varian kedua", asyn
     .toBe(true);
 
   await writeFile(join(dir, "design", "pages", "beranda.html"), BERANDA, "utf8");
+  // Halaman contoh dari perancah dibuang: desain uji hanya satu halaman.
+  await rm(join(dir, "design", "pages", "contoh.html"), { force: true });
   await writeFile(manifestPath, `${JSON.stringify(MANIFEST, null, 2)}\n`, "utf8");
 
   await page.getByRole("button", { name: "Buka kanvas lebar" }).click();
@@ -88,6 +90,11 @@ test("varian desain: buat varian, kelompok halaman, dan slug varian kedua", asyn
   await expect(kanvas).toBeVisible();
   const beranda = page.frameLocator('iframe[title="Halaman Beranda"]');
   await expect(beranda.locator("#judul")).toHaveText("Judul Beranda");
+
+  // Tampilan digeser ke kanan: halaman baru diletakkan di kanan sumber,
+  // jadi ia berada di luar area terlihat sampai kanvas menggeser tampilan.
+  await page.mouse.move(900, 800);
+  await page.mouse.wheel(-400, 0);
 
   // Menu frame membuka bagian "Varian".
   await page.getByRole("button", { name: "Menu frame Beranda", exact: true }).click();
@@ -106,10 +113,11 @@ test("varian desain: buat varian, kelompok halaman, dan slug varian kedua", asyn
   await tombolBuat.click();
   await expect(dialog).toHaveCount(0);
 
-  // Frame kedua muncul; muat semua supaya frame di luar layar ikut tampil.
-  await page.getByRole("button", { name: "Muat semua" }).click();
+  // Frame kedua muncul dan langsung memuat isinya: kanvas menggeser
+  // tampilan ke halaman baru, tanpa perlu "Muat semua".
   const varian = page.frameLocator('iframe[title="Halaman Beranda (gelap)"]');
   await expect(varian.locator("#judul")).toHaveText("Judul Beranda");
+  await expect(page.locator('iframe[title="Halaman Beranda (gelap)"]')).toBeInViewport();
 
   // Berkas varian tersalin utuh di folder kerja sesi.
   await expect
@@ -146,6 +154,8 @@ test("varian desain: buat varian, kelompok halaman, dan slug varian kedua", asyn
   await expect(page.locator(".jk-design-group")).toHaveCount(1);
 
   // Varian dengan nama sama lagi membuat slug `-2`.
+  // Muat semua dulu supaya frame sumber masuk layar lagi.
+  await page.getByRole("button", { name: "Muat semua" }).click();
   await page.getByRole("button", { name: "Menu frame Beranda", exact: true }).click();
   await page.getByRole("menuitemradio", { name: "Buat varian…" }).click();
   await expect(dialog).toBeVisible();

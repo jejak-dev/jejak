@@ -170,28 +170,45 @@ export function DesignTokens(props: DesignTokensProps) {
       )}
       {stale && <p class="jk-design-tokens-stale">{STALE_TEXT}</p>}
 
-      {draft.length === 0 ? (
-        <p class="jk-design-tokens-empty">{EMPTY_TEXT}</p>
-      ) : (
-        groups.map((group) => (
-          <section class="jk-design-tokens-group" key={group.title}>
-            <h3 class="jk-design-tokens-group-title">{group.title}</h3>
-            <ul class="jk-design-tokens-list">
-              {group.tokens.map((token) => {
-                const hexBaru = hexForColorInput(token.value);
-                if (hexBaru !== undefined) hexCache.current.set(token.name, hexBaru);
-                const hex = hexBaru ?? hexCache.current.get(token.name);
-                const sah = isValidTokenValue(token.value);
-                return (
-                  <li class="jk-design-token" key={token.name}>
-                    <code class="jk-design-token-name">{token.name}</code>
-                    <div class="jk-design-token-controls">
-                      {hex !== undefined && (
+      {/* Daftar token yang banyak digulir sendiri; form tambah dan footer
+          tetap terlihat tanpa ikut tergulir. */}
+      <div class="jk-design-tokens-scroll">
+        {draft.length === 0 ? (
+          <p class="jk-design-tokens-empty">{EMPTY_TEXT}</p>
+        ) : (
+          groups.map((group) => (
+            <section class="jk-design-tokens-group" key={group.title}>
+              <h3 class="jk-design-tokens-group-title">{group.title}</h3>
+              <ul class="jk-design-tokens-list">
+                {group.tokens.map((token) => {
+                  const hexBaru = hexForColorInput(token.value);
+                  if (hexBaru !== undefined) hexCache.current.set(token.name, hexBaru);
+                  const hex = hexBaru ?? hexCache.current.get(token.name);
+                  const sah = isValidTokenValue(token.value);
+                  return (
+                    <li class="jk-design-token" key={token.name}>
+                      <code class="jk-design-token-name">{token.name}</code>
+                      <div class="jk-design-token-controls">
+                        {hex !== undefined && (
+                          <input
+                            type="color"
+                            class="jk-design-token-swatch"
+                            aria-label={`Warna ${token.name}`}
+                            value={hex}
+                            onInput={(event) =>
+                              gantiNilai(
+                                token.name,
+                                (event.currentTarget as HTMLInputElement).value,
+                              )
+                            }
+                          />
+                        )}
                         <input
-                          type="color"
-                          class="jk-design-token-swatch"
-                          aria-label={`Warna ${token.name}`}
-                          value={hex}
+                          type="text"
+                          class="jk-design-token-value"
+                          aria-label={`Nilai ${token.name}`}
+                          aria-invalid={sah ? undefined : "true"}
+                          value={token.value}
                           onInput={(event) =>
                             gantiNilai(
                               token.name,
@@ -199,37 +216,24 @@ export function DesignTokens(props: DesignTokensProps) {
                             )
                           }
                         />
-                      )}
-                      <input
-                        type="text"
-                        class="jk-design-token-value"
-                        aria-label={`Nilai ${token.name}`}
-                        aria-invalid={sah ? undefined : "true"}
-                        value={token.value}
-                        onInput={(event) =>
-                          gantiNilai(
-                            token.name,
-                            (event.currentTarget as HTMLInputElement).value,
-                          )
-                        }
-                      />
-                      <button
-                        type="button"
-                        class="jk-design-chip jk-design-token-hapus"
-                        title={`Hapus ${token.name}`}
-                        onClick={() => hapus(token.name)}
-                      >
-                        Hapus
-                      </button>
-                    </div>
-                    {!sah && <p class="jk-design-token-invalid">{INVALID_VALUE}</p>}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        ))
-      )}
+                        <button
+                          type="button"
+                          class="jk-design-chip jk-design-token-hapus"
+                          title={`Hapus ${token.name}`}
+                          onClick={() => hapus(token.name)}
+                        >
+                          Hapus
+                        </button>
+                      </div>
+                      {!sah && <p class="jk-design-token-invalid">{INVALID_VALUE}</p>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))
+        )}
+      </div>
 
       <div class="jk-design-tokens-add">
         <input

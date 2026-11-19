@@ -178,6 +178,19 @@ test("token desain: ubah, simpan, lihat di frame, tambah, hapus, tolak nilai tak
   await expect(simpan).toBeEnabled();
   await expect(simpan).toHaveText("Simpan token (1)");
 
+  // Token banyak: daftar bergulir sendiri, footer tetap terlihat tanpa
+  // perlu menggulir panel.
+  for (let index = 1; index <= 12; index += 1) {
+    await panel.getByLabel("Nama token baru", { exact: true }).fill(`--warna-uji-${index}`);
+    await panel.getByLabel("Nilai token baru", { exact: true }).fill("#0a0b0c");
+    await panel.getByRole("button", { name: "Tambah token" }).click();
+  }
+  await expect(panel.getByText("--warna-uji-12")).toBeVisible();
+  await expect(simpan).toBeInViewport();
+  await expect(panel.getByRole("button", { name: "Perbarui DESIGN.md" })).toBeInViewport();
+  // Daftar token yang bergulir tak menggeser panelnya.
+  expect(await panel.evaluate((el) => el.scrollTop)).toBe(0);
+
   // Tutup panel token (menutupi toolbar kiri), lalu Esc berlapis.
   await chip.click();
   await expect(panel).toHaveCount(0);

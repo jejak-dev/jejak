@@ -11529,7 +11529,10 @@ h2.jk-md-heading {
   bottom: 12px;
   width: 280px;
   max-height: 60%;
-  overflow: auto;
+  /* Kolom: daftar token yang bergulir, form tambah dan footer tetap di tempat. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -11537,6 +11540,13 @@ h2.jk-md-heading {
   box-shadow: var(--shadow);
   color: var(--t2);
   font-size: 12px;
+}
+
+/* Daftar token bergulir sendiri supaya tombol simpan tak terdorong keluar. */
+.jk-design-tokens-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* Panel token dan kontrol zoom tak boleh saling menutupi. */

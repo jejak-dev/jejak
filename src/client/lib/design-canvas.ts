@@ -302,6 +302,23 @@ export function visibleSlugs(
 }
 
 /**
+ * True bila kotak frame sama sekali tak terlihat di viewport. Frame yang
+ * sebagian terlihat masih dihitung terlihat: pemanggil boleh memuat isinya.
+ */
+export function isOffscreen(rect: Rect, view: View, viewport: Size): boolean {
+  const kiri = -view.x / view.zoom;
+  const atas = -view.y / view.zoom;
+  const kanan = (viewport.width - view.x) / view.zoom;
+  const bawah = (viewport.height - view.y) / view.zoom;
+  return (
+    rect.x >= kanan ||
+    rect.x + rect.width <= kiri ||
+    rect.y >= bawah ||
+    rect.y + rect.height <= atas
+  );
+}
+
+/**
  * Batasi jumlah iframe hidup. Bila melebihi `max`, ambil yang pusatnya
  * terdekat ke pusat viewport; hasil tetap dalam urutan masukan.
  */

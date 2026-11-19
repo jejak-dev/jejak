@@ -17,6 +17,7 @@ import {
   fitView,
   frameRects,
   groupBoxes,
+  isOffscreen,
   newNoteAt,
   panBy,
   pickLive,
@@ -167,6 +168,8 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const pendingRef = useRef(new Map<string, Override>());
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fitDone = useRef(false);
+  /** Slug halaman yang sudah pernah diketahui; dipakai mencari halaman baru. */
+  const knownSlugsRef = useRef<Set<string> | undefined>(undefined);
   const panDrag = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null);
   const frameDrag = useRef<{
     slug: string;
@@ -349,6 +352,32 @@ export function DesignCanvas(props: DesignCanvasProps) {
     fitDone.current = true;
     setView(fitView(rects, viewport));
   }, [rects, viewport]);
+
+  // Halaman yang baru muncul (mis. varian) digeser ke layar supaya isinya
+  // dimuat. Tanpa ini frame baru hanya jadi placeholder sampai pengguna
+  // menyaring tampilan sendiri lewat "Muat semua".
+  useEffect(() => {
+    const known = knownSlugsRef.current;
+    if (known === undefined) {
+      // Mountir pertama: halaman yang sudah ada ditata oleh fit, bukan geser.
+      knownSlugsRef.current = new Set(design.pages.map((page) => page.slug));
+      return;
+    }
+    const baru = design.pages.filter((page) => !known.has(page.slug));
+    if (baru.length === 0) return;
+    for (const page of baru) known.add(page.slug);
+    // Fit awal belum selesai; biarkan fit yang menata tampilan.
+    if (!fitDone.current) return;
+    const size = viewportRef.current;
+    if (size.width <= 0 || size.height <= 0) return;
+    const slugBaru = baru[0]?.slug;
+    if (slugBaru === undefined) return;
+    const rect = rectsRef.current.find((item) => item.slug === slugBaru);
+    if (rect === undefined) return;
+    setView((current) =>
+      isOffscreen(rect, current, size) ? centerOn(current, rect, size) : current,
+    );
+  }, [design, viewport]);
 
   // Muat HTML halaman untuk frame yang hidup; pertahankan hasil per slug.
   useEffect(() => {
@@ -1314,10 +1343,14 @@ export function DesignCanvas(props: DesignCanvasProps) {
         >
           Token
         </button>
+        {/* Chip Catatan menambah catatan baru, bukan membuka panel: tak ada
+            status buka-tutup, jadi aria-expanded tak dipakai. Nama aksesibel
+            menyebut aksinya supaya jelas dari pembaca layar. */}
         <button
           type="button"
           class="jk-design-chip"
-          title="Catatan desain"
+          aria-label="Tambah catatan"
+          title="Tambah catatan"
           disabled={!canAddNote(notes)}
           onClick={addNote}
         >

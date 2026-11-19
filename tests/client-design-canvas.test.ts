@@ -15,6 +15,7 @@ import {
   frameHeight,
   frameRects,
   groupBoxes,
+  isOffscreen,
   newNoteAt,
   panBy,
   pickLive,
@@ -304,6 +305,35 @@ describe("visibleSlugs", () => {
 
   test("margin layar menambah yang dekat", () => {
     expect(visibleSlugs(rects, view, viewport, 200)).toEqual(["dalam", "margin"]);
+  });
+});
+
+describe("isOffscreen", () => {
+  const view: View = { x: 0, y: 0, zoom: 1 };
+  const viewport = { width: 800, height: 600 };
+
+  test("frame di dalam layar bukan luar layar", () => {
+    expect(isOffscreen(rect(0, 0, 100, 100), view, viewport)).toBe(false);
+  });
+
+  test("frame sebagian terlihat bukan luar layar", () => {
+    expect(isOffscreen(rect(700, 0, 200, 100), view, viewport)).toBe(false);
+  });
+
+  test("frame di kanan layar adalah luar layar", () => {
+    expect(isOffscreen(rect(900, 0, 100, 100), view, viewport)).toBe(true);
+  });
+
+  test("frame di bawah layar adalah luar layar", () => {
+    expect(isOffscreen(rect(0, 700, 100, 100), view, viewport)).toBe(true);
+  });
+
+  test("geser tampilan dan zoom ikut dihitung", () => {
+    const geser: View = { x: -500, y: 0, zoom: 1 };
+    expect(isOffscreen(rect(600, 0, 100, 100), geser, viewport)).toBe(false);
+    expect(isOffscreen(rect(400, 0, 100, 100), geser, viewport)).toBe(true);
+    const kecil: View = { x: 0, y: 0, zoom: 0.5 };
+    expect(isOffscreen(rect(1000, 0, 100, 100), kecil, viewport)).toBe(false);
   });
 });
 

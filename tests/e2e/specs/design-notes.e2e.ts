@@ -123,8 +123,11 @@ test("catatan desain: buat, ketik, seret, muat ulang, dan hapus", async ({ page 
   const kanvas = page.locator('section[aria-label="Kanvas desain"]');
   await expect(kanvas).toBeVisible();
 
-  // Chip Catatan menambah catatan kosong di tengah viewport.
-  await page.getByRole("button", { name: "Catatan", exact: true }).click();
+  // Chip Catatan menambah catatan kosong di tengah viewport. Chip ini aksi
+  // tambah, bukan panel: tak ada status buka-tutup, jadi tanpa aria-expanded.
+  const chipCatatan = page.getByRole("button", { name: "Tambah catatan" });
+  expect(await chipCatatan.getAttribute("aria-expanded")).toBeNull();
+  await chipCatatan.click();
   const kolom = page.locator('textarea[aria-label="Catatan"]');
   await expect(kolom).toHaveCount(1);
   await expect(kolom).toBeFocused();
@@ -163,7 +166,7 @@ test("catatan desain: buat, ketik, seret, muat ulang, dan hapus", async ({ page 
   await expect(kolomLama).toHaveValue("Cek kontras tombol");
 
   // Catatan kedua, lalu hapus lewat tombol "Hapus catatan".
-  await page.getByRole("button", { name: "Catatan", exact: true }).click();
+  await page.getByRole("button", { name: "Tambah catatan" }).click();
   await expect(page.locator('textarea[aria-label="Catatan"]')).toHaveCount(2);
   await page.locator('textarea[aria-label="Catatan"]').nth(1).fill("Catatan kedua");
   await expect
