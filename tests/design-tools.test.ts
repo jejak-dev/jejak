@@ -53,11 +53,14 @@ function ctx(): { sessionId: string; cwd: string } {
 }
 
 describe("definisi tool desain", () => {
-  test("satu tool design_patch dengan skema benar", () => {
+  test("tool design_patch dengan skema benar", () => {
     const definitions = tools().definitions;
-    expect(definitions).toHaveLength(1);
-    const def = definitions[0]!;
-    expect(def.name).toBe("design_patch");
+    expect(definitions.map((item) => item.name)).toEqual([
+      "design_comment_resolve",
+      "design_comments",
+      "design_patch",
+    ]);
+    const def = definitions.find((item) => item.name === "design_patch")!;
     expect(def.inputSchema.additionalProperties).toBe(false);
     expect(def.inputSchema.required).toEqual(["slug", "selector", "op"]);
     const props = def.inputSchema.properties as Record<string, { enum?: string[] }>;
@@ -192,10 +195,19 @@ function png(width: number, height: number): Buffer {
 
 describe("design_screenshot", () => {
   test("definisi hanya ada dengan broker", () => {
-    expect(tools().definitions.map((def) => def.name)).toEqual(["design_patch"]);
+    expect(tools().definitions.map((def) => def.name)).toEqual([
+      "design_comment_resolve",
+      "design_comments",
+      "design_patch",
+    ]);
     const broker = new CaptureBroker();
     const names = tools({ captures: broker }).definitions.map((def) => def.name);
-    expect(names).toEqual(["design_patch", "design_screenshot"]);
+    expect(names).toEqual([
+      "design_comment_resolve",
+      "design_comments",
+      "design_patch",
+      "design_screenshot",
+    ]);
   });
 
   test("panggilan tanpa broker ditolak", async () => {

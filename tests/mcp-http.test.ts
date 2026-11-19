@@ -153,6 +153,8 @@ describe("alur JSON-RPC", () => {
       result: { tools: { name: string; inputSchema: Record<string, unknown> }[] };
     }).result.tools;
     expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "design_comment_resolve",
+      "design_comments",
       "design_patch",
       "design_screenshot",
       "memory_propose",
@@ -228,7 +230,12 @@ describe("alur JSON-RPC", () => {
     const openedNoMemory = await noMemoryBridge.open({ sessionId: "s_kosong", cwd: dir });
     try {
       const tools = await listTools(noMemory, openedNoMemory.memory.token ?? "");
-      expect(tools).toEqual(["design_patch", "design_screenshot"]);
+      expect(tools).toEqual([
+        "design_comment_resolve",
+        "design_comments",
+        "design_patch",
+        "design_screenshot",
+      ]);
     } finally {
       openedNoMemory.close();
     }
@@ -334,6 +341,8 @@ describe("/mcp dengan workspace", () => {
     const noWsToken = opened.memory.token!;
     try {
       expect(await listTools(noWs, noWsToken)).toEqual([
+        "design_comment_resolve",
+        "design_comments",
         "design_patch",
         "design_screenshot",
         "memory_propose",
@@ -350,6 +359,8 @@ describe("/mcp dengan workspace", () => {
 
   test("sesi ber-workspace melihat tool memory dan workspace", async () => {
     expect(await listTools(wsApp, wsToken)).toEqual([
+      "design_comment_resolve",
+      "design_comments",
       "design_patch",
       "design_screenshot",
       "memory_propose",
@@ -395,6 +406,8 @@ describe("/mcp dengan workspace", () => {
     const onlyToken = opened.memory.token!;
     try {
       expect(await listTools(onlyWs, onlyToken)).toEqual([
+        "design_comment_resolve",
+        "design_comments",
         "design_patch",
         "design_screenshot",
         "workspace_overview",

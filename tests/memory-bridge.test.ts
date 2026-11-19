@@ -387,7 +387,11 @@ describe("createMemoryBridge + design", () => {
     const opened = await bridge.open({ sessionId: "s_design_ada", cwd: dir });
     try {
       expect(opened.memory.tools).toContain("design_patch");
+      expect(opened.memory.tools).toContain("design_comments");
+      expect(opened.memory.tools).toContain("design_comment_resolve");
       expect(opened.memory.indexLine).toContain("design_patch");
+      expect(opened.memory.indexLine).toContain("design_comments");
+      expect(opened.memory.indexLine).toContain("design_comment_resolve");
     } finally {
       opened.close();
     }
