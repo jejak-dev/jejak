@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   ApiError,
   createApiClient,
+  designExportUrl,
   designFrameUrl,
   type DesignComment,
   type DesignResult,
@@ -201,6 +202,29 @@ describe("klien API desain", () => {
     const api = createApiClient({ fetch });
     expect(api.designFrameUrl("s1", "beranda", 3, "web")).toBe(
       "/api/sessions/s1/design/frame?slug=beranda&v=3&repo=web",
+    );
+  });
+
+  test("designExportUrl html menyertakan slug dan repo", () => {
+    expect(designExportUrl("a/b c", "html", "beranda satu", "repo satu")).toBe(
+      "/api/sessions/a%2Fb%20c/design/export?format=html&slug=beranda%20satu&repo=repo%20satu",
+    );
+  });
+
+  test("designExportUrl zip dan react tidak menyertakan slug", () => {
+    expect(designExportUrl("s1", "zip", "beranda")).toBe(
+      "/api/sessions/s1/design/export?format=zip",
+    );
+    expect(designExportUrl("s1", "react", "beranda", "web")).toBe(
+      "/api/sessions/s1/design/export?format=react&repo=web",
+    );
+  });
+
+  test("klien menyediakan designExportUrl yang sama", () => {
+    const { fetch } = fakeFetch(() => jsonResponse({}));
+    const api = createApiClient({ fetch });
+    expect(api.designExportUrl("s1", "html", "x y", "web")).toBe(
+      "/api/sessions/s1/design/export?format=html&slug=x%20y&repo=web",
     );
   });
 

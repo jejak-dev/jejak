@@ -3,13 +3,16 @@ import {
   CANVAS_FILE_NAME,
   EXPORT_MARGIN,
   MAX_EXPORT_SIDE,
+  REACT_EXPORT_PROMPT,
   canvasBounds,
   dataUrlToBlob,
   downloadBlob,
+  downloadUrl,
   exportFailureMessage,
   exportFileName,
   fitScale,
   placeShots,
+  reactExportPrompt,
   type ExportRect,
 } from "../src/client/lib/design-export";
 
@@ -126,6 +129,53 @@ describe("downloadBlob", () => {
       URL.createObjectURL = urlAsli;
       URL.revokeObjectURL = revokeAsli;
     }
+  });
+});
+
+describe("downloadUrl", () => {
+  test("membuat tautan unduh untuk URL lalu menghapusnya", () => {
+    const diklik: Array<{ href: string; download: string }> = [];
+    const dihapus: number[] = [];
+    let urutan = 0;
+    const tautan = {
+      href: "",
+      download: "x",
+      rel: "",
+      click(): void {
+        diklik.push({ href: this.href, download: this.download });
+      },
+      remove(): void {
+        dihapus.push((urutan += 1));
+      },
+    };
+    const doc = {
+      createElement: () => tautan,
+      body: { appendChild: () => undefined },
+    } as unknown as Document;
+
+    downloadUrl("/api/sessions/s1/design/export?format=zip", doc);
+
+    expect(diklik).toEqual([
+      { href: "/api/sessions/s1/design/export?format=zip", download: "" },
+    ]);
+    expect(dihapus).toHaveLength(1);
+  });
+});
+
+describe("reactExportPrompt", () => {
+  test("menyebut halaman yang diekspor bila ada slug", () => {
+    const prompt = reactExportPrompt(["beranda", "masuk"]);
+    expect(prompt).toContain("Halaman yang diekspor: beranda, masuk.");
+    expect(prompt.startsWith(REACT_EXPORT_PROMPT)).toBe(true);
+  });
+
+  test("daftar kosong memakai Semua halaman.", () => {
+    expect(reactExportPrompt([])).toContain("Semua halaman.");
+  });
+
+  test("prompt memuat tsc --noEmit dan tanpa em dash", () => {
+    expect(REACT_EXPORT_PROMPT).toContain("tsc --noEmit");
+    expect(REACT_EXPORT_PROMPT).not.toContain("—");
   });
 });
 

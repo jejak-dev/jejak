@@ -27,6 +27,8 @@ export interface DesignFrameProps {
   onReload: () => void;
   /** Minta pembuatan varian baru dari halaman ini. */
   onCreateVariant?: () => void;
+  /** Unduh halaman ini sebagai HTML mandiri. */
+  onExportHtml?: () => void;
   /** Unduh halaman ini sebagai PNG (skala 1 atau 2). */
   onExportPng?: (scale: ExportScale) => void;
   /** Pointer meninggalkan pembungkus frame; dipakai alat Pilih. */
@@ -80,14 +82,25 @@ export function DesignFrame(props: DesignFrameProps) {
       onSelect: () => props.onCreateVariant?.(),
     });
   }
-  if (props.onExportPng !== undefined) {
+  if (props.onExportPng !== undefined || props.onExportHtml !== undefined) {
+    const opsi: Array<{ value: string; label: string }> = [];
+    if (props.onExportHtml !== undefined) {
+      opsi.push({ value: "html", label: "Unduh HTML" });
+    }
+    if (props.onExportPng !== undefined) {
+      opsi.push({ value: "png", label: "Unduh PNG" });
+      opsi.push({ value: "png2", label: "Unduh PNG 2x" });
+    }
     sections.push({
       title: "Ekspor",
-      options: [
-        { value: "png", label: "Unduh PNG" },
-        { value: "png2", label: "Unduh PNG 2x" },
-      ],
-      onSelect: (value) => props.onExportPng?.(value === "png2" ? 2 : 1),
+      options: opsi,
+      onSelect: (value) => {
+        if (value === "html") {
+          props.onExportHtml?.();
+          return;
+        }
+        props.onExportPng?.(value === "png2" ? 2 : 1);
+      },
     });
   }
 

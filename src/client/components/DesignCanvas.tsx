@@ -51,9 +51,11 @@ import {
   composeCanvas,
   dataUrlToBlob,
   downloadBlob,
+  downloadUrl,
   exportFailureMessage,
   exportFileName,
   fitScale,
+  reactExportPrompt,
   type ExportFailure,
   type ExportScale,
   type ExportShot,
@@ -1174,6 +1176,27 @@ export function DesignCanvas(props: DesignCanvasProps) {
     });
   };
 
+  /** Unduh HTML mandiri satu halaman lewat tautan rute ekspor. */
+  const exportFrameHtml = (slug: string): void => {
+    downloadUrl(api.designExportUrl(sessionId, "html", slug, repo));
+    setExportInfo({ text: "Mengunduh HTML…", gagal: false });
+  };
+
+  /** Unduh ZIP folder `design/` atau proyek React lewat tautan rute ekspor. */
+  const exportArchive = (format: "zip" | "react"): void => {
+    downloadUrl(api.designExportUrl(sessionId, format, undefined, repo));
+    setExportInfo({
+      text: format === "zip" ? "Mengunduh folder desain…" : "Mengunduh proyek React…",
+      gagal: false,
+    });
+  };
+
+  /** Tempel prompt pemecahan komponen ke komposer; tak mengirim apa pun. */
+  const quoteReactExport = (): void => {
+    const slugs = pages.filter((page) => !page.missing).map((page) => page.slug);
+    props.onQuote(reactExportPrompt(slugs));
+  };
+
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.isComposing) return;
     if (targetKindOf(event.target) === "input") return;
@@ -1368,6 +1391,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
                   ? undefined
                   : () => setVariantSlug(rect.slug)
               }
+              onExportHtml={() => exportFrameHtml(rect.slug)}
               onExportPng={(scale) => exportFramePng(rect.slug, scale)}
               onPointerLeave={() => setHover(undefined)}
               setFrameRef={frameRefFor(rect.slug)}
@@ -1589,6 +1613,45 @@ export function DesignCanvas(props: DesignCanvasProps) {
                   }}
                 >
                   PNG seluruh kanvas 2x
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-design-pages-item"
+                  onClick={() => {
+                    setExportOpen(false);
+                    exportArchive("zip");
+                  }}
+                >
+                  Folder desain (ZIP)
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-design-pages-item"
+                  onClick={() => {
+                    setExportOpen(false);
+                    exportArchive("react");
+                  }}
+                >
+                  Proyek React (ZIP)
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-design-pages-item"
+                  onClick={() => {
+                    setExportOpen(false);
+                    quoteReactExport();
+                  }}
+                >
+                  Minta agent memecah komponen React
                 </button>
               </li>
             </ul>

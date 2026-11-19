@@ -173,6 +173,40 @@ export function downloadBlob(blob: Blob, name: string, doc: Document = document)
 }
 
 /**
+ * Unduh URL lewat tautan sementara. Rute ekspor memakai cookie sesi, jadi
+ * tautan `a[download]` cukup: peramban mengirim cookie dan menyimpan respons
+ * dengan nama berkas dari `content-disposition`.
+ */
+export function downloadUrl(url: string, doc: Document = document): void {
+  const tautan = doc.createElement("a");
+  tautan.href = url;
+  tautan.download = "";
+  tautan.rel = "noopener";
+  doc.body.appendChild(tautan);
+  tautan.click();
+  tautan.remove();
+}
+
+/** Prompt untuk agent yang diminta memecah desain menjadi komponen React. */
+export const REACT_EXPORT_PROMPT = [
+  "Siapkan ekspor React dari desain di design/.",
+  "Mulai dari proyek hasil konversi mekanis (unduh lewat menu Ekspor > Proyek React, atau baca design/pages/*.html).",
+  "Pecah tiap halaman menjadi komponen kecil yang bermakna (Header, Hero, FormReservasi, dst.), beri nama komponen deskriptif,",
+  "ubah teks dan gambar yang berubah-ubah menjadi props bertipe, pertahankan tampilan persis,",
+  "taruh di folder design-react/ (src/components, src/pages, src/styles),",
+  "jalankan npx tsc --noEmit dan pastikan lolos sebelum menyerahkan,",
+  "lalu laporkan daftar komponen dan berkas.",
+].join(" ");
+
+/** Prompt pemecahan komponen React, dengan daftar halaman yang diekspor. */
+export function reactExportPrompt(slugs: string[]): string {
+  const daftar = slugs.filter((slug) => slug !== "");
+  const baris =
+    daftar.length === 0 ? "Semua halaman." : `Halaman yang diekspor: ${daftar.join(", ")}.`;
+  return `${REACT_EXPORT_PROMPT} ${baris}`;
+}
+
+/**
  * Susun tangkapan semua frame ke satu kanvas luar layar. Latar diisi warna
  * tetap (tak transparan) lalu tiap gambar digambar pada tempatnya.
  */

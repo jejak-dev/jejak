@@ -926,6 +926,13 @@ export interface ApiClient {
   getDesignPage(id: string, slug: string, repo?: string): Promise<DesignPageDoc>;
   /** URL frame desain; `version` (mtime) membuat iframe memuat ulang. */
   designFrameUrl(id: string, slug: string, version: number | string, repo?: string): string;
+  /** URL rute ekspor desain (HTML, ZIP folder, atau proyek React). */
+  designExportUrl(
+    id: string,
+    format: "html" | "zip" | "react",
+    slug?: string,
+    repo?: string,
+  ): string;
   /** Simpan posisi (dan perangkat) halaman yang sudah terdaftar. */
   saveDesignLayout(
     id: string,
@@ -1647,6 +1654,24 @@ export function designFrameUrl(
     ["repo", repo],
   ]);
   return `/api/sessions/${encodeURIComponent(id)}/design/frame${query}`;
+}
+
+/**
+ * URL rute ekspor desain. `slug` hanya disertakan untuk format HTML; ZIP
+ * folder dan proyek React selalu mengekspor seluruh `design/`.
+ */
+export function designExportUrl(
+  id: string,
+  format: "html" | "zip" | "react",
+  slug?: string,
+  repo?: string,
+): string {
+  const query = queryString([
+    ["format", format],
+    ["slug", format === "html" ? slug : undefined],
+    ["repo", repo],
+  ]);
+  return `/api/sessions/${encodeURIComponent(id)}/design/export${query}`;
 }
 
 function queryString(parts: Array<[string, string | undefined]>): string {
@@ -2642,6 +2667,10 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     designFrameUrl(id, slug, version, repo) {
       return designFrameUrl(id, slug, version, repo);
+    },
+
+    designExportUrl(id, format, slug, repo) {
+      return designExportUrl(id, format, slug, repo);
     },
 
     async saveDesignLayout(id, pages, repo) {

@@ -11307,6 +11307,7 @@ h2.jk-md-heading {
   right: 0;
   top: calc(100% + 4px);
   min-width: 200px;
+  width: max-content;
   margin: 0;
   padding: 4px;
   list-style: none;
@@ -11314,6 +11315,10 @@ h2.jk-md-heading {
   border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow);
+}
+
+.jk-design-export-menu .jk-design-pages-item {
+  white-space: nowrap;
 }
 
 .jk-design-export-status {
