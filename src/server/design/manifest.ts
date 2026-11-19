@@ -13,7 +13,14 @@ const MAX_ROUTE_LENGTH = 100;
 const META_HEAD_BYTES = 4 * 1024;
 const STAMP_MAX_FILES = 500;
 const STAMP_MAX_DEPTH = 3;
-const GAP = 80;
+/** Jarak antar frame halaman di kanvas (px). */
+export const GAP = 80;
+
+/** Batas panjang label kelompok dan label varian. */
+export const MAX_GROUP_LENGTH = 40;
+export const MAX_VARIANT_LENGTH = 30;
+/** Karakter kontrol tidak boleh ada di label. */
+const CONTROL_RE = /[\u0000-\u001F\u007F]/;
 
 export type DeviceId = "desktop" | "tablet" | "mobile" | "mobile-android";
 
@@ -28,6 +35,10 @@ export interface DesignPage {
   slug: string;
   title: string;
   route?: string;
+  /** Nama kelompok halaman; halaman sekelompok digambar bersama di kanvas. */
+  group?: string;
+  /** Label varian halaman (mis. "gelap", "kosong"). */
+  variant?: string;
   device: DeviceId;
   x: number;
   y: number;
@@ -41,6 +52,8 @@ export interface DesignManifestPage {
   slug: string;
   title: string;
   route?: string;
+  group?: string;
+  variant?: string;
   device: DeviceId;
   x: number;
   y: number;
@@ -79,6 +92,19 @@ export function deviceFromMeta(head: string): DeviceId | undefined {
 
 function clampCoord(value: number): number {
   return Math.max(-MAX_COORD, Math.min(MAX_COORD, value));
+}
+
+/**
+ * Memeriksa label kelompok atau varian: harus teks, dipangkas spasi tepi,
+ * panjang 1..maxLength, dan tanpa karakter kontrol. Nilai tak sah
+ * mengembalikan undefined.
+ */
+export function validLabel(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > maxLength) return undefined;
+  if (CONTROL_RE.test(trimmed)) return undefined;
+  return trimmed;
 }
 
 function coord(
@@ -171,6 +197,24 @@ export function parseManifest(raw: unknown): ParsedManifest {
         page.route = item.route;
       } else {
         warnings.push(`Halaman "${slug}": route diabaikan karena tidak valid.`);
+      }
+    }
+
+    if (item.group !== undefined) {
+      const group = validLabel(item.group, MAX_GROUP_LENGTH);
+      if (group === undefined) {
+        warnings.push(`Halaman "${slug}": group diabaikan karena tidak valid.`);
+      } else {
+        page.group = group;
+      }
+    }
+
+    if (item.variant !== undefined) {
+      const variant = validLabel(item.variant, MAX_VARIANT_LENGTH);
+      if (variant === undefined) {
+        warnings.push(`Halaman "${slug}": variant diabaikan karena tidak valid.`);
+      } else {
+        page.variant = variant;
       }
     }
 

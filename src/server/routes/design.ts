@@ -13,7 +13,7 @@ import { CaptureError, NOT_FOUND } from "../design/capture-broker";
 import { DesignDocError, syncDesignDoc } from "../design/design-doc";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignTokenError, readTokens, writeTokens, type DesignToken } from "../design/tokens";
-import { DesignWriteError, initDesign, saveLayout } from "../design/write";
+import { DesignWriteError, createVariant, initDesign, saveLayout } from "../design/write";
 import { REVERT_MESSAGES } from "../files/revert";
 import { FileError } from "../files/path";
 import { resolveRepoRoot } from "../files/repo-root";
@@ -200,6 +200,48 @@ function parseCaptureBody(body: unknown): { dataUrl: string } | { error: Capture
     return { error: record.error as CaptureFailure };
   }
   throw new DesignWriteError("Body permintaan tidak valid.", 400);
+}
+
+/**
+ * Body pembuatan varian: `{slug, variant, group?}`. Kunci tak dikenal
+ * ditolak; label divalidasi di modul penulis.
+ */
+function parseVariantBody(body: unknown): { slug: string; variant: string; group?: string } {
+  if (typeof body !== "string") {
+    throw new DesignWriteError("Body bukan JSON yang valid.", 400);
+  }
+  if (Buffer.byteLength(body, "utf8") > MAX_BODY_BYTES) {
+    throw new DesignWriteError("Body permintaan terlalu besar.", 400);
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(body);
+  } catch {
+    throw new DesignWriteError("Body bukan JSON yang valid.", 400);
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new DesignWriteError("Body permintaan harus berupa objek.", 400);
+  }
+  const record = input as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "slug" && key !== "variant" && key !== "group") {
+      throw new DesignWriteError("Field tidak dikenal.", 400);
+    }
+  }
+  if (typeof record.slug !== "string") {
+    throw new DesignWriteError("Slug halaman tidak valid.", 400);
+  }
+  if (typeof record.variant !== "string") {
+    throw new DesignWriteError("Label variant tidak valid.", 400);
+  }
+  if (record.group !== undefined && typeof record.group !== "string") {
+    throw new DesignWriteError("Label group tidak valid.", 400);
+  }
+  return {
+    slug: record.slug,
+    variant: record.variant,
+    ...(record.group === undefined ? {} : { group: record.group }),
+  };
 }
 
 /**
@@ -478,6 +520,37 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
             meta: { aksi: "design-layout", halaman: result.pages },
           });
           return jsonResponse(200, { ok: true, updated: result.pages });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/sessions/:id/design/variant",
+      async ({ params, query, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        if (session.status === "berjalan") {
+          return runningResponse();
+        }
+        try {
+          const input = parseVariantBody(body);
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          const page = await createVariant(root, input);
+          await syncDocDiam(root);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Varian desain dibuat",
+            meta: { aksi: "design-variant", asal: input.slug, baru: page.slug },
+          });
+          return jsonResponse(200, { page });
         } catch (error) {
           return errorResponse(error);
         }

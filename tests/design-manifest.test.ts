@@ -67,6 +67,35 @@ describe("parseManifest", () => {
     expect(parsed.pages.map((page) => page.slug)).toEqual(["ganda"]);
     expect(parsed.warnings).toHaveLength(2);
   });
+
+  test("group dan variant sah dipakai apa adanya", () => {
+    const parsed = parseManifest({
+      version: 1,
+      pages: [{ slug: "beranda", group: " Beranda ", variant: "gelap" }],
+    });
+    expect(parsed.warnings).toEqual([]);
+    expect(parsed.pages[0]!.group).toBe("Beranda");
+    expect(parsed.pages[0]!.variant).toBe("gelap");
+  });
+
+  test("group dan variant tak sah dibuang dengan warning", () => {
+    const parsed = parseManifest({
+      version: 1,
+      pages: [
+        { slug: "a", group: 12 },
+        { slug: "b", group: "   " },
+        { slug: "c", group: "x".repeat(41) },
+        { slug: "d", group: "ba\u0000ha" },
+        { slug: "e", variant: "x".repeat(31) },
+        { slug: "f", variant: [] },
+      ],
+    });
+    expect(parsed.pages.every((page) => page.group === undefined)).toBe(true);
+    expect(parsed.pages.every((page) => page.variant === undefined)).toBe(true);
+    expect(parsed.warnings).toHaveLength(6);
+    expect(parsed.warnings[0]).toBe('Halaman "a": group diabaikan karena tidak valid.');
+    expect(parsed.warnings[4]).toBe('Halaman "e": variant diabaikan karena tidak valid.');
+  });
 });
 
 describe("readDesign", () => {
@@ -100,6 +129,24 @@ describe("readDesign", () => {
     expect(page.mtime).toBeGreaterThan(0);
     expect(page.missing).toBe(false);
     expect(page.tooLarge).toBe(false);
+  });
+
+  test("group dan variant terbawa ke readDesign", async () => {
+    await writeManifest({
+      version: 1,
+      pages: [
+        { slug: "beranda", title: "Beranda", device: "desktop", x: 0, y: 0, group: "Beranda" },
+        { slug: "beranda-gelap", title: "Beranda (gelap)", device: "desktop", x: 1520, y: 0, group: "Beranda", variant: "gelap" },
+      ],
+    });
+    await writePage("beranda");
+    await writePage("beranda-gelap");
+
+    const result = await readDesign(dir);
+    expect(result.pages[0]!.group).toBe("Beranda");
+    expect(result.pages[0]!.variant).toBeUndefined();
+    expect(result.pages[1]!.group).toBe("Beranda");
+    expect(result.pages[1]!.variant).toBe("gelap");
   });
 
   test("halaman baru otomatis: perangkat dari meta, posisi di kanan halaman terakhir", async () => {

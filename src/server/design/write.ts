@@ -1,7 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DEVICES, MAX_PAGES, SLUG_RE, resolveDesignDir, type DeviceId } from "./manifest";
+import {
+  DEVICES,
+  GAP,
+  MAX_GROUP_LENGTH,
+  MAX_PAGE_BYTES,
+  MAX_PAGES,
+  MAX_VARIANT_LENGTH,
+  SLUG_RE,
+  resolveDesignDir,
+  validLabel,
+  type DeviceId,
+} from "./manifest";
 
 /** Galat tulis desain dengan status HTTP yang sesuai. */
 export class DesignWriteError extends Error {
@@ -23,10 +34,26 @@ interface LayoutEntry {
   x: number;
   y: number;
   device?: DeviceId;
+  /** undefined = tak diubah; null = kunci dihapus; teks = nilai baru. */
+  group?: string | null;
+  variant?: string | null;
 }
 
 function isDeviceId(value: unknown): value is DeviceId {
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(DEVICES, value);
+}
+
+/**
+ * Label kelompok atau varian pada entri tata letak: teks sah (dipangkas),
+ * atau null untuk menghapus kuncinya. Nilai lain tidak sah -> 400.
+ */
+function labelInput(value: unknown, key: "group" | "variant", maxLength: number): string | null {
+  if (value === null) return null;
+  const label = validLabel(value, maxLength);
+  if (label === undefined) {
+    throw new DesignWriteError(`Label ${key} tidak valid.`, 400);
+  }
+  return label;
 }
 
 function coord(value: unknown, axis: "x" | "y"): number {
@@ -74,6 +101,12 @@ function parseLayoutInput(input: unknown): LayoutEntry[] {
       }
       entry.device = item.device;
     }
+    if (item.group !== undefined) {
+      entry.group = labelInput(item.group, "group", MAX_GROUP_LENGTH);
+    }
+    if (item.variant !== undefined) {
+      entry.variant = labelInput(item.variant, "variant", MAX_VARIANT_LENGTH);
+    }
     entries.push(entry);
   }
   return entries;
@@ -119,6 +152,44 @@ async function readManifestForWrite(designDir: string): Promise<ManifestForWrite
 }
 
 /**
+ * Antrean penulisan manifest per folder desain: dua penulisan tak
+ * saling menimpa berkas design.json.
+ */
+const manifestLocks = new Map<string, Promise<void>>();
+
+function withManifestLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = manifestLocks.get(key) ?? Promise.resolve();
+  const run = previous.then(task, task);
+  const settled = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  manifestLocks.set(key, settled);
+  void settled.then(() => {
+    if (manifestLocks.get(key) === settled) manifestLocks.delete(key);
+  });
+  return run;
+}
+
+/** Menulis design.json secara atomik; mode berkas lama dipertahankan. */
+async function writeManifestFile(
+  designDir: string,
+  record: Record<string, unknown>,
+  mode: number,
+  failureMessage: string,
+): Promise<void> {
+  const text = `${JSON.stringify(record, null, 2)}\n`;
+  const tempPath = join(designDir, `.jejak-design-${randomUUID()}.tmp`);
+  try {
+    await writeFile(tempPath, text, { mode });
+    await rename(tempPath, join(designDir, "design.json"));
+  } catch {
+    await rm(tempPath, { force: true });
+    throw new DesignWriteError(failureMessage, 400);
+  }
+}
+
+/**
  * Memperbarui posisi (dan perangkat) halaman yang sudah terdaftar di
  * `design/design.json`. Menggabung, bukan mengganti: kunci lain di entri
  * maupun di objek akar dipertahankan. Penulisan atomik lewat berkas sementara
@@ -130,35 +201,292 @@ export async function saveLayout(root: string, input: unknown): Promise<{ pages:
   if (designDir === undefined) {
     throw new DesignWriteError(NOT_CREATED, 404);
   }
-  const { record, mode } = await readManifestForWrite(designDir);
-  const pages = record.pages as unknown[];
-  const bySlug = new Map<string, Record<string, unknown>>();
+  return withManifestLock(designDir, async () => {
+    const { record, mode } = await readManifestForWrite(designDir);
+    const pages = record.pages as unknown[];
+    const bySlug = new Map<string, Record<string, unknown>>();
+    for (const item of pages) {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+      const entry = item as Record<string, unknown>;
+      if (typeof entry.slug === "string") bySlug.set(entry.slug, entry);
+    }
+
+    let updated = 0;
+    for (const entry of entries) {
+      const target = bySlug.get(entry.slug);
+      if (target === undefined) continue;
+      target.x = entry.x;
+      target.y = entry.y;
+      if (entry.device !== undefined) target.device = entry.device;
+      if (entry.group !== undefined) {
+        if (entry.group === null) delete target.group;
+        else target.group = entry.group;
+      }
+      if (entry.variant !== undefined) {
+        if (entry.variant === null) delete target.variant;
+        else target.variant = entry.variant;
+      }
+      updated += 1;
+    }
+
+    await writeManifestFile(designDir, record, mode, "Tata letak desain tidak dapat disimpan.");
+    return { pages: updated };
+  });
+}
+
+/** Bentuk masukan pembuatan varian. */
+export interface VariantInput {
+  slug: string;
+  variant: string;
+  group?: string;
+}
+
+/** Data halaman varian yang baru dibuat. */
+export interface VariantPage {
+  slug: string;
+  title: string;
+  x: number;
+  y: number;
+}
+
+const MAX_VARIANT_ATTEMPTS = 20;
+const MAX_SLUG_LENGTH = 63;
+const SOURCE_MISSING = "Halaman sumber tidak ditemukan.";
+const SOURCE_INVALID = "Berkas halaman sumber tidak valid.";
+const VARIANT_CONFLICT = "Slug varian bertabrakan.";
+
+/** Huruf kecil; semua karakter selain huruf/angka menjadi tanda hubung. */
+function slugifyLabel(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/** Susun slug varian: `<slug sumber>-<slug varian>`, muat dalam 63 karakter. */
+function buildVariantSlug(sourceSlug: string, suffix: string, attempt: number): string {
+  const tail = attempt === 1 ? suffix : `${suffix}-${attempt}`;
+  const maxBase = MAX_SLUG_LENGTH - tail.length - 1;
+  const base = sourceSlug.length > maxBase ? sourceSlug.slice(0, maxBase).replace(/-+$/, "") : sourceSlug;
+  return `${base}-${tail}`;
+}
+
+/** Persegi panjang halaman: posisi dan ukuran menurut perangkat. */
+interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+/** Kotak halaman dari entri manifest; nilai tak sah dianggap 0/desktop. */
+function rectOf(entry: Record<string, unknown>): Rect {
+  const device = isDeviceId(entry.device) ? entry.device : "desktop";
+  const x = typeof entry.x === "number" && Number.isFinite(entry.x) ? entry.x : 0;
+  const y = typeof entry.y === "number" && Number.isFinite(entry.y) ? entry.y : 0;
+  return { x, y, width: DEVICES[device].width, height: DEVICES[device].height };
+}
+
+/** Slug sudah terpakai bila ada di manifest atau berkas halaman. */
+async function slugTaken(
+  pages: unknown[],
+  pagesDir: string,
+  candidate: string,
+): Promise<boolean> {
   for (const item of pages) {
     if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
-    const entry = item as Record<string, unknown>;
-    if (typeof entry.slug === "string") bySlug.set(entry.slug, entry);
+    if ((item as Record<string, unknown>).slug === candidate) return true;
   }
-
-  let updated = 0;
-  for (const entry of entries) {
-    const target = bySlug.get(entry.slug);
-    if (target === undefined) continue;
-    target.x = entry.x;
-    target.y = entry.y;
-    if (entry.device !== undefined) target.device = entry.device;
-    updated += 1;
-  }
-
-  const text = `${JSON.stringify(record, null, 2)}\n`;
-  const tempPath = join(designDir, `.jejak-design-${randomUUID()}.tmp`);
   try {
-    await writeFile(tempPath, text, { mode });
-    await rename(tempPath, join(designDir, "design.json"));
+    await lstat(join(pagesDir, `${candidate}.html`));
+    return true;
   } catch {
-    await rm(tempPath, { force: true });
-    throw new DesignWriteError("Tata letak desain tidak dapat disimpan.", 400);
+    return false;
   }
-  return { pages: updated };
+}
+
+/** Menulis berkas halaman baru secara eksklusif: berkas lama tak ditimpa. */
+async function writeVariantFile(
+  pagesDir: string,
+  slug: string,
+  content: Buffer,
+  mode: number,
+): Promise<void> {
+  const target = join(pagesDir, `${slug}.html`);
+  const tempPath = join(pagesDir, `.jejak-variant-${randomUUID()}.tmp`);
+  try {
+    await writeFile(tempPath, content, { mode });
+    await chmod(tempPath, mode);
+    try {
+      // link gagal bila target sudah ada: berkas lama tak pernah ditimpa.
+      await link(tempPath, target);
+    } catch (error) {
+      if (isEexist(error)) throw new DesignWriteError("Berkas varian sudah ada.", 409);
+      // Filesystem tanpa hardlink: tulis eksklusif langsung ke target.
+      await writeFile(target, content, { flag: "wx", mode });
+    }
+  } catch (error) {
+    if (error instanceof DesignWriteError) throw error;
+    throw new DesignWriteError("Berkas varian tidak dapat dibuat.", 400);
+  } finally {
+    await rm(tempPath, { force: true });
+  }
+}
+
+/**
+ * Membuat varian baru dari halaman sumber: berkas HTML disalin, entri
+ * manifest ditambah, dan kelompok halaman sumber disetel bila belum punya.
+ * Slug baru dihindari bentrok dengan pola `-2`, `-3`, dan seterusnya.
+ */
+export async function createVariant(root: string, input: VariantInput): Promise<VariantPage> {
+  if (typeof input !== "object" || input === null) {
+    throw new DesignWriteError("Permintaan tidak valid.", 400);
+  }
+  const slug = input.slug;
+  if (typeof slug !== "string" || !SLUG_RE.test(slug)) {
+    throw new DesignWriteError("Slug halaman tidak valid.", 400);
+  }
+  const variant = validLabel(input.variant, MAX_VARIANT_LENGTH);
+  if (variant === undefined) {
+    throw new DesignWriteError("Label variant tidak valid.", 400);
+  }
+  let groupInput: string | undefined;
+  if (input.group !== undefined) {
+    const parsed = validLabel(input.group, MAX_GROUP_LENGTH);
+    if (parsed === undefined) {
+      throw new DesignWriteError("Label group tidak valid.", 400);
+    }
+    groupInput = parsed;
+  }
+
+  const designDir = await resolveDesignDir(root);
+  if (designDir === undefined) {
+    throw new DesignWriteError(NOT_CREATED, 404);
+  }
+
+  return withManifestLock(designDir, async () => {
+    const { record, mode } = await readManifestForWrite(designDir);
+    const pages = record.pages as unknown[];
+    if (pages.length >= MAX_PAGES) {
+      throw new DesignWriteError("Batas halaman tercapai.", 400);
+    }
+
+    let source: Record<string, unknown> | undefined;
+    for (const item of pages) {
+      if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+      const entry = item as Record<string, unknown>;
+      if (entry.slug === slug) {
+        source = entry;
+        break;
+      }
+    }
+    if (source === undefined) {
+      throw new DesignWriteError(SOURCE_MISSING, 404);
+    }
+
+    const pagesDir = join(designDir, "pages");
+    let pagesInfo;
+    try {
+      pagesInfo = await lstat(pagesDir);
+    } catch {
+      pagesInfo = undefined;
+    }
+    if (pagesInfo === undefined || pagesInfo.isSymbolicLink() || !pagesInfo.isDirectory()) {
+      throw new DesignWriteError(SOURCE_MISSING, 404);
+    }
+
+    const sourcePath = join(pagesDir, `${slug}.html`);
+    let sourceInfo;
+    try {
+      sourceInfo = await lstat(sourcePath);
+    } catch {
+      sourceInfo = undefined;
+    }
+    if (sourceInfo === undefined) {
+      throw new DesignWriteError(SOURCE_MISSING, 404);
+    }
+    if (sourceInfo.isSymbolicLink() || !sourceInfo.isFile()) {
+      throw new DesignWriteError(SOURCE_INVALID, 400);
+    }
+    if (sourceInfo.size > MAX_PAGE_BYTES) {
+      throw new DesignWriteError("Halaman melebihi 512 KB.", 400);
+    }
+
+    let content: Buffer;
+    try {
+      content = await readFile(sourcePath);
+    } catch {
+      throw new DesignWriteError(SOURCE_INVALID, 400);
+    }
+
+    const suffix = slugifyLabel(variant) || "varian";
+    let newSlug = "";
+    for (let attempt = 1; attempt <= MAX_VARIANT_ATTEMPTS; attempt += 1) {
+      const candidate = buildVariantSlug(slug, suffix, attempt);
+      if (!SLUG_RE.test(candidate)) continue;
+      if (await slugTaken(pages, pagesDir, candidate)) continue;
+      newSlug = candidate;
+      break;
+    }
+    if (newSlug === "") {
+      throw new DesignWriteError(VARIANT_CONFLICT, 409);
+    }
+
+    const sourceDevice = isDeviceId(source.device) ? source.device : "desktop";
+    const sourceTitle =
+      typeof source.title === "string" && source.title.trim() !== ""
+        ? source.title.trim()
+        : slug;
+    const sourceGroup = validLabel(source.group, MAX_GROUP_LENGTH);
+    const groupLabel = groupInput ?? sourceGroup ?? sourceTitle;
+
+    const sourceRect = rectOf(source);
+    let x = sourceRect.x + sourceRect.width + GAP;
+    const y = sourceRect.y;
+    for (let step = 0; step < 20; step += 1) {
+      const candidate: Rect = { x, y, width: sourceRect.width, height: sourceRect.height };
+      const bentrok = pages.some((item) => {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
+        const entry = item as Record<string, unknown>;
+        if (entry.slug === newSlug) return false;
+        return rectsOverlap(candidate, rectOf(entry));
+      });
+      if (!bentrok) break;
+      x += sourceRect.width + GAP;
+    }
+
+    const entry: Record<string, unknown> = {
+      slug: newSlug,
+      title: `${sourceTitle} (${variant})`,
+      device: sourceDevice,
+      x,
+      y,
+      variant,
+      group: groupLabel,
+    };
+    pages.push(entry);
+    if (sourceGroup === undefined) source.group = groupLabel;
+
+    try {
+      await writeVariantFile(pagesDir, newSlug, content, 0o644);
+    } catch (error) {
+      pages.pop();
+      throw error;
+    }
+    try {
+      await writeManifestFile(designDir, record, mode, "Varian desain tidak dapat disimpan.");
+    } catch (error) {
+      pages.pop();
+      await rm(join(pagesDir, `${newSlug}.html`), { force: true });
+      throw error;
+    }
+
+    return { slug: newSlug, title: entry.title as string, x, y };
+  });
 }
 
 const TOKENS_CSS = `:root {
