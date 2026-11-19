@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readdir, rm, symlink, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import {
   CLAUDE_MEMORY_FILE_MAX_BYTES,
   CLAUDE_MEMORY_MAX_FILES,
@@ -10,6 +10,7 @@ import {
   claudeProjectEntries,
   claudeProjectSlug,
   claudeWorktreeOrigin,
+  isInsideDir,
   listClaudeMemories,
   parseClaudeMemory,
   resolveClaudeProject,
@@ -332,5 +333,26 @@ describe("folder Claude tidak pernah ditulis", () => {
     );
     expect(after).toEqual(before);
     expect(statsAfter).toEqual(statsBefore);
+  });
+});
+
+describe("isInsideDir lintas platform", () => {
+  const winDir = "C:\\Users\\boyku\\.claude\\projects\\F--lab-replmgr-be\\memory";
+
+  test("path Windows (backslash): berkas di dalam folder diterima", () => {
+    expect(isInsideDir(winDir, `${winDir}\\feedback-a.md`, win32)).toBe(true);
+    expect(isInsideDir(winDir, winDir, win32)).toBe(true);
+  });
+
+  test("path Windows: folder lain, saudara berawalan sama, dan naik ditolak", () => {
+    expect(isInsideDir(winDir, `${winDir}-lain\\a.md`, win32)).toBe(false);
+    expect(isInsideDir(winDir, `${winDir}\\..\\x.md`, win32)).toBe(false);
+    expect(isInsideDir(winDir, "D:\\lain\\a.md", win32)).toBe(false);
+  });
+
+  test("path POSIX tetap benar", () => {
+    expect(isInsideDir("/a/memory", "/a/memory/x.md", posix)).toBe(true);
+    expect(isInsideDir("/a/memory", "/a/memory-lain/x.md", posix)).toBe(false);
+    expect(isInsideDir("/a/memory", "/a/x.md", posix)).toBe(false);
   });
 });

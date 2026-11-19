@@ -2,7 +2,7 @@ import { realpathSync } from "node:fs";
 import { open, readdir, readFile, stat } from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import nodePath, { basename, dirname, join, resolve } from "node:path";
 
 /** Batas jumlah berkas memory yang dibaca dari satu folder. */
 export const CLAUDE_MEMORY_MAX_FILES = 200;
@@ -254,11 +254,22 @@ async function safeReaddir(path: string): Promise<Dirent[] | null> {
   }
 }
 
-function insideDir(dir: string, target: string): boolean {
-  const base = resolve(dir);
-  const full = resolve(target);
-  return full === base || full.startsWith(`${base}/`);
+/**
+ * True bila `target` sama dengan `dir` atau berada di bawahnya. Memakai
+ * pemisah path platform (`\\` di Windows); `pathApi` bisa diganti untuk tes.
+ */
+export function isInsideDir(
+  dir: string,
+  target: string,
+  pathApi: Pick<typeof nodePath, "resolve" | "relative" | "isAbsolute" | "sep"> = nodePath,
+): boolean {
+  const rel = pathApi.relative(pathApi.resolve(dir), pathApi.resolve(target));
+  if (rel === "") return true;
+  if (rel === ".." || rel.startsWith(`..${pathApi.sep}`)) return false;
+  return !pathApi.isAbsolute(rel);
 }
+
+const insideDir = isInsideDir;
 
 /**
  * Gabungkan beberapa daftar memory; berkas dengan nama sama digabung satu
@@ -381,7 +392,7 @@ export function claudeProjectEntries(
     const worktree = seed.worktree;
     const isWorktree =
       worktree !== undefined &&
-      (seed.cwd === worktree.path || seed.cwd.startsWith(`${worktree.path}/`));
+      isInsideDir(worktree.path, seed.cwd);
     const originPath =
       isWorktree && worktree !== undefined ? canonicalPath(worktree.repoRoot) : undefined;
     const originAltPath =
