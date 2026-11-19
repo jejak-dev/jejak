@@ -185,6 +185,19 @@ describe("initDesign", () => {
     expect(assembled.html).toContain("--warna-latar");
   });
 
+  test("DESIGN.md memuat aturan anti-slop", async () => {
+    await initDesign(dir);
+    const isi = await readFile(join(dir, "design", "DESIGN.md"), "utf8");
+    expect(isi).toContain("## Kualitas visual (anti-slop)");
+    expect(isi).toContain("lorem ipsum");
+    expect(isi).toContain("prefers-reduced-motion");
+    // Bagian baru berada di antara "Gaya" dan "Mengubah desain yang sudah ada".
+    expect(isi.indexOf("## Gaya")).toBeLessThan(isi.indexOf("## Kualitas visual (anti-slop)"));
+    expect(isi.indexOf("## Kualitas visual (anti-slop)")).toBeLessThan(
+      isi.indexOf("## Mengubah desain yang sudah ada"),
+    );
+  });
+
   test("panggilan kedua 409", async () => {
     await initDesign(dir);
     expect(await statusOf(initDesign(dir))).toBe(409);

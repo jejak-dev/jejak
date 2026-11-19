@@ -664,6 +664,36 @@ Web dan mobile dirancang sebagai halaman terpisah.
 - Tanpa jaringan dari dalam halaman.
 - Tautan antarhalaman memakai \`#/rute\`.
 
+## Kualitas visual (anti-slop)
+
+Mulai dari subjek, bukan template:
+
+- Sebelum menulis HTML, tulis rencana singkat di awal jawaban: palet 4-6 warna bernama (hex), peran font, konsep tata letak satu kalimat. Tinjau: bila rencana itu bisa dipakai untuk produk lain apa pun, ganti.
+- Hero membuka dengan hal paling khas dari dunia subjeknya (foto/ilustrasi SVG, kutipan, data nyata, demo), bukan judul + angka besar + gradasi.
+- Isi teks nyata dan spesifik untuk subjek. Dilarang lorem ipsum, "Fitur 1/2/3", nama "Acme", testimoni rekaan generik.
+
+Hindari penanda hasil generator:
+
+- Latar krem hangat + serif kontras tinggi + aksen terakota; latar hitam + satu aksen hijau/oranye neon; tata letak koran penuh garis tipis.
+- Semua konten dipecah jadi kartu identik dengan radius sama dan bayangan abu yang sama; gradasi sebagai hiasan.
+- Label huruf kapital berjarak di atas tiap judul, string meta bertanda titik tengah, label "KATA — pecahan", panah "→" di semua tautan/tombol, font monospace untuk label kecil tanpa alasan.
+- Satu kata di judul diberi warna atau miring berbeda.
+- Penomoran 01/02/03 bila isinya bukan urutan.
+- Animasi masuk geser-naik pada tiap seksi dan transisi hover di setiap kartu. Gerak hanya untuk menarik perhatian satu momen, atau menjawab aksi pengguna.
+- Hitam murni diganti hitam bertint (#0B0B0B/#111) tanpa alasan.
+
+Tipografi dan tata letak:
+
+- Satu atau dua keluarga font, jika dua harus jelas berbeda; skala tipe jelas; panjang baris di bawah 80 karakter; line-height serif sedikit lebih longgar.
+- Font hanya yang tersedia lokal (system stack atau woff2 di \`design/assets\`); pilih tumpukan sistem yang bermakna (mis. Georgia/Charter untuk serif, bukan selalu system-ui).
+- Boleh satu elemen yang berani dan diingat; sisanya tenang. Buang satu hiasan sebelum selesai.
+- Struktur visual (garis, nomor, label) hanya bila membawa informasi.
+
+Kualitas dasar yang wajib:
+
+- Responsif sampai 390 px tanpa gulir horizontal, fokus keyboard terlihat, \`prefers-reduced-motion\` dihormati, kontras teks memadai, \`alt\` pada gambar bermakna.
+- Salin: kata kerja jelas pada tombol ("Pesan kamar", bukan "Kirim"), kalimat aktif, huruf kecil kalimat biasa, tanpa kata promosi kosong.
+
 ## Mengubah desain yang sudah ada
 
 - Untuk perubahan terarah pakai \`design_patch\` (satu elemen per panggilan), bukan menulis ulang halaman.
