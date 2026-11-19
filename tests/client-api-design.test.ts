@@ -5,6 +5,7 @@ import {
   designFrameUrl,
   type DesignComment,
   type DesignResult,
+  type DesignToken,
 } from "../src/client/lib/api";
 
 interface Call {
@@ -372,5 +373,94 @@ describe("klien API komentar desain", () => {
     );
     expect(calls[0]?.init.method).toBe("DELETE");
     expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+  });
+});
+
+describe("klien API token desain", () => {
+  const TOKEN: DesignToken = { name: "--warna-aksen", value: "#2f6fed" };
+
+  test("getDesignTokens GET dengan query repo dan membuang elemen tak sah", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        tokens: [TOKEN, { name: 5 }, { ...TOKEN, value: 7 }, "x", null],
+        mtime: 123,
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    expect(await api.getDesignTokens("a/b c", "repo satu")).toEqual({
+      tokens: [TOKEN],
+      mtime: 123,
+    });
+    expect(calls[0]?.url).toBe("/api/sessions/a%2Fb%20c/design/tokens?repo=repo%20satu");
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.body).toBeUndefined();
+  });
+
+  test("getDesignTokens menerima mtime null saat berkas token tak ada", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ tokens: [], mtime: null }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.getDesignTokens("s1")).toEqual({ tokens: [], mtime: null });
+  });
+
+  test("getDesignTokens menolak respons tanpa daftar token", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ tokens: "x" }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.getDesignTokens("s1")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("getDesignTokens menolak mtime yang bukan angka", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ tokens: [], mtime: "baru" }));
+    const api = createApiClient({ fetch });
+
+    await expect(api.getDesignTokens("s1")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("saveDesignTokens PUT body JSON dengan repo di query", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ tokens: [TOKEN], mtime: 9 }));
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.saveDesignTokens(
+      "s 1",
+      { tokens: [TOKEN], baseMtime: 123 },
+      "web",
+    );
+    expect(hasil).toEqual({ tokens: [TOKEN], mtime: 9 });
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/design/tokens?repo=web");
+    expect(calls[0]?.init.method).toBe("PUT");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      tokens: [TOKEN],
+      baseMtime: 123,
+    });
+  });
+
+  test("saveDesignTokens tak mengirim baseMtime null atau undefined", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ tokens: [], mtime: 1 }));
+    const api = createApiClient({ fetch });
+
+    await api.saveDesignTokens("s1", { tokens: [TOKEN], baseMtime: null });
+    await api.saveDesignTokens("s1", { tokens: [TOKEN] });
+
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ tokens: [TOKEN] });
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({ tokens: [TOKEN] });
+  });
+
+  test("saveDesignTokens melempar galat 409 dari server", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Token berubah sejak dibaca; muat ulang." }, 409),
+    );
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.saveDesignTokens("s1", { tokens: [TOKEN], baseMtime: 1 });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(409);
   });
 });

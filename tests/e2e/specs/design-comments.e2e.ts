@@ -156,6 +156,9 @@ test("komentar desain: tambah, status, kirim ke agent, hapus, Esc berlapis", asy
   // komentarnya ditandai.
   await chip.click();
   await expect(panel).toHaveCount(0);
+  // Kartu info (kanan atas) bisa menutupi pin di tepi kanan elemen lebar;
+  // lipat dulu supaya klik mengenai pin.
+  await info.getByRole("button", { name: "Lipat" }).click();
   await pin.click();
   await expect(panel).toBeVisible();
   await expect(panel.locator(".jk-design-comment")).toHaveAttribute("aria-current", "true");

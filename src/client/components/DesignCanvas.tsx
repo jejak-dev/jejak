@@ -5,6 +5,7 @@ import {
   type ApiClient,
   type DesignComment,
   type DesignResult,
+  type DesignToken,
   type DeviceId,
 } from "../lib/api";
 import {
@@ -49,6 +50,7 @@ import { targetKindOf } from "../lib/shortcuts";
 import { CopyButton } from "./CopyButton";
 import { DesignComments } from "./DesignComments";
 import { DesignFrame } from "./DesignFrame";
+import { DesignTokens } from "./DesignTokens";
 
 export interface DesignCanvasProps {
   api: ApiClient;
@@ -72,6 +74,10 @@ export interface DesignCanvasProps {
   onAddComment?: (input: { slug: string; selector: string; text: string }) => Promise<unknown>;
   onCommentStatus?: (id: string, status: "open" | "done") => void;
   onRemoveComment?: (id: string) => void;
+  /** Token desain beserta aksinya; panel dibuka lewat chip chrome. */
+  tokens?: DesignToken[];
+  tokenError?: string;
+  onSaveTokens?: (tokens: DesignToken[]) => Promise<void>;
 }
 
 interface Override {
@@ -90,7 +96,7 @@ function frameUrl(
   api: ApiClient,
   id: string,
   slug: string,
-  version: number,
+  version: number | string,
   repo: string | undefined,
 ): string {
   return typeof api.designFrameUrl === "function"
@@ -156,6 +162,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const [selectionLabel, setSelectionLabel] = useState("");
   const [infoOpen, setInfoOpen] = useState(true);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [tokensOpen, setTokensOpen] = useState(false);
   const [focusedComment, setFocusedComment] = useState<string | undefined>(undefined);
   const [commentText, setCommentText] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
@@ -175,6 +182,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const lastHoverRef = useRef<{ slug: string; label: string } | undefined>(undefined);
   // Penunggu balasan `shot` per id permintaan; kunci sama dengan pesan frame.
   const shotWaiters = useRef(new Map<string, ShotWaiter>());
+
+  // Cap waktu `tokens.css`; masuk ke versi frame supaya frame memuat ulang
+  // ketika token berubah meski HTML halaman tak berubah.
+  const tokenStamp = design.tokens.mtime ?? 0;
 
   const pages = design.pages.map((page) => {
     const override = overrides[page.slug];
@@ -598,7 +609,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
     // Klik ruang kosong kanvas (di luar frame dan chrome) membuang pilihan.
     if (toolRef.current === "select" && target instanceof Element) {
       const diChrome = target.closest(
-        ".jk-design-frame, .jk-design-frame-label, .jk-design-toolbar, .jk-design-pages, .jk-design-zoom, .jk-design-actions, .jk-design-info, .jk-design-comments, .jk-design-comment-form",
+        ".jk-design-frame, .jk-design-frame-label, .jk-design-toolbar, .jk-design-pages, .jk-design-zoom, .jk-design-actions, .jk-design-info, .jk-design-comments, .jk-design-comment-form, .jk-design-tokens",
       );
       if (diChrome === null) setSelection(undefined);
     }
@@ -814,6 +825,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
     "jk-design-canvas",
     panMode ? "jk-design-pan" : "",
     dragging ? "jk-design-dragging" : "",
+    tokensOpen ? "jk-design-canvas-tokens" : "",
   ]
     .filter((item) => item !== "")
     .join(" ");
@@ -873,7 +885,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
           const src =
             doc === undefined
               ? undefined
-              : frameUrl(api, sessionId, page.slug, doc.mtime, repo);
+              : frameUrl(api, sessionId, page.slug, `${doc.mtime}-${tokenStamp}`, repo);
           return (
             <DesignFrame
               key={rect.slug}
@@ -1051,6 +1063,15 @@ export function DesignCanvas(props: DesignCanvasProps) {
         <button
           type="button"
           class="jk-design-chip"
+          aria-expanded={tokensOpen}
+          title="Token desain"
+          onClick={() => setTokensOpen((open) => !open)}
+        >
+          Token
+        </button>
+        <button
+          type="button"
+          class="jk-design-chip"
           aria-expanded={commentsOpen}
           title="Komentar desain"
           onClick={() => setCommentsOpen((open) => !open)}
@@ -1172,6 +1193,15 @@ export function DesignCanvas(props: DesignCanvasProps) {
             </div>
           )}
         </aside>
+      )}
+
+      {tokensOpen && (
+        <DesignTokens
+          tokens={props.tokens ?? []}
+          error={props.tokenError}
+          onSave={(next) => props.onSaveTokens?.(next) ?? Promise.resolve()}
+          onCancel={() => setTokensOpen(false)}
+        />
       )}
 
       {commentsOpen && (

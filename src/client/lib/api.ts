@@ -441,6 +441,12 @@ export interface DesignComment {
   createdAt: number;
 }
 
+/** Satu token desain: nama variabel CSS dan nilainya. */
+export interface DesignToken {
+  name: string;
+  value: string;
+}
+
 /** Masukan komentar desain baru. */
 export interface DesignCommentInput {
   slug: string;
@@ -502,6 +508,18 @@ function designCommentFrom(value: unknown): DesignComment | undefined {
   if (status !== "open" && status !== "done") return undefined;
   if (typeof createdAt !== "number" || !Number.isFinite(createdAt)) return undefined;
   return { id, slug, selector, text, status, createdAt };
+}
+
+/**
+ * Menyaring satu token desain dari respons server. `undefined` bila
+ * bentuknya salah; elemen tak sah dibuang diam-diam oleh pemanggil.
+ */
+function designTokenFrom(value: unknown): DesignToken | undefined {
+  if (!isRecord(value)) return undefined;
+  const { name, value: isi } = value;
+  if (typeof name !== "string" || name === "") return undefined;
+  if (typeof isi !== "string") return undefined;
+  return { name, value: isi };
 }
 
 export interface RejectChangeInput {
@@ -869,7 +887,7 @@ export interface ApiClient {
   /** Satu halaman desain yang sudah dirakit untuk frame. */
   getDesignPage(id: string, slug: string, repo?: string): Promise<DesignPageDoc>;
   /** URL frame desain; `version` (mtime) membuat iframe memuat ulang. */
-  designFrameUrl(id: string, slug: string, version: number, repo?: string): string;
+  designFrameUrl(id: string, slug: string, version: number | string, repo?: string): string;
   /** Simpan posisi (dan perangkat) halaman yang sudah terdaftar. */
   saveDesignLayout(
     id: string,
@@ -902,6 +920,20 @@ export interface ApiClient {
   ): Promise<DesignComment>;
   /** Hapus satu komentar. */
   deleteDesignComment(id: string, commentId: string, repo?: string): Promise<void>;
+  /** Daftar token desain beserta cap waktu berkasnya. */
+  getDesignTokens(
+    id: string,
+    repo?: string,
+  ): Promise<{ tokens: DesignToken[]; mtime: number | null }>;
+  /**
+   * Simpan daftar token desain. `baseMtime` adalah cap waktu berkas saat
+   * terakhir dibaca; tak dikirim bila null atau undefined.
+   */
+  saveDesignTokens(
+    id: string,
+    input: { tokens: DesignToken[]; baseMtime?: number | null },
+    repo?: string,
+  ): Promise<{ tokens: DesignToken[]; mtime: number }>;
   searchFiles(
     id: string,
     query: string,
@@ -1548,13 +1580,13 @@ function memoryQuery(params: MemoryQuery | undefined): string {  if (params === 
 
 /** Query string dari pasangan yang diberikan; nilai undefined dilewati. */
 /**
- * URL rute frame desain; semua nilai di-encode. `version` (mtime halaman)
- * membedakan URL supaya iframe memuat ulang saat berkas berubah.
+ * URL rute frame desain; semua nilai di-encode. `version` (mtime halaman dan
+ * token) membedakan URL supaya iframe memuat ulang saat berkas berubah.
  */
 export function designFrameUrl(
   id: string,
   slug: string,
-  version: number,
+  version: number | string,
   repo?: string,
 ): string {
   const query = queryString([
@@ -2645,6 +2677,51 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         `/api/sessions/${encodeURIComponent(id)}/design/comments/${encodeURIComponent(commentId)}${query}`,
         {},
       );
+    },
+
+    async getDesignTokens(id, repo) {
+      const query = queryString([["repo", repo]]);
+      const data = await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/design/tokens${query}`,
+      );
+      const raw = field(data, "tokens");
+      if (!Array.isArray(raw)) throw invalidResponse();
+      const tokens: DesignToken[] = [];
+      for (const item of raw) {
+        const token = designTokenFrom(item);
+        if (token !== undefined) tokens.push(token);
+      }
+      const mtime = field(data, "mtime");
+      // mtime boleh null (berkas token belum ada); angka lain tak sah.
+      if (mtime !== null && (typeof mtime !== "number" || !Number.isFinite(mtime))) {
+        throw invalidResponse();
+      }
+      return { tokens, mtime: mtime ?? null };
+    },
+
+    async saveDesignTokens(id, input, repo) {
+      const query = queryString([["repo", repo]]);
+      const body: { tokens: DesignToken[]; baseMtime?: number } = { tokens: input.tokens };
+      // baseMtime null/undefined berarti "tak tahu"; field tak dikirim.
+      if (input.baseMtime !== undefined && input.baseMtime !== null) {
+        body.baseMtime = input.baseMtime;
+      }
+      const data = await request(
+        "PUT",
+        `/api/sessions/${encodeURIComponent(id)}/design/tokens${query}`,
+        body,
+      );
+      const raw = field(data, "tokens");
+      if (!Array.isArray(raw)) throw invalidResponse();
+      const tokens: DesignToken[] = [];
+      for (const item of raw) {
+        const token = designTokenFrom(item);
+        if (token !== undefined) tokens.push(token);
+      }
+      const mtime = field(data, "mtime");
+      if (typeof mtime !== "number" || !Number.isFinite(mtime)) throw invalidResponse();
+      return { tokens, mtime };
     },
 
     async searchFiles(id, query, options) {

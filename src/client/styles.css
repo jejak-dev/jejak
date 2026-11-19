@@ -11401,6 +11401,132 @@ h2.jk-md-heading {
   font-size: 12px;
 }
 
+/* Token desain: panel melayang di kiri bawah; komentar tetap di kanan bawah. */
+.jk-design-tokens {
+  position: absolute;
+  /* Di kanan toolbar kiri (selebar ~48px) agar tidak menutupinya. */
+  left: 64px;
+  bottom: 12px;
+  width: 280px;
+  max-height: 60%;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--t2);
+  font-size: 12px;
+}
+
+/* Panel token dan kontrol zoom tak boleh saling menutupi. */
+.jk-design-canvas-tokens .jk-design-zoom {
+  left: 304px;
+}
+
+.jk-design-tokens-empty {
+  margin: 0;
+  color: var(--t3);
+}
+
+.jk-design-tokens-error {
+  margin: 0 0 6px;
+  color: var(--bad);
+}
+
+.jk-design-tokens-stale {
+  margin: 0 0 6px;
+  color: var(--warn);
+}
+
+.jk-design-tokens-group + .jk-design-tokens-group {
+  margin-top: 8px;
+}
+
+.jk-design-tokens-group-title {
+  margin: 0 0 4px;
+  color: var(--t3);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.jk-design-tokens-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jk-design-token {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jk-design-token-name {
+  color: var(--t1);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jk-design-token-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.jk-design-token-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+}
+
+.jk-design-token-value {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--t1);
+  font: inherit;
+  font-size: 12px;
+}
+
+.jk-design-token-value[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.jk-design-token-invalid {
+  margin: 0;
+  color: var(--bad);
+  font-size: 12px;
+}
+
+.jk-design-tokens-add {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.jk-design-tokens-footer {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+
 /* Mode fokus: kanvas mengisi seluruh badan, baris pesan melayang di bawah. */
 
 .jk-main.is-design-focus > .jk-top {
