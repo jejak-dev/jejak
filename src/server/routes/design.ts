@@ -10,6 +10,7 @@ import {
 } from "../design/comments";
 import type { CaptureBroker, CaptureFailure } from "../design/capture-broker";
 import { CaptureError, NOT_FOUND } from "../design/capture-broker";
+import { DesignDocError, syncDesignDoc } from "../design/design-doc";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignTokenError, readTokens, writeTokens, type DesignToken } from "../design/tokens";
 import { DesignWriteError, initDesign, saveLayout } from "../design/write";
@@ -49,6 +50,9 @@ function errorResponse(error: unknown): Response {
     return jsonResponse(error.status, { error: error.message });
   }
   if (error instanceof DesignTokenError) {
+    return jsonResponse(error.status, { error: error.message });
+  }
+  if (error instanceof DesignDocError) {
     return jsonResponse(error.status, { error: error.message });
   }
   if (error instanceof DesignError) {
@@ -128,6 +132,19 @@ function parseTokensBody(body: unknown): { tokens: DesignToken[]; baseMtime?: nu
   return { tokens: record.tokens as DesignToken[], ...(baseMtime === undefined ? {} : { baseMtime }) };
 }
 
+/** Body sinkronisasi dokumen: kosong berarti default; tak ada isi lain. */
+function parseDocBody(body: unknown): void {
+  if (body === undefined || body === null) return;
+  let input: unknown = body;
+  if (typeof body === "string") {
+    if (body.trim() === "") return;
+    input = parseJsonBody(body);
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new DesignDocError("Body permintaan harus berupa objek.", 400);
+  }
+}
+
 /** Body init opsional: kosong berarti default; `tracked` harus boolean. */
 function parseInitBody(body: unknown): { tracked?: boolean } {
   if (body === undefined || body === null) return {};
@@ -197,6 +214,17 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
   const audit = options.audit;
   const captures = options.captures;
   const auditEntry = (entry: AuditEntryInput): void => recordAudit(audit, entry);
+  /**
+   * Sinkronisasi DESIGN.md otomatis: berjalan diam-diam, galatnya ditelan
+   * sehingga aksi utama (simpan token, tata letak, perancah) tak gagal.
+   */
+  const syncDocDiam = async (root: string): Promise<void> => {
+    try {
+      await syncDesignDoc(root);
+    } catch {
+      // Kegagalan sinkronisasi diabaikan.
+    }
+  };
 
   const plugin = new Elysia({ name: "jejak-design-routes" })
     .get("/api/sessions/:id/design", async ({ params, query }) => {
@@ -411,6 +439,7 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
           const root = await resolveRepoRoot(session, query.repo, workspaces);
           const { mtime } = await writeTokens(root, input);
           const read = await readTokens(root);
+          await syncDocDiam(root);
           auditEntry({
             kind: "berkas",
             sessionId: session.id,
@@ -441,6 +470,7 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
           const input = parseJsonBody(body);
           const root = await resolveRepoRoot(session, query.repo, workspaces);
           const result = await saveLayout(root, input);
+          await syncDocDiam(root);
           auditEntry({
             kind: "berkas",
             sessionId: session.id,
@@ -448,6 +478,33 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
             meta: { aksi: "design-layout", halaman: result.pages },
           });
           return jsonResponse(200, { ok: true, updated: result.pages });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/sessions/:id/design/doc",
+      async ({ params, query, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        try {
+          parseDocBody(body);
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          const result = await syncDesignDoc(root);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Dokumen desain diperbarui",
+            meta: { aksi: "design-doc" },
+          });
+          return jsonResponse(200, { changed: result.changed });
         } catch (error) {
           return errorResponse(error);
         }
@@ -471,6 +528,10 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
           const input = parseInitBody(body);
           const root = await resolveRepoRoot(session, query.repo, workspaces);
           const result = await initDesign(root, input);
+          // Blok otomatis ditambahkan hanya bila DESIGN.md baru dibuat.
+          if (result.created.includes("design/DESIGN.md")) {
+            await syncDocDiam(root);
+          }
           auditEntry({
             kind: "berkas",
             sessionId: session.id,

@@ -934,6 +934,8 @@ export interface ApiClient {
     input: { tokens: DesignToken[]; baseMtime?: number | null },
     repo?: string,
   ): Promise<{ tokens: DesignToken[]; mtime: number }>;
+  /** Perbarui blok otomatis `design/DESIGN.md` dengan token dan halaman terkini. */
+  syncDesignDoc(id: string, repo?: string): Promise<{ changed: boolean }>;
   searchFiles(
     id: string,
     query: string,
@@ -2722,6 +2724,19 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const mtime = field(data, "mtime");
       if (typeof mtime !== "number" || !Number.isFinite(mtime)) throw invalidResponse();
       return { tokens, mtime };
+    },
+
+    async syncDesignDoc(id, repo) {
+      const query = queryString([["repo", repo]]);
+      // Penjaga server mewajibkan content-type JSON; body kosong cukup.
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/design/doc${query}`,
+        {},
+      );
+      const changed = field(data, "changed");
+      if (typeof changed !== "boolean") throw invalidResponse();
+      return { changed };
     },
 
     async searchFiles(id, query, options) {

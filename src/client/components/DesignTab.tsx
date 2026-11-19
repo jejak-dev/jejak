@@ -168,6 +168,7 @@ export function DesignTab(props: DesignTabProps) {
             // frame memuat ulang `tokens.css` yang baru.
             await refresh();
           }}
+          onSyncDoc={async () => api.syncDesignDoc(sessionId, repo)}
         />
       </div>
     );

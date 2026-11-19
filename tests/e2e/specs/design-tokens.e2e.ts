@@ -62,6 +62,19 @@ async function isiTokens(): Promise<string> {
   }
 }
 
+/** Isi blok otomatis dalam `design/DESIGN.md`; "" bila blok belum ada. */
+async function isiBlokOtomatis(): Promise<string> {
+  try {
+    const isi = await readFile(join(dir, "design", "DESIGN.md"), "utf8");
+    const awal = isi.indexOf("<!-- jejak:auto:start -->");
+    const akhir = isi.indexOf("<!-- jejak:auto:end -->");
+    if (awal === -1 || akhir === -1) return "";
+    return isi.slice(awal, akhir);
+  } catch {
+    return "";
+  }
+}
+
 test("token desain: ubah, simpan, lihat di frame, tambah, hapus, tolak nilai tak sah", async ({
   page,
 }) => {
@@ -138,6 +151,13 @@ test("token desain: ubah, simpan, lihat di frame, tambah, hapus, tolak nilai tak
   await expect(simpan).toHaveText("Simpan token (1)");
   await simpan.click();
   await expect.poll(isiTokens, { timeout: 15_000 }).toContain("--warna-kustom: #00ff00");
+
+  // Blok otomatis DESIGN.md memuat token baru.
+  await expect.poll(isiBlokOtomatis, { timeout: 15_000 }).toContain("--warna-kustom");
+
+  // Tombol perbarui DESIGN.md menampilkan status.
+  await panel.getByRole("button", { name: "Perbarui DESIGN.md" }).click();
+  await expect(panel.getByRole("status")).toHaveText(/DESIGN\.md (diperbarui|sudah terbaru)\./);
 
   // Hapus token itu lagi.
   const baris = panel.locator("li", { hasText: "--warna-kustom" });

@@ -464,3 +464,47 @@ describe("klien API token desain", () => {
     expect((caught as ApiError).status).toBe(409);
   });
 });
+
+describe("klien API dokumen desain", () => {
+  test("syncDesignDoc POST body JSON dengan repo di query", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ changed: true }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.syncDesignDoc("s 1", "web")).toEqual({ changed: true });
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/design/doc?repo=web");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(calls[0]?.init.body).toBe("{}");
+  });
+
+  test("syncDesignDoc tanpa repo tidak mengirim query", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ changed: false }));
+    const api = createApiClient({ fetch });
+
+    expect(await api.syncDesignDoc("s1")).toEqual({ changed: false });
+    expect(calls[0]?.url).toBe("/api/sessions/s1/design/doc");
+  });
+
+  test("syncDesignDoc menolak respons tanpa changed boolean", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({}));
+    const api = createApiClient({ fetch });
+
+    await expect(api.syncDesignDoc("s1")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("syncDesignDoc melempar galat server", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Penyuntingan berkas dimatikan." }, 403),
+    );
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.syncDesignDoc("s1");
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(403);
+  });
+});

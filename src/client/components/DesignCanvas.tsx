@@ -78,6 +78,8 @@ export interface DesignCanvasProps {
   tokens?: DesignToken[];
   tokenError?: string;
   onSaveTokens?: (tokens: DesignToken[]) => Promise<void>;
+  /** Perbarui blok otomatis `DESIGN.md`; tombol panel token memakainya. */
+  onSyncDoc?: () => Promise<{ changed: boolean }>;
 }
 
 interface Override {
@@ -1201,6 +1203,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
           error={props.tokenError}
           onSave={(next) => props.onSaveTokens?.(next) ?? Promise.resolve()}
           onCancel={() => setTokensOpen(false)}
+          onSyncDoc={props.onSyncDoc}
         />
       )}
 

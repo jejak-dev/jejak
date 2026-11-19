@@ -17,10 +17,17 @@ export interface DesignTokensProps {
   onSave: (tokens: DesignToken[]) => Promise<void>;
   /** Tutup panel tanpa menyimpan. */
   onCancel: () => void;
+  /**
+   * Perbarui blok otomatis `DESIGN.md`. Bila tak ada, tombol tak tampil.
+   */
+  onSyncDoc?: () => Promise<{ changed: boolean }>;
 }
 
 const EMPTY_TEXT = "Belum ada token. Tambahkan variabel CSS seperti --warna-aksen.";
 const STALE_TEXT = "Token berubah di tempat lain.";
+const DOC_UPDATED_TEXT = "DESIGN.md diperbarui.";
+const DOC_CURRENT_TEXT = "DESIGN.md sudah terbaru.";
+const DOC_FAILED_TEXT = "DESIGN.md tidak dapat diperbarui.";
 const INVALID_NAME = "Nama token tidak valid.";
 const INVALID_VALUE = "Nilai token tidak valid.";
 const DUPLICATE_NAME = "Nama token sudah ada.";
@@ -48,6 +55,9 @@ export function DesignTokens(props: DesignTokensProps) {
   const [newName, setNewName] = useState("");
   const [newValue, setNewValue] = useState("");
   const [addError, setAddError] = useState<string | undefined>(undefined);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<string | undefined>(undefined);
+  const [syncError, setSyncError] = useState<string | undefined>(undefined);
 
   // Token tersimpan yang jadi dasar draf; dasar dirty dihitung terhadap ini.
   const baseRef = useRef<DesignToken[]>(tokens);
@@ -127,6 +137,25 @@ export function DesignTokens(props: DesignTokensProps) {
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** Perbarui DESIGN.md; hasil ditunjukkan sebagai status atau galat. */
+  const perbaruiDoc = async (): Promise<void> => {
+    const sinkron = props.onSyncDoc;
+    if (sinkron === undefined || syncBusy) return;
+    setSyncBusy(true);
+    setSyncStatus(undefined);
+    setSyncError(undefined);
+    try {
+      const hasil = await sinkron();
+      setSyncStatus(hasil.changed ? DOC_UPDATED_TEXT : DOC_CURRENT_TEXT);
+    } catch (caught) {
+      setSyncError(
+        caught instanceof Error && caught.message !== "" ? caught.message : DOC_FAILED_TEXT,
+      );
+    } finally {
+      setSyncBusy(false);
     }
   };
 
@@ -247,7 +276,28 @@ export function DesignTokens(props: DesignTokensProps) {
         <button type="button" class="jk-design-chip" onClick={props.onCancel}>
           Batalkan
         </button>
+        {props.onSyncDoc !== undefined && (
+          <button
+            type="button"
+            class="jk-design-chip"
+            disabled={syncBusy}
+            onClick={() => void perbaruiDoc()}
+          >
+            Perbarui DESIGN.md
+          </button>
+        )}
       </div>
+
+      {syncStatus !== undefined && (
+        <p class="jk-design-tokens-stale" role="status">
+          {syncStatus}
+        </p>
+      )}
+      {syncError !== undefined && (
+        <p class="jk-design-tokens-error" role="alert">
+          {syncError}
+        </p>
+      )}
     </aside>
   );
 }
