@@ -10955,6 +10955,52 @@ h2.jk-md-heading {
   color: var(--t2);
 }
 
+/* Chip varian di samping judul frame. */
+.jk-design-frame-variant {
+  padding: 0 6px;
+  border: 1px solid var(--line-2);
+  border-radius: 999px;
+  color: var(--t3);
+  font-size: 12px;
+}
+
+/* Kotak kelompok halaman: garis putus-putus di bawah frame. */
+.jk-design-group {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--link) 4%, transparent);
+  pointer-events: none;
+}
+
+.jk-design-group-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  color: var(--t3);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Dialog buat varian: kolom nama dan saran siap pakai. */
+.jk-design-variant {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.jk-design-variant-input {
+  font-size: 12.5px;
+}
+
+.jk-design-variant-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .jk-design-frame-meta {
   color: var(--t3);
 }

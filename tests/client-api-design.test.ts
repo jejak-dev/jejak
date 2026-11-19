@@ -465,6 +465,69 @@ describe("klien API token desain", () => {
   });
 });
 
+describe("klien API varian desain", () => {
+  const HALAMAN = { slug: "beranda-gelap", title: "Beranda (gelap)", x: 1520, y: 0 };
+
+  test("createDesignVariant POST body JSON dengan repo di query", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ page: HALAMAN }));
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.createDesignVariant(
+      "s 1",
+      { slug: "beranda", variant: "gelap" },
+      "web",
+    );
+    expect(hasil).toEqual({ page: HALAMAN });
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/design/variant?repo=web");
+    expect(calls[0]?.init.method).toBe("POST");
+    // Penjaga server menolak POST tanpa content-type JSON (415).
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      slug: "beranda",
+      variant: "gelap",
+    });
+  });
+
+  test("createDesignVariant meneruskan group bila ada", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ page: HALAMAN }));
+    const api = createApiClient({ fetch });
+
+    await api.createDesignVariant("s1", { slug: "beranda", variant: "gelap", group: "Utama" });
+    expect(calls[0]?.url).toBe("/api/sessions/s1/design/variant");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      slug: "beranda",
+      variant: "gelap",
+      group: "Utama",
+    });
+  });
+
+  test("createDesignVariant menolak respons tanpa halaman sah", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({}));
+    const api = createApiClient({ fetch });
+
+    await expect(
+      api.createDesignVariant("s1", { slug: "beranda", variant: "gelap" }),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("createDesignVariant melempar galat server", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ error: "Halaman sumber tidak ditemukan." }, 404),
+    );
+    const api = createApiClient({ fetch });
+
+    let caught: unknown;
+    try {
+      await api.createDesignVariant("s1", { slug: "hilang", variant: "gelap" });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(404);
+    expect((caught as ApiError).message).toBe("Halaman sumber tidak ditemukan.");
+  });
+});
+
 describe("klien API dokumen desain", () => {
   test("syncDesignDoc POST body JSON dengan repo di query", async () => {
     const { fetch, calls } = fakeFetch(() => jsonResponse({ changed: true }));

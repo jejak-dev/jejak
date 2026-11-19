@@ -1,11 +1,13 @@
 import type { DeviceId } from "../lib/api";
 import type { Rect } from "../lib/design-canvas";
 import { DEVICE_IDS, deviceLabel } from "../lib/design-ui";
-import { Dropdown } from "./Dropdown";
+import { Dropdown, type DropdownSection } from "./Dropdown";
 
 export interface DesignFrameProps {
   title: string;
   route?: string;
+  /** Label varian halaman (mis. "gelap"); chip kecil di samping judul. */
+  variant?: string;
   device: DeviceId;
   rect: Rect;
   zoom: number;
@@ -22,6 +24,8 @@ export interface DesignFrameProps {
   onLabelPointerUp: (event: PointerEvent) => void;
   onDevice: (device: DeviceId) => void;
   onReload: () => void;
+  /** Minta pembuatan varian baru dari halaman ini. */
+  onCreateVariant?: () => void;
   /** Pointer meninggalkan pembungkus frame; dipakai alat Pilih. */
   onPointerLeave?: () => void;
   setFrameRef: (element: HTMLIFrameElement | null) => void;
@@ -32,12 +36,47 @@ function isDeviceId(value: string): value is DeviceId {
 }
 
 /**
+ * Judul tanpa sufiks varian. Server menamai halaman varian sebagai
+ * "Judul (varian)"; di label kanvas varian tampil sebagai chip terpisah.
+ */
+function judulTanpaVarian(title: string, variant: string | undefined): string {
+  if (variant === undefined || variant === "") return title;
+  const sufiks = ` (${variant})`;
+  return title.endsWith(sufiks) ? title.slice(0, -sufiks.length) : title;
+}
+
+/**
  * Satu frame di kanvas: label di atas (ukuran layar tetap lewat
  * `scale(1/zoom)`) dan kotak berukuran preset perangkat. Hanya memuat iframe
  * saat hidup; selain itu kotak penampung berjudul.
  */
 export function DesignFrame(props: DesignFrameProps) {
   const { title, route, device, rect, zoom, live, missing, src, warnings } = props;
+  const varian = props.variant;
+  const labelJudul = judulTanpaVarian(title, varian);
+
+  const sections: DropdownSection[] = [
+    {
+      title: "Perangkat",
+      value: device,
+      options: DEVICE_IDS.map((id) => ({ value: id, label: deviceLabel(id) })),
+      onSelect: (value) => {
+        if (isDeviceId(value)) props.onDevice(value);
+      },
+    },
+    {
+      title: "Frame",
+      options: [{ value: "reload", label: "Segarkan frame" }],
+      onSelect: () => props.onReload(),
+    },
+  ];
+  if (props.onCreateVariant !== undefined) {
+    sections.push({
+      title: "Varian",
+      options: [{ value: "create", label: "Buat varian…" }],
+      onSelect: () => props.onCreateVariant?.(),
+    });
+  }
 
   return (
     <>
@@ -53,7 +92,10 @@ export function DesignFrame(props: DesignFrameProps) {
         onPointerUp={props.onLabelPointerUp}
         onPointerCancel={props.onLabelPointerUp}
       >
-        <span class="jk-design-frame-title">{title}</span>
+        <span class="jk-design-frame-title">{labelJudul}</span>
+        {varian !== undefined && varian !== "" && (
+          <span class="jk-design-frame-variant">{varian}</span>
+        )}
         <span class="jk-design-frame-meta">{deviceLabel(device)}</span>
         {route !== undefined && route !== "" && (
           <span class="jk-design-frame-meta">{route}</span>
@@ -68,21 +110,7 @@ export function DesignFrame(props: DesignFrameProps) {
           ariaLabel={`Menu frame ${title}`}
           placement="down"
           align="start"
-          sections={[
-            {
-              title: "Perangkat",
-              value: device,
-              options: DEVICE_IDS.map((id) => ({ value: id, label: deviceLabel(id) })),
-              onSelect: (value) => {
-                if (isDeviceId(value)) props.onDevice(value);
-              },
-            },
-            {
-              title: "Frame",
-              options: [{ value: "reload", label: "Segarkan frame" }],
-              onSelect: () => props.onReload(),
-            },
-          ]}
+          sections={sections}
         />
       </div>
 

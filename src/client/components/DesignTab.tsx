@@ -169,6 +169,11 @@ export function DesignTab(props: DesignTabProps) {
             await refresh();
           }}
           onSyncDoc={async () => api.syncDesignDoc(sessionId, repo)}
+          onCreateVariant={async (slug, variant) => {
+            await api.createDesignVariant(sessionId, { slug, variant }, repo);
+            // Muat ulang model desain supaya halaman baru ikut ke kanvas.
+            await refresh();
+          }}
         />
       </div>
     );

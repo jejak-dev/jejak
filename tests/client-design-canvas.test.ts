@@ -11,11 +11,13 @@ import {
   fitView,
   frameHeight,
   frameRects,
+  groupBoxes,
   panBy,
   pickLive,
   screenToWorld,
   snap,
   stepZoom,
+  variantSuggestions,
   visibleSlugs,
   wheelAction,
   worldToScreen,
@@ -140,6 +142,100 @@ describe("boundsOf", () => {
       width: 250,
       height: 150,
     });
+  });
+});
+
+describe("groupBoxes", () => {
+  const rects = [
+    { slug: "beranda", ...rect(0, 0, 100, 100) },
+    { slug: "beranda-gelap", ...rect(200, 0, 100, 100) },
+    { slug: "profil", ...rect(0, 300, 100, 100) },
+    { slug: "masuk", ...rect(200, 300, 100, 100) },
+  ];
+
+  test("kelompok dengan satu anggota tidak digambar", () => {
+    const kotak = groupBoxes(
+      [
+        { slug: "beranda", group: "Beranda" },
+        { slug: "profil", group: "Profil" },
+      ],
+      rects,
+    );
+    expect(kotak).toEqual([]);
+  });
+
+  test("kelompok dengan dua anggota digambar satu kotak", () => {
+    const kotak = groupBoxes(
+      [
+        { slug: "beranda", group: "Beranda" },
+        { slug: "beranda-gelap", group: "Beranda" },
+      ],
+      rects,
+      0,
+    );
+    expect(kotak).toEqual([
+      {
+        group: "Beranda",
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 100,
+        slugs: ["beranda", "beranda-gelap"],
+      },
+    ]);
+  });
+
+  test("dua kelompok jadi dua kotak berurutan kemunculan pertama", () => {
+    const kotak = groupBoxes(
+      [
+        { slug: "beranda", group: "Beranda" },
+        { slug: "masuk", group: "Masuk" },
+        { slug: "beranda-gelap", group: "Beranda" },
+        { slug: "profil", group: "Masuk" },
+      ],
+      rects,
+      0,
+    );
+    expect(kotak.map((item) => item.group)).toEqual(["Beranda", "Masuk"]);
+    expect(kotak[0]?.slugs).toEqual(["beranda", "beranda-gelap"]);
+    expect(kotak[1]?.slugs).toEqual(["masuk", "profil"]);
+  });
+
+  test("padding menambah semua sisi", () => {
+    const kotak = groupBoxes(
+      [
+        { slug: "beranda", group: "Beranda" },
+        { slug: "beranda-gelap", group: "Beranda" },
+      ],
+      rects,
+      24,
+    );
+    expect(kotak[0]).toEqual({
+      group: "Beranda",
+      x: -24,
+      y: -24,
+      width: 300 + 48,
+      height: 100 + 48,
+      slugs: ["beranda", "beranda-gelap"],
+    });
+  });
+
+  test("halaman tanpa kelompok diabaikan", () => {
+    const kotak = groupBoxes(
+      [
+        { slug: "beranda", group: "Beranda" },
+        { slug: "beranda-gelap" },
+        { slug: "profil", group: "Beranda" },
+      ],
+      rects,
+      0,
+    );
+    expect(kotak).toHaveLength(1);
+    expect(kotak[0]?.slugs).toEqual(["beranda", "profil"]);
+  });
+
+  test("saran varian berisi empat nama baku", () => {
+    expect(variantSuggestions).toEqual(["gelap", "kosong", "galat", "memuat"]);
   });
 });
 

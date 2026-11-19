@@ -113,6 +113,72 @@ export function boundsOf(rects: readonly Rect[]): Rect | undefined {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
+/** Halaman yang punya kelompok; dipakai untuk menghitung kotak kelompok. */
+export interface GroupPage {
+  slug: string;
+  group?: string;
+}
+
+/** Kotak kelompok halaman: satu kubus pembungkus seluruh anggotanya. */
+export interface GroupBox {
+  group: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Slug anggota kelompok, urut kemunculan. */
+  slugs: string[];
+}
+
+/**
+ * Kotak kelompok halaman. Hanya kelompok dengan dua anggota atau lebih yang
+ * digambar; kelompok bernama sama selalu jadi satu kotak. Kotak dilebihkan
+ * `pad` di semua sisi supaya tidak menempel frame di dalamnya.
+ */
+export function groupBoxes(
+  pages: readonly GroupPage[],
+  rects: readonly ({ slug: string } & Rect)[],
+  pad = 24,
+): GroupBox[] {
+  const bySlug = new Map(rects.map((rect) => [rect.slug, rect]));
+  const urutan: string[] = [];
+  const anggota = new Map<string, string[]>();
+  for (const page of pages) {
+    const group = page.group;
+    if (group === undefined || group === "") continue;
+    const list = anggota.get(group);
+    if (list === undefined) {
+      anggota.set(group, [page.slug]);
+      urutan.push(group);
+      continue;
+    }
+    list.push(page.slug);
+  }
+
+  const kotak: GroupBox[] = [];
+  for (const group of urutan) {
+    const slugs = anggota.get(group) ?? [];
+    if (slugs.length < 2) continue;
+    const rectAnggota = slugs
+      .map((slug) => bySlug.get(slug))
+      .filter((rect): rect is { slug: string } & Rect => rect !== undefined);
+    const batas = boundsOf(rectAnggota);
+    if (batas === undefined) continue;
+    kotak.push({
+      group,
+      x: batas.x - pad,
+      y: batas.y - pad,
+      width: batas.width + pad * 2,
+      height: batas.height + pad * 2,
+      slugs,
+    });
+  }
+  return kotak;
+}
+
+/** Saran nama varian yang sering dipakai. */
+export const variantSuggestions: readonly string[] = ["gelap", "kosong", "galat", "memuat"];
+
 /** Tampilkan semua frame: zoom paling besar 1, dipusatkan di viewport. */
 export function fitView(rects: readonly Rect[], viewport: Size, padding = 48): View {
   const bounds = boundsOf(rects);

@@ -12,6 +12,7 @@ import {
   centerOn,
   fitView,
   frameRects,
+  groupBoxes,
   panBy,
   pickLive,
   snap,
@@ -51,6 +52,7 @@ import { CopyButton } from "./CopyButton";
 import { DesignComments } from "./DesignComments";
 import { DesignFrame } from "./DesignFrame";
 import { DesignTokens } from "./DesignTokens";
+import { DesignVariantDialog } from "./DesignVariantDialog";
 
 export interface DesignCanvasProps {
   api: ApiClient;
@@ -80,6 +82,8 @@ export interface DesignCanvasProps {
   onSaveTokens?: (tokens: DesignToken[]) => Promise<void>;
   /** Perbarui blok otomatis `DESIGN.md`; tombol panel token memakainya. */
   onSyncDoc?: () => Promise<{ changed: boolean }>;
+  /** Buat varian baru dari halaman sumber; kanvas memuat ulang model desain. */
+  onCreateVariant?: (slug: string, variant: string) => Promise<void>;
 }
 
 interface Override {
@@ -169,6 +173,8 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const [commentText, setCommentText] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentLocalError, setCommentLocalError] = useState<string | undefined>(undefined);
+  /** Slug halaman yang sedang dibuat variannya; undefined berarti dialog tutup. */
+  const [variantSlug, setVariantSlug] = useState<string | undefined>(undefined);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -880,6 +886,27 @@ export function DesignCanvas(props: DesignCanvasProps) {
           />
         )}
 
+        {groupBoxes(pages, rects).map((box) => (
+          <div
+            key={box.group}
+            class="jk-design-group"
+            style={{
+              left: `${box.x}px`,
+              top: `${box.y}px`,
+              width: `${box.width}px`,
+              height: `${box.height}px`,
+            }}
+            aria-hidden="true"
+          >
+            <span
+              class="jk-design-group-label"
+              style={{ transform: `scale(${1 / view.zoom}) translateY(-100%)` }}
+            >
+              {box.group}
+            </span>
+          </div>
+        ))}
+
         {rects.map((rect) => {
           const page = pageBySlug.get(rect.slug);
           if (page === undefined) return null;
@@ -893,6 +920,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
               key={rect.slug}
               title={page.title}
               route={page.route}
+              variant={page.variant}
               device={page.device}
               rect={rect as Rect}
               zoom={view.zoom}
@@ -905,6 +933,11 @@ export function DesignCanvas(props: DesignCanvasProps) {
               onLabelPointerUp={onLabelUp}
               onDevice={(device) => onDevice(rect.slug, device)}
               onReload={() => reloadFrame(rect.slug)}
+              onCreateVariant={
+                props.onCreateVariant === undefined
+                  ? undefined
+                  : () => setVariantSlug(rect.slug)
+              }
               onPointerLeave={() => setHover(undefined)}
               setFrameRef={frameRefFor(rect.slug)}
             />
@@ -1219,6 +1252,17 @@ export function DesignCanvas(props: DesignCanvasProps) {
           onQuote={props.onQuote}
           onSetStatus={(id, status) => props.onCommentStatus?.(id, status)}
           onRemove={(id) => props.onRemoveComment?.(id)}
+        />
+      )}
+
+      {variantSlug !== undefined && props.onCreateVariant !== undefined && (
+        <DesignVariantDialog
+          sourceTitle={pageBySlug.get(variantSlug)?.title ?? variantSlug}
+          onCreate={async (variant) => {
+            await props.onCreateVariant?.(variantSlug, variant);
+            setVariantSlug(undefined);
+          }}
+          onCancel={() => setVariantSlug(undefined)}
         />
       )}
 

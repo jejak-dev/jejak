@@ -431,6 +431,21 @@ export interface DesignLayoutPage {
   device?: DeviceId;
 }
 
+/** Input pembuatan varian: halaman sumber, label varian, dan kelompok. */
+export interface DesignVariantInput {
+  slug: string;
+  variant: string;
+  group?: string;
+}
+
+/** Halaman varian yang baru dibuat server. */
+export interface DesignVariantPage {
+  slug: string;
+  title: string;
+  x: number;
+  y: number;
+}
+
 /** Satu komentar pengguna pada elemen halaman desain. */
 export interface DesignComment {
   id: string;
@@ -894,6 +909,12 @@ export interface ApiClient {
     pages: DesignLayoutPage[],
     repo?: string,
   ): Promise<{ ok: true; updated: number }>;
+  /** Buat varian halaman dari halaman sumber yang sudah ada. */
+  createDesignVariant(
+    id: string,
+    input: DesignVariantInput,
+    repo?: string,
+  ): Promise<{ page: DesignVariantPage }>;
   /** Buat perancah `design/` bila belum ada. */
   initDesign(
     id: string,
@@ -2606,6 +2627,23 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const updated = field(data, "updated");
       if (typeof updated !== "number" || !Number.isFinite(updated)) throw invalidResponse();
       return { ok: true, updated };
+    },
+
+    async createDesignVariant(id, input, repo) {
+      const query = queryString([["repo", repo]]);
+      // Server mewajibkan content-type JSON pada POST ini.
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/design/variant${query}`,
+        input,
+      );
+      const page = field(data, "page");
+      if (!isRecord(page)) throw invalidResponse();
+      const { slug, title, x, y } = page;
+      if (typeof slug !== "string" || typeof title !== "string") throw invalidResponse();
+      if (typeof x !== "number" || !Number.isFinite(x)) throw invalidResponse();
+      if (typeof y !== "number" || !Number.isFinite(y)) throw invalidResponse();
+      return { page: { slug, title, x, y } };
     },
 
     async initDesign(id, repo, options) {
