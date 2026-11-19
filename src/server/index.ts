@@ -467,6 +467,10 @@ export function createApp(options: CreateAppOptions = {}) {
       resolve: () => browserGate.get(),
       ...(options.audit === undefined ? {} : { audit: options.audit }),
     },
+    design: {
+      editEnabled: () => env.JEJAK_FILE_EDIT?.trim() !== "0",
+      ...(options.audit === undefined ? {} : { audit: options.audit }),
+    },
     goalReporter: (sessionId, report) => goalReporter.report(sessionId, report),
     goalActive: (sessionId) => goalReporter.hasGoal(sessionId),
     mcpUrl: options.mcpUrl,

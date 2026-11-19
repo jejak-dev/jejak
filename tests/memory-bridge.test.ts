@@ -377,6 +377,33 @@ describe("createMemoryBridge + workspace", () => {
   });
 });
 
+describe("createMemoryBridge + design", () => {
+  test("tool dan indexLine menyebut design_patch saat opsi design ada", async () => {
+    const { bridge } = createMemoryBridge({
+      service,
+      design: { editEnabled: () => true },
+    });
+    const opened = await bridge.open({ sessionId: "s_design_ada", cwd: dir });
+    try {
+      expect(opened.memory.tools).toContain("design_patch");
+      expect(opened.memory.indexLine).toContain("design_patch");
+    } finally {
+      opened.close();
+    }
+  });
+
+  test("tanpa opsi design tidak ada design_patch", async () => {
+    const { bridge } = createMemoryBridge({ service });
+    const opened = await bridge.open({ sessionId: "s_design_tidak", cwd: dir });
+    try {
+      expect(opened.memory.tools).not.toContain("design_patch");
+      expect(opened.memory.indexLine).not.toContain("design_patch");
+    } finally {
+      opened.close();
+    }
+  });
+});
+
 describe("createMemoryBridge + browser", () => {
   /** Manajer browser palsu: hanya snapshot dan daftar tab yang dipakai. */
   function managerPalsu(): BrowserManager {

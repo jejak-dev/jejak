@@ -152,7 +152,11 @@ describe("alur JSON-RPC", () => {
     const tools = ((await listed.json()) as {
       result: { tools: { name: string; inputSchema: Record<string, unknown> }[] };
     }).result.tools;
-    expect(tools.map((tool) => tool.name).sort()).toEqual(["memory_propose", "memory_search"]);
+    expect(tools.map((tool) => tool.name).sort()).toEqual([
+      "design_patch",
+      "memory_propose",
+      "memory_search",
+    ]);
     for (const tool of tools) {
       expect(tool.inputSchema.type).toBe("object");
       expect(tool.inputSchema.additionalProperties).toBe(false);
@@ -223,7 +227,7 @@ describe("alur JSON-RPC", () => {
     const openedNoMemory = await noMemoryBridge.open({ sessionId: "s_kosong", cwd: dir });
     try {
       const tools = await listTools(noMemory, openedNoMemory.memory.token ?? "");
-      expect(tools).toEqual([]);
+      expect(tools).toEqual(["design_patch"]);
     } finally {
       openedNoMemory.close();
     }
@@ -328,7 +332,11 @@ describe("/mcp dengan workspace", () => {
     const opened = await noWsBridge.open({ sessionId: "s_no_ws", cwd: dir });
     const noWsToken = opened.memory.token!;
     try {
-      expect(await listTools(noWs, noWsToken)).toEqual(["memory_propose", "memory_search"]);
+      expect(await listTools(noWs, noWsToken)).toEqual([
+        "design_patch",
+        "memory_propose",
+        "memory_search",
+      ]);
 
       const result = await callTool(noWs, noWsToken, "workspace_overview", {});
       expect(result.isError).toBe(true);
@@ -340,6 +348,7 @@ describe("/mcp dengan workspace", () => {
 
   test("sesi ber-workspace melihat tool memory dan workspace", async () => {
     expect(await listTools(wsApp, wsToken)).toEqual([
+      "design_patch",
       "memory_propose",
       "memory_search",
       "workspace_overview",
@@ -383,6 +392,7 @@ describe("/mcp dengan workspace", () => {
     const onlyToken = opened.memory.token!;
     try {
       expect(await listTools(onlyWs, onlyToken)).toEqual([
+        "design_patch",
         "workspace_overview",
         "workspace_service",
       ]);
