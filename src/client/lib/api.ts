@@ -21,6 +21,7 @@ import type { GitCommit, GitStatus } from "../../server/git/git-read";
 import type { GitCommitResult } from "../../server/git/git-write";
 import type { WorktreeInfo, WorktreeInspect } from "../../server/git/worktree-service";
 import type {
+  DesignNote,
   DesignPage,
   DesignResult,
   DeviceId,
@@ -413,7 +414,7 @@ export interface SaveFileResult {
   size: number;
 }
 
-export type { DesignPage, DesignResult, DeviceId };
+export type { DesignNote, DesignPage, DesignResult, DeviceId };
 
 /** Halaman desain yang sudah dirakit server menjadi dokumen aman. */
 export interface DesignPageDoc {
@@ -429,6 +430,14 @@ export interface DesignLayoutPage {
   x: number;
   y: number;
   device?: DeviceId;
+}
+
+/** Satu catatan yang dikirim ke `PUT design/notes`; id boleh dikosongkan. */
+export interface DesignNoteInput {
+  id?: string;
+  x: number;
+  y: number;
+  text: string;
 }
 
 /** Input pembuatan varian: halaman sumber, label varian, dan kelompok. */
@@ -535,6 +544,20 @@ function designTokenFrom(value: unknown): DesignToken | undefined {
   if (typeof name !== "string" || name === "") return undefined;
   if (typeof isi !== "string") return undefined;
   return { name, value: isi };
+}
+
+/**
+ * Menyaring satu catatan desain dari respons server. `undefined` bila
+ * bentuknya salah; elemen tak sah dibuang diam-diam oleh pemanggil.
+ */
+function designNoteFrom(value: unknown): DesignNote | undefined {
+  if (!isRecord(value)) return undefined;
+  const { id, x, y, text } = value;
+  if (typeof id !== "string" || id === "") return undefined;
+  if (typeof x !== "number" || !Number.isFinite(x)) return undefined;
+  if (typeof y !== "number" || !Number.isFinite(y)) return undefined;
+  if (typeof text !== "string") return undefined;
+  return { id, x, y, text };
 }
 
 export interface RejectChangeInput {
@@ -909,6 +932,12 @@ export interface ApiClient {
     pages: DesignLayoutPage[],
     repo?: string,
   ): Promise<{ ok: true; updated: number }>;
+  /** Ganti seluruh daftar catatan tempel di kanvas. */
+  saveDesignNotes(
+    id: string,
+    notes: DesignNoteInput[],
+    repo?: string,
+  ): Promise<{ notes: DesignNote[] }>;
   /** Buat varian halaman dari halaman sumber yang sudah ada. */
   createDesignVariant(
     id: string,
@@ -2627,6 +2656,31 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const updated = field(data, "updated");
       if (typeof updated !== "number" || !Number.isFinite(updated)) throw invalidResponse();
       return { ok: true, updated };
+    },
+
+    async saveDesignNotes(id, notes, repo) {
+      const query = queryString([["repo", repo]]);
+      const body: { notes: DesignNoteInput[] } = {
+        notes: notes.map((note) => ({
+          ...(note.id === undefined ? {} : { id: note.id }),
+          x: note.x,
+          y: note.y,
+          text: note.text,
+        })),
+      };
+      const data = await request(
+        "PUT",
+        `/api/sessions/${encodeURIComponent(id)}/design/notes${query}`,
+        body,
+      );
+      const raw = field(data, "notes");
+      if (!Array.isArray(raw)) throw invalidResponse();
+      const hasil: DesignNote[] = [];
+      for (const item of raw) {
+        const note = designNoteFrom(item);
+        if (note !== undefined) hasil.push(note);
+      }
+      return { notes: hasil };
     },
 
     async createDesignVariant(id, input, repo) {

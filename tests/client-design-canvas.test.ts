@@ -2,18 +2,23 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  MAX_NOTES,
   MAX_ZOOM,
   MIN_ZOOM,
   ZOOM_STEPS,
   boundsOf,
+  canAddNote,
   centerOn,
+  clampNote,
   clampZoom,
   fitView,
   frameHeight,
   frameRects,
   groupBoxes,
+  newNoteAt,
   panBy,
   pickLive,
+  sameNotes,
   screenToWorld,
   snap,
   stepZoom,
@@ -391,5 +396,64 @@ describe("sumber iframe", () => {
     expect(source).toContain("src={src}");
     expect(source).not.toContain("srcdoc");
     expect(source).toContain('referrerpolicy="no-referrer"');
+  });
+});
+
+describe("clampNote", () => {
+  test("koordinat dijepit ke batas dan teks dipangkas", () => {
+    expect(clampNote({ id: "n_0123abcd", x: 999999, y: -999999, text: "a" })).toEqual({
+      id: "n_0123abcd",
+      x: 100000,
+      y: -100000,
+      text: "a",
+    });
+    expect(clampNote({ id: "n_0123abcd", x: 0, y: 0, text: "b".repeat(600) }).text).toHaveLength(
+      500,
+    );
+  });
+
+  test("nilai bukan bilangan dianggap 0", () => {
+    const hasil = clampNote({
+      id: "n_0123abcd",
+      x: Number.NaN,
+      y: Number.POSITIVE_INFINITY,
+      text: "teks",
+    });
+    expect(hasil.x).toBe(0);
+    expect(hasil.y).toBe(0);
+    expect(hasil.text).toBe("teks");
+  });
+});
+
+describe("newNoteAt", () => {
+  test("catatan baru di tengah viewport dalam koordinat dunia", () => {
+    const view: View = { x: 100, y: 50, zoom: 2 };
+    expect(newNoteAt(view, { width: 800, height: 600 })).toEqual({
+      x: (400 - 100) / 2,
+      y: (300 - 50) / 2,
+    });
+  });
+});
+
+describe("canAddNote", () => {
+  test("batas 50 catatan", () => {
+    expect(canAddNote([])).toBe(true);
+    const catatan = Array.from({ length: MAX_NOTES }, (_, index) => ({
+      id: `n_${index.toString(16).padStart(8, "0")}`,
+      x: 0,
+      y: 0,
+      text: "",
+    }));
+    expect(canAddNote(catatan)).toBe(false);
+  });
+});
+
+describe("sameNotes", () => {
+  test("daftar sama bila isi dan urutannya sama", () => {
+    const a = [{ id: "n_0123abcd", x: 1, y: 2, text: "satu" }];
+    expect(sameNotes(a, [{ id: "n_0123abcd", x: 1, y: 2, text: "satu" }])).toBe(true);
+    expect(sameNotes(a, [{ id: "n_0123abcd", x: 1, y: 2, text: "dua" }])).toBe(false);
+    expect(sameNotes(a, [{ id: "n_0123abce", x: 1, y: 2, text: "satu" }])).toBe(false);
+    expect(sameNotes(a, [])).toBe(false);
   });
 });

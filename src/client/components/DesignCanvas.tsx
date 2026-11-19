@@ -4,17 +4,23 @@ import {
   designFrameUrl,
   type ApiClient,
   type DesignComment,
+  type DesignNote,
+  type DesignNoteInput,
   type DesignResult,
   type DesignToken,
   type DeviceId,
 } from "../lib/api";
 import {
+  canAddNote,
   centerOn,
+  clampNote,
   fitView,
   frameRects,
   groupBoxes,
+  newNoteAt,
   panBy,
   pickLive,
+  sameNotes,
   snap,
   stepZoom,
   visibleSlugs,
@@ -51,6 +57,7 @@ import { targetKindOf } from "../lib/shortcuts";
 import { CopyButton } from "./CopyButton";
 import { DesignComments } from "./DesignComments";
 import { DesignFrame } from "./DesignFrame";
+import { DesignNotes } from "./DesignNotes";
 import { DesignTokens } from "./DesignTokens";
 import { DesignVariantDialog } from "./DesignVariantDialog";
 
@@ -84,6 +91,10 @@ export interface DesignCanvasProps {
   onSyncDoc?: () => Promise<{ changed: boolean }>;
   /** Buat varian baru dari halaman sumber; kanvas memuat ulang model desain. */
   onCreateVariant?: (slug: string, variant: string) => Promise<void>;
+  /** Catatan tempel di kanvas; undefined berarti tak ada catatan. */
+  notes?: DesignNote[];
+  /** Simpan seluruh daftar catatan; mengembalikan daftar yang tersimpan. */
+  onSaveNotes?: (notes: DesignNoteInput[]) => Promise<DesignNote[]>;
 }
 
 interface Override {
@@ -111,6 +122,8 @@ function frameUrl(
 }
 
 const SAVE_DEBOUNCE_MS = 500;
+/** Jeda tanpa ketikan sebelum teks catatan dikirim ke server. */
+const NOTE_SAVE_DEBOUNCE_MS = 600;
 const EMPTY_TEXT = "Belum ada halaman. Minta agent merancang halaman pertama.";
 /** Batas penunggu balasan tangkapan; yang terlama dibuang lebih dulu. */
 const MAX_SHOT_WAITERS = 20;
@@ -122,6 +135,19 @@ interface ShotWaiter {
 
 function errorMessage(caught: unknown): string {
   return caught instanceof ApiError ? caught.message : "tata letak tidak dapat disimpan";
+}
+
+/** Id catatan baru: "n_" + delapan digit heksadesimal yang belum dipakai. */
+function newNoteId(notes: readonly DesignNote[]): string {
+  const taken = new Set(notes.map((note) => note.id));
+  const bytes = new Uint8Array(4);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    globalThis.crypto.getRandomValues(bytes);
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    const id = `n_${hex}`;
+    if (!taken.has(id)) return id;
+  }
+  return `n_${Date.now().toString(16).padStart(8, "0").slice(-8)}`;
 }
 
 /**
@@ -175,6 +201,11 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const [commentLocalError, setCommentLocalError] = useState<string | undefined>(undefined);
   /** Slug halaman yang sedang dibuat variannya; undefined berarti dialog tutup. */
   const [variantSlug, setVariantSlug] = useState<string | undefined>(undefined);
+  /** Catatan tempel; state lokal adalah sumber tampilan. */
+  const [notes, setNotes] = useState<DesignNote[]>(props.notes ?? []);
+  const [noteError, setNoteError] = useState<string | undefined>(undefined);
+  /** Catatan yang textarea-nya harus difokuskan (mis. setelah dibuat). */
+  const [focusNoteId, setFocusNoteId] = useState<string | undefined>(undefined);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -190,6 +221,25 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const lastHoverRef = useRef<{ slug: string; label: string } | undefined>(undefined);
   // Penunggu balasan `shot` per id permintaan; kunci sama dengan pesan frame.
   const shotWaiters = useRef(new Map<string, ShotWaiter>());
+
+  // Daftar catatan: state lokal adalah sumber tampilan, server hanya menyetel
+  // ulang bila tak ada simpanan berjalan atau tertunda dan tak ada textarea
+  // yang terfokus.
+  const notesRef = useRef<DesignNote[]>(props.notes ?? []);
+  notesRef.current = notes;
+  /** Daftar catatan terakhir yang diketahui tersimpan di server. */
+  const notesSavedRef = useRef<DesignNote[]>(props.notes ?? []);
+  /** true bila satu permintaan simpan sedang berjalan. */
+  const notesRunningRef = useRef(false);
+  /** Daftar yang menunggu dikirim setelah permintaan berjalan selesai. */
+  const notesQueuedRef = useRef<DesignNote[] | undefined>(undefined);
+  /** Timer jeda simpan teks per catatan. */
+  const noteTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /** true bila ada textarea catatan yang terfokus. */
+  const noteFocusedRef = useRef(false);
+  /** true bila ada catatan yang sedang diseret. */
+  const noteDraggingRef = useRef(false);
+  const noteTextareasRef = useRef(new Map<string, HTMLTextAreaElement>());
 
   // Cap waktu `tokens.css`; masuk ke versi frame supaya frame memuat ulang
   // ketika token berubah meski HTML halaman tak berubah.
@@ -541,8 +591,31 @@ export function DesignCanvas(props: DesignCanvasProps) {
   useEffect(() => {
     return () => {
       if (timerRef.current !== undefined) clearTimeout(timerRef.current);
+      for (const timer of noteTimersRef.current.values()) clearTimeout(timer);
+      noteTimersRef.current.clear();
     };
   }, []);
+
+  // Data server (polling) menyetel ulang daftar lokal hanya bila tak ada
+  // simpanan berjalan atau tertunda, tak ada seretan, dan tak ada textarea
+  // yang terfokus; editing lokal tak boleh ditimpa.
+  useEffect(() => {
+    const next = props.notes ?? [];
+    if (notesRunningRef.current || notesQueuedRef.current !== undefined) return;
+    if (noteFocusedRef.current || noteDraggingRef.current) return;
+    notesSavedRef.current = next;
+    notesRef.current = next;
+    setNotes(next);
+  }, [props.notes]);
+
+  // Catatan baru difokuskan begitu textarea-nya muncul.
+  useEffect(() => {
+    if (focusNoteId === undefined) return;
+    const element = noteTextareasRef.current.get(focusNoteId);
+    if (element === undefined) return;
+    element.focus();
+    setFocusNoteId(undefined);
+  }, [focusNoteId, notes]);
 
   const flush = async (): Promise<void> => {
     const entries = [...pendingRef.current.entries()].map(([slug, value]) => ({
@@ -570,6 +643,124 @@ export function DesignCanvas(props: DesignCanvasProps) {
       timerRef.current = undefined;
       void flush();
     }, SAVE_DEBOUNCE_MS);
+  };
+
+  /**
+   * Kirim seluruh daftar catatan ke server. Satu permintaan berjalan pada
+   * satu waktu; perubahan yang datang saat berjalan diantre dan dikirim
+   * sesudahnya. Galat tak menghapus daftar lokal.
+   */
+  const sendNotes = async (list: DesignNote[]): Promise<void> => {
+    notesRunningRef.current = true;
+    try {
+      const simpan = props.onSaveNotes;
+      if (simpan === undefined) return;
+      const tersimpan = await simpan(
+        list.map((note) => ({ id: note.id, x: note.x, y: note.y, text: note.text })),
+      );
+      notesSavedRef.current = tersimpan;
+      setNoteError(undefined);
+    } catch (caught) {
+      setNoteError(
+        caught instanceof ApiError ? caught.message : "catatan tidak dapat disimpan",
+      );
+    } finally {
+      notesRunningRef.current = false;
+      const next = notesQueuedRef.current;
+      notesQueuedRef.current = undefined;
+      if (next !== undefined) void sendNotes(next);
+    }
+  };
+
+  /** Minta simpan daftar catatan; antre bila permintaan lain berjalan. */
+  const requestNoteSave = (list: DesignNote[]): void => {
+    if (notesRunningRef.current) {
+      notesQueuedRef.current = list;
+      return;
+    }
+    void sendNotes(list);
+  };
+
+  /** Simpan bila daftar lokal berbeda dari daftar tersimpan. */
+  const commitNotes = (): void => {
+    const current = notesRef.current;
+    if (sameNotes(current, notesSavedRef.current)) return;
+    requestNoteSave(current);
+  };
+
+  const replaceNotes = (next: DesignNote[]): void => {
+    notesRef.current = next;
+    setNotes(next);
+  };
+
+  const setNoteText = (id: string, text: string): void => {
+    replaceNotes(
+      notesRef.current.map((note) => (note.id === id ? { ...note, text } : note)),
+    );
+  };
+
+  const moveNote = (id: string, x: number, y: number): void => {
+    replaceNotes(
+      notesRef.current.map((note) =>
+        note.id === id ? clampNote({ ...note, x, y }) : note,
+      ),
+    );
+  };
+
+  const deleteNote = (id: string): void => {
+    const timer = noteTimersRef.current.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      noteTimersRef.current.delete(id);
+    }
+    replaceNotes(notesRef.current.filter((note) => note.id !== id));
+    commitNotes();
+  };
+
+  const addNote = (): void => {
+    if (!canAddNote(notesRef.current)) return;
+    const posisi = newNoteAt(viewRef.current, viewportRef.current);
+    const note: DesignNote = {
+      id: newNoteId(notesRef.current),
+      x: posisi.x,
+      y: posisi.y,
+      text: "",
+    };
+    replaceNotes([...notesRef.current, note]);
+    setFocusNoteId(note.id);
+    commitNotes();
+  };
+
+  /** Simpan teks catatan: saat blur atau setelah jeda tanpa ketikan. */
+  const commitNoteText = (id: string): void => {
+    const timer = noteTimersRef.current.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      noteTimersRef.current.delete(id);
+    }
+    commitNotes();
+  };
+
+  const scheduleNoteText = (id: string): void => {
+    const timer = noteTimersRef.current.get(id);
+    if (timer !== undefined) clearTimeout(timer);
+    noteTimersRef.current.set(
+      id,
+      setTimeout(() => {
+        noteTimersRef.current.delete(id);
+        commitNotes();
+      }, NOTE_SAVE_DEBOUNCE_MS),
+    );
+  };
+
+  const changeNoteText = (id: string, text: string): void => {
+    setNoteText(id, text);
+    scheduleNoteText(id);
+  };
+
+  const registerNoteTextarea = (id: string, element: HTMLTextAreaElement | null): void => {
+    if (element === null) noteTextareasRef.current.delete(id);
+    else noteTextareasRef.current.set(id, element);
   };
 
   const startPan = (event: PointerEvent): void => {
@@ -612,12 +803,14 @@ export function DesignCanvas(props: DesignCanvasProps) {
     const target = event.target;
     const interaktif =
       target instanceof Element &&
-      target.closest("button, a, input, select, textarea, [role='menu']") !== null;
+      target.closest(
+        "button, a, input, select, textarea, [role='menu'], .jk-design-note",
+      ) !== null;
     if (!interaktif) containerRef.current?.focus();
     // Klik ruang kosong kanvas (di luar frame dan chrome) membuang pilihan.
     if (toolRef.current === "select" && target instanceof Element) {
       const diChrome = target.closest(
-        ".jk-design-frame, .jk-design-frame-label, .jk-design-toolbar, .jk-design-pages, .jk-design-zoom, .jk-design-actions, .jk-design-info, .jk-design-comments, .jk-design-comment-form, .jk-design-tokens",
+        ".jk-design-frame, .jk-design-frame-label, .jk-design-toolbar, .jk-design-pages, .jk-design-zoom, .jk-design-actions, .jk-design-info, .jk-design-comments, .jk-design-comment-form, .jk-design-tokens, .jk-design-note",
       );
       if (diChrome === null) setSelection(undefined);
     }
@@ -944,6 +1137,23 @@ export function DesignCanvas(props: DesignCanvasProps) {
           );
         })}
 
+        <DesignNotes
+          notes={notes}
+          zoom={view.zoom}
+          onTextChange={changeNoteText}
+          onTextCommit={commitNoteText}
+          onMove={moveNote}
+          onMoveCommit={() => commitNotes()}
+          onDelete={deleteNote}
+          onFocusChange={(focused) => {
+            noteFocusedRef.current = focused;
+          }}
+          onDragChange={(dragging) => {
+            noteDraggingRef.current = dragging;
+          }}
+          registerTextarea={registerNoteTextarea}
+        />
+
         {hover !== undefined && hoverRect !== undefined && !hoverSama && (
           <div
             class="jk-design-overlay-hover"
@@ -1107,6 +1317,15 @@ export function DesignCanvas(props: DesignCanvasProps) {
         <button
           type="button"
           class="jk-design-chip"
+          title="Catatan desain"
+          disabled={!canAddNote(notes)}
+          onClick={addNote}
+        >
+          Catatan
+        </button>
+        <button
+          type="button"
+          class="jk-design-chip"
           aria-expanded={commentsOpen}
           title="Komentar desain"
           onClick={() => setCommentsOpen((open) => !open)}
@@ -1142,6 +1361,12 @@ export function DesignCanvas(props: DesignCanvasProps) {
           Keluar dari mode lebar
         </button>
       </div>
+
+      {noteError !== undefined && (
+        <p class="jk-design-note-error" role="alert">
+          {noteError}
+        </p>
+      )}
 
       {selection !== undefined && (
         <aside class="jk-design-info" aria-label="Elemen terpilih">

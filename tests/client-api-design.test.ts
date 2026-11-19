@@ -46,6 +46,7 @@ const DESIGN: DesignResult = {
       tooLarge: false,
     },
   ],
+  notes: [],
   tokens: { mtime: null },
   warnings: [],
 };
@@ -225,6 +226,49 @@ describe("klien API desain", () => {
     await api.saveDesignLayout("s1", []);
     expect(calls[0]?.url).toBe("/api/sessions/s1/design/layout");
     expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ pages: [] });
+  });
+
+  test("saveDesignNotes PUT body notes dan mengembalikan daftar", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ notes: [{ id: "n_0123abcd", x: 5, y: 6, text: "halo" }] }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.saveDesignNotes(
+      "s1",
+      [{ id: "n_0123abcd", x: 5, y: 6, text: "halo" }],
+      "web",
+    );
+    expect(hasil.notes).toEqual([{ id: "n_0123abcd", x: 5, y: 6, text: "halo" }]);
+    expect(calls[0]?.url).toBe("/api/sessions/s1/design/notes?repo=web");
+    expect(calls[0]?.init.method).toBe("PUT");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      notes: [{ id: "n_0123abcd", x: 5, y: 6, text: "halo" }],
+    });
+  });
+
+  test("saveDesignNotes tanpa id tidak mengirim key id", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ notes: [{ id: "n_0123abcd", x: 0, y: 0, text: "" }] }),
+    );
+    const api = createApiClient({ fetch });
+
+    await api.saveDesignNotes("s1", [{ x: 0, y: 0, text: "" }]);
+    expect(calls[0]?.url).toBe("/api/sessions/s1/design/notes");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      notes: [{ x: 0, y: 0, text: "" }],
+    });
+  });
+
+  test("saveDesignNotes membuang entri tak sah dari respons", async () => {
+    const { fetch } = fakeFetch(() =>
+      jsonResponse({ notes: [{ id: "n_0123abcd", x: 0, y: 0, text: "ok" }, { id: 5 }] }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.saveDesignNotes("s1", []);
+    expect(hasil.notes).toHaveLength(1);
   });
 
   test("initDesign POST dan mengembalikan created", async () => {

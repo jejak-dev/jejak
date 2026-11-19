@@ -11,6 +11,15 @@ export const MAX_ZOOM = 4;
 /** Batas tinggi frame, sama dengan batas pesan `size` di protokol. */
 export const MAX_FRAME_PX = 6000;
 
+/**
+ * Batas catatan tempel. Disalin dari `src/server/design/manifest.ts`
+ * (MAX_NOTES, MAX_NOTE_TEXT, MAX_COORD) supaya kode server (node:fs,
+ * node:crypto) tidak ikut masuk ke bundel klien.
+ */
+export const MAX_NOTES = 50;
+export const MAX_NOTE_TEXT = 500;
+export const MAX_NOTE_COORD = 100000;
+
 export interface View {
   x: number;
   y: number;
@@ -178,6 +187,65 @@ export function groupBoxes(
 
 /** Saran nama varian yang sering dipakai. */
 export const variantSuggestions: readonly string[] = ["gelap", "kosong", "galat", "memuat"];
+
+/** Satu catatan tempel: teks bebas pada koordinat dunia. */
+export interface NoteLike {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+}
+
+/**
+ * Jepit satu catatan: koordinat ke batas ±100000 dan teks ke 500 karakter.
+ * Nilai bukan bilangan dianggap 0.
+ */
+export function clampNote(note: NoteLike): NoteLike {
+  const coord = (value: number): number => {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(-MAX_NOTE_COORD, Math.min(MAX_NOTE_COORD, Math.round(value)));
+  };
+  return {
+    id: note.id,
+    x: coord(note.x),
+    y: coord(note.y),
+    text: typeof note.text === "string" ? note.text.slice(0, MAX_NOTE_TEXT) : "",
+  };
+}
+
+/** Posisi catatan baru: di tengah viewport, dalam koordinat dunia. */
+export function newNoteAt(view: View, viewport: Size): { x: number; y: number } {
+  const tengah = screenToWorld(view, {
+    x: viewport.width / 2,
+    y: viewport.height / 2,
+  });
+  return { x: tengah.x, y: tengah.y };
+}
+
+/** Boleh menambah catatan baru? Batas 50 catatan per kanvas. */
+export function canAddNote(notes: readonly unknown[]): boolean {
+  return notes.length < MAX_NOTES;
+}
+
+/** Dua daftar catatan sama bila isi, urutan, dan posisinya sama. */
+export function sameNotes(a: readonly NoteLike[], b: readonly NoteLike[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let index = 0; index < a.length; index += 1) {
+    const kiri = a[index];
+    const kanan = b[index];
+    if (
+      kiri === undefined ||
+      kanan === undefined ||
+      kiri.id !== kanan.id ||
+      kiri.x !== kanan.x ||
+      kiri.y !== kanan.y ||
+      kiri.text !== kanan.text
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /** Tampilkan semua frame: zoom paling besar 1, dipusatkan di viewport. */
 export function fitView(rects: readonly Rect[], viewport: Size, padding = 48): View {

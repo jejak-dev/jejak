@@ -22,6 +22,15 @@ export const MAX_VARIANT_LENGTH = 30;
 /** Karakter kontrol tidak boleh ada di label. */
 const CONTROL_RE = /[\u0000-\u001F\u007F]/;
 
+/** Batas jumlah catatan tempel di kanvas. */
+export const MAX_NOTES = 50;
+/** Batas panjang teks satu catatan. */
+export const MAX_NOTE_TEXT = 500;
+/** Id catatan: huruf "n_" lalu delapan digit heksadesimal. */
+export const NOTE_ID_RE = /^n_[0-9a-f]{8}$/;
+/** Karakter kontrol yang dilarang di teks catatan; baris baru tetap boleh. */
+const NOTE_CONTROL_RE = /[\u0000-\u0009\u000B-\u001F\u007F]/;
+
 export type DeviceId = "desktop" | "tablet" | "mobile" | "mobile-android";
 
 export const DEVICES: Record<DeviceId, { width: number; height: number }> = {
@@ -59,8 +68,17 @@ export interface DesignManifestPage {
   y: number;
 }
 
+/** Satu catatan tempel di kanvas: teks bebas pada koordinat dunia. */
+export interface DesignNote {
+  id: string;
+  x: number;
+  y: number;
+  text: string;
+}
+
 export interface ParsedManifest {
   pages: DesignManifestPage[];
+  notes: DesignNote[];
   warnings: string[];
   error?: string;
 }
@@ -68,6 +86,7 @@ export interface ParsedManifest {
 export interface DesignResult {
   exists: boolean;
   pages: DesignPage[];
+  notes: DesignNote[];
   tokens: { mtime: number | null };
   manifestError?: string;
   warnings: string[];
@@ -126,21 +145,95 @@ function coord(
 }
 
 /**
+ * Membaca daftar catatan dari manifest. Daftar yang bukan daftar diabaikan
+ * dengan peringatan; entri tak sah dibuang satu per satu dengan peringatan;
+ *sisanya dipotong ke batas `MAX_NOTES` dengan peringatan.
+ */
+export function parseNotes(value: unknown, warnings: string[]): DesignNote[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    warnings.push("Daftar catatan diabaikan: bukan daftar.");
+    return [];
+  }
+  const notes: DesignNote[] = [];
+  const seen = new Set<string>();
+  for (const entry of value) {
+    if (notes.length >= MAX_NOTES) {
+      warnings.push(`Daftar catatan dipotong ke ${MAX_NOTES} catatan.`);
+      break;
+    }
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      warnings.push("Entri catatan dilewati: bukan objek.");
+      continue;
+    }
+    const item = entry as Record<string, unknown>;
+    const id = item.id;
+    if (typeof id !== "string" || !NOTE_ID_RE.test(id)) {
+      warnings.push("Entri catatan dilewati: id tidak valid.");
+      continue;
+    }
+    if (seen.has(id)) {
+      warnings.push(`Catatan "${id}" dilewati: id ganda.`);
+      continue;
+    }
+    const x = item.x;
+    const y = item.y;
+    if (
+      typeof x !== "number" ||
+      !Number.isFinite(x) ||
+      typeof y !== "number" ||
+      !Number.isFinite(y)
+    ) {
+      warnings.push(`Catatan "${id}" dilewati: posisi tidak valid.`);
+      continue;
+    }
+    const text = item.text;
+    if (typeof text !== "string" || text.length > MAX_NOTE_TEXT || NOTE_CONTROL_RE.test(text)) {
+      warnings.push(`Catatan "${id}" dilewati: teks tidak valid.`);
+      continue;
+    }
+    seen.add(id);
+    notes.push({
+      id,
+      x: clampCoord(x),
+      y: clampCoord(y),
+      text,
+    });
+  }
+  return notes;
+}
+
+/**
  * Memvalidasi isi `design.json` yang sudah di-parse. Entri bermasalah dibuang
  * atau diperbaiki; setiap masalah dicatat sebagai satu kalimat di `warnings`.
  */
 export function parseManifest(raw: unknown): ParsedManifest {
   const warnings: string[] = [];
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-    return { pages: [], warnings, error: "design.json tidak valid: isi harus berupa objek." };
+    return {
+      pages: [],
+      notes: [],
+      warnings,
+      error: "design.json tidak valid: isi harus berupa objek.",
+    };
   }
   const record = raw as Record<string, unknown>;
   if (record.version !== 1) {
-    return { pages: [], warnings, error: "design.json tidak valid: versi harus 1." };
+    return {
+      pages: [],
+      notes: [],
+      warnings,
+      error: "design.json tidak valid: versi harus 1.",
+    };
   }
   const list = record.pages;
   if (!Array.isArray(list)) {
-    return { pages: [], warnings, error: "design.json tidak valid: pages harus berupa daftar." };
+    return {
+      pages: [],
+      notes: [],
+      warnings,
+      error: "design.json tidak valid: pages harus berupa daftar.",
+    };
   }
 
   const pages: DesignManifestPage[] = [];
@@ -221,7 +314,7 @@ export function parseManifest(raw: unknown): ParsedManifest {
     pages.push(page);
   }
 
-  return { pages, warnings };
+  return { pages, notes: parseNotes(record.notes, warnings), warnings };
 }
 
 /** Posisi halaman baru: di kanan halaman paling kanan sebelumnya, dengan jarak. */
@@ -347,23 +440,30 @@ export async function readDesign(root: string): Promise<DesignResult> {
   const warnings: string[] = [];
   const designDir = await resolveDesignDir(root);
   if (designDir === undefined) {
-    return { exists: false, pages: [], tokens: { mtime: null }, warnings };
+    return { exists: false, pages: [], notes: [], tokens: { mtime: null }, warnings };
   }
 
   const manifest = await readManifestFile(designDir);
   const pagesDir = join(designDir, "pages");
   const hasPagesDir = await isDirectory(pagesDir);
   if (!manifest.present && !hasPagesDir) {
-    return { exists: false, pages: [], tokens: { mtime: null }, warnings };
+    return { exists: false, pages: [], notes: [], tokens: { mtime: null }, warnings };
   }
 
-  const result: DesignResult = { exists: true, pages: [], tokens: { mtime: null }, warnings };
+  const result: DesignResult = {
+    exists: true,
+    pages: [],
+    notes: [],
+    tokens: { mtime: null },
+    warnings,
+  };
   if (manifest.error !== undefined) result.manifestError = manifest.error;
 
   const parsed: ParsedManifest =
-    manifest.raw === undefined ? { pages: [], warnings: [] } : parseManifest(manifest.raw);
+    manifest.raw === undefined ? { pages: [], notes: [], warnings: [] } : parseManifest(manifest.raw);
   warnings.push(...parsed.warnings);
   if (parsed.error !== undefined) result.manifestError = parsed.error;
+  result.notes = parsed.notes;
 
   const pageFiles = await scanPages(designDir);
   const fileBySlug = new Map<string, PageFile>();

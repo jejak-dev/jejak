@@ -11447,6 +11447,80 @@ h2.jk-md-heading {
   font-size: 12px;
 }
 
+/* Catatan tempel: kartu kuning lembut di kanvas; ukuran layar tetap lewat
+   transform scale(1/zoom) pada .jk-design-note. */
+.jk-design-note {
+  position: absolute;
+  box-sizing: border-box;
+  width: 180px;
+  transform-origin: 0 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 12%, var(--surface));
+  box-shadow: var(--shadow);
+  color: var(--t1);
+  font-size: 12px;
+}
+
+/* Pegangan seret di atas catatan. */
+.jk-design-note-handle {
+  height: 12px;
+  border-radius: 9px 9px 0 0;
+  background: color-mix(in srgb, var(--warn) 26%, transparent);
+  cursor: grab;
+}
+
+.jk-design-note-handle:active {
+  cursor: grabbing;
+}
+
+.jk-design-note-text {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--t1);
+  font: inherit;
+  font-size: 12px;
+  resize: none;
+  user-select: text;
+}
+
+.jk-design-note-delete {
+  display: block;
+  margin: 0 8px 8px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--t3);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.jk-design-note-delete:hover {
+  color: var(--t1);
+}
+
+/* Galat simpan catatan, dekat chip Catatan di kanan atas. */
+.jk-design-note-error {
+  position: absolute;
+  right: 12px;
+  top: 44px;
+  max-width: 280px;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--bad);
+  font-size: 12px;
+  box-shadow: var(--shadow);
+}
+
 /* Token desain: panel melayang di kiri bawah; komentar tetap di kanan bawah. */
 .jk-design-tokens {
   position: absolute;

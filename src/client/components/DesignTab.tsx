@@ -174,6 +174,13 @@ export function DesignTab(props: DesignTabProps) {
             // Muat ulang model desain supaya halaman baru ikut ke kanvas.
             await refresh();
           }}
+          notes={design.notes}
+          onSaveNotes={async (list) => {
+            const result = await api.saveDesignNotes(sessionId, list, repo);
+            // Muat ulang model desain supaya catatan ikut ke state server.
+            await refresh();
+            return result.notes;
+          }}
         />
       </div>
     );

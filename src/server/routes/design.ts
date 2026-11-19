@@ -13,7 +13,7 @@ import { CaptureError, NOT_FOUND } from "../design/capture-broker";
 import { DesignDocError, syncDesignDoc } from "../design/design-doc";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignTokenError, readTokens, writeTokens, type DesignToken } from "../design/tokens";
-import { DesignWriteError, createVariant, initDesign, saveLayout } from "../design/write";
+import { DesignWriteError, createVariant, initDesign, saveLayout, saveNotes } from "../design/write";
 import { REVERT_MESSAGES } from "../files/revert";
 import { FileError } from "../files/path";
 import { resolveRepoRoot } from "../files/repo-root";
@@ -68,6 +68,8 @@ const EDIT_DISABLED = "Penyuntingan berkas dimatikan.";
 const MAX_BODY_BYTES = 256 * 1024;
 /** Batas body rute token: daftar token dibatasi 200 entri. */
 const MAX_TOKENS_BODY_BYTES = 64 * 1024;
+/** Batas body rute catatan: daftar catatan dibatasi 50 entri. */
+const MAX_NOTES_BODY_BYTES = 64 * 1024;
 /** Batas body unggahan tangkapan: PNG 4 MB menjadi ~5,4 MB base64. */
 const MAX_CAPTURE_BODY_CHARS = 6_000_000;
 const DATA_URL_PREFIX = "data:image/png;base64,";
@@ -242,6 +244,38 @@ function parseVariantBody(body: unknown): { slug: string; variant: string; group
     variant: record.variant,
     ...(record.group === undefined ? {} : { group: record.group }),
   };
+}
+
+/**
+ * Body `PUT notes`: `{notes: [{id?, x, y, text}]}`. Kunci tak dikenal
+ * ditolak; isi catatan divalidasi di modul penulis.
+ */
+function parseNotesBody(body: unknown): { notes: unknown[] } {
+  if (typeof body !== "string") {
+    throw new DesignWriteError("Body bukan JSON yang valid.", 400);
+  }
+  if (Buffer.byteLength(body, "utf8") > MAX_NOTES_BODY_BYTES) {
+    throw new DesignWriteError("Body permintaan terlalu besar.", 400);
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(body);
+  } catch {
+    throw new DesignWriteError("Body bukan JSON yang valid.", 400);
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new DesignWriteError("Body permintaan harus berupa objek.", 400);
+  }
+  const record = input as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "notes") {
+      throw new DesignWriteError("Field tidak dikenal.", 400);
+    }
+  }
+  if (!Array.isArray(record.notes)) {
+    throw new DesignWriteError("Field notes harus berupa daftar.", 400);
+  }
+  return { notes: record.notes };
 }
 
 /**
@@ -520,6 +554,37 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
             meta: { aksi: "design-layout", halaman: result.pages },
           });
           return jsonResponse(200, { ok: true, updated: result.pages });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .put(
+      "/api/sessions/:id/design/notes",
+      async ({ params, query, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        if (session.status === "berjalan") {
+          return runningResponse();
+        }
+        try {
+          const input = parseNotesBody(body);
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          const result = await saveNotes(root, input);
+          await syncDocDiam(root);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Catatan desain disimpan",
+            meta: { aksi: "design-notes", jumlah: result.notes.length },
+          });
+          return jsonResponse(200, { notes: result.notes });
         } catch (error) {
           return errorResponse(error);
         }

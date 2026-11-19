@@ -1,16 +1,20 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { chmod, link, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   DEVICES,
   GAP,
   MAX_GROUP_LENGTH,
+  MAX_NOTE_TEXT,
+  MAX_NOTES,
   MAX_PAGE_BYTES,
   MAX_PAGES,
   MAX_VARIANT_LENGTH,
+  NOTE_ID_RE,
   SLUG_RE,
   resolveDesignDir,
   validLabel,
+  type DesignNote,
   type DeviceId,
 } from "./manifest";
 
@@ -231,6 +235,96 @@ export async function saveLayout(root: string, input: unknown): Promise<{ pages:
 
     await writeManifestFile(designDir, record, mode, "Tata letak desain tidak dapat disimpan.");
     return { pages: updated };
+  });
+}
+
+/** Karakter kontrol yang dilarang di teks catatan; baris baru tetap boleh. */
+const NOTE_CONTROL_RE = /[\u0000-\u0009\u000B-\u001F\u007F]/;
+
+/** Teks catatan: string 0..500 tanpa karakter kontrol selain baris baru. */
+function noteText(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new DesignWriteError("Teks catatan harus berupa teks.", 400);
+  }
+  if (value.length > MAX_NOTE_TEXT) {
+    throw new DesignWriteError(`Teks catatan melebihi ${MAX_NOTE_TEXT} karakter.`, 400);
+  }
+  if (NOTE_CONTROL_RE.test(value)) {
+    throw new DesignWriteError("Teks catatan memuat karakter yang tak diizinkan.", 400);
+  }
+  return value;
+}
+
+/** Id catatan baru: "n_" + delapan digit heksadesimal yang belum dipakai. */
+function newNoteId(taken: Set<string>): string {
+  for (;;) {
+    const id = `n_${randomBytes(4).toString("hex")}`;
+    if (!taken.has(id)) return id;
+  }
+}
+
+/**
+ * Memvalidasi masukan `saveNotes`: daftar catatan yang menggantikan seluruh
+ * daftar lama. Entri tanpa `id` diberi id baru; entri tak sah ditolak 400.
+ */
+function parseNotesInput(input: unknown): DesignNote[] {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new DesignWriteError("Body permintaan harus berupa objek.", 400);
+  }
+  const record = input as Record<string, unknown>;
+  const list = record.notes;
+  if (!Array.isArray(list)) {
+    throw new DesignWriteError("Field notes harus berupa daftar.", 400);
+  }
+  if (list.length > MAX_NOTES) {
+    throw new DesignWriteError(`Daftar catatan melebihi batas ${MAX_NOTES}.`, 400);
+  }
+  const notes: DesignNote[] = [];
+  const taken = new Set<string>();
+  for (const raw of list) {
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      throw new DesignWriteError("Entri catatan harus berupa objek.", 400);
+    }
+    const item = raw as Record<string, unknown>;
+    const note: DesignNote = {
+      id: "",
+      x: coord(item.x, "x"),
+      y: coord(item.y, "y"),
+      text: noteText(item.text),
+    };
+    if (item.id === undefined) {
+      note.id = newNoteId(taken);
+    } else {
+      if (typeof item.id !== "string" || !NOTE_ID_RE.test(item.id)) {
+        throw new DesignWriteError("Id catatan tidak valid.", 400);
+      }
+      if (taken.has(item.id)) {
+        throw new DesignWriteError(`Id catatan "${item.id}" ganda.`, 400);
+      }
+      note.id = item.id;
+    }
+    taken.add(note.id);
+    notes.push(note);
+  }
+  return notes;
+}
+
+/**
+ * Mengganti seluruh daftar catatan di `design/design.json`. Kunci lain di
+ * manifest (halaman, kelompok, dst.) dipertahankan; penulisan atomik lewat
+ * berkas sementara di folder yang sama.
+ */
+export async function saveNotes(root: string, input: unknown): Promise<{ notes: DesignNote[] }> {
+  const notes = parseNotesInput(input);
+  const designDir = await resolveDesignDir(root);
+  if (designDir === undefined) {
+    throw new DesignWriteError(NOT_CREATED, 404);
+  }
+  return withManifestLock(designDir, async () => {
+    const { record, mode } = await readManifestForWrite(designDir);
+    record.notes = notes;
+    await writeManifestFile(designDir, record, mode, "Catatan desain tidak dapat disimpan.");
+    return { notes };
   });
 }
 

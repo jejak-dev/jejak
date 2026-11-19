@@ -9,6 +9,7 @@ import {
 const DESIGN: DesignResult = {
   exists: true,
   pages: [],
+  notes: [],
   tokens: { mtime: null },
   warnings: [],
 };
