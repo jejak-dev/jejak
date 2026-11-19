@@ -16,7 +16,7 @@ test("prompt yang ditahan tampil di sidebar sebagai Tertahan", async ({ page }) 
   await kirimPrompt(page, PROMPT_BERJALAN);
 
   // Kembali ke beranda: composer di sana yang punya pilihan "Tunggu sesi".
-  await page.getByRole("button", { name: "Sesi baru" }).click();
+  await page.getByRole("button", { name: "Sesi baru", exact: true }).click();
 
   const tunggu = page.getByRole("button", { name: "Tunggu sesi", exact: true });
   await expect(tunggu).toBeVisible();
