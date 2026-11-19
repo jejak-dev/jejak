@@ -7,7 +7,13 @@
 
 import type { CaptureFailure, DesignCaptureRequest } from "./api";
 
-export type CaptureOutcome = { dataUrl: string } | { error: CaptureFailure };
+/**
+ * Hasil tangkapan. `width`/`height` adalah ukuran piksel gambar (bukan
+ * ukuran perangkat); dipakai pengekspor PNG di kanvas.
+ */
+export type CaptureOutcome =
+  | { dataUrl: string; width?: number; height?: number }
+  | { error: CaptureFailure };
 
 /** Menangkap satu halaman di kanvas; `requestId` dipakai sebagai id pesan. */
 export type CaptureFn = (

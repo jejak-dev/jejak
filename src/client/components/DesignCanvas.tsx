@@ -43,6 +43,21 @@ import {
   pinsMessage,
 } from "../lib/design-protocol";
 import type { CaptureFn, CaptureOutcome } from "../lib/design-capture";
+import {
+  CANVAS_FILE_NAME,
+  EXPORT_MARGIN,
+  MAX_EXPORT_SIDE,
+  canvasBounds,
+  composeCanvas,
+  dataUrlToBlob,
+  downloadBlob,
+  exportFailureMessage,
+  exportFileName,
+  fitScale,
+  type ExportFailure,
+  type ExportScale,
+  type ExportShot,
+} from "../lib/design-export";
 import { commentCountLabel, commentNumbers, pinsForSlug } from "../lib/design-comments";
 import {
   chipText,
@@ -128,6 +143,10 @@ const NOTE_SAVE_DEBOUNCE_MS = 600;
 const EMPTY_TEXT = "Belum ada halaman. Minta agent merancang halaman pertama.";
 /** Batas penunggu balasan tangkapan; yang terlama dibuang lebih dulu. */
 const MAX_SHOT_WAITERS = 20;
+/** Batas tunggu frame siap (frame hidup dan melapor "ready"). */
+const EXPORT_TIMEOUT_MS = 15000;
+/** Jeda antar pemeriksaan frame siap. */
+const EXPORT_POLL_MS = 100;
 
 interface ShotWaiter {
   slug: string;
@@ -209,6 +228,16 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const [noteError, setNoteError] = useState<string | undefined>(undefined);
   /** Catatan yang textarea-nya harus difokuskan (mis. setelah dibuat). */
   const [focusNoteId, setFocusNoteId] = useState<string | undefined>(undefined);
+  /** Menu ekspor terbuka. */
+  const [exportOpen, setExportOpen] = useState(false);
+  /** Satu ekspor sedang berjalan. */
+  const [exportBusy, setExportBusy] = useState(false);
+  /** Pesan status ekspor: teks yang tampil dan tanda kegagalannya. */
+  const [exportInfo, setExportInfo] = useState<{ text: string; gagal: boolean } | undefined>(
+    undefined,
+  );
+  /** Slug yang dipaksa hidup selama ekspor berjalan. */
+  const [forceLive, setForceLive] = useState<string[]>([]);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -224,6 +253,15 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const lastHoverRef = useRef<{ slug: string; label: string } | undefined>(undefined);
   // Penunggu balasan `shot` per id permintaan; kunci sama dengan pesan frame.
   const shotWaiters = useRef(new Map<string, ShotWaiter>());
+  /** Elemen frame yang sudah melapor "ready" per slug. */
+  const readyEls = useRef(new Map<string, HTMLIFrameElement>());
+  /** Elemen frame yang sudah melapor "size" per slug. */
+  const sizeEls = useRef(new Map<string, HTMLIFrameElement>());
+  /** true bila satu ekspor sedang berjalan (menjaga hanya satu ekspor). */
+  const exportBusyRef = useRef(false);
+  /** Slug yang dipaksa hidup; dipakai saat ekspor dan dikembalikan sesudahnya. */
+  const forceLiveRef = useRef<string[]>([]);
+  forceLiveRef.current = forceLive;
 
   // Daftar catatan: state lokal adalah sumber tampilan, server hanya menyetel
   // ulang bila tak ada simpanan berjalan atau tertunda dan tak ada textarea
@@ -263,7 +301,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
   rectsRef.current = rects;
 
   const visible = visibleSlugs(rects, view, viewport);
-  const live = pickLive(visible, rects, view, viewport);
+  // Frame yang dipaksa hidup (saat ekspor) tetap hidup walau di luar layar.
+  const liveUmum = pickLive(visible, rects, view, viewport);
+  const live =
+    forceLive.length === 0 ? liveUmum : [...new Set([...liveUmum, ...forceLive])];
   const liveSet = new Set(live);
   const liveKey = live.join(",");
 
@@ -297,6 +338,34 @@ export function DesignCanvas(props: DesignCanvasProps) {
     return callback;
   };
 
+  /**
+   * Minta tangkapan layar satu frame lewat iframe-nya. Jalur yang sama
+   * dipakai agent; ekspor PNG memakainya juga.
+   */
+  const captureFrame = (
+    slug: string,
+    scale: 1 | 2,
+    requestId: string,
+  ): Promise<CaptureOutcome> => {
+    const waiters = shotWaiters.current;
+    const frame = frameEls.current.get(slug);
+    if (frame === undefined || frame.contentWindow === null) {
+      return Promise.resolve({ error: "no-frame" });
+    }
+    const pesan = captureMessage(requestId, scale);
+    if (pesan === undefined) return Promise.resolve({ error: "failed" });
+    return new Promise<CaptureOutcome>((resolve) => {
+      // Batas entri: penunggu terlama dibuang lebih dulu (timeout runner
+      // sudah melaporkan kegagalannya sendiri).
+      if (waiters.size >= MAX_SHOT_WAITERS) {
+        const tertua = waiters.keys().next().value;
+        if (tertua !== undefined) waiters.delete(tertua);
+      }
+      waiters.set(requestId, { slug, resolve });
+      frame.contentWindow?.postMessage(pesan, "*");
+    });
+  };
+
   // Ukuran viewport diamati supaya fit dan pemusatan memakai ukuran nyata.
   useEffect(() => {
     const el = containerRef.current;
@@ -319,24 +388,9 @@ export function DesignCanvas(props: DesignCanvasProps) {
     const waiters = shotWaiters.current;
     const daftar = registerCaptureRef.current;
     if (daftar === undefined) return;
-    daftar((slug, scale, requestId): Promise<CaptureOutcome> => {
-      const frame = frameEls.current.get(slug);
-      if (frame === undefined || frame.contentWindow === null) {
-        return Promise.resolve({ error: "no-frame" });
-      }
-      const pesan = captureMessage(requestId, scale);
-      if (pesan === undefined) return Promise.resolve({ error: "failed" });
-      return new Promise<CaptureOutcome>((resolve) => {
-        // Batas entri: penunggu terlama dibuang lebih dulu (timeout runner
-        // sudah melaporkan kegagalannya sendiri).
-        if (waiters.size >= MAX_SHOT_WAITERS) {
-          const tertua = waiters.keys().next().value;
-          if (tertua !== undefined) waiters.delete(tertua);
-        }
-        waiters.set(requestId, { slug, resolve });
-        frame.contentWindow?.postMessage(pesan, "*");
-      });
-    });
+    daftar((slug, scale, requestId): Promise<CaptureOutcome> =>
+      captureFrame(slug, scale, requestId),
+    );
     return () => {
       daftar(undefined);
       for (const waiter of waiters.values()) waiter.resolve({ error: "failed" });
@@ -441,6 +495,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
       if (message === undefined) return;
       switch (message.type) {
         case "ready":
+          readyEls.current.set(slug, element);
           element.contentWindow?.postMessage(
             modeMessage(toolRef.current === "select" ? "select" : "preview"),
             "*",
@@ -448,6 +503,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
           kirimPin(slug);
           return;
         case "size":
+          sizeEls.current.set(slug, element);
           setContentHeights((prev) =>
             prev[slug] === message.height ? prev : { ...prev, [slug]: message.height },
           );
@@ -521,7 +577,11 @@ export function DesignCanvas(props: DesignCanvasProps) {
           // Frame lain tak boleh memalsukan balasan untuk slug penunggu.
           if (waiter === undefined || waiter.slug !== slug) return;
           shotWaiters.current.delete(message.id);
-          waiter.resolve({ dataUrl: message.dataUrl });
+          waiter.resolve({
+            dataUrl: message.dataUrl,
+            width: message.width,
+            height: message.height,
+          });
           return;
         }
         case "shot-error": {
@@ -966,6 +1026,154 @@ export function DesignCanvas(props: DesignCanvasProps) {
     setView(fitView(rectsRef.current, viewportRef.current));
   };
 
+  /** Hasil satu langkah ekspor: alasan gagal, data PNG, dan catatan tambahan. */
+  interface HasilEkspor {
+    gagal?: ExportFailure;
+    catatan?: string;
+    dataUrl?: string;
+  }
+
+  /**
+   * Tunggu frame siap: frame hidup dan elemennya yang sama sudah melapor
+   * "ready" (atau "size" bila `butuhSize`).
+   */
+  const waitFrame = async (slug: string, butuhSize: boolean): Promise<boolean> => {
+    const batas = Date.now() + EXPORT_TIMEOUT_MS;
+    while (Date.now() < batas) {
+      const frame = frameEls.current.get(slug);
+      if (
+        frame !== undefined &&
+        readyEls.current.get(slug) === frame &&
+        (!butuhSize || sizeEls.current.get(slug) === frame)
+      ) {
+        return true;
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, EXPORT_POLL_MS);
+      });
+    }
+    return false;
+  };
+
+  /** Tangkap satu frame dengan batas waktu sendiri. */
+  const captureFrameWithTimeout = async (
+    slug: string,
+    scale: ExportScale,
+    requestId: string,
+  ): Promise<HasilEkspor> => {
+    const batas = new Promise<HasilEkspor>((resolve) => {
+      setTimeout(() => resolve({ gagal: "timeout" }), EXPORT_TIMEOUT_MS);
+    });
+    const tangkap = captureFrame(slug, scale, requestId).then(
+      (balasan): HasilEkspor =>
+        "error" in balasan ? { gagal: balasan.error } : { dataUrl: balasan.dataUrl },
+    );
+    return Promise.race([tangkap, batas]);
+  };
+
+  /** Muat data URL PNG sebagai gambar yang bisa digambar ke kanvas. */
+  const loadImage = async (dataUrl: string): Promise<HTMLImageElement> => {
+    const gambar = new Image();
+    gambar.src = dataUrl;
+    if (typeof gambar.decode === "function") {
+      await gambar.decode();
+      return gambar;
+    }
+    await new Promise<void>((resolve, reject) => {
+      gambar.onload = () => resolve();
+      gambar.onerror = () => reject(new Error("gambar gagal dimuat"));
+    });
+    return gambar;
+  };
+
+  /**
+   * Jalankan satu ekspor. Hanya satu ekspor boleh berjalan; galat tak
+   * pernah melempar ke luar, tapi ditulis sebagai pesan status.
+   */
+  const jalankanEkspor = async (kerja: () => Promise<HasilEkspor>): Promise<void> => {
+    if (exportBusyRef.current) return;
+    exportBusyRef.current = true;
+    setExportBusy(true);
+    setExportInfo({ text: "Menyiapkan PNG…", gagal: false });
+    try {
+      const hasil = await kerja();
+      if (hasil.gagal !== undefined) {
+        setExportInfo({ text: exportFailureMessage(hasil.gagal), gagal: true });
+        return;
+      }
+      const catatan = hasil.catatan === undefined ? "" : ` ${hasil.catatan}`;
+      setExportInfo({ text: `PNG siap diunduh.${catatan}`, gagal: false });
+    } catch {
+      // Galat tak terduga (mis. gambar tak bisa dimuat) tak boleh lolos.
+      setExportInfo({ text: exportFailureMessage("failed"), gagal: true });
+    } finally {
+      exportBusyRef.current = false;
+      setExportBusy(false);
+    }
+  };
+
+  /** Unduh PNG satu frame; frame yang belum hidup dimuat lebih dulu. */
+  const exportFramePng = (slug: string, scale: ExportScale): void => {
+    void jalankanEkspor(async () => {
+      const asal = forceLiveRef.current;
+      setForceLive([...new Set([...asal, slug])]);
+      try {
+        if (!(await waitFrame(slug, false))) return { gagal: "timeout" };
+        const hasil = await captureFrameWithTimeout(slug, scale, `exp-${slug}`);
+        if (hasil.gagal !== undefined || hasil.dataUrl === undefined) {
+          return { gagal: hasil.gagal ?? "failed" };
+        }
+        downloadBlob(dataUrlToBlob(hasil.dataUrl), exportFileName(slug, scale));
+        return {};
+      } finally {
+        setForceLive(asal);
+      }
+    });
+  };
+
+  /** Unduh PNG seluruh kanvas: semua frame dipaksa hidup lalu digabung. */
+  const exportCanvasPng = (scale: ExportScale): void => {
+    void jalankanEkspor(async () => {
+      const slugs = pages.filter((page) => !page.missing).map((page) => page.slug);
+      if (slugs.length === 0) return { gagal: "no-frame" };
+      const asal = forceLiveRef.current;
+      const viewAsal = viewRef.current;
+      setForceLive([...new Set([...asal, ...slugs])]);
+      // "Muat semua": seluruh frame dibawa ke layar supaya isinya termuat.
+      fit();
+      try {
+        for (const slug of slugs) {
+          if (!(await waitFrame(slug, true))) return { gagal: "timeout" };
+        }
+        const shots: ExportShot[] = [];
+        for (const slug of slugs) {
+          const hasil = await captureFrameWithTimeout(slug, scale, `exp-${slug}`);
+          if (hasil.gagal !== undefined || hasil.dataUrl === undefined) {
+            return { gagal: hasil.gagal ?? "failed" };
+          }
+          const gambar = await loadImage(hasil.dataUrl);
+          shots.push({ slug, image: gambar });
+        }
+        const rectsExport = rectsRef.current.filter((rect) => slugs.includes(rect.slug));
+        const bounds = canvasBounds(rectsExport, EXPORT_MARGIN);
+        if (bounds === undefined) return { gagal: "no-frame" };
+        // Skala tangkapan digabung dengan penuningan batas 8192 px.
+        const turun = fitScale(bounds.width * scale, bounds.height * scale, MAX_EXPORT_SIDE);
+        const kanvas = composeCanvas(shots, rectsExport, bounds, scale * turun);
+        const blob = await new Promise<Blob | null>((resolve) => {
+          kanvas.toBlob((hasil) => resolve(hasil), "image/png");
+        });
+        if (blob === null) return { gagal: "failed" };
+        downloadBlob(blob, CANVAS_FILE_NAME);
+        return turun < 1 ? { catatan: "Diperkecil agar muat 8192 px." } : {};
+      } finally {
+        // Kembalikan keadaan kanvas seperti semula.
+        setForceLive(asal);
+        setView(viewAsal);
+      }
+    });
+  };
+
   const onKeyDown = (event: KeyboardEvent): void => {
     if (event.isComposing) return;
     if (targetKindOf(event.target) === "input") return;
@@ -1160,6 +1368,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
                   ? undefined
                   : () => setVariantSlug(rect.slug)
               }
+              onExportPng={(scale) => exportFramePng(rect.slug, scale)}
               onPointerLeave={() => setHover(undefined)}
               setFrameRef={frameRefFor(rect.slug)}
             />
@@ -1334,6 +1543,57 @@ export function DesignCanvas(props: DesignCanvasProps) {
       </div>
 
       <div class="jk-design-actions">
+        {exportInfo !== undefined && (
+          <span
+            class="jk-design-export-status"
+            role={exportInfo.gagal ? "alert" : "status"}
+          >
+            {exportInfo.text}
+          </span>
+        )}
+        <div class="jk-design-export">
+          <button
+            type="button"
+            class="jk-design-chip"
+            aria-haspopup="menu"
+            aria-expanded={exportOpen}
+            title="Ekspor desain"
+            disabled={exportBusy}
+            onClick={() => setExportOpen((open) => !open)}
+          >
+            {exportBusy ? "Menyiapkan PNG…" : "Ekspor"}
+          </button>
+          {exportOpen && (
+            <ul class="jk-design-export-menu" role="menu" aria-label="Ekspor desain">
+              <li>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-design-pages-item"
+                  onClick={() => {
+                    setExportOpen(false);
+                    exportCanvasPng(1);
+                  }}
+                >
+                  PNG seluruh kanvas
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-design-pages-item"
+                  onClick={() => {
+                    setExportOpen(false);
+                    exportCanvasPng(2);
+                  }}
+                >
+                  PNG seluruh kanvas 2x
+                </button>
+              </li>
+            </ul>
+          )}
+        </div>
         <button
           type="button"
           class="jk-design-chip"

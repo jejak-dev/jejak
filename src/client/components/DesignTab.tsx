@@ -48,7 +48,14 @@ export function DesignTab(props: DesignTabProps) {
     () =>
       createCaptureRunner({
         capture: () => captureRef.current,
-        upload: (requestId, body) => api.uploadDesignCapture(sessionId, requestId, body, repo),
+        upload: (requestId, body) =>
+          // Server hanya butuh data URL; ukuran piksel tak ikut diunggah.
+          api.uploadDesignCapture(
+            sessionId,
+            requestId,
+            "dataUrl" in body ? { dataUrl: body.dataUrl } : body,
+            repo,
+          ),
       }),
     [api, sessionId, repo],
   );

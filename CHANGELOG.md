@@ -14,6 +14,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Design: `DESIGN.md` bawaan kini memuat bagian "Kualitas visual (anti-slop)" agar agent merancang halaman dari subjek, bukan template (rencana palet/font/tata letak, isi teks nyata, penanda khas generator, tipografi, dan kualitas dasar seperti responsif 390 px serta `prefers-reduced-motion`).
 - Design: skill `design-antislop` dipasang otomatis ke `.claude/skills/` proyek saat Mulai desain, sehingga agent memakainya tanpa langkah tambahan.
 - Design: ekspor desain lewat rute `design/export` — satu halaman diekspor sebagai HTML mandiri (CSS dan aset sudah di-inline, tanpa runtime frame), dan folder `design/` diekspor sebagai satu arsip ZIP.
+- Design: ekspor PNG dari kanvas. Menu `⋯` frame mengunduh satu halaman sebagai PNG (1x atau 2x), dan chip Ekspor mengunduh seluruh kanvas sebagai satu PNG (semua frame ditangkap berurutan lalu disusun dengan margin; komposisi diperkecil bila sisi terpanjang melebihi 8192 px).
 
 ## [0.1.0-beta.15] - 2026-11-18
 

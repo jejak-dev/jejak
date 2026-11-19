@@ -1,5 +1,6 @@
 import type { DeviceId } from "../lib/api";
 import type { Rect } from "../lib/design-canvas";
+import type { ExportScale } from "../lib/design-export";
 import { DEVICE_IDS, deviceLabel } from "../lib/design-ui";
 import { Dropdown, type DropdownSection } from "./Dropdown";
 
@@ -26,6 +27,8 @@ export interface DesignFrameProps {
   onReload: () => void;
   /** Minta pembuatan varian baru dari halaman ini. */
   onCreateVariant?: () => void;
+  /** Unduh halaman ini sebagai PNG (skala 1 atau 2). */
+  onExportPng?: (scale: ExportScale) => void;
   /** Pointer meninggalkan pembungkus frame; dipakai alat Pilih. */
   onPointerLeave?: () => void;
   setFrameRef: (element: HTMLIFrameElement | null) => void;
@@ -75,6 +78,16 @@ export function DesignFrame(props: DesignFrameProps) {
       title: "Varian",
       options: [{ value: "create", label: "Buat varian…" }],
       onSelect: () => props.onCreateVariant?.(),
+    });
+  }
+  if (props.onExportPng !== undefined) {
+    sections.push({
+      title: "Ekspor",
+      options: [
+        { value: "png", label: "Unduh PNG" },
+        { value: "png2", label: "Unduh PNG 2x" },
+      ],
+      onSelect: (value) => props.onExportPng?.(value === "png2" ? 2 : 1),
     });
   }
 

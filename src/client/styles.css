@@ -11297,6 +11297,36 @@ h2.jk-md-heading {
   gap: 4px;
 }
 
+/* Chip Ekspor: menu kecil di bawah chip, pesan status di sebelah kirinya. */
+.jk-design-export {
+  position: relative;
+}
+
+.jk-design-export-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.jk-design-export-status {
+  align-self: center;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--t2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .jk-design-empty {
   position: absolute;
   inset: 0;
