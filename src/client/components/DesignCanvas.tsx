@@ -3,6 +3,7 @@ import {
   ApiError,
   designFrameUrl,
   type ApiClient,
+  type DesignComment,
   type DesignResult,
   type DeviceId,
 } from "../lib/api";
@@ -26,11 +27,13 @@ import {
 import {
   captureMessage,
   clearSelectionMessage,
+  highlightMessage,
   isFromFrame,
   modeMessage,
   parseFrameMessage,
 } from "../lib/design-protocol";
 import type { CaptureFn, CaptureOutcome } from "../lib/design-capture";
+import { commentCountLabel } from "../lib/design-comments";
 import {
   chipText,
   elementContext,
@@ -43,6 +46,7 @@ import {
 } from "../lib/design-select";
 import { targetKindOf } from "../lib/shortcuts";
 import { CopyButton } from "./CopyButton";
+import { DesignComments } from "./DesignComments";
 import { DesignFrame } from "./DesignFrame";
 
 export interface DesignCanvasProps {
@@ -57,6 +61,12 @@ export interface DesignCanvasProps {
   onQuote: (text: string) => void;
   /** Daftarkan penangkap layar saat kanvas terpasang; lepas saat unmount. */
   registerCapture?: (fn: CaptureFn | undefined) => void;
+  /** Komentar desain beserta aksinya; panel dibuka lewat chip chrome. */
+  comments?: DesignComment[];
+  commentError?: string;
+  onAddComment?: (input: { slug: string; selector: string; text: string }) => Promise<unknown>;
+  onCommentStatus?: (id: string, status: "open" | "done") => void;
+  onRemoveComment?: (id: string) => void;
 }
 
 interface Override {
@@ -138,6 +148,10 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const [selection, setSelection] = useState<Selection | undefined>(undefined);
   const [selectionLabel, setSelectionLabel] = useState("");
   const [infoOpen, setInfoOpen] = useState(true);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentText, setCommentText] = useState("");
+  const [commentBusy, setCommentBusy] = useState(false);
+  const [commentLocalError, setCommentLocalError] = useState<string | undefined>(undefined);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -534,7 +548,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
     // Klik ruang kosong kanvas (di luar frame dan chrome) membuang pilihan.
     if (toolRef.current === "select" && target instanceof Element) {
       const diChrome = target.closest(
-        ".jk-design-frame, .jk-design-frame-label, .jk-design-toolbar, .jk-design-pages, .jk-design-zoom, .jk-design-actions, .jk-design-info",
+        ".jk-design-frame, .jk-design-frame-label, .jk-design-toolbar, .jk-design-pages, .jk-design-zoom, .jk-design-actions, .jk-design-info, .jk-design-comments, .jk-design-comment-form",
       );
       if (diChrome === null) setSelection(undefined);
     }
@@ -616,6 +630,33 @@ export function DesignCanvas(props: DesignCanvasProps) {
     setSelection(undefined);
     setDocs({});
     void refresh();
+  };
+
+  /** Sorot elemen komentar di frame halaman itu; diabaikan bila frame tak ada. */
+  const locateComment = (slug: string, selector: string): void => {
+    const frame = frameEls.current.get(slug);
+    frame?.contentWindow?.postMessage(highlightMessage(selector), "*");
+  };
+
+  const tambahKomentar = async (): Promise<void> => {
+    const teks = commentText.trim();
+    const current = selectionRef.current;
+    if (teks === "" || commentBusy || current === undefined) return;
+    const tambah = props.onAddComment;
+    if (tambah === undefined) return;
+    setCommentBusy(true);
+    setCommentLocalError(undefined);
+    try {
+      await tambah({ slug: current.slug, selector: current.selector, text: teks });
+      setCommentText("");
+      setCommentsOpen(true);
+    } catch (caught) {
+      setCommentLocalError(
+        caught instanceof ApiError ? caught.message : "komentar tidak dapat disimpan",
+      );
+    } finally {
+      setCommentBusy(false);
+    }
   };
 
   const zoomTo = (zoom: number): void => {
@@ -949,6 +990,15 @@ export function DesignCanvas(props: DesignCanvasProps) {
         <button
           type="button"
           class="jk-design-chip"
+          aria-expanded={commentsOpen}
+          title="Komentar desain"
+          onClick={() => setCommentsOpen((open) => !open)}
+        >
+          {commentCountLabel(props.comments ?? [])}
+        </button>
+        <button
+          type="button"
+          class="jk-design-chip"
           aria-label="Segarkan"
           title="Segarkan"
           onClick={refreshAll}
@@ -1016,9 +1066,54 @@ export function DesignCanvas(props: DesignCanvasProps) {
                   Sisipkan ke pesan
                 </button>
               </div>
+              {props.onAddComment !== undefined && (
+                <form
+                  class="jk-design-comment-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void tambahKomentar();
+                  }}
+                >
+                  <textarea
+                    class="jk-design-comment-form-input"
+                    aria-label="Komentar untuk elemen ini"
+                    maxLength={1000}
+                    rows={2}
+                    value={commentText}
+                    onInput={(event) =>
+                      setCommentText((event.currentTarget as HTMLTextAreaElement).value)
+                    }
+                  />
+                  <button
+                    type="submit"
+                    class="jk-design-chip"
+                    disabled={commentText.trim() === "" || commentBusy}
+                  >
+                    Tambah komentar
+                  </button>
+                  {commentLocalError !== undefined && (
+                    <p class="jk-design-comment-form-error" role="alert">
+                      {commentLocalError}
+                    </p>
+                  )}
+                </form>
+              )}
             </div>
           )}
         </aside>
+      )}
+
+      {commentsOpen && (
+        <DesignComments
+          comments={props.comments ?? []}
+          pages={pages}
+          live={liveSet}
+          error={props.commentError ?? commentLocalError}
+          onLocate={locateComment}
+          onQuote={props.onQuote}
+          onSetStatus={(id, status) => props.onCommentStatus?.(id, status)}
+          onRemove={(id) => props.onRemoveComment?.(id)}
+        />
       )}
 
       <p class="jk-visually-hidden" aria-live="polite">

@@ -3,6 +3,7 @@ import { ApiError, type ApiClient } from "../lib/api";
 import { createCaptureRunner, type CaptureFn } from "../lib/design-capture";
 import { SAMPLE_PROMPT, pageRows } from "../lib/design-ui";
 import { useDesign } from "../lib/use-design";
+import { useDesignComments } from "../lib/use-design-comments";
 import { DesignCanvas } from "./DesignCanvas";
 
 export interface DesignTabProps {
@@ -52,6 +53,7 @@ export function DesignTab(props: DesignTabProps) {
     active,
     (requests) => runner.handle(requests),
   );
+  const comments = useDesignComments(api, sessionId, repo, active, design);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const [tracked, setTracked] = useState(false);
@@ -142,6 +144,11 @@ export function DesignTab(props: DesignTabProps) {
           registerCapture={(fn) => {
             captureRef.current = fn;
           }}
+          comments={comments.comments}
+          commentError={comments.error}
+          onAddComment={(input) => comments.add(input)}
+          onCommentStatus={(id, status) => void comments.setStatus(id, status)}
+          onRemoveComment={(id) => void comments.remove(id)}
         />
       </div>
     );

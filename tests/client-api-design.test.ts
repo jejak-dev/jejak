@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { ApiError, createApiClient, designFrameUrl, type DesignResult } from "../src/client/lib/api";
+import {
+  ApiError,
+  createApiClient,
+  designFrameUrl,
+  type DesignComment,
+  type DesignResult,
+} from "../src/client/lib/api";
 
 interface Call {
   url: string;
@@ -277,5 +283,94 @@ describe("klien API desain", () => {
       expect((caught as ApiError).status).toBe(status);
       expect((caught as ApiError).message).toBe(message);
     }
+  });
+});
+
+describe("klien API komentar desain", () => {
+  const COMMENT: DesignComment = {
+    id: "c_aaaaaaaaaa",
+    slug: "beranda",
+    selector: '[id="judul"]',
+    text: "Perbesar judul",
+    status: "open",
+    createdAt: 1,
+  };
+
+  test("listDesignComments GET dan membuang elemen tak sah", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        comments: [COMMENT, { id: 5 }, { ...COMMENT, status: "lama" }, "x"],
+        mtime: 123,
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    expect(await api.listDesignComments("a/b c", "repo satu")).toEqual({
+      comments: [COMMENT],
+      mtime: 123,
+    });
+    expect(calls[0]?.url).toBe("/api/sessions/a%2Fb%20c/design/comments?repo=repo%20satu");
+    expect(calls[0]?.init.method).toBe("GET");
+  });
+
+  test("listDesignComments menolak respons tanpa daftar", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ comments: "x" }));
+    const api = createApiClient({ fetch });
+    await expect(api.listDesignComments("s1")).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("addDesignComment POST body JSON dan repo di query", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ comment: COMMENT }, 201));
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.addDesignComment(
+      "s 1",
+      { slug: "beranda", selector: '[id="judul"]', text: "Perbesar judul" },
+      "web",
+    );
+    expect(hasil).toEqual(COMMENT);
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/design/comments?repo=web");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      slug: "beranda",
+      selector: '[id="judul"]',
+      text: "Perbesar judul",
+    });
+  });
+
+  test("addDesignComment menolak respons tanpa komentar sah", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({}, 201));
+    const api = createApiClient({ fetch });
+    await expect(
+      api.addDesignComment("s1", { slug: "beranda", selector: "#a", text: "x" }),
+    ).rejects.toBeInstanceOf(ApiError);
+  });
+
+  test("updateDesignComment PATCH id ter-encode", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({ comment: { ...COMMENT, status: "done" } }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.updateDesignComment("s1", "c/a b", { status: "done" }, "web");
+    expect(hasil.status).toBe("done");
+    expect(calls[0]?.url).toBe(
+      "/api/sessions/s1/design/comments/c%2Fa%20b?repo=web",
+    );
+    expect(calls[0]?.init.method).toBe("PATCH");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ status: "done" });
+  });
+
+  test("deleteDesignComment DELETE dengan content-type JSON", async () => {
+    const { fetch, calls } = fakeFetch(() => jsonResponse({ ok: true }));
+    const api = createApiClient({ fetch });
+
+    await api.deleteDesignComment("s1", "c_aaaaaaaaaa", "web");
+    expect(calls[0]?.url).toBe(
+      "/api/sessions/s1/design/comments/c_aaaaaaaaaa?repo=web",
+    );
+    expect(calls[0]?.init.method).toBe("DELETE");
+    expect(calls[0]?.init.headers).toEqual({ "content-type": "application/json" });
   });
 });

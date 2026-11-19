@@ -431,6 +431,29 @@ export interface DesignLayoutPage {
   device?: DeviceId;
 }
 
+/** Satu komentar pengguna pada elemen halaman desain. */
+export interface DesignComment {
+  id: string;
+  slug: string;
+  selector: string;
+  text: string;
+  status: "open" | "done";
+  createdAt: number;
+}
+
+/** Masukan komentar desain baru. */
+export interface DesignCommentInput {
+  slug: string;
+  selector: string;
+  text: string;
+}
+
+/** Perubahan satu komentar desain. */
+export interface DesignCommentUpdate {
+  status?: "open" | "done";
+  text?: string;
+}
+
 /** Alasan klien gagal menangkap layar; sama dengan broker server. */
 export type CaptureFailure = "tainted" | "too-large" | "failed" | "no-frame";
 
@@ -463,6 +486,22 @@ function designCapturesFrom(value: unknown): DesignCaptureRequest[] {
     hasil.push({ id, slug, scale });
   }
   return hasil;
+}
+
+/**
+ * Menyaring satu komentar desain dari respons server. `undefined` bila
+ * bentuknya salah; elemen tak sah dibuang diam-diam oleh pemanggil.
+ */
+function designCommentFrom(value: unknown): DesignComment | undefined {
+  if (!isRecord(value)) return undefined;
+  const { id, slug, selector, text, status, createdAt } = value;
+  if (typeof id !== "string" || id === "") return undefined;
+  if (typeof slug !== "string" || slug === "") return undefined;
+  if (typeof selector !== "string" || selector === "") return undefined;
+  if (typeof text !== "string") return undefined;
+  if (status !== "open" && status !== "done") return undefined;
+  if (typeof createdAt !== "number" || !Number.isFinite(createdAt)) return undefined;
+  return { id, slug, selector, text, status, createdAt };
 }
 
 export interface RejectChangeInput {
@@ -843,6 +882,26 @@ export interface ApiClient {
     repo?: string,
     options?: { tracked?: boolean },
   ): Promise<{ ok: true; created: string[] }>;
+  /** Komentar pengguna pada elemen desain. */
+  listDesignComments(
+    id: string,
+    repo?: string,
+  ): Promise<{ comments: DesignComment[]; mtime: number }>;
+  /** Tambah satu komentar pada elemen halaman. */
+  addDesignComment(
+    id: string,
+    input: DesignCommentInput,
+    repo?: string,
+  ): Promise<DesignComment>;
+  /** Ubah status dan/atau teks satu komentar. */
+  updateDesignComment(
+    id: string,
+    commentId: string,
+    input: DesignCommentUpdate,
+    repo?: string,
+  ): Promise<DesignComment>;
+  /** Hapus satu komentar. */
+  deleteDesignComment(id: string, commentId: string, repo?: string): Promise<void>;
   searchFiles(
     id: string,
     query: string,
@@ -2526,6 +2585,66 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const created = field(data, "created");
       if (!Array.isArray(created)) throw invalidResponse();
       return { ok: true, created: stringListFrom(created) };
+    },
+
+    async listDesignComments(id, repo) {
+      const query = queryString([["repo", repo]]);
+      const data = await request(
+        "GET",
+        `/api/sessions/${encodeURIComponent(id)}/design/comments${query}`,
+      );
+      const raw = field(data, "comments");
+      if (!Array.isArray(raw)) throw invalidResponse();
+      const comments: DesignComment[] = [];
+      for (const item of raw) {
+        const comment = designCommentFrom(item);
+        if (comment !== undefined) comments.push(comment);
+      }
+      const mtime = field(data, "mtime");
+      if (typeof mtime !== "number" || !Number.isFinite(mtime)) throw invalidResponse();
+      return { comments, mtime };
+    },
+
+    async addDesignComment(id, input, repo) {
+      const query = queryString([["repo", repo]]);
+      const body: DesignCommentInput = {
+        slug: input.slug,
+        selector: input.selector,
+        text: input.text,
+      };
+      const data = await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/design/comments${query}`,
+        body,
+      );
+      const comment = designCommentFrom(field(data, "comment"));
+      if (comment === undefined) throw invalidResponse();
+      return comment;
+    },
+
+    async updateDesignComment(id, commentId, input, repo) {
+      const query = queryString([["repo", repo]]);
+      const body: DesignCommentUpdate = {};
+      if (input.status !== undefined) body.status = input.status;
+      if (input.text !== undefined) body.text = input.text;
+      const data = await request(
+        "PATCH",
+        `/api/sessions/${encodeURIComponent(id)}/design/comments/${encodeURIComponent(commentId)}${query}`,
+        body,
+      );
+      const comment = designCommentFrom(field(data, "comment"));
+      if (comment === undefined) throw invalidResponse();
+      return comment;
+    },
+
+    async deleteDesignComment(id, commentId, repo) {
+      const query = queryString([["repo", repo]]);
+      // Penjaga server mewajibkan content-type JSON pada DELETE; body kosong cukup.
+      await request(
+        "DELETE",
+        `/api/sessions/${encodeURIComponent(id)}/design/comments/${encodeURIComponent(commentId)}${query}`,
+        {},
+      );
     },
 
     async searchFiles(id, query, options) {
