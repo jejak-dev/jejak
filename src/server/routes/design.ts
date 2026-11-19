@@ -1,6 +1,13 @@
 import { Elysia } from "elysia";
 import type { SessionManager, WorkspaceResolver } from "../sessions/session-manager";
 import { DesignError, assemblePage, buildCsp } from "../design/assemble";
+import {
+  DesignCommentError,
+  addComment,
+  deleteComment,
+  listComments,
+  updateComment,
+} from "../design/comments";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignWriteError, initDesign, saveLayout } from "../design/write";
 import { REVERT_MESSAGES } from "../files/revert";
@@ -31,6 +38,9 @@ function jsonResponse(status: number, payload: unknown): Response {
 /** Pemetaan galat yang sama dengan rute berkas. */
 function errorResponse(error: unknown): Response {
   if (error instanceof DesignWriteError) {
+    return jsonResponse(error.status, { error: error.message });
+  }
+  if (error instanceof DesignCommentError) {
     return jsonResponse(error.status, { error: error.message });
   }
   if (error instanceof DesignError) {
@@ -155,6 +165,97 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
         return errorResponse(error);
       }
     })
+    .get("/api/sessions/:id/design/comments", async ({ params, query }) => {
+      const session = manager.get(params.id);
+      if (session === undefined) {
+        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+      }
+      try {
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        return await listComments(root);
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .post(
+      "/api/sessions/:id/design/comments",
+      async ({ params, query, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        try {
+          const input = parseJsonBody(body);
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          const comment = await addComment(root, input);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Komentar desain ditambah",
+            meta: { aksi: "design-comment", halaman: comment.slug },
+          });
+          return jsonResponse(201, { comment });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .patch(
+      "/api/sessions/:id/design/comments/:commentId",
+      async ({ params, query, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        try {
+          const input = parseJsonBody(body);
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          const comment = await updateComment(root, params.commentId, input);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Komentar desain diubah",
+            meta: { aksi: "design-comment", halaman: comment.slug },
+          });
+          return jsonResponse(200, { comment });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .delete(
+      "/api/sessions/:id/design/comments/:commentId",
+      async ({ params, query }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        try {
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          await deleteComment(root, params.commentId);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Komentar desain dihapus",
+            meta: { aksi: "design-comment" },
+          });
+          return jsonResponse(200, { ok: true });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+    )
     .put(
       "/api/sessions/:id/design/layout",
       async ({ params, query, body }) => {
