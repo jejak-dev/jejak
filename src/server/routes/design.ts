@@ -11,7 +11,7 @@ import {
 import type { CaptureBroker, CaptureFailure } from "../design/capture-broker";
 import { CaptureError, NOT_FOUND } from "../design/capture-broker";
 import { DesignDocError, syncDesignDoc } from "../design/design-doc";
-import { exportDesignZip, exportStandalonePage } from "../design/export";
+import { exportDesignZip, exportReactProject, exportStandalonePage } from "../design/export";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignTokenError, readTokens, writeTokens, type DesignToken } from "../design/tokens";
 import { DesignWriteError, createVariant, initDesign, saveLayout, saveNotes } from "../design/write";
@@ -389,6 +389,18 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
             sessionId: session.id,
             summary: "Folder desain diekspor",
             meta: { aksi: "design.export", format: "zip", jumlah: result.files },
+          });
+          return new Response(result.data, {
+            headers: exportHeaders("application/zip", result.filename),
+          });
+        }
+        if (format === "react") {
+          const result = await exportReactProject(root);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Desain diekspor sebagai proyek React",
+            meta: { aksi: "design.export", format: "react", jumlah: result.files },
           });
           return new Response(result.data, {
             headers: exportHeaders("application/zip", result.filename),

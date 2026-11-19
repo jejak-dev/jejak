@@ -134,6 +134,25 @@ describe("GET /api/sessions/:id/design/export", () => {
     expect(new TextDecoder().decode(data)).toContain("pages/beranda.html");
   });
 
+  test("format react mengembalikan arsip proyek React", async () => {
+    await seedDesign();
+    const server = makeApp();
+    const id = await createSession(server);
+
+    const res = await req(server, `/api/sessions/${id}/design/export?format=react`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/zip");
+    expect(res.headers.get("content-disposition")).toBe('attachment; filename="design-react.zip"');
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const data = new Uint8Array(await res.arrayBuffer());
+    expect(data[0]).toBe(0x50);
+    expect(data[1]).toBe(0x4b);
+    const teks = new TextDecoder().decode(data);
+    expect(teks).toContain("src/App.tsx");
+    expect(teks).toContain("package.json");
+  });
+
   test("format tak dikenal 400", async () => {
     await seedDesign();
     const server = makeApp();
@@ -181,13 +200,17 @@ describe("GET /api/sessions/:id/design/export", () => {
 
     await req(server, `/api/sessions/${id}/design/export?format=html&slug=beranda`);
     await req(server, `/api/sessions/${id}/design/export?format=zip`);
+    await req(server, `/api/sessions/${id}/design/export?format=react`);
     const entries = audit.list({ kind: "berkas", limit: 50 });
     const ekspor = entries.filter((item) => item.meta.aksi === "design.export");
-    expect(ekspor).toHaveLength(2);
+    expect(ekspor).toHaveLength(3);
     const html = ekspor.find((item) => item.meta.format === "html");
     expect(html?.meta.slug).toBe("beranda");
     const zip = ekspor.find((item) => item.meta.format === "zip");
     expect(zip?.meta.jumlah).toBe(3);
+    const react = ekspor.find((item) => item.meta.format === "react");
+    expect(react).toBeDefined();
+    expect(typeof react?.meta.jumlah).toBe("number");
     audit.close();
   });
 });
