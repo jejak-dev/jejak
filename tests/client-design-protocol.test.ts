@@ -4,7 +4,10 @@ import {
   MAX_FRAME_HEIGHT,
   MAX_HTML_CHARS,
   MAX_MESSAGE_BYTES,
+  MAX_SHOT_CHARS,
   MIN_FRAME_HEIGHT,
+  SHOT_DATA_URL_PREFIX,
+  captureMessage,
   clearSelectionMessage,
   highlightMessage,
   isFromFrame,
@@ -13,6 +16,19 @@ import {
 } from "../src/client/lib/design-protocol";
 
 const BOUNDS = { x: 1, y: 2, width: 3, height: 4 };
+const PNG_KECIL = `${SHOT_DATA_URL_PREFIX}iVBORw0KGgo=`;
+
+function shot(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    channel: DESIGN_CHANNEL,
+    type: "shot",
+    id: "tangkapan-1",
+    width: 800,
+    height: 600,
+    dataUrl: PNG_KECIL,
+    ...extra,
+  };
+}
 
 describe("parseFrameMessage: tipe yang sah", () => {
   test("ready", () => {
@@ -205,6 +221,69 @@ describe("parseFrameMessage: pemotongan dan penjepitan", () => {
   });
 });
 
+describe("parseFrameMessage: shot dan shot-error", () => {
+  test("shot sah", () => {
+    expect(parseFrameMessage(shot())).toEqual({
+      channel: DESIGN_CHANNEL,
+      type: "shot",
+      id: "tangkapan-1",
+      width: 800,
+      height: 600,
+      dataUrl: PNG_KECIL,
+    });
+  });
+
+  test("dataUrl bukan PNG ditolak", () => {
+    expect(parseFrameMessage(shot({ dataUrl: "data:image/jpeg;base64,abcd" }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ dataUrl: "data:image/png,abcd" }))).toBeUndefined();
+  });
+
+  test("dataUrl berisi karakter non-base64 ditolak", () => {
+    expect(parseFrameMessage(shot({ dataUrl: `${SHOT_DATA_URL_PREFIX}ab cd` }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ dataUrl: `${SHOT_DATA_URL_PREFIX}ab!cd` }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ dataUrl: `${SHOT_DATA_URL_PREFIX}ab==cd` }))).toBeUndefined();
+  });
+
+  test("dataUrl terlalu panjang ditolak", () => {
+    expect(
+      parseFrameMessage(shot({ dataUrl: `${SHOT_DATA_URL_PREFIX}${"A".repeat(MAX_SHOT_CHARS)}` })),
+    ).toBeUndefined();
+  });
+
+  test("id tak sah ditolak", () => {
+    expect(parseFrameMessage(shot({ id: "" }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ id: "a".repeat(65) }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ id: "ada spasi" }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ id: 5 }))).toBeUndefined();
+  });
+
+  test("width/height di luar rentang ditolak", () => {
+    expect(parseFrameMessage(shot({ width: 0 }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ width: 8193 }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ height: 1.5 }))).toBeUndefined();
+    expect(parseFrameMessage(shot({ height: NaN }))).toBeUndefined();
+  });
+
+  test("pesan shot besar tidak ditolak batas 64 KB", () => {
+    const besar = `${SHOT_DATA_URL_PREFIX}${"A".repeat(200_000)}`;
+    const pesan = parseFrameMessage(shot({ dataUrl: besar }));
+    expect(pesan?.type).toBe("shot");
+    if (pesan?.type === "shot") expect(pesan.dataUrl.length).toBe(besar.length);
+  });
+
+  test("shot-error sah dan tak sah", () => {
+    expect(
+      parseFrameMessage({ channel: DESIGN_CHANNEL, type: "shot-error", id: "x", reason: "tainted" }),
+    ).toEqual({ channel: DESIGN_CHANNEL, type: "shot-error", id: "x", reason: "tainted" });
+    expect(
+      parseFrameMessage({ channel: DESIGN_CHANNEL, type: "shot-error", id: "x", reason: "besok" }),
+    ).toBeUndefined();
+    expect(
+      parseFrameMessage({ channel: DESIGN_CHANNEL, type: "shot-error", id: "", reason: "failed" }),
+    ).toBeUndefined();
+  });
+});
+
 describe("isFromFrame", () => {
   test("hanya sumber yang sama", () => {
     const jendela = {};
@@ -223,5 +302,31 @@ describe("pembuat pesan", () => {
       type: "highlight",
       selector: "x".repeat(500),
     });
+  });
+
+  test("capture: id sah, skala bawaan 1", () => {
+    expect(captureMessage("abc_123-XYZ")).toEqual({
+      channel: DESIGN_CHANNEL,
+      type: "capture",
+      id: "abc_123-XYZ",
+      scale: 1,
+    });
+    expect(captureMessage("a")).toEqual({ channel: DESIGN_CHANNEL, type: "capture", id: "a", scale: 1 });
+  });
+
+  test("capture: skala 2", () => {
+    expect(captureMessage("id", 2)).toEqual({
+      channel: DESIGN_CHANNEL,
+      type: "capture",
+      id: "id",
+      scale: 2,
+    });
+  });
+
+  test("capture: id tak sah menghasilkan undefined", () => {
+    expect(captureMessage("")).toBeUndefined();
+    expect(captureMessage("a".repeat(65))).toBeUndefined();
+    expect(captureMessage("ada spasi")).toBeUndefined();
+    expect(captureMessage("salah!")).toBeUndefined();
   });
 });

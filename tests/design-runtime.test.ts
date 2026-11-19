@@ -38,6 +38,14 @@ describe("frameRuntimeScript", () => {
     expect(() => new Function(sumber)).not.toThrow();
   });
 
+  test("cabang capture dan pesan shot ada di sumber", () => {
+    const sumber = buildRuntimeSource("beranda");
+    expect(sumber).toContain('data.type === "capture"');
+    expect(sumber).toContain('"shot-error"');
+    expect(sumber).toContain('type: "shot"');
+    expect(() => new Function(sumber)).not.toThrow();
+  });
+
   test("slug aneh ter-escape dan tidak menutup tag skrip", () => {
     const jahat = '</script><b>"  ';
     const sumber = buildRuntimeSource(jahat);

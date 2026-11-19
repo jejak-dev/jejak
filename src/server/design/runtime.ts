@@ -43,14 +43,22 @@ export const RUNTIME_SOURCE = `(function () {
   var BATAS_HTML = 2048;
   var BATAS_TEKS = 200;
   var BATAS_SELECTOR = 500;
+  var BATAS_SHOT = 6000000;
+  var BATAS_LEBAR_TANGKAP = 4096;
+  var BATAS_TINGGI_TANGKAP = 6000;
+  var BATAS_SISI_PIKSEL = 8192;
+  var BATAS_LUAS_PIKSEL = 40000000;
+  var BATAS_WAKTU_TANGKAP = 10000;
+  var ID_TANGKAP = /^[A-Za-z0-9_-]{1,64}$/;
   var mode = "preview";
   var overlay = null;
   var tinggiTerakhir = -1;
   var bingkai = 0;
   var hoverBingkai = 0;
   var geser = null;
+  var menangkap = false;
 
-  function kirim(pesan) {
+  function kirim(pesan, batas) {
     pesan.channel = CHANNEL;
     var teks;
     try {
@@ -58,7 +66,8 @@ export const RUNTIME_SOURCE = `(function () {
     } catch (galat) {
       return;
     }
-    if (teks.length > BATAS_PESAN) return;
+    var maks = typeof batas === "number" ? batas : BATAS_PESAN;
+    if (teks.length > maks) return;
     try {
       window.parent.postMessage(pesan, "*");
     } catch (galat) {}
@@ -354,6 +363,146 @@ export const RUNTIME_SOURCE = `(function () {
     kirim({ type: "route", hash: (location.hash || "").slice(0, 200) });
   });
 
+  function kirimGalatTangkap(id, alasan) {
+    kirim({ type: "shot-error", id: id, reason: alasan });
+  }
+
+  // Kanvas menampung raster; lepaskan setelah selesai agar memori frame
+  // tidak menumpuk antar tangkapan.
+  function lepasKanvas(kanvas) {
+    try {
+      kanvas.width = 0;
+      kanvas.height = 0;
+    } catch (galat) {}
+  }
+
+  function tangkap(id, skala) {
+    if (menangkap) {
+      kirimGalatTangkap(id, "failed");
+      return;
+    }
+    menangkap = true;
+    var selesai = false;
+    var kanvas = null;
+    var pewaktu = setTimeout(function () {
+      gagal("failed");
+    }, BATAS_WAKTU_TANGKAP);
+
+    function akhir() {
+      if (selesai) return;
+      selesai = true;
+      menangkap = false;
+      clearTimeout(pewaktu);
+      if (kanvas) lepasKanvas(kanvas);
+    }
+
+    function gagal(alasan) {
+      if (selesai) return;
+      akhir();
+      kirimGalatTangkap(id, alasan);
+    }
+
+    try {
+      var akar = document.documentElement;
+      if (!akar) {
+        gagal("failed");
+        return;
+      }
+      var lebar = Math.max(akar.scrollWidth, akar.clientWidth);
+      var tinggi = Math.max(akar.scrollHeight, akar.clientHeight);
+      if (lebar > BATAS_LEBAR_TANGKAP) lebar = BATAS_LEBAR_TANGKAP;
+      if (tinggi > BATAS_TINGGI_TANGKAP) tinggi = BATAS_TINGGI_TANGKAP;
+      if (lebar < 1 || tinggi < 1) {
+        gagal("failed");
+        return;
+      }
+      var pikselLebar = lebar * skala;
+      var pikselTinggi = tinggi * skala;
+      if (pikselLebar > BATAS_SISI_PIKSEL || pikselTinggi > BATAS_SISI_PIKSEL ||
+          pikselLebar * pikselTinggi > BATAS_LUAS_PIKSEL) {
+        gagal("too-large");
+        return;
+      }
+
+      var klon;
+      try {
+        klon = akar.cloneNode(true);
+      } catch (galat) {
+        gagal("failed");
+        return;
+      }
+      var buang = klon.querySelectorAll("script, [data-jejak-sorot], [data-jejak-toast]");
+      for (var i = 0; i < buang.length; i += 1) {
+        if (buang[i].parentNode) buang[i].parentNode.removeChild(buang[i]);
+      }
+      klon.removeAttribute("data-jejak-design-runtime");
+      var semua = klon.querySelectorAll("[data-jejak-design-runtime]");
+      for (var j = 0; j < semua.length; j += 1) {
+        semua[j].removeAttribute("data-jejak-design-runtime");
+      }
+
+      var xml;
+      try {
+        xml = new XMLSerializer().serializeToString(klon);
+      } catch (galat) {
+        gagal("failed");
+        return;
+      }
+      var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + lebar +
+        '" height="' + tinggi +
+        '"><foreignObject x="0" y="0" width="100%" height="100%">' +
+        xml + "</foreignObject></svg>";
+
+      var gambar = new Image();
+      function muat() {
+        if (selesai) return;
+        try {
+          kanvas = document.createElement("canvas");
+          kanvas.width = pikselLebar;
+          kanvas.height = pikselTinggi;
+          var konteks = kanvas.getContext("2d");
+          if (!konteks) {
+            gagal("failed");
+            return;
+          }
+          konteks.scale(skala, skala);
+          konteks.drawImage(gambar, 0, 0);
+        } catch (galatGambar) {
+          gagal("failed");
+          return;
+        }
+        var dataUrl;
+        try {
+          dataUrl = kanvas.toDataURL("image/png");
+        } catch (galatKanvas) {
+          var nama = galatKanvas && galatKanvas.name ? String(galatKanvas.name) : "";
+          gagal(nama === "SecurityError" ? "tainted" : "failed");
+          return;
+        }
+        if (!dataUrl || dataUrl.indexOf("data:image/png;base64,") !== 0 ||
+            dataUrl.length > BATAS_SHOT) {
+          gagal(dataUrl ? "too-large" : "failed");
+          return;
+        }
+        akhir();
+        kirim({ type: "shot", id: id, width: pikselLebar, height: pikselTinggi, dataUrl: dataUrl }, BATAS_SHOT + 4096);
+      }
+      function galatMuat() {
+        gagal("failed");
+      }
+      gambar.onerror = galatMuat;
+      if (typeof gambar.decode === "function") {
+        gambar.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+        gambar.decode().then(muat, galatMuat);
+      } else {
+        gambar.onload = muat;
+        gambar.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      }
+    } catch (galatLuar) {
+      gagal("failed");
+    }
+  }
+
   window.addEventListener("message", function (e) {
     if (e.source !== window.parent) return;
     var data = e.data;
@@ -369,6 +518,13 @@ export const RUNTIME_SOURCE = `(function () {
     }
     if (data.type === "clear-selection") {
       hapusOverlay();
+      return;
+    }
+    if (data.type === "capture") {
+      if (typeof data.id !== "string" || !ID_TANGKAP.test(data.id)) return;
+      var skala = data.scale === undefined ? 1 : data.scale;
+      if (skala !== 1 && skala !== 2) return;
+      tangkap(data.id, skala);
       return;
     }
     if (data.type === "highlight") {

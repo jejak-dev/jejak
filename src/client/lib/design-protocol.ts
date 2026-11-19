@@ -10,6 +10,14 @@ export const MIN_FRAME_HEIGHT = 200;
 export const MAX_FRAME_HEIGHT = 6000;
 export const MAX_HTML_CHARS = 2048;
 
+/** Batas id pesan `capture`/`shot`: 1..64 karakter `[A-Za-z0-9_-]`. */
+export const MESSAGE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+/** Batas perkiraan panjang data URL PNG; lebih besar dari batas pesan biasa. */
+export const MAX_SHOT_CHARS = 6_000_000;
+/** Batas sisi lebar/tinggi gambar tangkapan yang dilaporkan frame. */
+export const MAX_SHOT_DIMENSION = 8192;
+export const SHOT_DATA_URL_PREFIX = "data:image/png;base64,";
+
 const MAX_TEXT_CHARS = 200;
 const MAX_SELECTOR_CHARS = 500;
 const MAX_HASH_CHARS = 200;
@@ -68,12 +76,32 @@ export type FrameMessage =
       clientX: number;
       clientY: number;
     }
-  | { channel: typeof DESIGN_CHANNEL; type: "pan"; dx: number; dy: number };
+  | { channel: typeof DESIGN_CHANNEL; type: "pan"; dx: number; dy: number }
+  | {
+      channel: typeof DESIGN_CHANNEL;
+      type: "shot";
+      id: string;
+      width: number;
+      height: number;
+      dataUrl: string;
+    }
+  | {
+      channel: typeof DESIGN_CHANNEL;
+      type: "shot-error";
+      id: string;
+      reason: ShotErrorReason;
+    };
+
+/** Alasan tangkapan layar gagal di dalam frame. */
+export type ShotErrorReason = "tainted" | "too-large" | "failed";
+
+const SHOT_ERROR_REASONS: readonly ShotErrorReason[] = ["tainted", "too-large", "failed"];
 
 export type HostMessage =
   | { channel: typeof DESIGN_CHANNEL; type: "mode"; tool: "preview" | "select" }
   | { channel: typeof DESIGN_CHANNEL; type: "clear-selection" }
-  | { channel: typeof DESIGN_CHANNEL; type: "highlight"; selector: string };
+  | { channel: typeof DESIGN_CHANNEL; type: "highlight"; selector: string }
+  | { channel: typeof DESIGN_CHANNEL; type: "capture"; id: string; scale: 1 | 2 };
 
 const STYLE_KEYS = [
   "color",
@@ -102,6 +130,14 @@ function teks(value: unknown, maks: number): string | undefined {
   return value.slice(0, maks);
 }
 
+/** Bilangan bulat 1..MAX_SHOT_DIMENSION untuk dimensi tangkapan. */
+function dimensi(value: unknown): number | undefined {
+  const n = angka(value);
+  if (n === undefined || !Number.isInteger(n)) return undefined;
+  if (n < 1 || n > MAX_SHOT_DIMENSION) return undefined;
+  return n;
+}
+
 function bounds(value: unknown): FrameBounds | undefined {
   if (!isRecord(value)) return undefined;
   const x = angka(value.x);
@@ -125,6 +161,29 @@ function style(value: unknown): FrameStyle {
 }
 
 /**
+ * Sisa `dataUrl` setelah awalan PNG harus base64 murni. Regex lengket dipakai
+ * supaya pemeriksaan dimulai di offset awalan tanpa memotong (menyalin)
+ * string data URL yang bisa berukuran megabita.
+ */
+const SHOT_BASE64_RE = /[A-Za-z0-9+/]+={0,2}$/y;
+
+/** Memvalidasi pesan `shot` tanpa men-stringify data URL besar. */
+function parseShot(data: Record<string, unknown>): FrameMessage | undefined {
+  const id = data.id;
+  if (typeof id !== "string" || !MESSAGE_ID_RE.test(id)) return undefined;
+  const width = dimensi(data.width);
+  const height = dimensi(data.height);
+  if (width === undefined || height === undefined) return undefined;
+  const dataUrl = data.dataUrl;
+  if (typeof dataUrl !== "string") return undefined;
+  if (dataUrl.length > MAX_SHOT_CHARS) return undefined;
+  if (!dataUrl.startsWith(SHOT_DATA_URL_PREFIX)) return undefined;
+  SHOT_BASE64_RE.lastIndex = SHOT_DATA_URL_PREFIX.length;
+  if (!SHOT_BASE64_RE.test(dataUrl)) return undefined;
+  return { channel: DESIGN_CHANNEL, type: "shot", id, width, height, dataUrl };
+}
+
+/**
  * Memvalidasi satu pesan dari frame. Mengembalikan `undefined` untuk apa pun
  * yang tidak dikenal, terlalu besar, atau berbentuk salah; tidak pernah
  * melempar.
@@ -133,6 +192,8 @@ export function parseFrameMessage(data: unknown): FrameMessage | undefined {
   if (!isRecord(data)) return undefined;
   if (data.channel !== DESIGN_CHANNEL) return undefined;
   if (typeof data.type !== "string") return undefined;
+  // `shot` membawa data URL besar dengan batasnya sendiri; jangan di-stringify.
+  if (data.type === "shot") return parseShot(data);
   let ukuran: number;
   try {
     ukuran = JSON.stringify(data).length;
@@ -224,6 +285,13 @@ export function parseFrameMessage(data: unknown): FrameMessage | undefined {
       if (dx === undefined || dy === undefined) return undefined;
       return { channel: DESIGN_CHANNEL, type: "pan", dx, dy };
     }
+    case "shot-error": {
+      const id = data.id;
+      if (typeof id !== "string" || !MESSAGE_ID_RE.test(id)) return undefined;
+      const reason = SHOT_ERROR_REASONS.find((nilai) => nilai === data.reason);
+      if (reason === undefined) return undefined;
+      return { channel: DESIGN_CHANNEL, type: "shot-error", id, reason };
+    }
     default:
       return undefined;
   }
@@ -247,4 +315,13 @@ export function clearSelectionMessage(): HostMessage {
 /** Pesan untuk menyorot elemen lewat selector (dipakai D2). */
 export function highlightMessage(selector: string): HostMessage {
   return { channel: DESIGN_CHANNEL, type: "highlight", selector: selector.slice(0, MAX_SELECTOR_CHARS) };
+}
+
+/**
+ * Pesan untuk meminta tangkapan layar dari frame (dipakai D2). `undefined`
+ * bila `id` tidak lolos batas, karena frame akan mengabaikannya.
+ */
+export function captureMessage(id: string, scale: 1 | 2 = 1): HostMessage | undefined {
+  if (!MESSAGE_ID_RE.test(id)) return undefined;
+  return { channel: DESIGN_CHANNEL, type: "capture", id, scale };
 }
