@@ -11,6 +11,7 @@ import {
 import type { CaptureBroker, CaptureFailure } from "../design/capture-broker";
 import { CaptureError, NOT_FOUND } from "../design/capture-broker";
 import { designStamp, readDesign } from "../design/manifest";
+import { DesignTokenError, readTokens, writeTokens, type DesignToken } from "../design/tokens";
 import { DesignWriteError, initDesign, saveLayout } from "../design/write";
 import { REVERT_MESSAGES } from "../files/revert";
 import { FileError } from "../files/path";
@@ -47,6 +48,9 @@ function errorResponse(error: unknown): Response {
   if (error instanceof DesignCommentError) {
     return jsonResponse(error.status, { error: error.message });
   }
+  if (error instanceof DesignTokenError) {
+    return jsonResponse(error.status, { error: error.message });
+  }
   if (error instanceof DesignError) {
     return jsonResponse(error.status, { error: error.message });
   }
@@ -58,6 +62,8 @@ function errorResponse(error: unknown): Response {
 
 const EDIT_DISABLED = "Penyuntingan berkas dimatikan.";
 const MAX_BODY_BYTES = 256 * 1024;
+/** Batas body rute token: daftar token dibatasi 200 entri. */
+const MAX_TOKENS_BODY_BYTES = 64 * 1024;
 /** Batas body unggahan tangkapan: PNG 4 MB menjadi ~5,4 MB base64. */
 const MAX_CAPTURE_BODY_CHARS = 6_000_000;
 const DATA_URL_PREFIX = "data:image/png;base64,";
@@ -81,6 +87,45 @@ function parseJsonBody(body: unknown): unknown {
   } catch {
     throw new DesignWriteError("Body bukan JSON yang valid.", 400);
   }
+}
+
+/**
+ * Body `PUT tokens`: `{tokens: [{name, value}], baseMtime?}`. Kunci tak
+ * dikenal ditolak; daftar token divalidasi di modul token.
+ */
+function parseTokensBody(body: unknown): { tokens: DesignToken[]; baseMtime?: number } {
+  if (typeof body !== "string") {
+    throw new DesignTokenError("Body bukan JSON yang valid.", 400);
+  }
+  if (Buffer.byteLength(body, "utf8") > MAX_TOKENS_BODY_BYTES) {
+    throw new DesignTokenError("Body permintaan terlalu besar.", 413);
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(body);
+  } catch {
+    throw new DesignTokenError("Body bukan JSON yang valid.", 400);
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new DesignTokenError("Body permintaan harus berupa objek.", 400);
+  }
+  const record = input as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (key !== "tokens" && key !== "baseMtime") {
+      throw new DesignTokenError("Field tidak dikenal.", 400);
+    }
+  }
+  if (!Array.isArray(record.tokens)) {
+    throw new DesignTokenError("Field tokens harus berupa daftar.", 400);
+  }
+  let baseMtime: number | undefined;
+  if (record.baseMtime !== undefined) {
+    if (typeof record.baseMtime !== "number" || !Number.isFinite(record.baseMtime)) {
+      throw new DesignTokenError("baseMtime harus berupa bilangan.", 400);
+    }
+    baseMtime = record.baseMtime;
+  }
+  return { tokens: record.tokens as DesignToken[], ...(baseMtime === undefined ? {} : { baseMtime }) };
 }
 
 /** Body init opsional: kosong berarti default; `tracked` harus boolean. */
@@ -338,6 +383,46 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
           return errorResponse(error);
         }
       },
+    )
+    .get("/api/sessions/:id/design/tokens", async ({ params, query }) => {
+      const session = manager.get(params.id);
+      if (session === undefined) {
+        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+      }
+      try {
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        return await readTokens(root);
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .put(
+      "/api/sessions/:id/design/tokens",
+      async ({ params, query, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        if (!editEnabled) {
+          return jsonResponse(403, { error: EDIT_DISABLED });
+        }
+        try {
+          const input = parseTokensBody(body);
+          const root = await resolveRepoRoot(session, query.repo, workspaces);
+          const { mtime } = await writeTokens(root, input);
+          const read = await readTokens(root);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Token desain disimpan",
+            meta: { aksi: "design-tokens", jumlah: read.tokens.length },
+          });
+          return jsonResponse(200, { tokens: read.tokens, mtime });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
     )
     .put(
       "/api/sessions/:id/design/layout",
