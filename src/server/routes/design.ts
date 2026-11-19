@@ -8,6 +8,8 @@ import {
   listComments,
   updateComment,
 } from "../design/comments";
+import type { CaptureBroker, CaptureFailure } from "../design/capture-broker";
+import { CaptureError, NOT_FOUND } from "../design/capture-broker";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignWriteError, initDesign, saveLayout } from "../design/write";
 import { REVERT_MESSAGES } from "../files/revert";
@@ -26,6 +28,8 @@ export interface DesignRoutesOptions {
   editEnabled?: boolean;
   /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
   audit?: AuditStore;
+  /** Perantara tangkapan layar; tanpa ini unggahan tangkapan menjawab 404. */
+  captures?: CaptureBroker;
 }
 
 function jsonResponse(status: number, payload: unknown): Response {
@@ -54,6 +58,11 @@ function errorResponse(error: unknown): Response {
 
 const EDIT_DISABLED = "Penyuntingan berkas dimatikan.";
 const MAX_BODY_BYTES = 256 * 1024;
+/** Batas body unggahan tangkapan: PNG 4 MB menjadi ~5,4 MB base64. */
+const MAX_CAPTURE_BODY_CHARS = 6_000_000;
+const DATA_URL_PREFIX = "data:image/png;base64,";
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+const CAPTURE_FAILURES: readonly CaptureFailure[] = ["tainted", "too-large", "failed", "no-frame"];
 
 function runningResponse(): Response {
   return jsonResponse(409, { error: REVERT_MESSAGES.RUNNING });
@@ -93,6 +102,44 @@ function parseInitBody(body: unknown): { tracked?: boolean } {
   return { tracked: record.tracked };
 }
 
+/** Body unggahan tangkapan: `{dataUrl}` atau `{error}`; bentuk salah -> 400. */
+function parseCaptureBody(body: unknown): { dataUrl: string } | { error: CaptureFailure } {
+  if (typeof body !== "string") {
+    throw new DesignWriteError("Body bukan JSON yang valid.", 400);
+  }
+  if (body.length > MAX_CAPTURE_BODY_CHARS) {
+    throw new DesignWriteError("Body permintaan terlalu besar.", 400);
+  }
+  let input: unknown;
+  try {
+    input = JSON.parse(body);
+  } catch {
+    throw new DesignWriteError("Body bukan JSON yang valid.", 400);
+  }
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    throw new DesignWriteError("Body permintaan tidak valid.", 400);
+  }
+  const record = input as Record<string, unknown>;
+  if (typeof record.dataUrl === "string") {
+    const dataUrl = record.dataUrl;
+    if (!dataUrl.startsWith(DATA_URL_PREFIX)) {
+      throw new DesignWriteError("Gambar tangkapan tidak valid.", 400);
+    }
+    const isi = dataUrl.slice(DATA_URL_PREFIX.length);
+    if (isi.length === 0 || !BASE64_RE.test(isi)) {
+      throw new DesignWriteError("Gambar tangkapan tidak valid.", 400);
+    }
+    return { dataUrl };
+  }
+  if (typeof record.error === "string") {
+    if (!(CAPTURE_FAILURES as readonly string[]).includes(record.error)) {
+      throw new DesignWriteError("Body permintaan tidak valid.", 400);
+    }
+    return { error: record.error as CaptureFailure };
+  }
+  throw new DesignWriteError("Body permintaan tidak valid.", 400);
+}
+
 /**
  * Rute model desain. Semua di bawah `/api/` sehingga otomatis dilindungi
  * autentikasi. Hanya `PUT layout` dan `POST init` yang menulis ke disk.
@@ -103,6 +150,7 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
   const allowGoogleFonts = options.allowGoogleFonts === true;
   const editEnabled = options.editEnabled ?? true;
   const audit = options.audit;
+  const captures = options.captures;
   const auditEntry = (entry: AuditEntryInput): void => recordAudit(audit, entry);
 
   const plugin = new Elysia({ name: "jejak-design-routes" })
@@ -160,11 +208,46 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
       }
       try {
         const root = await resolveRepoRoot(session, query.repo, workspaces);
-        return { stamp: await designStamp(root) };
+        const stamp = await designStamp(root);
+        if (captures === undefined) return { stamp };
+        // Polling stamp sekaligus menandai kanvas desain sedang terbuka.
+        captures.touch(session.id);
+        return { stamp, captures: captures.pending(session.id) };
       } catch (error) {
         return errorResponse(error);
       }
     })
+    .post(
+      "/api/sessions/:id/design/capture/:requestId",
+      async ({ params, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        // Bukan penulisan berkas: sakelar editEnabled tidak dipakai.
+        if (captures === undefined) {
+          return jsonResponse(404, { error: "Permintaan tidak ditemukan." });
+        }
+        try {
+          const input = parseCaptureBody(body);
+          if ("error" in input) {
+            const dikenal = captures.fail(session.id, params.requestId, input.error);
+            if (!dikenal) return jsonResponse(404, { error: NOT_FOUND });
+            return jsonResponse(200, { ok: true });
+          }
+          const png = Buffer.from(input.dataUrl.slice(DATA_URL_PREFIX.length), "base64");
+          captures.complete(session.id, params.requestId, png);
+          return jsonResponse(200, { ok: true });
+        } catch (error) {
+          if (error instanceof CaptureError) {
+            if (error.message === NOT_FOUND) return jsonResponse(404, { error: error.message });
+            return jsonResponse(400, { error: error.message });
+          }
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
     .get("/api/sessions/:id/design/comments", async ({ params, query }) => {
       const session = manager.get(params.id);
       if (session === undefined) {

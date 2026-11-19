@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SqliteAuditStore } from "../src/server/audit/audit-store";
+import { CaptureBroker } from "../src/server/design/capture-broker";
 import {
   DESIGN_EDIT_DISABLED_MESSAGE,
   DesignTools,
@@ -37,10 +38,13 @@ function pagePath(): string {
   return join(dir, "design", "pages", "home.html");
 }
 
-function tools(options: { editEnabled?: () => boolean; audit?: SqliteAuditStore } = {}): DesignTools {
+function tools(
+  options: { editEnabled?: () => boolean; audit?: SqliteAuditStore; captures?: CaptureBroker } = {},
+): DesignTools {
   return new DesignTools({
     editEnabled: options.editEnabled ?? (() => true),
     ...(options.audit === undefined ? {} : { audit: options.audit }),
+    ...(options.captures === undefined ? {} : { captures: options.captures }),
   });
 }
 
@@ -169,5 +173,122 @@ describe("design_patch perilaku", () => {
     });
     expect(hasil.isError).toBe(true);
     expect(hasil.text).not.toContain("RAHASIA-123");
+  });
+});
+
+/** PNG minimal valid (tanda tangan + IHDR) untuk hasil tangkapan. */
+function png(width: number, height: number): Buffer {
+  const buf = Buffer.alloc(45);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buf, 0);
+  buf.writeUInt32BE(13, 8);
+  buf.write("IHDR", 12, "latin1");
+  buf.writeUInt32BE(width, 16);
+  buf.writeUInt32BE(height, 20);
+  buf[24] = 8;
+  buf[25] = 2;
+  buf.write("IEND", 37, "latin1");
+  return buf;
+}
+
+describe("design_screenshot", () => {
+  test("definisi hanya ada dengan broker", () => {
+    expect(tools().definitions.map((def) => def.name)).toEqual(["design_patch"]);
+    const broker = new CaptureBroker();
+    const names = tools({ captures: broker }).definitions.map((def) => def.name);
+    expect(names).toEqual(["design_patch", "design_screenshot"]);
+  });
+
+  test("panggilan tanpa broker ditolak", async () => {
+    const hasil = await tools().call(ctx(), "design_screenshot", { slug: "home" });
+    expect(hasil.isError).toBe(true);
+    expect(hasil.text).toContain("tidak dikenal");
+  });
+
+  test("alur sukses memuat gambar dan audit tercatat", async () => {
+    const store = new SqliteAuditStore(":memory:");
+    try {
+      const broker = new CaptureBroker({ timeoutMs: 500 });
+      broker.touch("s_design");
+      const janji = tools({ captures: broker, audit: store }).call(ctx(), "design_screenshot", {
+        slug: "home",
+        scale: 2,
+      });
+      await Bun.sleep(5);
+      const pending = broker.pending("s_design");
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.scale).toBe(2);
+      broker.complete("s_design", pending[0]!.id, png(20, 30));
+      const hasil = await janji;
+      expect(hasil.isError).toBe(false);
+      expect(hasil.text).toContain("20x30 px");
+      expect(hasil.image?.mimeType).toBe("image/png");
+      expect(Buffer.from(hasil.image!.data, "base64").subarray(0, 4).toString("hex")).toBe(
+        "89504e47",
+      );
+      const entri = store.list({ kind: "tool" });
+      expect(entri).toHaveLength(1);
+      expect(entri[0]?.summary).toBe("Design screenshot");
+      expect(entri[0]?.meta).toEqual({ tool: "design_screenshot", halaman: "home" });
+    } finally {
+      store.close();
+    }
+  });
+
+  test("halaman tak ada dan kanvas tak terbuka", async () => {
+    const broker = new CaptureBroker();
+    broker.touch("s_design");
+    const hilang = await tools({ captures: broker }).call(ctx(), "design_screenshot", {
+      slug: "tidak-ada",
+    });
+    expect(hilang.isError).toBe(true);
+    expect(hilang.text).toBe("Halaman tidak ditemukan.");
+
+    const tanpaKanvas = await tools({ captures: new CaptureBroker() }).call(
+      ctx(),
+      "design_screenshot",
+      { slug: "home" },
+    );
+    expect(tanpaKanvas.isError).toBe(true);
+    expect(tanpaKanvas.text).toContain("Buka kanvas desain");
+    expect(broker.pending("s_design")).toEqual([]);
+  });
+
+  test("args salah ditolak", async () => {
+    const broker = new CaptureBroker();
+    const asing = await tools({ captures: broker }).call(ctx(), "design_screenshot", {
+      slug: "home",
+      rahasia: 1,
+    });
+    expect(asing.isError).toBe(true);
+    expect(asing.text).toContain("tidak dikenal");
+    const skala = await tools({ captures: broker }).call(ctx(), "design_screenshot", {
+      slug: "home",
+      scale: 3,
+    });
+    expect(skala.isError).toBe(true);
+    const tanpaSlug = await tools({ captures: broker }).call(ctx(), "design_screenshot", {});
+    expect(tanpaSlug.isError).toBe(true);
+    expect(broker.pending("s_design")).toEqual([]);
+  });
+
+  test("kegagalan klien tidak dicatat di audit", async () => {
+    const store = new SqliteAuditStore(":memory:");
+    try {
+      const broker = new CaptureBroker({ timeoutMs: 500 });
+      broker.touch("s_design");
+      const janji = tools({ captures: broker, audit: store }).call(
+        ctx(),
+        "design_screenshot",
+        { slug: "home" },
+      );
+      await Bun.sleep(5);
+      broker.fail("s_design", broker.pending("s_design")[0]!.id, "tainted");
+      const hasil = await janji;
+      expect(hasil.isError).toBe(true);
+      expect(hasil.text).toContain("tidak mengizinkan");
+      expect(store.list({ kind: "tool" })).toEqual([]);
+    } finally {
+      store.close();
+    }
   });
 });

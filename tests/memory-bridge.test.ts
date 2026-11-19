@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentEvent, AgentRunner, RunInput } from "../src/server/agent/events";
 import type { BrowserManager, BrowserState, PageSnapshot } from "../src/server/browser/browser-manager";
+import { CaptureBroker } from "../src/server/design/capture-broker";
 import { createMemoryBridge, type MemoryBridge } from "../src/server/memory/memory-bridge";
 import { MemoryService } from "../src/server/memory/memory-service";
 import { FileMemoryStore } from "../src/server/memory/memory-store";
@@ -389,6 +390,28 @@ describe("createMemoryBridge + design", () => {
       expect(opened.memory.indexLine).toContain("design_patch");
     } finally {
       opened.close();
+    }
+  });
+
+  test("tool dan indexLine menyebut design_screenshot hanya bila broker ada", async () => {
+    const { bridge } = createMemoryBridge({
+      service,
+      design: { editEnabled: () => true, captures: new CaptureBroker() },
+    });
+    const opened = await bridge.open({ sessionId: "s_design_ss", cwd: dir });
+    try {
+      expect(opened.memory.tools).toContain("design_screenshot");
+      expect(opened.memory.indexLine).toContain("design_screenshot");
+    } finally {
+      opened.close();
+    }
+    const tanpa = createMemoryBridge({ service, design: { editEnabled: () => true } });
+    const openedTanpa = await tanpa.bridge.open({ sessionId: "s_design_ss2", cwd: dir });
+    try {
+      expect(openedTanpa.memory.tools).not.toContain("design_screenshot");
+      expect(openedTanpa.memory.indexLine).not.toContain("design_screenshot");
+    } finally {
+      openedTanpa.close();
     }
   });
 

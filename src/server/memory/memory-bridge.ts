@@ -16,6 +16,7 @@ import type { QuestionService } from "../questions/question-service";
 import { WorkspaceTools, type WorkspaceToolSource } from "../workspaces/workspace-tools";
 import { BrowserTools } from "../browser/browser-tools";
 import type { BrowserManager } from "../browser/browser-manager";
+import type { CaptureBroker } from "../design/capture-broker";
 import { DesignTools } from "../design/design-tools";
 import type { AuditStore } from "../audit/audit-store";
 
@@ -72,6 +73,8 @@ export interface MemoryBridgeDesignOptions {
   editEnabled: () => boolean;
   /** Penyimpan audit; tanpa ini tool desain tidak dicatat. */
   audit?: AuditStore;
+  /** Perantara tangkapan layar; tanpa ini tool `design_screenshot` tidak ada. */
+  captures?: CaptureBroker;
 }
 
 /** Sumber tool browser untuk jembatan. */
@@ -96,6 +99,9 @@ const BROWSER_INDEX_LINE =
 
 const DESIGN_INDEX_LINE =
   " Halaman desain di design/pages/ diubah dengan design_patch (perubahan terarah pada satu elemen) alih-alih menulis ulang seluruh berkas: baca halaman dulu untuk memilih selector yang cocok tepat satu elemen ([id=\"...\"]), sertakan baseMtime bila diketahui, dan satu panggilan hanya mengubah satu elemen.";
+
+const DESIGN_SCREENSHOT_INDEX_LINE =
+  " Periksa hasil ubahan dengan design_screenshot (hanya jika kanvas desain terbuka di Jejak; kalau galat, minta pengguna membukanya).";
 
 /** Set komposit: tool memory hanya bila layanan memory ada, tool workspace hanya bila token punya workspace. */
 function composeTools(
@@ -209,6 +215,9 @@ export function createMemoryBridge(options: MemoryBridgeOptions): {
       : new DesignTools({
           editEnabled: options.design.editEnabled,
           ...(options.design.audit === undefined ? {} : { audit: options.design.audit }),
+          ...(options.design.captures === undefined
+            ? {}
+            : { captures: options.design.captures }),
         });
   const browserTools =
     options.browser === undefined
@@ -262,6 +271,9 @@ export function createMemoryBridge(options: MemoryBridgeOptions): {
       }
       if (designTools !== undefined) {
         indexLine = `${indexLine}${DESIGN_INDEX_LINE}`.trim();
+      }
+      if (options.design?.captures !== undefined) {
+        indexLine = `${indexLine}${DESIGN_SCREENSHOT_INDEX_LINE}`.trim();
       }
 
       const available: string[] = [];

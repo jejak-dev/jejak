@@ -64,6 +64,7 @@ import { checkpointRoutes } from "./routes/checkpoints";
 import { auditRoutes } from "./routes/audit";
 import { clientRoutes, type ClientRoutesOptions } from "./routes/client";
 import { designRoutes } from "./routes/design";
+import { CaptureBroker } from "./design/capture-broker";
 import { fileRoutes } from "./routes/files";
 import { fsRoutes } from "./routes/fs";
 import { goalRoutes } from "./routes/goal";
@@ -458,6 +459,10 @@ export function createApp(options: CreateAppOptions = {}) {
   // seketika (tool tak tampil dan panggilan ditolak saat browser mati).
   // Jembatan selalu dibuat; Mode Goal tetap butuh tool `goal_update` yang
   // hanya ada bila layanan memory tersedia.
+  // Satu broker tangkapan dipakai jembatan MCP dan rute desain: agent
+  // meminta, klien yang mem-poll stamp menangkap lalu mengunggah.
+  const captures = new CaptureBroker();
+
   const memoryBridge = createMemoryBridge({
     ...(options.memory === undefined ? {} : { service: options.memory }),
     ...(options.workspaces === undefined ? {} : { workspaces: options.workspaces }),
@@ -470,6 +475,7 @@ export function createApp(options: CreateAppOptions = {}) {
     design: {
       editEnabled: () => env.JEJAK_FILE_EDIT?.trim() !== "0",
       ...(options.audit === undefined ? {} : { audit: options.audit }),
+      captures,
     },
     goalReporter: (sessionId, report) => goalReporter.report(sessionId, report),
     goalActive: (sessionId) => goalReporter.hasGoal(sessionId),
@@ -920,6 +926,7 @@ export function createApp(options: CreateAppOptions = {}) {
       allowGoogleFonts: env.JEJAK_DESIGN_GOOGLE_FONTS?.trim() === "1",
       editEnabled: env.JEJAK_FILE_EDIT?.trim() !== "0",
       audit: options.audit,
+      captures,
     }),
   );
   // Rute tunnel dipasang di luar rantai demi alasan yang sama.
