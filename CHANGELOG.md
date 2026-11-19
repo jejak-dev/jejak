@@ -10,6 +10,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 - Design (D1): tab Desain dan kanvas frame. Desain berupa HTML biasa di folder `design/` repo (`design.json`, `pages/`, `tokens.css`); tiap halaman tampil sebagai frame iframe tersandbox (tanpa jaringan, CSP ketat) dengan preset desktop, tablet, dan mobile, zoom, geser, dan tata letak tersimpan. Alat Pilih menampilkan info elemen (selector, gaya, HTML) dan menyisipkannya ke pesan untuk diubah agent. Mode lebar menyempitkan sidebar agar kanvas leluasa.
 - Design (D2): agent mengubah desain dari kanvas. Alat `design_patch` (perubahan terarah per elemen dengan `baseMtime`), `design_screenshot` (tangkapan frame dari kanvas yang terbuka), `design_comments` dan `design_comment_resolve`. Pengguna menambah komentar pada elemen terpilih, pin bernomor tampil di frame, dan daftar komentar bisa dikirim ke agent. Mode Fokus (tombol atau F) membuat kanvas memenuhi jendela dengan baris pesan melayang.
+- Design (D3): sistem desain. Panel Token menyunting variabel `design/tokens.css` (warna, ukuran, font) dan frame memuat ulang setelah disimpan. `design/DESIGN.md` memuat blok otomatis berisi token dan halaman terkini yang dibaca agent. Halaman bisa dibuat varian (mis. gelap, kosong, galat) dan halaman sekelompok digambar dalam satu kotak berlabel. Catatan tempel bebas di kanvas disimpan di `design.json`.
 
 ## [0.1.0-beta.15] - 2026-11-18
 
