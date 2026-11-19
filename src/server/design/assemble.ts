@@ -408,7 +408,7 @@ function insertRuntime(html: string, script: string): string {
 export async function assemblePage(
   root: string,
   slug: string,
-  options: { allowGoogleFonts?: boolean } = {},
+  options: { allowGoogleFonts?: boolean; runtime?: boolean } = {},
 ): Promise<{ slug: string; html: string; mtime: number; warnings: string[] }> {
   if (!SLUG_RE.test(slug)) throw new DesignError("Slug halaman tidak valid.", 400);
   const designDir = await resolveDesignDir(root);
@@ -531,7 +531,8 @@ export async function assemblePage(
 
   let html = applyEdits(source, edits);
   html = insertCsp(html, scanTags(html), allowGoogleFonts);
-  html = insertRuntime(html, frameRuntimeScript(slug));
+  // Runtime frame hanya berguna di dalam kanvas; ekspor berkas tak memakainya.
+  if (options.runtime !== false) html = insertRuntime(html, frameRuntimeScript(slug));
 
   return { slug, html, mtime: Math.round(info.mtimeMs), warnings: ctx.warnings };
 }

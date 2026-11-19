@@ -11,6 +11,7 @@ import {
 import type { CaptureBroker, CaptureFailure } from "../design/capture-broker";
 import { CaptureError, NOT_FOUND } from "../design/capture-broker";
 import { DesignDocError, syncDesignDoc } from "../design/design-doc";
+import { exportDesignZip, exportStandalonePage } from "../design/export";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignTokenError, readTokens, writeTokens, type DesignToken } from "../design/tokens";
 import { DesignWriteError, createVariant, initDesign, saveLayout, saveNotes } from "../design/write";
@@ -62,6 +63,16 @@ function errorResponse(error: unknown): Response {
     return jsonResponse(error.code === "tidak-ditemukan" ? 404 : 400, { error: error.message });
   }
   return jsonResponse(400, { error: "Permintaan tidak valid." });
+}
+
+/** Header unduhan berkas ekspor desain (HTML mandiri atau ZIP). */
+function exportHeaders(contentType: string, filename: string): Record<string, string> {
+  return {
+    "content-type": contentType,
+    "content-disposition": `attachment; filename="${filename}"`,
+    "x-content-type-options": "nosniff",
+    "cache-control": "no-store",
+  };
 }
 
 const EDIT_DISABLED = "Penyuntingan berkas dimatikan.";
@@ -346,6 +357,44 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
             "referrer-policy": "no-referrer",
           },
         });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
+    .get("/api/sessions/:id/design/export", async ({ params, query }) => {
+      const session = manager.get(params.id);
+      if (session === undefined) {
+        return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+      }
+      try {
+        const root = await resolveRepoRoot(session, query.repo, workspaces);
+        const format = typeof query.format === "string" ? query.format : "";
+        if (format === "html") {
+          const slug = typeof query.slug === "string" ? query.slug : "";
+          const result = await exportStandalonePage(root, slug);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Halaman desain diekspor",
+            meta: { aksi: "design.export", format: "html", slug },
+          });
+          return new Response(result.html, {
+            headers: exportHeaders("text/html; charset=utf-8", result.filename),
+          });
+        }
+        if (format === "zip") {
+          const result = await exportDesignZip(root);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Folder desain diekspor",
+            meta: { aksi: "design.export", format: "zip", jumlah: result.files },
+          });
+          return new Response(result.data, {
+            headers: exportHeaders("application/zip", result.filename),
+          });
+        }
+        return jsonResponse(400, { error: "Format ekspor tidak dikenal." });
       } catch (error) {
         return errorResponse(error);
       }
