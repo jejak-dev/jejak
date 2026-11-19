@@ -242,6 +242,13 @@ Web dan mobile dirancang sebagai halaman terpisah.
 - Tanpa jaringan dari dalam halaman.
 - Tautan antarhalaman memakai \`#/rute\`.
 
+## Mengubah desain yang sudah ada
+
+- Untuk perubahan terarah pakai \`design_patch\` (satu elemen per panggilan), bukan menulis ulang halaman.
+- Selalu sertakan \`baseMtime\` dari pembacaan terakhir; bila berkas berubah, baca ulang lalu ulangi.
+- Periksa hasilnya dengan \`design_screenshot\` bila kanvas terbuka di Jejak.
+- Baca komentar terbuka dengan \`design_comments\`, kerjakan, lalu tandai selesai dengan \`design_comment_resolve\`.
+
 ## Token awal
 
 | Nama | Arti |
