@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.19] - 2026-11-20
+
 ### Ditambahkan
 
 - Plugin: marketplace plugin bisa ditambah dari URL GitHub lewat panel plugin.
