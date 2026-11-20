@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.16] - 2026-11-20
+
 ### Ditambahkan
 
 - Design (D1): tab Desain dan kanvas frame. Desain berupa HTML biasa di folder `design/` repo (`design.json`, `pages/`, `tokens.css`); tiap halaman tampil sebagai frame iframe tersandbox (tanpa jaringan, CSP ketat) dengan preset desktop, tablet, dan mobile, zoom, geser, dan tata letak tersimpan. Alat Pilih menampilkan info elemen (selector, gaya, HTML) dan menyisipkannya ke pesan untuk diubah agent. Mode lebar menyempitkan sidebar agar kanvas leluasa.

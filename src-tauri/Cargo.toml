@@ -1,6 +1,6 @@
 [package]
 name = "jejak-desktop"
-version = "0.1.0-beta.15"
+version = "0.1.0-beta.16"
 description = "Workbench agent coding"
 authors = ["Jejak"]
 license = "MIT"
