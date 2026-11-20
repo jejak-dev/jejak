@@ -310,6 +310,11 @@ export interface PluginCommandOutcome {
   message: string;
 }
 
+/** Hasil penambahan marketplace; daftar terbaru ikut bila berhasil. */
+export interface MarketplaceAddOutcome extends PluginCommandOutcome {
+  marketplaces?: MarketplaceInfoItem[];
+}
+
 export interface ClaudeConfigPatch {
   userSettings?: boolean;
   hooksEnabled?: boolean;
@@ -1184,6 +1189,8 @@ export interface ApiClient {
   installPlugin(id: string): Promise<PluginCommandOutcome>;
   /** Copot plugin yang terpasang. */
   uninstallPlugin(id: string): Promise<PluginCommandOutcome>;
+  /** Tambah marketplace dari URL GitHub atau bentuk `owner/repo`. */
+  addMarketplace(source: string): Promise<MarketplaceAddOutcome>;
   /** Daftar perintah slash yang tersedia di folder kerja tertentu. */
   listCommands(cwd: string): Promise<CommandListResult>;
 }
@@ -2071,6 +2078,16 @@ function pluginCommandOutcomeFrom(payload: unknown): PluginCommandOutcome {
     throw invalidResponse();
   }
   return { ok: payload.ok, message: payload.message };
+}
+
+/** Hasil penambahan marketplace; `marketplaces` divalidasi bila ada. */
+function marketplaceAddOutcomeFrom(payload: unknown): MarketplaceAddOutcome {
+  const outcome = pluginCommandOutcomeFrom(payload);
+  const result: MarketplaceAddOutcome = outcome;
+  if (isRecord(payload) && payload.marketplaces !== undefined) {
+    result.marketplaces = marketplaceListFrom(payload);
+  }
+  return result;
 }
 
 /** Perintah runner dari server; `group` dan `detail` boleh absen. */
@@ -3786,6 +3803,12 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
     async uninstallPlugin(id) {
       return pluginCommandOutcomeFrom(
         await request("POST", "/api/claude/plugins/uninstall", { id }),
+      );
+    },
+
+    async addMarketplace(source) {
+      return marketplaceAddOutcomeFrom(
+        await request("POST", "/api/claude/marketplaces/add", { source }),
       );
     },
 

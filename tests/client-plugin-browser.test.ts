@@ -43,16 +43,19 @@ interface Opsi {
   items?: MarketplacePluginItem[];
   /** Hasil pencarian yang dikembalikan server. */
   hasil?: { ok: boolean; message: string };
+  /** Hasil penambahan marketplace; bawaan sukses. */
+  tambah?: { ok: boolean; message: string };
 }
 
 interface Panggilan {
   cari: MarketplaceSearchInput[];
   pasang: string[];
   copot: string[];
+  tambah: string[];
 }
 
 function apiPalsu(opsi: Opsi = {}): { api: ApiClient; panggilan: Panggilan } {
-  const panggilan: Panggilan = { cari: [], pasang: [], copot: [] };
+  const panggilan: Panggilan = { cari: [], pasang: [], copot: [], tambah: [] };
   const katalog = opsi.items ?? [plugin()];
   const base = {
     listMarketplaces: async () => [
@@ -86,6 +89,10 @@ function apiPalsu(opsi: Opsi = {}): { api: ApiClient; panggilan: Panggilan } {
     uninstallPlugin: async (id: string) => {
       panggilan.copot.push(id);
       return { ok: true, message: "Plugin dicopot." };
+    },
+    addMarketplace: async (sumber: string) => {
+      panggilan.tambah.push(sumber);
+      return opsi.tambah ?? { ok: true, message: "Marketplace ditambahkan." };
     },
   };
   return { api: base as unknown as ApiClient, panggilan };
@@ -302,5 +309,81 @@ describe("pemasangan plugin dari marketplace", () => {
     expect(tombol(node, "Terpasang")).toBeDefined();
     expect(tombol(node, "Copot")).toBeDefined();
     expect(tombol(node, "Pasang")).toBeUndefined();
+  });
+});
+
+/** Isi kolom sumber marketplace. */
+function isiSumber(root: FakeNode, teks: string): void {
+  const input = find(
+    root,
+    (node) =>
+      node.localName === "input" && node.getAttribute("aria-label") === "Sumber marketplace",
+  );
+  expect(input).toBeDefined();
+  (input as unknown as { value: string }).value = teks;
+  fire(input!, "input");
+}
+
+describe("tambah marketplace", () => {
+  test("konfirmasi muncul dulu dan API tak dipanggil sebelum 'Ya, tambah'", async () => {
+    const { api, panggilan } = apiPalsu();
+    const node = mount(h(PluginBrowser, { api }));
+    await flushEffects();
+
+    isiSumber(node, "anti/slop");
+    await flushEffects();
+    fire(tombol(node, "Tambah")!, "click");
+    await flushEffects();
+
+    expect(node.textContent).toContain("Mengunduh kode dari anti/slop. Lanjutkan?");
+    expect(panggilan.tambah).toEqual([]);
+  });
+
+  test("'Ya, tambah' memanggil API dan menampilkan pesan sukses", async () => {
+    const { api, panggilan } = apiPalsu();
+    const node = mount(h(PluginBrowser, { api }));
+    await flushEffects();
+
+    isiSumber(node, "anti/slop");
+    await flushEffects();
+    fire(tombol(node, "Tambah")!, "click");
+    await flushEffects();
+    fire(tombol(node, "Ya, tambah")!, "click");
+    await flushEffects();
+
+    expect(panggilan.tambah).toEqual(["anti/slop"]);
+    expect(node.textContent).toContain("Marketplace ditambahkan.");
+    expect(tombol(node, "Ya, tambah")).toBeUndefined();
+  });
+
+  test("kegagalan menampilkan pesan server", async () => {
+    const { api } = apiPalsu({ tambah: { ok: false, message: "Repo tak ditemukan." } });
+    const node = mount(h(PluginBrowser, { api }));
+    await flushEffects();
+
+    isiSumber(node, "anti/slop");
+    await flushEffects();
+    fire(tombol(node, "Tambah")!, "click");
+    await flushEffects();
+    fire(tombol(node, "Ya, tambah")!, "click");
+    await flushEffects();
+
+    expect(node.textContent).toContain("Repo tak ditemukan.");
+  });
+
+  test("Batal menutup konfirmasi tanpa memanggil API", async () => {
+    const { api, panggilan } = apiPalsu();
+    const node = mount(h(PluginBrowser, { api }));
+    await flushEffects();
+
+    isiSumber(node, "anti/slop");
+    await flushEffects();
+    fire(tombol(node, "Tambah")!, "click");
+    await flushEffects();
+    fire(tombol(node, "Batal")!, "click");
+    await flushEffects();
+
+    expect(panggilan.tambah).toEqual([]);
+    expect(tombol(node, "Ya, tambah")).toBeUndefined();
   });
 });

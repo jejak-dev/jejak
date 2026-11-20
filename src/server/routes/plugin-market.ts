@@ -8,7 +8,10 @@ import {
   listMarketplaces,
   searchMarketplacePlugins,
 } from "../claude-config/marketplace";
-import type { PluginInstaller } from "../claude-config/plugin-installer";
+import {
+  type PluginInstaller,
+  parseMarketplaceSource,
+} from "../claude-config/plugin-installer";
 import { PLUGIN_ID_PATTERN, listInstalledPlugins } from "../claude-config/plugins";
 
 export interface PluginMarketRoutesOptions {
@@ -27,6 +30,7 @@ const NO_INSTALLER = "Pemasangan plugin tidak tersedia.";
 const MAX_QUERY_LENGTH = 100;
 
 const ID_BODY_KEYS = ["id"] as const;
+const SOURCE_BODY_KEYS = ["source"] as const;
 
 function jsonResponse(status: number, payload: unknown): Response {
   return new Response(JSON.stringify(payload), {
@@ -119,6 +123,18 @@ function parsePluginId(body: unknown): string {
 
 function audit(store: AuditStore | undefined, summary: string, meta: AuditMeta): void {
   recordAudit(store, { kind: "pengaturan", summary, meta });
+}
+
+/** Sumber marketplace dari body; dinormalkan sebelum dipakai. */
+function parseSource(body: unknown): string {
+  const record = parseObjectBody(body, SOURCE_BODY_KEYS);
+  const value = record.source;
+  if (typeof value !== "string") {
+    throw new RequestError("Sumber marketplace tidak valid.");
+  }
+  const parsed = parseMarketplaceSource(value);
+  if (!parsed.ok) throw new RequestError(parsed.error);
+  return parsed.source;
 }
 
 /**
@@ -223,6 +239,32 @@ export function pluginMarketRoutes(options: PluginMarketRoutesOptions = {}): Ely
           store.setPluginEnabled(id, false);
           audit(auditStore, "Plugin dicopot", { aksi: "copot-plugin", plugin: id });
           return { ok: true, message: hasil.message };
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
+    .post(
+      "/api/claude/marketplaces/add",
+      async ({ body }) => {
+        if (store === undefined) return disabledResponse(DISABLED);
+        if (installer === undefined) return disabledResponse(NO_INSTALLER);
+        try {
+          const source = parseSource(body);
+          const hasil = await installer.addMarketplace(source);
+          if (!hasil.ok) {
+            audit(auditStore, "Penambahan marketplace gagal", {
+              aksi: "gagal-tambah-marketplace",
+              sumber: source,
+            });
+            return { ok: false, message: hasil.message };
+          }
+          audit(auditStore, "Marketplace ditambahkan", {
+            aksi: "tambah-marketplace",
+            sumber: source,
+          });
+          return { ok: true, message: hasil.message, marketplaces: listMarketplaces(home) };
         } catch (error) {
           return errorResponse(error);
         }

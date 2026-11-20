@@ -136,6 +136,10 @@ function installerPalsu(
       if (hasil.ok) await tulis(id);
       return hasil;
     },
+    addMarketplace: async (source) => {
+      calls.push(`addMarketplace:${source}`);
+      return hasil;
+    },
   };
 }
 
@@ -298,5 +302,94 @@ describe("rute marketplace dan pemasangan plugin", () => {
     const res = await req(app, "POST", "/api/claude/plugins/uninstall", { id: "alpha@valid" });
     expect(res.status).toBe(404);
     expect(installer.calls).toEqual([]);
+  });
+
+  test("POST tambah marketplace menormalkan sumber, memuat daftar, dan mencatat audit", async () => {
+    const audit = auditStore();
+    const installer = installerPalsu({ ok: true, message: "Marketplace ditambahkan." });
+    const app = setup({ installer, audit });
+
+    const res = await req(app, "POST", "/api/claude/marketplaces/add", {
+      source: "pemilik/repo",
+    });
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.ok).toBe(true);
+    expect(body.message).toBe("Marketplace ditambahkan.");
+    expect(body.marketplaces).toEqual([
+      {
+        name: "valid",
+        description: "Katalog contoh",
+        pluginCount: 2,
+        lastUpdated: "2026-01-02T03:04:05.000Z",
+      },
+    ]);
+    expect(installer.calls).toEqual(["addMarketplace:https://github.com/pemilik/repo"]);
+
+    const auditEntries = entries(audit);
+    expect(auditEntries.map((entry) => entry.summary)).toContain("Marketplace ditambahkan");
+    const catat = auditEntries.find((entry) => entry.summary === "Marketplace ditambahkan");
+    expect(catat?.meta).toMatchObject({
+      aksi: "tambah-marketplace",
+      sumber: "https://github.com/pemilik/repo",
+    });
+  });
+
+  test("POST tambah marketplace gagal dari CLI tetap 200 dengan ok false", async () => {
+    const audit = auditStore();
+    const installer = installerPalsu({ ok: false, message: "CLI gagal." });
+    const app = setup({ installer, audit });
+
+    const res = await req(app, "POST", "/api/claude/marketplaces/add", {
+      source: "https://github.com/pemilik/repo.git",
+    });
+    expect(res.status).toBe(200);
+    const body = await json(res);
+    expect(body.ok).toBe(false);
+    expect(body.message).toBe("CLI gagal.");
+    expect(installer.calls).toEqual(["addMarketplace:https://github.com/pemilik/repo"]);
+    expect(entries(audit).map((entry) => entry.summary)).toContain(
+      "Penambahan marketplace gagal",
+    );
+  });
+
+  test("POST tambah marketplace 400 untuk sumber buruk dan body asing", async () => {
+    const installer = installerPalsu({ ok: true, message: "ok" });
+    const app = setup({ installer });
+    for (const body of [
+      { source: "http://github.com/pemilik/repo" },
+      { source: "git@github.com:pemilik/repo" },
+      { source: "file:///tmp/x" },
+      { source: "/tmp/x" },
+      { source: "-x/y" },
+      { source: "o r/x" },
+      { source: "o/r/extra" },
+      { source: "" },
+      { source: 1 },
+      {},
+      { source: "pemilik/repo", lain: 1 },
+    ]) {
+      expect((await req(app, "POST", "/api/claude/marketplaces/add", body)).status).toBe(400);
+    }
+    expect(installer.calls).toEqual([]);
+  });
+
+  test("POST tambah marketplace 503 tanpa store atau tanpa installer", async () => {
+    const tanpaStore = setup({ tanpaStore: true });
+    const res = await tanpaStore.handle(
+      new Request("http://127.0.0.1:3000/api/claude/marketplaces/add", {
+        method: "POST",
+        headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+        body: JSON.stringify({ source: "pemilik/repo" }),
+      }),
+    );
+    expect(res.status).toBe(503);
+
+    const matikan = setup({ matikan: true });
+    const res2 = await req(matikan, "POST", "/api/claude/marketplaces/add", {
+      source: "pemilik/repo",
+    });
+    expect(res2.status).toBe(503);
+    expect(await json(res2)).toEqual({ error: "Pemasangan plugin tidak tersedia." });
   });
 });

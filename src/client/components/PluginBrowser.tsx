@@ -24,6 +24,7 @@ const INSTALL_OK_NOTE = "Terpasang. Nyalakan di tab Terpasang agar dipakai sesi 
 const INSTALLING_NOTE = "Memasang… (bisa sampai beberapa menit)";
 const UNINSTALLING_NOTE = "Mencabut…";
 const UNINSTALL_OK_NOTE = "Plugin dicopot dari Claude Code.";
+const ADDING_NOTE = "Menambahkan marketplace…";
 
 /** Status satu kartu: info saat berjalan, hijau saat berhasil, galat saat gagal. */
 interface StatusPesan {
@@ -86,6 +87,12 @@ export function PluginBrowser({ api, onChanged }: PluginBrowserProps) {
   const sibukRef = useRef(false);
   /** Makin banyak untuk memuat ulang data. */
   const [muatUlang, setMuatUlang] = useState(0);
+  /** Kolom dan status penambahan marketplace. */
+  const [sumber, setSumber] = useState("");
+  /** Sumber yang sedang menunggu konfirmasi penambahan. */
+  const [sumberKonfirmasi, setSumberKonfirmasi] = useState<string | undefined>();
+  const [tambahStatus, setTambahStatus] = useState<StatusPesan | undefined>();
+  const [sedangTambah, setSedangTambah] = useState(false);
 
   // Jeda pencarian: ketikan cepat tak memicu permintaan bertubi-tubi.
   useEffect(() => {
@@ -255,6 +262,39 @@ export function PluginBrowser({ api, onChanged }: PluginBrowserProps) {
     [api, onChanged],
   );
 
+  const tambahMarketplace = useCallback(
+    async (sumber: string): Promise<void> => {
+      if (sibukRef.current) return;
+      sibukRef.current = true;
+      setSumberKonfirmasi(undefined);
+      setSumber("");
+      setSedangTambah(true);
+      setTambahStatus({ nada: "info", teks: ADDING_NOTE });
+      try {
+        const hasil = await api.addMarketplace(sumber);
+        if (hasil.ok) {
+          setTambahStatus({ nada: "ok", teks: hasil.message });
+          // Daftar marketplace dan katalog berubah; muat ulang sekaligus.
+          setMuatUlang((current) => current + 1);
+          onChanged?.();
+        } else {
+          setTambahStatus({ nada: "galat", teks: hasil.message });
+        }
+      } catch (caught) {
+        if (isDisabled(caught)) {
+          setDisabled(true);
+          setError(undefined);
+        } else {
+          setTambahStatus({ nada: "galat", teks: errorMessage(caught) });
+        }
+      } finally {
+        sibukRef.current = false;
+        setSedangTambah(false);
+      }
+    },
+    [api, onChanged],
+  );
+
   if (disabled) {
     return <p class="jk-note">{DISABLED_NOTE}</p>;
   }
@@ -264,6 +304,69 @@ export function PluginBrowser({ api, onChanged }: PluginBrowserProps) {
 
   return (
     <div class="jk-plugin-browser">
+      <div class="jk-plugin-add">
+        <span class="jk-plugin-section-title">Tambah marketplace</span>
+        <div class="jk-plugin-add-row">
+          <input
+            type="text"
+            class="jk-input jk-plugin-add-input"
+            placeholder="owner/repo atau https://github.com/owner/repo"
+            aria-label="Sumber marketplace"
+            maxLength={200}
+            value={sumber}
+            onInput={(event) =>
+              setSumber((event.currentTarget as HTMLInputElement).value)
+            }
+          />
+          <button
+            type="button"
+            class="jk-button"
+            disabled={sumber.trim() === "" || sedangTambah}
+            onClick={() => setSumberKonfirmasi(sumber.trim())}
+          >
+            Tambah
+          </button>
+        </div>
+
+        {sumberKonfirmasi !== undefined && (
+          <div class="jk-plugin-confirm">
+            <p class="jk-plugin-confirm-text">
+              {`Mengunduh kode dari ${sumberKonfirmasi}. Lanjutkan?`}
+            </p>
+            <div class="jk-plugin-confirm-actions">
+              <button
+                type="button"
+                class="jk-button jk-button-primary"
+                onClick={() => void tambahMarketplace(sumberKonfirmasi)}
+              >
+                Ya, tambah
+              </button>
+              <button
+                type="button"
+                class="jk-button"
+                onClick={() => setSumberKonfirmasi(undefined)}
+              >
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
+
+        {tambahStatus !== undefined && (
+          <p
+            class={
+              tambahStatus.nada === "galat"
+                ? "jk-error-line jk-plugin-status"
+                : tambahStatus.nada === "ok"
+                  ? "jk-plugin-ok jk-plugin-status"
+                  : "jk-plugin-info jk-plugin-status"
+            }
+            role={tambahStatus.nada === "galat" ? "alert" : undefined}
+          >
+            {tambahStatus.teks}
+          </p>
+        )}
+      </div>
       <div class="jk-plugin-toolbar">
         <span class="jk-plugin-searchbox">
           <Icon name="search" size={14} />

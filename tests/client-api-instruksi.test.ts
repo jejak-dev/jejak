@@ -358,6 +358,33 @@ describe("marketplace", () => {
     expect(hasil.message).toBe("Sumber plugin tak bisa dijangkau.");
   });
 
+  test("addMarketplace mengirim sumber di body dan memvalidasi daftar", async () => {
+    const { fetch, calls } = fakeFetch(() =>
+      jsonResponse({
+        ok: true,
+        message: "Marketplace ditambahkan.",
+        marketplaces: [
+          { name: "pasar", description: "Contoh", pluginCount: 1, lastUpdated: "2026-01-01" },
+        ],
+      }),
+    );
+    const api = createApiClient({ fetch });
+
+    const hasil = await api.addMarketplace("anti/slop");
+
+    expect(hasil.ok).toBe(true);
+    expect(hasil.marketplaces?.[0]?.name).toBe("pasar");
+    expect(calls[0]?.url).toBe("/api/claude/marketplaces/add");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.init.body).toBe(JSON.stringify({ source: "anti/slop" }));
+  });
+
+  test("addMarketplace melaporkan kegagalan tanpa melempar galat", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ ok: false, message: "Repo tak ada." }));
+    const hasil = await createApiClient({ fetch }).addMarketplace("anti/slop");
+    expect(hasil).toEqual({ ok: false, message: "Repo tak ada." });
+  });
+
   test("uninstallPlugin mengirim id di body", async () => {
     const { fetch, calls } = fakeFetch(() =>
       jsonResponse({ ok: true, message: "Plugin dicopot." }),

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   createPluginInstaller,
+  parseMarketplaceSource,
   pluginEnv,
   type PluginSpawn,
   type PluginSpawnOptions,
@@ -169,5 +170,47 @@ describe("pemasang plugin", () => {
     expect(kedua.ok).toBe(false);
     expect(kedua.message).toBe("Masih ada pemasangan lain berjalan.");
     void pertama;
+  });
+});
+
+describe("pembacaan sumber marketplace", () => {
+  test("bentuk URL GitHub dan owner/repo dinormalkan", () => {
+    for (const [masukan, harapan] of [
+      ["https://github.com/pemilik/repo", "https://github.com/pemilik/repo"],
+      ["https://github.com/pemilik/repo.git", "https://github.com/pemilik/repo"],
+      ["https://github.com/pemilik/repo/", "https://github.com/pemilik/repo"],
+      ["pemilik/repo", "https://github.com/pemilik/repo"],
+      ["Pemilik.1-x/repo_2.y", "https://github.com/Pemilik.1-x/repo_2.y"],
+      [" a/b ".trim(), "https://github.com/a/b"],
+    ] as Array<[string, string]>) {
+      expect(parseMarketplaceSource(masukan)).toEqual({ ok: true, source: harapan });
+    }
+  });
+
+  test("sumber buruk ditolak", () => {
+    for (const masukan of [
+      "",
+      "a/b/c",
+      "http://github.com/owner/repo",
+      "https://github.com/owner",
+      "https://github.com//repo",
+      "ssh://git@github.com/owner/repo",
+      "git@github.com:owner/repo",
+      "file:///tmp/repo",
+      "/tmp/owner/repo",
+      "owner/",
+      "/owner/repo",
+      "-owner/repo",
+      "owner/repo extra",
+      "a\tb",
+      "https://github.com/buruk panjang/repo",
+      "https://github.com/own\rer/repo",
+    ]) {
+      expect(parseMarketplaceSource(masukan).ok).toBe(false);
+    }
+  });
+
+  test("bukan string ditolak", () => {
+    expect(parseMarketplaceSource("").ok).toBe(false);
   });
 });

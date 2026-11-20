@@ -11,6 +11,8 @@ export interface PluginCommandResult {
 export interface PluginInstaller {
   install(id: string): Promise<PluginCommandResult>;
   uninstall(id: string): Promise<PluginCommandResult>;
+  /** Daftarkan marketplace dari URL GitHub atau bentuk `owner/repo`. */
+  addMarketplace(source: string): Promise<PluginCommandResult>;
 }
 
 /** Hasil menjalankan satu proses. */
@@ -60,6 +62,60 @@ const PROVIDER_PREFIX = /^(JEJAK_|ANTHROPIC_|OPENAI_|DEEPSEEK_)/;
 const BUSY_MESSAGE = "Masih ada pemasangan lain berjalan.";
 const NOT_FOUND_MESSAGE =
   "CLI claude tidak ditemukan. Pasang Claude Code dulu atau atur jalurnya di Pengaturan.";
+
+/** Hasil pembacaan sumber marketplace. */
+export type MarketplaceSourceResult =
+  | { ok: true; /** Sumber ternormalisasi, mis. `https://github.com/o/r`. */ source: string }
+  | { ok: false; error: string };
+
+/** Awalan URL GitHub yang diterima; hanya https. */
+const GITHUB_PREFIX = "https://github.com/";
+/** Satu ruas owner atau repo. */
+const OWNER_REPO_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
+/** Spasi atau karakter kontrol; tak diterima di sumber mana pun. */
+const BAD_CHARS_PATTERN = /[\s\u0000-\u001f\u007f]/;
+
+/**
+ * Normalkan sumber marketplace menjadi URL GitHub `https://github.com/o/r`.
+ *
+ * Menerima hanya `https://github.com/<owner>/<repo>` (akhiran `.git` atau `/`
+ * opsional) dan bentuk pendek `<owner>/<repo>`. Skema lain, path lokal,
+ * awalan `-`, spasi, dan karakter kontrol ditolak sebelum CLI dijalankan.
+ */
+export function parseMarketplaceSource(text: string): MarketplaceSourceResult {
+  if (typeof text !== "string") {
+    return { ok: false, error: "Sumber marketplace tidak valid." };
+  }
+  if (text === "") {
+    return { ok: false, error: "Sumber marketplace kosong." };
+  }
+  if (BAD_CHARS_PATTERN.test(text)) {
+    return { ok: false, error: "Sumber marketplace tak boleh memuat spasi atau karakter kontrol." };
+  }
+  if (text.startsWith("-")) {
+    return { ok: false, error: "Sumber marketplace tak boleh diawali tanda minus." };
+  }
+
+  let bagian = text;
+  if (text.startsWith(GITHUB_PREFIX)) {
+    bagian = text.slice(GITHUB_PREFIX.length);
+  } else if (text.includes("://") || text.includes(":")) {
+    return { ok: false, error: "Hanya URL GitHub https://github.com/<owner>/<repo> yang diterima." };
+  }
+  if (bagian.endsWith("/")) bagian = bagian.slice(0, -1);
+  if (bagian.toLowerCase().endsWith(".git")) bagian = bagian.slice(0, -4);
+
+  const pisah = bagian.indexOf("/");
+  if (pisah <= 0) {
+    return { ok: false, error: "Sumber marketplace harus berbentuk owner/repo." };
+  }
+  const owner = bagian.slice(0, pisah);
+  const repo = bagian.slice(pisah + 1);
+  if (!OWNER_REPO_PATTERN.test(owner) || !OWNER_REPO_PATTERN.test(repo)) {
+    return { ok: false, error: "Sumber marketplace harus berbentuk owner/repo." };
+  }
+  return { ok: true, source: `${GITHUB_PREFIX}${owner}/${repo}` };
+}
 
 /**
  * Env untuk proses CLI: tanpa kunci Jejak dan penyedia model.
@@ -167,12 +223,9 @@ export function createPluginInstaller(options: PluginInstallerOptions): PluginIn
   let sibuk = false;
 
   async function jalankan(
-    id: string,
-    aksi: "install" | "uninstall",
+    args: string[],
+    sukses: string,
   ): Promise<PluginCommandResult> {
-    if (!PLUGIN_ID_PATTERN.test(id)) {
-      return { ok: false, message: "Id plugin tidak valid." };
-    }
     if (sibuk) return { ok: false, message: BUSY_MESSAGE };
     sibuk = true;
     try {
@@ -185,7 +238,7 @@ export function createPluginInstaller(options: PluginInstallerOptions): PluginIn
       if (ditemukan === null || ditemukan.path.trim() === "") {
         return { ok: false, message: NOT_FOUND_MESSAGE };
       }
-      const cmd = [ditemukan.path, "plugin", aksi, id, "--scope", "user"];
+      const cmd = [ditemukan.path, ...args];
       const hasil = await withTimeout(
         spawn(cmd, { env: pluginEnv(env, options.home), timeoutMs }),
         timeoutMs + TIMEOUT_GRACE_MS,
@@ -210,22 +263,32 @@ export function createPluginInstaller(options: PluginInstallerOptions): PluginIn
                 : `CLI claude berhenti dengan kode ${code}.`,
         };
       }
-      return {
-        ok: true,
-        message:
-          keluaran !== ""
-            ? keluaran
-            : aksi === "install"
-              ? `Plugin ${id} berhasil dipasang.`
-              : `Plugin ${id} berhasil dicopot.`,
-      };
+      return { ok: true, message: keluaran !== "" ? keluaran : sukses };
     } finally {
       sibuk = false;
     }
   }
 
   return {
-    install: (id) => jalankan(id, "install"),
-    uninstall: (id) => jalankan(id, "uninstall"),
+    install: async (id) => {
+      if (!PLUGIN_ID_PATTERN.test(id)) {
+        return { ok: false, message: "Id plugin tidak valid." };
+      }
+      return jalankan(["plugin", "install", id, "--scope", "user"], `Plugin ${id} berhasil dipasang.`);
+    },
+    uninstall: async (id) => {
+      if (!PLUGIN_ID_PATTERN.test(id)) {
+        return { ok: false, message: "Id plugin tidak valid." };
+      }
+      return jalankan(["plugin", "uninstall", id, "--scope", "user"], `Plugin ${id} berhasil dicopot.`);
+    },
+    addMarketplace: async (source) => {
+      const parsed = parseMarketplaceSource(source);
+      if (!parsed.ok) return { ok: false, message: parsed.error };
+      return jalankan(
+        ["plugin", "marketplace", "add", parsed.source, "--scope", "user"],
+        `Marketplace ${parsed.source} berhasil ditambahkan.`,
+      );
+    },
   };
 }

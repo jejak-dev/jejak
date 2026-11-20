@@ -8053,6 +8053,23 @@ h2.jk-md-heading {
   gap: 10px;
 }
 
+.jk-plugin-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jk-plugin-add-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jk-plugin-add-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .jk-plugin-toolbar {
   display: flex;
   flex-wrap: wrap;
