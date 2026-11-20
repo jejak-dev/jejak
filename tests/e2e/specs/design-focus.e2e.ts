@@ -104,7 +104,8 @@ test("mode fokus: kanvas penuh, header hilang, pesan melayang, draf bertahan", a
   const kotakPesan = await pesan.boundingBox();
   expect(kotakPesan).not.toBeNull();
   const tengahPesan = kotakPesan!.x + kotakPesan!.width / 2;
-  expect(Math.abs(tengahPesan - ukuran!.width / 2)).toBeLessThanOrEqual(40);
+  // Toleransi memberi ruang untuk pembulatan subpiksel dan scrollbar.
+  expect(Math.abs(tengahPesan - ukuran!.width / 2)).toBeLessThanOrEqual(48);
   const kotakKartu = await page.locator("form.jk-reply").boundingBox();
   expect(kotakKartu).not.toBeNull();
   // Tepi bawah kartu dekat tepi bawah jendela.

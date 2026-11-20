@@ -434,8 +434,17 @@ describe("Composer: menu perintah slash", () => {
     await flushEffects();
 
     const kolom = area(root);
+    // Tunggu menu benar-benar punya dua opsi agar tidak bergantung pada jeda tetap.
+    for (let i = 0; i < 40 && opsiPerintah(root).length < 2; i += 1) await flushEffects();
+    expect(opsiPerintah(root).length).toBeGreaterThanOrEqual(2);
     fire(kolom!, "keydown", { key: "ArrowDown" });
-    await flushEffects();
+    for (
+      let i = 0;
+      i < 40 && opsiPerintah(root)[1]?.getAttribute("aria-selected") !== "true";
+      i += 1
+    ) {
+      await flushEffects();
+    }
 
     const opsi = opsiPerintah(root);
     expect(opsi[0]?.getAttribute("aria-selected")).toBe("false");
