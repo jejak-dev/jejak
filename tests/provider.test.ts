@@ -310,6 +310,13 @@ test("toSdkEnv hanya memetakan field yang diset", () => {
   expect(toSdkEnv({ profileId: "p" })).toEqual({});
 });
 
+test("toSdkEnv meneruskan jendela konteks agar CLI tak compact di 200 rb", () => {
+  expect(toSdkEnv({ profileId: "p", model: "deepseek-v4", contextWindow: 1_000_000 })).toEqual({
+    ANTHROPIC_MODEL: "deepseek-v4",
+    CLAUDE_CODE_MAX_CONTEXT_TOKENS: "1000000",
+  });
+});
+
 test("redactResolved menyamarkan apiKey dan userinfo baseUrl", () => {
   const apiKey = "super-secret-key";
   const redacted = redactResolved({

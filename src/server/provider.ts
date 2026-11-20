@@ -486,6 +486,13 @@ export function toSdkEnv(resolved: ResolvedProvider): Record<string, string> {
   if (resolved.apiKey !== undefined) env.ANTHROPIC_API_KEY = resolved.apiKey;
   if (resolved.model !== undefined) env.ANTHROPIC_MODEL = resolved.model;
   if (resolved.lightModel !== undefined) env.ANTHROPIC_SMALL_FAST_MODEL = resolved.lightModel;
+  // Tanpa ini CLI menganggap model non-Claude berjendela 200 rb dan auto compact
+  // di sana. Diuji: hanya CLAUDE_CODE_MAX_CONTEXT_TOKENS yang menaikkan batas
+  // (CLAUDE_CODE_AUTO_COMPACT_WINDOW hanya bisa menurunkan). Nama model berawalan
+  // "claude-" diabaikan CLI, jadi aman.
+  if (resolved.contextWindow !== undefined) {
+    env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(resolved.contextWindow);
+  }
 
   return env;
 }
