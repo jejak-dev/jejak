@@ -6,6 +6,21 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambahkan
+
+- Plugin: marketplace plugin bisa ditambah dari URL GitHub lewat panel plugin.
+- Memory: detail memory tampil di modal, dan baris daftar menjadi tombol ringkas.
+- Provider: tombol "Muat model" kini juga membaca jendela konteks tiap model dari `/v1/models` provider (`context_length`, `context_window`, `max_context_length`, `max_model_len`, `max_input_tokens`) dan mengisi kolom jendela yang masih kosong.
+
+### Diperbaiki
+
+- Model non-Claude tidak lagi auto compact di 200 rb token: jendela konteks profil diteruskan ke CLI lewat `CLAUDE_CODE_MAX_CONTEXT_TOKENS`.
+- Tunnel menjalankan `cloudflared` lewat jalur lengkap sehingga jalan di aplikasi desktop tanpa PATH Homebrew.
+- Judul dan deskripsi baris memory membungkus, tidak lagi terpotong elipsis.
+- Saklar plugin memakai switch, bukan kotak centang.
+- Tautan web di app desktop dibuka di browser sistem.
+- Ringkasan sesi memory memakai sisa anggaran dan menjaga baris markdown jawaban akhir.
+
 ## [0.1.0-beta.18] - 2026-11-20
 
 ### Diperbaiki
