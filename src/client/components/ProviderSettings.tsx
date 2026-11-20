@@ -139,12 +139,21 @@ export function ProviderSettings({ api, onSaved }: ProviderSettingsProps) {
           setModelsNote("Provider tidak mengembalikan model.");
           return;
         }
-        setDraft((current) =>
-          current === undefined
-            ? current
-            : updateProfile(current, profileId, { modelsText: result.models.join("\n") }),
+        const windows = result.contextWindows ?? {};
+        setDraft((current) => {
+          if (current === undefined) return current;
+          const profile = current.profiles.find((candidate) => candidate.id === profileId);
+          // Jendela yang sudah diisi pengguna tidak ditimpa.
+          const modelWindows = { ...(profile?.modelWindows ?? {}) };
+          for (const [id, value] of Object.entries(windows)) {
+            if ((modelWindows[id] ?? "").trim() === "") modelWindows[id] = String(value);
+          }
+          return updateProfile(current, profileId, { modelsText: result.models.join("\n"), modelWindows });
+        });
+        const filled = Object.keys(windows).length;
+        setModelsNote(
+          `${result.models.length} model dimuat${filled > 0 ? `, ${filled} dengan jendela konteks` : ""}. Simpan untuk menerapkan.`,
         );
-        setModelsNote(`${result.models.length} model dimuat. Simpan untuk menerapkan.`);
       } catch (error) {
         setModelsNote(`Gagal memuat model: ${messageOf(error)}`);
       } finally {

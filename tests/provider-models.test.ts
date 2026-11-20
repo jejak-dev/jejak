@@ -27,6 +27,25 @@ describe("listModels", () => {
     expect((f.calls[0]!.init.headers as Record<string, string>)["x-api-key"]).toBe("sk-rahasia");
   });
 
+  test("membaca jendela konteks dari field context_length dan sejenisnya", async () => {
+    const f = fakeFetch(
+      () =>
+        new Response(
+          JSON.stringify({
+            data: [
+              { id: "a", context_length: 1_000_000 },
+              { id: "b", max_model_len: 131072 },
+              { id: "c", context_length: "besar" },
+              { id: "d" },
+            ],
+          }),
+        ),
+    );
+    const result = await listModels(resolved(), { fetch: f.impl });
+    expect(result.models).toEqual(["a", "b", "c", "d"]);
+    expect(result.contextWindows).toEqual({ a: 1_000_000, b: 131072 });
+  });
+
   test("401 -> galat autentikasi, 404 -> isi manual, 200 tak dikenal -> galat", async () => {
     for (const [status, text] of [
       [401, "autentikasi"],

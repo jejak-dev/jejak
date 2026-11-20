@@ -1022,7 +1022,9 @@ export interface ApiClient {
   browseDirs(path?: string): Promise<BrowseResult>;
   nativePickerAvailable(): Promise<boolean>;
   pickFolderNative(start?: string): Promise<string | undefined>;
-  listProviderModels(profileId: string): Promise<{ ok: boolean; models: string[]; error?: string }>;
+  listProviderModels(
+    profileId: string,
+  ): Promise<{ ok: boolean; models: string[]; contextWindows?: Record<string, number>; error?: string }>;
   rejectChange(id: string, input: RejectChangeInput): Promise<RejectChangeResult>;
   undoChange(id: string, undoId: string, repo?: string): Promise<{ path: string }>;
   getCheckpoints(id: string): Promise<CheckpointList>;
@@ -3085,7 +3087,17 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
         throw new ApiError("respons server tidak valid", 200);
       }
       const models = result.models.filter((id): id is string => typeof id === "string");
-      const view: { ok: boolean; models: string[]; error?: string } = { ok: result.ok, models };
+      const view: { ok: boolean; models: string[]; contextWindows?: Record<string, number>; error?: string } = {
+        ok: result.ok,
+        models,
+      };
+      if (isRecord(result.contextWindows)) {
+        const windows: Record<string, number> = {};
+        for (const [id, value] of Object.entries(result.contextWindows)) {
+          if (typeof value === "number" && Number.isInteger(value) && value > 0) windows[id] = value;
+        }
+        if (Object.keys(windows).length > 0) view.contextWindows = windows;
+      }
       if (typeof result.error === "string") view.error = result.error;
       return view;
     },

@@ -169,7 +169,22 @@ export async function testConnection(
 export interface ModelListResult {
   ok: boolean;
   models: string[];
+  /** Jendela konteks per model bila provider melaporkannya di /models. */
+  contextWindows?: Record<string, number>;
   error?: string;
+}
+
+/** Nama field jendela konteks yang dipakai berbagai provider (OpenRouter, vLLM, LiteLLM, dll). */
+const WINDOW_FIELDS = ["context_length", "context_window", "max_context_length", "max_model_len", "max_input_tokens"];
+
+function windowOfRow(row: Record<string, unknown>): number | undefined {
+  for (const key of WINDOW_FIELDS) {
+    const value = row[key];
+    if (typeof value === "number" && Number.isInteger(value) && value >= 1000 && value <= 100_000_000) {
+      return value;
+    }
+  }
+  return undefined;
 }
 
 const MAX_MODELS = 500;
@@ -221,12 +236,19 @@ export async function listModels(
     return { ok: false, models: [], error: UNKNOWN_RESPONSE_ERROR };
   }
   const models: string[] = [];
+  const contextWindows: Record<string, number> = {};
   for (const row of rows) {
     const id = isRecord(row) ? row.id : undefined;
     if (typeof id !== "string") continue;
     const clean = sanitize(id.trim(), apiKey);
-    if (clean !== "" && clean.length <= 200 && !models.includes(clean)) models.push(clean);
+    if (clean !== "" && clean.length <= 200 && !models.includes(clean)) {
+      models.push(clean);
+      const window = windowOfRow(row as Record<string, unknown>);
+      if (window !== undefined) contextWindows[clean] = window;
+    }
     if (models.length >= MAX_MODELS) break;
   }
-  return { ok: true, models };
+  return Object.keys(contextWindows).length > 0
+    ? { ok: true, models, contextWindows }
+    : { ok: true, models };
 }
