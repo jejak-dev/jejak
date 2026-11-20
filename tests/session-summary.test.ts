@@ -152,3 +152,17 @@ describe("upsertSessionSummary", () => {
     expect(semua[0]?.body).toContain("Berkas diubah: src/lib/storage");
   });
 });
+
+describe("jawaban akhir panjang", () => {
+  test("tak dipotong pendek dan markdown tetap berbaris", () => {
+    const jawaban = `## Hasil\n\n${"- butir panjang yang perlu tetap utuh\n".repeat(40)}`;
+    const summary = buildSessionSummary("t", [
+      { type: "user_message", text: "tolong kerjakan" },
+      { type: "tool_call", id: "1", name: "Bash", input: {} },
+      { type: "text", text: jawaban },
+    ] as never);
+    expect(summary?.body).toContain("Jawaban akhir:\n## Hasil");
+    expect(summary?.body.length).toBeGreaterThan(900);
+    expect(summary?.body.length).toBeLessThanOrEqual(2000);
+  });
+});

@@ -17,6 +17,13 @@ function clip(text: string, max: number): string {
   return flat.length <= max ? flat : `${flat.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
 }
 
+/** Potong tanpa meratakan baris, supaya markdown jawaban tetap utuh. */
+function clipKeepingLines(text: string, max: number): string {
+  const tidy = text.replace(/\r\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  if (tidy.length <= max) return tidy;
+  return `${tidy.slice(0, Math.max(0, max - 1)).trimEnd()}…`;
+}
+
 /** Buang blok lampiran yang ditempel UI di akhir pesan pengguna. */
 function withoutAttachments(text: string): string {
   const index = text.indexOf("\n\nLampiran:\n");
@@ -100,8 +107,17 @@ export function buildSessionSummary(
   }
   if (commands > 0) lines.push(`Perintah dijalankan: ${commands}`);
   const answer = lastResult?.summary?.trim() || finalText.trim();
-  if (answer !== "") lines.push(`Jawaban akhir: ${clip(answer, 700)}`);
-  if (lastResult !== undefined && !lastResult.ok) lines.push("Catatan: giliran terakhir berakhir gagal.");
+  const note =
+    lastResult !== undefined && !lastResult.ok ? "Catatan: giliran terakhir berakhir gagal." : "";
+  if (answer !== "") {
+    // Jawaban memakai sisa anggaran badan memory, bukan batas tetap pendek.
+    const used = lines.join("\n").length + (lines.length > 0 ? 1 : 0);
+    const reserve = note === "" ? 0 : note.length + 1;
+    const budget = Math.max(200, MEMORY_BODY_MAX - used - reserve - "Jawaban akhir:\n".length);
+    const text = clipKeepingLines(answer, budget);
+    lines.push(text.includes("\n") ? `Jawaban akhir:\n${text}` : `Jawaban akhir: ${text}`);
+  }
+  if (note !== "") lines.push(note);
 
   return {
     title: clip(`${SESSION_SUMMARY_PREFIX}${title}`, MEMORY_TITLE_MAX),
