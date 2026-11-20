@@ -6,8 +6,6 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
-## [0.1.0-beta.16] - 2026-11-20
-
 ### Ditambahkan
 
 - Design (D1): tab Desain dan kanvas frame. Desain berupa HTML biasa di folder `design/` repo (`design.json`, `pages/`, `tokens.css`); tiap halaman tampil sebagai frame iframe tersandbox (tanpa jaringan, CSP ketat) dengan preset desktop, tablet, dan mobile, zoom, geser, dan tata letak tersimpan. Alat Pilih menampilkan info elemen (selector, gaya, HTML) dan menyisipkannya ke pesan untuk diubah agent. Mode lebar menyempitkan sidebar agar kanvas leluasa.
@@ -25,6 +23,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Design: ekspor Figma tidak lagi menaruh kotak abu-abu di bawah gambar dan svg yang berhasil dirasterisasi.
 - Design: ekspor Figma membawa gradien linear (`linear-gradient`) dan auto layout untuk flex satu baris; auto layout hanya dipakai bila hitungan tata letak Figma cocok dengan posisi DOM (selain itu posisi mutlak).
 - Browser: situs `http://` (misalnya IP server tanpa HTTPS) kini terbuka; Chrome headless tidak lagi menaikkan ke https lalu gagal tanpa turun balik.
+
+### Diperbaiki
+
+- Tes menu slash dan e2e mode fokus tidak lagi flaky di runner CI yang sibuk (menunggu kondisi, bukan jeda tetap).
 
 ## [0.1.0-beta.15] - 2026-11-18
 
