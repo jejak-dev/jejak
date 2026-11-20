@@ -785,6 +785,7 @@ export const RUNTIME_SOURCE = `(function () {
       if (fill) node.fill = fill;
       else if (gambarLatar && cs.backgroundImage.indexOf("gradient") === -1) {
         node.fill = { r: 0.85, g: 0.85, b: 0.85, a: 1 };
+        node.abuCadangan = true;
       }
       var tepi = garisTepi(cs);
       if (tepi) node.stroke = tepi;
@@ -806,7 +807,10 @@ export const RUNTIME_SOURCE = `(function () {
           sumber = String(el.getAttribute("src") || "").slice(0, 60);
         } catch (galat) {}
         node.name = "gambar: " + (sumber || tag);
-        if (!node.fill) node.fill = { r: 0.85, g: 0.85, b: 0.85, a: 1 };
+        if (!node.fill) {
+          node.fill = { r: 0.85, g: 0.85, b: 0.85, a: 1 };
+          node.abuCadangan = true;
+        }
         if (tugas.length < 60) tugas.push({ node: node, kerja: tugasGambar(el, tag, cs, r.width, r.height) });
         return;
       }
@@ -908,11 +912,15 @@ export const RUNTIME_SOURCE = `(function () {
           if (total + r.data.length > 4500000) continue;
           total += r.data.length;
           hasil.tugas[i].node.image = { data: r.data, fit: r.fit };
+          // Abu-abu hanya cadangan bila rasterisasi gagal.
+          if (hasil.tugas[i].node.abuCadangan) delete hasil.tugas[i].node.fill;
         }
       }
       var teks = "";
       try {
-        teks = JSON.stringify(hasil.root);
+        teks = JSON.stringify(hasil.root, function (kunci, nilai) {
+          return kunci === "abuCadangan" ? undefined : nilai;
+        });
       } catch (galat) {
         kirimGalatTangkap(id, "failed");
         return;

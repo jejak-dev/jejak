@@ -147,6 +147,8 @@ test("ekspor Figma: frame, tombol, dan teks dibaca balik dari berkas .fig", asyn
   expect(gambar.length).toBe(2);
   for (const g of gambar) {
     expect(g.fillPaints?.some((p) => p.type === "IMAGE")).toBe(true);
+    // Tanpa abu-abu cadangan di bawah gambar yang berhasil dirasterisasi.
+    expect(g.fillPaints?.some((p) => p.type === "SOLID")).toBe(false);
   }
   expect(nodes.some((n) => (n.effects?.length ?? 0) > 0)).toBe(true);
 });
