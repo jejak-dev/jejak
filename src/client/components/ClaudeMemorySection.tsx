@@ -8,6 +8,7 @@ import {
   type ClaudeMemoryResponse,
 } from "../lib/claude-memory";
 import { folderName, formatRelative } from "../lib/format";
+import { DetailDialog } from "./DetailDialog";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 
@@ -127,36 +128,46 @@ export function isDuplicateJejakItem(
   return item.jejakId !== undefined && jejakIds.includes(item.jejakId);
 }
 
-/** Baris memory Claude Code; isi dibuka lewat `details` (baca-saja). */
-export function ClaudeMemoryRow({ item, open, onToggle }: ClaudeMemoryRowProps): VNode {
-  const description = claudeMemoryDescriptionLine(item);
+/** Modal isi memory Claude Code (baca-saja); hanya dirender saat terbuka. */
+function ClaudeMemoryDetail({
+  item,
+  onClose,
+}: {
+  item: ClaudeMemoryItem;
+  onClose: () => void;
+}): VNode {
   return (
-    <details
-      class="jk-claude-row"
-      open={open === true ? true : undefined}
-      onToggle={
-        onToggle === undefined
-          ? undefined
-          : (event) => onToggle(event.currentTarget.open)
-      }
-    >
-      <summary>
-        <span class="jk-memory-title">{item.title}</span>
-        {description !== "" && <span class="jk-claude-desc">{description}</span>}
-        <span class="jk-claude-type">{claudeMemoryTypeLabel(item.type)}</span>
-        {item.jejakId !== undefined && (
-          <span class="jk-claude-badge">Jejak</span>
-        )}
-        <span class="jk-claude-time">{formatRelative(item.updatedAt, new Date())}</span>
-        <span class="jk-claude-origin">Claude</span>
-      </summary>
+    <DetailDialog open title={item.title} idPrefix="jk-claude-detail" onClose={onClose}>
       <div class="jk-claude-body">
         <Markdown text={item.body} />
         {item.truncated && (
           <p class="jk-note">Isi dipotong karena berkas terlalu besar.</p>
         )}
       </div>
-    </details>
+    </DetailDialog>
+  );
+}
+
+/** Baris memory Claude Code; isi dibuka di modal (baca-saja). */
+export function ClaudeMemoryRow({ item, open, onToggle }: ClaudeMemoryRowProps): VNode {
+  const description = claudeMemoryDescriptionLine(item);
+  return (
+    <>
+      <button
+        type="button"
+        class="jk-claude-row"
+        aria-haspopup="dialog"
+        onClick={() => onToggle?.(true)}
+      >
+        <span class="jk-memory-title">{item.title}</span>
+        {description !== "" && <span class="jk-claude-desc">{description}</span>}
+        <span class="jk-claude-type">{claudeMemoryTypeLabel(item.type)}</span>
+        {item.jejakId !== undefined && <span class="jk-claude-badge">Jejak</span>}
+        <span class="jk-claude-time">{formatRelative(item.updatedAt, new Date())}</span>
+        <span class="jk-claude-origin">Claude</span>
+      </button>
+      {open === true && <ClaudeMemoryDetail item={item} onClose={() => onToggle?.(false)} />}
+    </>
   );
 }
 

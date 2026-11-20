@@ -17,7 +17,7 @@ import {
   staleLabel,
   type MemoryDraft,
 } from "../lib/memory";
-import { Icon } from "./Icon";
+import { DETAIL_FOCUS_SELECTOR, DetailDialogView } from "./DetailDialog";
 import { Markdown } from "./Markdown";
 import { MemoryForm } from "./MemoryForm";
 import {
@@ -51,6 +51,8 @@ export interface MemoryRowProps {
 /** Sifat baris tanpa hook; dipakai uji render tanpa DOM. */
 export interface MemoryRowViewProps extends MemoryRowProps {
   dialog: ConfirmDialogBindings;
+  /** Binding modal detail (isi memory). */
+  detail: ConfirmDialogBindings;
 }
 
 export function MemoryRow(props: MemoryRowProps) {
@@ -62,7 +64,19 @@ export function MemoryRow(props: MemoryRowProps) {
     onCancel: props.onCancelConfirm,
   });
 
-  return <MemoryRowView {...props} dialog={dialog} />;
+  const closeDetail = (): void => {
+    if (props.editing) props.onCancelEdit();
+    props.onToggleOpen(false);
+  };
+  const detail = useConfirmDialogBindings({
+    open: (props.open || props.editing) && !(props.confirmingReject || props.confirmingDelete),
+    busy: props.busy,
+    tone: "default",
+    initialFocusSelector: DETAIL_FOCUS_SELECTOR,
+    onCancel: closeDetail,
+  });
+
+  return <MemoryRowView {...props} dialog={dialog} detail={detail} />;
 }
 
 export function MemoryRowView(props: MemoryRowViewProps) {
@@ -76,6 +90,7 @@ export function MemoryRowView(props: MemoryRowViewProps) {
     busy,
     failure,
     dialog,
+    detail,
   } = props;
 
   const stale = staleLabel(item.staleReason);
@@ -87,37 +102,41 @@ export function MemoryRowView(props: MemoryRowViewProps) {
 
   return (
     <>
-      <details
+      <button
+        type="button"
         class="jk-memory-row"
         data-id={item.id}
-        open={open || editing}
-        onToggle={(event) => props.onToggleOpen(event.currentTarget.open)}
+        aria-haspopup="dialog"
+        onClick={() => props.onToggleOpen(true)}
       >
-        <summary
-          onClick={(event) => {
-            // Saat mengubah, baris tidak boleh tertutup karena form masih terbuka.
-            if (editing) event.preventDefault();
-          }}
-        >
-          <span class="jk-chev" aria-hidden="true">
-            <Icon name="chevron" />
+        <span class="jk-memory-title">{item.title}</span>
+        {revision && (
+          <span class="jk-memory-flag jk-memory-flag-revisi" title="Usulan revisi memory lain">
+            Revisi
           </span>
-          <span class="jk-memory-title">{item.title}</span>
-          {revision && (
-            <span class="jk-memory-flag jk-memory-flag-revisi" title="Usulan revisi memory lain">
-              Revisi
-            </span>
-          )}
-          {stale !== undefined && (
-            <span class="jk-memory-flag" title={stale}>
-              mungkin basi
-            </span>
-          )}
-          <span class="jk-memory-scope">
-            {layerLabel(item.layer)} · {projectLabel(item.projectKey)}
+        )}
+        {stale !== undefined && (
+          <span class="jk-memory-flag" title={stale}>
+            mungkin basi
           </span>
-        </summary>
+        )}
+        <span class="jk-memory-scope">
+          {layerLabel(item.layer)} · {projectLabel(item.projectKey)}
+        </span>
+      </button>
 
+      <DetailDialogView
+        open={open || editing}
+        suspended={confirmingReject || confirmingDelete}
+        title={item.title}
+        busy={busy}
+        idPrefix={`jk-memory-detail-${item.id}`}
+        bindings={detail}
+        onClose={() => {
+          if (editing) props.onCancelEdit();
+          props.onToggleOpen(false);
+        }}
+      >
         <div class="jk-memory-row-body">
           {editing ? (
             <MemoryForm
@@ -243,7 +262,7 @@ export function MemoryRowView(props: MemoryRowViewProps) {
             </>
           )}
         </div>
-      </details>
+      </DetailDialogView>
 
       <ConfirmDialogView
         open={confirmingReject}

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Fragment } from "preact";
 import type { ComponentChild, VNode } from "preact";
 import {
   ClaudeMemoryRow,
@@ -341,7 +342,39 @@ describe("ClaudeMemorySectionView", () => {
   });
 });
 
+/** Cari elemen tanpa menjalankan komponen fungsi (bebas hook). */
+function findElements(node: ComponentChild, predicate: (vnode: VNode) => boolean): VNode[] {
+  if (node === null || node === undefined || typeof node === "boolean") return [];
+  if (typeof node === "string" || typeof node === "number") return [];
+  if (Array.isArray(node)) return node.flatMap((child) => findElements(child, predicate));
+  const vnode = node as VNode;
+  const self = predicate(vnode) ? [vnode] : [];
+  return self.concat(findElements(vnode.props.children as ComponentChild, predicate));
+}
+
 describe("ClaudeMemoryRow", () => {
+  test("baris berupa tombol yang membuka modal", () => {
+    const calls: boolean[] = [];
+    const node = ClaudeMemoryRow({
+      item: makeItem(),
+      onToggle: (next) => calls.push(next),
+    }) as unknown as ComponentChild;
+    const tombol = findElements(node, (vnode) => vnode.type === "button")[0];
+    expect(propsOf(tombol)["class"]).toBe("jk-claude-row");
+    expect(propsOf(tombol)["aria-haspopup"]).toBe("dialog");
+    (propsOf(tombol)["onClick"] as () => void)();
+    expect(calls).toEqual([true]);
+  });
+
+  test("isi memory hanya dirender di modal saat baris terbuka", () => {
+    const tertutup = ClaudeMemoryRow({ item: makeItem() }) as unknown as ComponentChild;
+    const terbuka = ClaudeMemoryRow({ item: makeItem(), open: true }) as unknown as ComponentChild;
+    const modal = (node: ComponentChild) =>
+      findElements(node, (vnode) => typeof vnode.type === "function" && vnode.type !== Fragment);
+    expect(modal(tertutup)).toHaveLength(0);
+    expect(modal(terbuka)).toHaveLength(1);
+  });
+
   test("baris menampilkan judul, deskripsi, tipe, dan waktu", () => {
     const node = ClaudeMemoryRow({
       item: makeItem(),
@@ -546,14 +579,14 @@ describe("ClaudeMemorySectionView lipatan proyek", () => {
     expect(calls).toEqual([["/a/proyek-satu", true]]);
   });
 
-  test("baris yang dibuka dikendalikan lewat kunci baris", () => {
+  test("kunci baris yang dibuka diteruskan ke baris", () => {
     const node = ClaudeMemorySectionView({
       states: [duaProyek[0] as ClaudeMemoryProjectState],
       openItems: new Set<string>(["proyek/satu.md"]),
     }) as unknown as ComponentChild;
-    const rows = detailsByClass(node, "jk-claude-row");
+    const rows = findElements(node, (vnode) => vnode.type === ClaudeMemoryRow);
     expect(rows).toHaveLength(2);
     expect(propsOf(rows[0])["open"]).toBe(true);
-    expect(propsOf(rows[1])["open"]).toBeUndefined();
+    expect(propsOf(rows[1])["open"]).toBe(false);
   });
 });

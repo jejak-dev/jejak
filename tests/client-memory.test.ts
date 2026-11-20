@@ -107,6 +107,7 @@ function renderRow(item: MemoryItem, overrides: Partial<MemoryRowProps> = {}): C
     confirmingDelete: false,
     busy: false,
     dialog: DIALOG,
+    detail: DIALOG,
     onToggleOpen: NOOP,
     onSubmitEdit: NOOP,
     onCancelEdit: NOOP,

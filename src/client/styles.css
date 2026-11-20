@@ -5392,34 +5392,34 @@ h2.jk-md-heading {
   outline: none;
 }
 
-.jk-memory-row {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.jk-memory-row > summary {
+.jk-memory-row,
+.jk-claude-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
+  width: 100%;
   min-height: 34px;
+  margin: 0;
   padding: 6px 4px;
-  list-style: none;
-  cursor: pointer;
+  border: 0;
+  border-bottom: 1px solid var(--line);
   border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.jk-memory-row > summary:hover {
+.jk-memory-row:hover,
+.jk-claude-row:hover {
   background: var(--hover);
 }
 
-.jk-memory-row > summary::-webkit-details-marker {
-  display: none;
-}
-
-.jk-memory-row[open] > summary .jk-chev {
-  transform: rotate(90deg);
+.jk-memory-row:focus-visible,
+.jk-claude-row:focus-visible {
+  outline: 2px solid var(--t2);
+  outline-offset: -2px;
 }
 
 .jk-memory-title {
@@ -5459,7 +5459,7 @@ h2.jk-md-heading {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  margin: 2px 0 14px 22px;
+  margin: 0;
 }
 
 .jk-memory-stale {
@@ -5634,32 +5634,6 @@ h2.jk-md-heading {
   display: flex;
   flex-direction: column;
   margin-top: 8px;
-}
-
-.jk-claude-row {
-  border: 0;
-  padding: 0;
-  margin: 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.jk-claude-row > summary {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  min-height: 34px;
-  padding: 6px 4px;
-  list-style: none;
-  cursor: pointer;
-  border-radius: 6px;
-}
-
-.jk-claude-row > summary:hover {
-  background: var(--hover);
-}
-
-.jk-claude-row > summary::-webkit-details-marker {
-  display: none;
 }
 
 .jk-claude-desc {
@@ -10247,6 +10221,32 @@ h2.jk-md-heading {
   outline: 0;
 }
 
+.jk-detail-card {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+
+.jk-detail-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.jk-detail-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.jk-detail-body {
+  min-height: 0;
+  overflow: auto;
+}
+
 .jk-confirm-title {
   margin: 0 0 8px;
   color: var(--t1);
@@ -11768,13 +11768,13 @@ h2.jk-md-heading {
 
 /* Layar sempit: judul & deskripsi baris memory boleh turun ke baris sendiri. */
 @media (max-width: 640px) {
-  .jk-memory-row > summary,
-  .jk-claude-row > summary {
+  .jk-memory-row,
+  .jk-claude-row {
     flex-wrap: wrap;
   }
 
-  .jk-memory-row > summary .jk-memory-title,
-  .jk-claude-row > summary .jk-memory-title {
+  .jk-memory-row .jk-memory-title,
+  .jk-claude-row .jk-memory-title {
     flex: 1 1 100%;
   }
 
