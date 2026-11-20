@@ -198,13 +198,14 @@ export function PluginsPanel({ api }: PluginsPanelProps) {
                     </div>
                   </div>
                   <div class="jk-plugin-actions">
-                    <input
-                      type="checkbox"
-                      class="jk-plugin-switch"
+                    <button
+                      type="button"
+                      role="switch"
+                      class={`jk-switch jk-plugin-switch${plugin.enabled ? " jk-switch-on" : ""}`}
+                      aria-checked={plugin.enabled ? "true" : "false"}
                       aria-label={`Aktifkan plugin ${plugin.name}`}
-                      checked={plugin.enabled}
                       disabled={busy !== undefined}
-                      onChange={(event) => void toggle(plugin, event.currentTarget.checked)}
+                      onClick={() => void toggle(plugin, !plugin.enabled)}
                     />
                   </div>
                 </li>

@@ -70,16 +70,13 @@ function apiPalsu(
 function saklar(root: FakeNode): FakeNode | undefined {
   return find(
     root,
-    (node) => node.localName === "input" && node.getAttribute("type") === "checkbox",
+    (node) => node.localName === "button" && node.getAttribute("role") === "switch",
   );
 }
 
-/** Status saklar: properti bila ada, atribut bila tidak. */
+/** Status saklar dari aria-checked. */
 function aktif(elemen: FakeNode | undefined): boolean {
-  if (elemen === undefined) return false;
-  const properti = (elemen as unknown as { checked?: boolean }).checked;
-  if (typeof properti === "boolean") return properti;
-  return elemen.getAttribute("checked") === "true";
+  return elemen?.getAttribute("aria-checked") === "true";
 }
 
 /* ---------- Tampilan ---------- */
@@ -122,7 +119,7 @@ describe("panel plugin", () => {
 
     const baris = find(node, (item) => item.getAttribute("class") === "jk-plugin-row");
     expect(baris?.localName).toBe("li");
-    expect(find(baris!, (item) => item.getAttribute("class") === "jk-plugin-switch")).toBeDefined();
+    expect(find(baris!, (item) => (item.getAttribute("class") ?? "").includes("jk-plugin-switch"))).toBeDefined();
   });
 
   test("galat memuat menampilkan pesan dan tombol coba lagi", async () => {
@@ -155,8 +152,7 @@ describe("perilaku panel plugin", () => {
     await flushEffects();
 
     const tombol = saklar(node);
-    (tombol as unknown as { checked: boolean }).checked = true;
-    fire(tombol as FakeNode, "change");
+    fire(tombol as FakeNode, "click");
     await flushEffects();
 
     expect(panggilan).toEqual([{ id: "alpha@pasar", enabled: true }]);
@@ -169,8 +165,7 @@ describe("perilaku panel plugin", () => {
     await flushEffects();
 
     const tombol = saklar(node);
-    (tombol as unknown as { checked: boolean }).checked = true;
-    fire(tombol as FakeNode, "change");
+    fire(tombol as FakeNode, "click");
     await flushEffects();
 
     expect(aktif(saklar(node))).toBe(true);
@@ -184,8 +179,7 @@ describe("perilaku panel plugin", () => {
     await flushEffects();
 
     const tombol = saklar(node);
-    (tombol as unknown as { checked: boolean }).checked = true;
-    fire(tombol as FakeNode, "change");
+    fire(tombol as FakeNode, "click");
     await flushEffects();
 
     expect(aktif(saklar(node))).toBe(false);
