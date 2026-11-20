@@ -17,6 +17,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Design: ekspor PNG dari kanvas. Menu `⋯` frame mengunduh satu halaman sebagai PNG (1x atau 2x), dan chip Ekspor mengunduh seluruh kanvas sebagai satu PNG (semua frame ditangkap berurutan lalu disusun dengan margin; komposisi diperkecil bila sisi terpanjang melebihi 8192 px).
 - Design: ekspor desain sebagai proyek React (Vite + TypeScript) berdiri sendiri lewat `design/export?format=react`; tiap halaman dikonversi mekanis menjadi satu komponen.
 - Design: menu Ekspor lengkap (HTML per frame, ZIP folder, proyek React, prompt pemecahan komponen).
+- Design: penulis berkas Figma (.fig) di server dari scene graph (`POST design/export-fig`); frame, teks, warna, garis tepi, sudut bulat. Dependensi baru `@open-pencil/fig`, `@open-pencil/kiwi` (MIT) dan `fflate` supaya skema biner Figma tidak ditulis ulang.
 
 ## [0.1.0-beta.15] - 2026-11-18
 

@@ -12,6 +12,8 @@ import type { CaptureBroker, CaptureFailure } from "../design/capture-broker";
 import { CaptureError, NOT_FOUND } from "../design/capture-broker";
 import { DesignDocError, syncDesignDoc } from "../design/design-doc";
 import { exportDesignZip, exportReactProject, exportStandalonePage } from "../design/export";
+import { buildFig } from "../design/fig";
+import { validateScene } from "../design/scene";
 import { designStamp, readDesign } from "../design/manifest";
 import { DesignTokenError, readTokens, writeTokens, type DesignToken } from "../design/tokens";
 import { DesignWriteError, createVariant, initDesign, saveLayout, saveNotes } from "../design/write";
@@ -77,6 +79,8 @@ function exportHeaders(contentType: string, filename: string): Record<string, st
 
 const EDIT_DISABLED = "Penyuntingan berkas dimatikan.";
 const MAX_BODY_BYTES = 256 * 1024;
+/** Scene ekspor Figma dari klien bisa besar (banyak node); batas sendiri. */
+const MAX_SCENE_BODY_BYTES = 8 * 1024 * 1024;
 /** Batas body rute token: daftar token dibatasi 200 entri. */
 const MAX_TOKENS_BODY_BYTES = 64 * 1024;
 /** Batas body rute catatan: daftar catatan dibatasi 50 entri. */
@@ -411,6 +415,44 @@ export function designRoutes(options: DesignRoutesOptions): Elysia {
         return errorResponse(error);
       }
     })
+    .post(
+      "/api/sessions/:id/design/export-fig",
+      async ({ params, body }) => {
+        const session = manager.get(params.id);
+        if (session === undefined) {
+          return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });
+        }
+        // Bukan penulisan berkas proyek: sakelar editEnabled tidak dipakai.
+        try {
+          if (typeof body !== "string") {
+            return jsonResponse(400, { error: "Body bukan JSON yang valid." });
+          }
+          if (Buffer.byteLength(body, "utf8") > MAX_SCENE_BODY_BYTES) {
+            return jsonResponse(400, { error: "Body permintaan terlalu besar." });
+          }
+          let mentah: unknown;
+          try {
+            mentah = JSON.parse(body);
+          } catch {
+            return jsonResponse(400, { error: "Body bukan JSON yang valid." });
+          }
+          const scene = validateScene(mentah);
+          const result = await buildFig(scene);
+          auditEntry({
+            kind: "berkas",
+            sessionId: session.id,
+            summary: "Desain diekspor sebagai berkas Figma",
+            meta: { aksi: "design.export", format: "fig", jumlah: result.nodes },
+          });
+          return new Response(result.data, {
+            headers: exportHeaders("application/octet-stream", result.filename),
+          });
+        } catch (error) {
+          return errorResponse(error);
+        }
+      },
+      { parse: "text" },
+    )
     .get("/api/sessions/:id/design/stamp", async ({ params, query }) => {
       const session = manager.get(params.id);
       if (session === undefined) {

@@ -214,3 +214,59 @@ describe("GET /api/sessions/:id/design/export", () => {
     audit.close();
   });
 });
+
+const SCENE = {
+  name: "Uji",
+  pages: [
+    {
+      name: "Beranda",
+      width: 390,
+      height: 800,
+      root: { kind: "box", name: "body", x: 0, y: 0, width: 390, height: 800 },
+    },
+  ],
+};
+
+function postFig(server: App, id: string, body: string): Promise<Response> {
+  return server.handle(
+    new Request(`http://127.0.0.1:3000/api/sessions/${id}/design/export-fig`, {
+      method: "POST",
+      headers: { host: "127.0.0.1:3000", "content-type": "application/json" },
+      body,
+    }),
+  );
+}
+
+describe("POST /api/sessions/:id/design/export-fig", () => {
+  test("sesi tak dikenal 404", async () => {
+    const server = makeApp();
+    const res = await postFig(server, "s_tidakada", JSON.stringify(SCENE));
+    expect(res.status).toBe(404);
+  });
+
+  test("scene sah menghasilkan berkas biner dan entri audit", async () => {
+    const audit = new SqliteAuditStore(":memory:");
+    const server = makeApp(audit);
+    const id = await createSession(server);
+    const res = await postFig(server, id, JSON.stringify(SCENE));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/octet-stream");
+    expect(res.headers.get("content-disposition")).toBe('attachment; filename="design.fig"');
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    const data = new Uint8Array(await res.arrayBuffer());
+    // Arsip ZIP berisi canvas.fig.
+    expect(data[0]).toBe(0x50);
+    expect(data[1]).toBe(0x4b);
+    const entri = audit.list({}).find((e) => e.meta?.format === "fig");
+    expect(entri).toBeDefined();
+  });
+
+  test("body bukan JSON 400, scene tak sah 400, terlalu besar 400", async () => {
+    const server = makeApp();
+    const id = await createSession(server);
+    expect((await postFig(server, id, "bukan json")).status).toBe(400);
+    expect((await postFig(server, id, JSON.stringify({ name: "x", pages: [] }))).status).toBe(400);
+    const besar = JSON.stringify({ name: "x".repeat(9 * 1024 * 1024), pages: [] });
+    expect((await postFig(server, id, besar)).status).toBe(400);
+  });
+});
