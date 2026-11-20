@@ -158,6 +158,64 @@ describe("buildFig", () => {
   });
 });
 
+const PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+describe("bayangan dan gambar", () => {
+  function sceneGambar(): SceneDoc {
+    const dasar = contoh();
+    const root = dasar.pages[0]!.root;
+    root.children = [
+      {
+        kind: "box",
+        name: "foto",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 80,
+        image: { data: PNG_1X1, fit: "fill" },
+        shadows: [
+          { x: 0, y: 2, blur: 8, spread: 1, color: { r: 0, g: 0, b: 0, a: 0.2 }, inset: false },
+        ],
+      },
+      {
+        kind: "box",
+        name: "foto-sama",
+        x: 0,
+        y: 100,
+        width: 50,
+        height: 50,
+        image: { data: PNG_1X1, fit: "fit" },
+      },
+    ];
+    return dasar;
+  }
+
+  test("gambar masuk arsip sekali (dedup) dan dirujuk lewat paint IMAGE", async () => {
+    const out = await buildFig(sceneGambar());
+    const salinan = out.data.buffer.slice(
+      out.data.byteOffset,
+      out.data.byteOffset + out.data.byteLength,
+    ) as ArrayBuffer;
+    const hasil = await parseFigBuffer(salinan);
+    expect(hasil.images.length).toBe(1);
+    const [nama, bytes] = hasil.images[0]!;
+    expect(nama).toMatch(/^[0-9a-f]{40}$/);
+    expect(bytes.length).toBeGreaterThan(10);
+    const foto = (hasil.nodeChanges as unknown as Array<Record<string, unknown>>).find(
+      (n) => n.name === "foto",
+    ) as { fillPaints: Array<{ type: string; imageScaleMode?: string }>; effects: unknown[] };
+    expect(foto.fillPaints.some((p) => p.type === "IMAGE" && p.imageScaleMode === "FILL")).toBe(true);
+    expect(foto.effects.length).toBe(1);
+  });
+
+  test("build dengan gambar tetap deterministik", async () => {
+    const a = await buildFig(sceneGambar());
+    const b = await buildFig(sceneGambar());
+    expect(Buffer.from(a.data).equals(Buffer.from(b.data))).toBe(true);
+  });
+});
+
 describe("fontStyle", () => {
   test("memetakan bobot dan miring", () => {
     expect(fontStyle(400, false)).toBe("Regular");

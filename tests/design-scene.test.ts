@@ -78,4 +78,21 @@ describe("validateScene", () => {
     };
     expect(galat(scene([halaman(banyak)]))).toContain("Terlalu banyak node");
   });
+
+  test("menerima bayangan dan gambar, menolak yang cacat", () => {
+    const sh = { x: 0, y: 2, blur: 8, spread: 0, color: { r: 0, g: 0, b: 0, a: 0.1 }, inset: false };
+    const ok = validateScene(
+      scene([halaman({ ...kotak, shadows: [sh], image: { data: "QUJD", fit: "fill" } })]),
+    );
+    expect(ok.pages[0]?.root.shadows?.length).toBe(1);
+    expect(ok.pages[0]?.root.image?.fit).toBe("fill");
+    expect(galat(scene([halaman({ ...kotak, shadows: [{ ...sh, inset: "ya" }] })]))).toContain("inset");
+    expect(galat(scene([halaman({ ...kotak, image: { data: "bukan base64!", fit: "fill" } })]))).toContain("base64");
+    expect(galat(scene([halaman({ ...kotak, image: { data: "QUJD", fit: "zoom" } })]))).toContain("fit");
+    const banyak = {
+      ...kotak,
+      children: Array.from({ length: 61 }, () => ({ ...kotak, image: { data: "QUJD", fit: "fill" } })),
+    };
+    expect(galat(scene([halaman(banyak)]))).toContain("Terlalu banyak gambar");
+  });
 });

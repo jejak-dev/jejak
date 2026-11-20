@@ -9,6 +9,7 @@ import {
   initCodec,
   type NodeChange,
 } from "@open-pencil/kiwi/fig/codec";
+import { createHash } from "node:crypto";
 import { deflateSync } from "fflate";
 import type { SceneDoc, SceneNode } from "./scene";
 
@@ -120,6 +121,13 @@ interface Counter {
   next: number;
 }
 
+/** Gambar unik (dedup lewat SHA-1 isi) yang ikut masuk arsip. */
+interface ImagePool {
+  entries: Map<string, Uint8Array>;
+}
+
+const IMAGE_SCALE: Record<string, string> = { fill: "FILL", fit: "FIT", stretch: "STRETCH" };
+
 function emit(
   node: SceneNode,
   parentLocalID: number,
@@ -127,6 +135,7 @@ function emit(
   index: number,
   counter: Counter,
   out: NodeChange[],
+  pool: ImagePool,
 ): void {
   const localID = counter.next;
   counter.next += 1;
@@ -165,6 +174,35 @@ function emit(
     // FRAME tanpa isi tetap tampil; tanpa fill dibiarkan transparan.
     if (node.fill === undefined) change.fillPaints = [];
   }
+  if (node.shadows !== undefined && node.shadows.length > 0 && !isText) {
+    change.effects = node.shadows.map((sh) => ({
+      type: sh.inset ? ("INNER_SHADOW" as const) : ("DROP_SHADOW" as const),
+      color: sh.color,
+      offset: { x: sh.x, y: sh.y },
+      radius: sh.blur,
+      spread: sh.spread,
+      visible: true,
+      blendMode: "NORMAL",
+      showShadowBehindNode: false,
+    }));
+  }
+  if (node.image !== undefined && !isText) {
+    const bytes = new Uint8Array(Buffer.from(node.image.data, "base64"));
+    const hash = createHash("sha1").update(bytes).digest();
+    pool.entries.set(`images/${hash.toString("hex")}`, bytes);
+    const paints = change.fillPaints ?? [];
+    change.fillPaints = [
+      ...paints,
+      {
+        type: "IMAGE",
+        image: { hash: new Uint8Array(hash) },
+        imageScaleMode: IMAGE_SCALE[node.image.fit] ?? "FILL",
+        opacity: 1,
+        visible: true,
+        blendMode: "NORMAL",
+      },
+    ];
+  }
   const teks = node.text;
   if (isText && teks !== undefined) {
     const font = resolveFont(teks.fontFamily, teks.fontWeight);
@@ -190,7 +228,7 @@ function emit(
   out.push(change);
   const anak = isText ? undefined : node.children;
   if (anak !== undefined) {
-    anak.forEach((child, i) => emit(child, localID, SESSION, i, counter, out));
+    anak.forEach((child, i) => emit(child, localID, SESSION, i, counter, out, pool));
   }
 }
 
@@ -202,6 +240,7 @@ export async function buildFig(
   const changes: NodeChange[] = [];
   changes.push(makeDocumentNodeChange({ sessionID: 0, localID: 0 }, "srgb"));
   const counter: Counter = { next: 1 };
+  const pool: ImagePool = { entries: new Map() };
   scene.pages.forEach((page, index) => {
     // CANVAS memakai sesi 0 dan localID 1.. agar terpisah dari node biasa.
     const canvasID = index + 1;
@@ -220,6 +259,7 @@ export async function buildFig(
       0,
       counter,
       changes,
+      pool,
     );
   });
   const message = createNodeChangesMessage(0, 0, changes);
@@ -229,6 +269,7 @@ export async function buildFig(
     kiwiData,
     thumbnailPNG: THUMBNAIL,
     metaJSON: JSON.stringify({ version: 1, file_name: scene.name }),
+    images: [...pool.entries].map(([name, data]) => ({ name, data })),
   });
   return { filename: "design.fig", data, nodes: changes.length };
 }

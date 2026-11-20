@@ -602,9 +602,143 @@ export const RUNTIME_SOURCE = `(function () {
     };
   }
 
+  // Bayangan: nilai terhitung berbentuk "rgba(...) 0px 2px 8px 0px" dipisah
+  // koma di tingkat atas; warna selalu di depan.
+  function bayanganDari(nilai) {
+    if (!nilai || nilai === "none") return undefined;
+    var bagian = [];
+    var dalamKurung = 0;
+    var awal = 0;
+    for (var i = 0; i < nilai.length; i += 1) {
+      var ch = nilai.charAt(i);
+      if (ch === "(") dalamKurung += 1;
+      else if (ch === ")") dalamKurung -= 1;
+      else if (ch === "," && dalamKurung === 0) {
+        bagian.push(nilai.slice(awal, i));
+        awal = i + 1;
+      }
+    }
+    bagian.push(nilai.slice(awal));
+    var hasil = [];
+    for (var k = 0; k < bagian.length && hasil.length < 8; k += 1) {
+      var teks = bagian[k].trim();
+      var inset = false;
+      if (teks.indexOf("inset") !== -1) {
+        inset = true;
+        teks = teks.split("inset").join(" ").trim();
+      }
+      var warnaTeks = "";
+      var sisa = teks;
+      var tutup = teks.indexOf(")");
+      if (teks.indexOf("(") !== -1 && tutup !== -1) {
+        warnaTeks = teks.slice(0, tutup + 1);
+        sisa = teks.slice(tutup + 1);
+      } else {
+        var spasiPertama = teks.indexOf(" ");
+        warnaTeks = spasiPertama === -1 ? teks : teks.slice(0, spasiPertama);
+        sisa = spasiPertama === -1 ? "" : teks.slice(spasiPertama);
+      }
+      var warna = warnaDari(warnaTeks);
+      var angkaSisa = sisa.trim().split(" ");
+      if (!warna || angkaSisa.length < 2) continue;
+      hasil.push({
+        x: angka(angkaSisa[0]),
+        y: angka(angkaSisa[1]),
+        blur: Math.max(0, angka(angkaSisa[2] || "0")),
+        spread: angka(angkaSisa[3] || "0"),
+        color: warna,
+        inset: inset
+      });
+    }
+    return hasil.length > 0 ? hasil : undefined;
+  }
+
+  // Rasterisasi gambar ke data base64 (maksimal sisi 800 px). Gagal (lintas
+  // asal) mengembalikan null sehingga kotak abu-abu tetap dipakai.
+  var BATAS_SISI_GAMBAR = 800;
+  var BATAS_GAMBAR_B64 = 700000;
+  function rasterGambar(gambar) {
+    try {
+      var w = gambar.naturalWidth || gambar.width;
+      var h = gambar.naturalHeight || gambar.height;
+      if (!(w > 0) || !(h > 0)) return null;
+      var skala = Math.min(1, BATAS_SISI_GAMBAR / Math.max(w, h));
+      var kanvas = document.createElement("canvas");
+      kanvas.width = Math.max(1, Math.round(w * skala));
+      kanvas.height = Math.max(1, Math.round(h * skala));
+      kanvas.getContext("2d").drawImage(gambar, 0, 0, kanvas.width, kanvas.height);
+      var url = kanvas.toDataURL("image/png");
+      if (url.length > BATAS_GAMBAR_B64) url = kanvas.toDataURL("image/jpeg", 0.8);
+      lepasKanvas(kanvas);
+      if (url.length > BATAS_GAMBAR_B64) return null;
+      var koma = url.indexOf(",");
+      return koma === -1 ? null : url.slice(koma + 1);
+    } catch (galat) {
+      return null;
+    }
+  }
+
+  function muatGambar(sumber) {
+    return new Promise(function (selesai) {
+      var gambar = new Image();
+      var pewaktu = setTimeout(function () { selesai(null); }, 4000);
+      gambar.onload = function () { clearTimeout(pewaktu); selesai(gambar); };
+      gambar.onerror = function () { clearTimeout(pewaktu); selesai(null); };
+      gambar.src = sumber;
+    });
+  }
+
+  // Tugas gambar untuk satu elemen: img, svg inline, atau background-image url().
+  function tugasGambar(el, tag, cs, lebar, tinggi) {
+    var fitCss = cs.objectFit;
+    var fit = fitCss === "cover" ? "fill" : fitCss === "contain" || fitCss === "scale-down" ? "fit" : "stretch";
+    if (tag === "img") {
+      if (el.complete && el.naturalWidth > 0) {
+        return Promise.resolve({ data: rasterGambar(el), fit: fit });
+      }
+      return muatGambar(el.currentSrc || el.src).then(function (g) {
+        return { data: g ? rasterGambar(g) : null, fit: fit };
+      });
+    }
+    if (tag === "svg") {
+      var salinan = el.cloneNode(true);
+      if (!salinan.getAttribute("xmlns")) salinan.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+      if (!salinan.getAttribute("width")) salinan.setAttribute("width", String(Math.round(lebar)));
+      if (!salinan.getAttribute("height")) salinan.setAttribute("height", String(Math.round(tinggi)));
+      var teksSvg = new XMLSerializer().serializeToString(salinan);
+      return muatGambar("data:image/svg+xml;charset=utf-8," + encodeURIComponent(teksSvg)).then(function (g) {
+        return { data: g ? rasterGambar(g) : null, fit: "stretch" };
+      });
+    }
+    if (tag === "canvas") {
+      try {
+        var url = el.toDataURL("image/png");
+        var k = url.indexOf(",");
+        return Promise.resolve({ data: url.length < BATAS_GAMBAR_B64 && k !== -1 ? url.slice(k + 1) : null, fit: "stretch" });
+      } catch (galat) {
+        return Promise.resolve({ data: null, fit: "stretch" });
+      }
+    }
+    var latar = cs.backgroundImage || "";
+    var mulai = latar.indexOf("url(");
+    if (mulai !== -1) {
+      var akhirUrl = latar.indexOf(")", mulai);
+      var alamat = latar.slice(mulai + 4, akhirUrl).trim();
+      if ((alamat.charAt(0) === '"' || alamat.charAt(0) === "'") && alamat.length > 1) {
+        alamat = alamat.slice(1, alamat.length - 1);
+      }
+      var fitLatar = cs.backgroundSize === "cover" ? "fill" : cs.backgroundSize === "contain" ? "fit" : "fill";
+      return muatGambar(alamat).then(function (g) {
+        return { data: g ? rasterGambar(g) : null, fit: fitLatar };
+      });
+    }
+    return null;
+  }
+
   function bangunScene() {
     var jumlah = { n: 0 };
     var peringatan = 0;
+    var tugas = [];
 
     function telusuri(el, induk, absX, absY, dalam) {
       if (jumlah.n >= BATAS_NODE_SCENE) return;
@@ -650,9 +784,15 @@ export const RUNTIME_SOURCE = `(function () {
       var sudut = jejariSudut(cs, r.width, r.height);
       if (sudut !== undefined) node.radius = sudut;
       if (opasitas < 1) node.opacity = opasitas;
+      var bayangan = bayanganDari(cs.boxShadow);
+      if (bayangan) node.shadows = bayangan;
       if (cs.overflowX !== "visible" || cs.overflowY !== "visible") node.clip = true;
       jumlah.n += 1;
       induk.push(node);
+      if (gambarLatar && cs.backgroundImage.indexOf("url(") !== -1 && tugas.length < 60 &&
+          tag !== "img" && tag !== "svg" && tag !== "canvas") {
+        tugas.push({ node: node, kerja: tugasGambar(el, tag, cs, r.width, r.height) });
+      }
       if (tag === "img" || tag === "svg" || tag === "canvas" || tag === "video" || tag === "picture") {
         var sumber = "";
         try {
@@ -660,6 +800,7 @@ export const RUNTIME_SOURCE = `(function () {
         } catch (galat) {}
         node.name = "gambar: " + (sumber || tag);
         if (!node.fill) node.fill = { r: 0.85, g: 0.85, b: 0.85, a: 1 };
+        if (tugas.length < 60) tugas.push({ node: node, kerja: tugasGambar(el, tag, cs, r.width, r.height) });
         return;
       }
       node.children = [];
@@ -734,7 +875,7 @@ export const RUNTIME_SOURCE = `(function () {
       children: []
     };
     anakAnak(body, akar.children, 0, 0, 0, csBody);
-    return { width: lebar, height: tinggi, root: akar };
+    return { width: lebar, height: tinggi, root: akar, tugas: tugas };
   }
 
   function tangkapScene(id) {
@@ -745,18 +886,36 @@ export const RUNTIME_SOURCE = `(function () {
       kirimGalatTangkap(id, "failed");
       return;
     }
-    var teks = "";
-    try {
-      teks = JSON.stringify(hasil.root);
-    } catch (galat) {
-      kirimGalatTangkap(id, "failed");
-      return;
-    }
-    if (teks.length > BATAS_SCENE) {
-      kirimGalatTangkap(id, "too-large");
-      return;
-    }
-    kirim({ type: "scene", id: id, width: hasil.width, height: hasil.height, root: hasil.root }, BATAS_SCENE + 4096);
+    var selesaiSemua = Promise.all(hasil.tugas.map(function (t) {
+      return Promise.resolve(t.kerja).then(function (r) { return r; }, function () { return null; });
+    }));
+    var batas = new Promise(function (selesai) {
+      setTimeout(function () { selesai(null); }, 9000);
+    });
+    Promise.race([selesaiSemua, batas]).then(function (daftar) {
+      var total = 0;
+      if (daftar) {
+        for (var i = 0; i < daftar.length; i += 1) {
+          var r = daftar[i];
+          if (!r || !r.data) continue;
+          if (total + r.data.length > 4500000) continue;
+          total += r.data.length;
+          hasil.tugas[i].node.image = { data: r.data, fit: r.fit };
+        }
+      }
+      var teks = "";
+      try {
+        teks = JSON.stringify(hasil.root);
+      } catch (galat) {
+        kirimGalatTangkap(id, "failed");
+        return;
+      }
+      if (teks.length > BATAS_SCENE) {
+        kirimGalatTangkap(id, "too-large");
+        return;
+      }
+      kirim({ type: "scene", id: id, width: hasil.width, height: hasil.height, root: hasil.root }, BATAS_SCENE + 4096);
+    });
   }
 
   function tangkap(id, skala) {

@@ -28,6 +28,21 @@ export interface SceneText {
   letterSpacing?: number;
 }
 
+export interface SceneShadow {
+  x: number;
+  y: number;
+  blur: number;
+  spread: number;
+  color: SceneColor;
+  inset: boolean;
+}
+
+/** Gambar raster (PNG atau JPEG, base64 tanpa awalan) yang mengisi sebuah box. */
+export interface SceneImage {
+  data: string;
+  fit: "fill" | "fit" | "stretch";
+}
+
 export interface SceneNode {
   /** `box` menjadi FRAME Figma; gambar dan svg dikirim klien sebagai box abu-abu. */
   kind: "box" | "text";
@@ -43,6 +58,8 @@ export interface SceneNode {
   opacity?: number;
   clip?: boolean;
   text?: SceneText;
+  shadows?: SceneShadow[];
+  image?: SceneImage;
   children?: SceneNode[];
 }
 
@@ -65,6 +82,10 @@ const MAX_NAME = 120;
 const MAX_CHARACTERS = 20000;
 const MAX_FONT_FAMILY = 100;
 const MAX_ABS = 1e6;
+const MAX_SHADOWS = 8;
+const MAX_IMAGE_CHARS = 1_200_000;
+export const MAX_SCENE_IMAGES = 60;
+const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function fail(message: string): never {
   throw new DesignError(message, 400);
@@ -128,6 +149,7 @@ function text(value: unknown, where: string): SceneText {
 
 interface Budget {
   nodes: number;
+  images: number;
 }
 
 function node(value: unknown, where: string, depth: number, budget: Budget): SceneNode {
@@ -168,6 +190,35 @@ function node(value: unknown, where: string, depth: number, budget: Budget): Sce
     if (typeof obj.clip !== "boolean") fail(`${where}.clip harus boolean.`);
     hasil.clip = obj.clip;
   }
+  if (obj.shadows !== undefined) {
+    if (!Array.isArray(obj.shadows)) fail(`${where}.shadows harus berupa daftar.`);
+    hasil.shadows = obj.shadows.slice(0, MAX_SHADOWS).map((raw, i) => {
+      const w = `${where}.shadows[${i}]`;
+      const sh = record(raw, w);
+      if (typeof sh.inset !== "boolean") fail(`${w}.inset harus boolean.`);
+      return {
+        x: num(sh.x, `${w}.x`),
+        y: num(sh.y, `${w}.y`),
+        blur: Math.max(0, num(sh.blur, `${w}.blur`)),
+        spread: num(sh.spread, `${w}.spread`),
+        color: color(sh.color, `${w}.color`),
+        inset: sh.inset,
+      };
+    });
+  }
+  if (obj.image !== undefined) {
+    if (kind === "text") fail(`${where}: node teks tidak boleh punya gambar.`);
+    const img = record(obj.image, `${where}.image`);
+    const fit = img.fit;
+    if (fit !== "fill" && fit !== "fit" && fit !== "stretch") fail(`${where}.image.fit tidak dikenal.`);
+    const data = img.data;
+    if (typeof data !== "string" || data.length === 0 || data.length > MAX_IMAGE_CHARS || !BASE64_RE.test(data)) {
+      fail(`${where}.image.data bukan base64 yang sah atau terlalu besar.`);
+    }
+    budget.images += 1;
+    if (budget.images > MAX_SCENE_IMAGES) fail(`Terlalu banyak gambar (maksimal ${MAX_SCENE_IMAGES}).`);
+    hasil.image = { data, fit };
+  }
   if (kind === "text") {
     if (obj.text === undefined) fail(`${where}.text wajib untuk node teks.`);
     hasil.text = text(obj.text, `${where}.text`);
@@ -190,7 +241,7 @@ export function validateScene(value: unknown): SceneDoc {
   if (obj.pages.length > MAX_SCENE_PAGES) {
     fail(`Terlalu banyak halaman (maksimal ${MAX_SCENE_PAGES}).`);
   }
-  const budget: Budget = { nodes: 0 };
+  const budget: Budget = { nodes: 0, images: 0 };
   const pages = obj.pages.map((raw, i): ScenePage => {
     const where = `scene.pages[${i}]`;
     const page = record(raw, where);

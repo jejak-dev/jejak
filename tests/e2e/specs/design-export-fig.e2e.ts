@@ -42,6 +42,8 @@ input{margin:0 40px 40px;padding:10px 12px;width:320px;border:1px solid #888;bor
 <div><h2>Kamar Kebun</h2><span>Rp 650.000 per malam</span></div>
 <div><h2>Paviliun</h2><span>Rp 1.200.000 per malam</span></div>
 </div>
+<img id="foto" alt="" width="400" height="240" style="margin:0 40px 40px;object-fit:cover;box-shadow:0 6px 16px rgba(0,0,0,.2);border-radius:12px" src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22400%22%20height%3D%22240%22%3E%3Crect%20width%3D%22400%22%20height%3D%22240%22%20fill%3D%22%239ec5d8%22%2F%3E%3Ccircle%20cx%3D%22300%22%20cy%3D%2260%22%20r%3D%2230%22%20fill%3D%22%23f2c94c%22%2F%3E%3Crect%20y%3D%22150%22%20width%3D%22400%22%20height%3D%2290%22%20fill%3D%22%233f7a9b%22%2F%3E%3C%2Fsvg%3E">
+<svg id="ikon" width="40" height="40" viewBox="0 0 40 40" style="margin:0 40px"><circle cx="20" cy="20" r="18" fill="#b3261e"/></svg>
 <input placeholder="Email untuk kabar kamar kosong">
 </body>
 </html>`;
@@ -73,6 +75,8 @@ async function buatSesiDi(page: Page, cwd: string, prompt: string): Promise<void
 }
 
 interface NodeBaca {
+  effects?: unknown[];
+  fillPaints?: Array<{ type: string }>;
   type: string;
   name: string;
   size?: { x: number; y: number };
@@ -137,4 +141,12 @@ test("ekspor Figma: frame, tombol, dan teks dibaca balik dari berkas .fig", asyn
   expect(tombol?.size?.y).toBe(56);
   expect(tombol?.strokeWeight).toBe(2);
   expect(tombol?.cornerRadius).toBe(12);
+  // Gambar dan svg masuk arsip sebagai gambar; bayangan kartu menjadi efek.
+  expect(hasil.images.length).toBeGreaterThanOrEqual(2);
+  const gambar = nodes.filter((n) => n.name.startsWith("gambar:"));
+  expect(gambar.length).toBe(2);
+  for (const g of gambar) {
+    expect(g.fillPaints?.some((p) => p.type === "IMAGE")).toBe(true);
+  }
+  expect(nodes.some((n) => (n.effects?.length ?? 0) > 0)).toBe(true);
 });
