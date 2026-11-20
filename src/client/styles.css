@@ -5401,10 +5401,10 @@ h2.jk-md-heading {
 
 .jk-memory-row > summary {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 34px;
-  padding: 0 4px;
+  padding: 6px 4px;
   list-style: none;
   cursor: pointer;
   border-radius: 6px;
@@ -5425,15 +5425,17 @@ h2.jk-md-heading {
 .jk-memory-title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
   font-size: 13px;
   font-weight: 600;
 }
 
 .jk-memory-flag {
   flex: none;
+  white-space: nowrap;
   color: var(--warn);
   font-size: 12px;
 }
@@ -5448,6 +5450,7 @@ h2.jk-md-heading {
 
 .jk-memory-scope {
   flex: none;
+  white-space: nowrap;
   color: var(--t3);
   font-size: 12px;
 }
@@ -5642,10 +5645,10 @@ h2.jk-md-heading {
 
 .jk-claude-row > summary {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-height: 34px;
-  padding: 0 4px;
+  padding: 6px 4px;
   list-style: none;
   cursor: pointer;
   border-radius: 6px;
@@ -5662,9 +5665,10 @@ h2.jk-md-heading {
 .jk-claude-desc {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
   color: var(--t3);
   font-size: 12px;
 }
@@ -5676,18 +5680,21 @@ h2.jk-md-heading {
   border-radius: 999px;
   color: var(--t2);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .jk-claude-time {
   flex: none;
   color: var(--t3);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .jk-claude-origin {
   flex: none;
   color: var(--t3);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .jk-claude-body {
@@ -5744,6 +5751,7 @@ h2.jk-md-heading {
 
 .jk-claude-badge {
   flex: none;
+  white-space: nowrap;
   padding: 0 6px;
   border: 1px solid var(--line-2);
   border-radius: 999px;
@@ -11739,4 +11747,21 @@ h2.jk-md-heading {
   width: auto;
   max-width: none;
   border-left: 0;
+}
+
+/* Layar sempit: judul & deskripsi baris memory boleh turun ke baris sendiri. */
+@media (max-width: 640px) {
+  .jk-memory-row > summary,
+  .jk-claude-row > summary {
+    flex-wrap: wrap;
+  }
+
+  .jk-memory-row > summary .jk-memory-title,
+  .jk-claude-row > summary .jk-memory-title {
+    flex: 1 1 100%;
+  }
+
+  .jk-claude-desc {
+    flex: 1 1 100%;
+  }
 }
