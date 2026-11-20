@@ -606,6 +606,137 @@ export const RUNTIME_SOURCE = `(function () {
     };
   }
 
+  // Gradien linear pertama dari nilai background-image terhitung. Sudut CSS,
+  // titik warna dengan posisi persen atau px (tanpa posisi dibagi rata).
+  function bagiAtas(teks) {
+    var bagian = [];
+    var dalam = 0;
+    var awal = 0;
+    for (var i = 0; i < teks.length; i += 1) {
+      var ch = teks.charAt(i);
+      if (ch === "(") dalam += 1;
+      else if (ch === ")") dalam -= 1;
+      else if (ch === "," && dalam === 0) {
+        bagian.push(teks.slice(awal, i).trim());
+        awal = i + 1;
+      }
+    }
+    bagian.push(teks.slice(awal).trim());
+    return bagian;
+  }
+
+  var ARAH_GRADIEN = {
+    "to top": 0, "to right": 90, "to bottom": 180, "to left": 270,
+    "to top right": 45, "to right top": 45, "to bottom right": 135, "to right bottom": 135,
+    "to bottom left": 225, "to left bottom": 225, "to top left": 315, "to left top": 315
+  };
+
+  function gradienDari(nilai, lebar, tinggi) {
+    var mulai = String(nilai || "").indexOf("linear-gradient(");
+    if (mulai === -1) return null;
+    var terbuka = mulai + 16;
+    var dalam = 1;
+    var akhir = terbuka;
+    while (akhir < nilai.length && dalam > 0) {
+      var c = nilai.charAt(akhir);
+      if (c === "(") dalam += 1;
+      else if (c === ")") dalam -= 1;
+      akhir += 1;
+    }
+    if (dalam !== 0) return null;
+    var bagian = bagiAtas(nilai.slice(terbuka, akhir - 1));
+    var sudut = 180;
+    var arah = bagian[0].toLowerCase();
+    if (arah.slice(-3) === "deg") {
+      sudut = parseFloat(arah);
+      bagian.shift();
+    } else if (ARAH_GRADIEN.hasOwnProperty(arah)) {
+      sudut = ARAH_GRADIEN[arah];
+      bagian.shift();
+    } else if (arah.slice(-3) === "rad" || arah.slice(-4) === "turn" || arah.slice(-4) === "grad") {
+      return null;
+    }
+    if (!(sudut === sudut) || bagian.length < 2 || bagian.length > 16) return null;
+    var titik = [];
+    for (var i = 0; i < bagian.length; i += 1) {
+      var item = bagian[i];
+      var posisi = null;
+      var spasi = -1;
+      var d = 0;
+      for (var j = item.length - 1; j >= 0; j -= 1) {
+        var k = item.charAt(j);
+        if (k === ")") d += 1;
+        else if (k === "(") d -= 1;
+        else if (k === " " && d === 0) {
+          spasi = j;
+          break;
+        }
+      }
+      var warnaTeks = item;
+      if (spasi !== -1) {
+        var sisa = item.slice(spasi + 1);
+        var angkaSisa = parseFloat(sisa);
+        if (sisa.slice(-1) === "%" && angkaSisa === angkaSisa) {
+          posisi = angkaSisa / 100;
+          warnaTeks = item.slice(0, spasi).trim();
+        } else if (sisa.slice(-2) === "px" && angkaSisa === angkaSisa) {
+          var panjang = Math.abs(lebar * Math.sin(sudut * Math.PI / 180)) + Math.abs(tinggi * Math.cos(sudut * Math.PI / 180));
+          posisi = panjang > 0 ? angkaSisa / panjang : 0;
+          warnaTeks = item.slice(0, spasi).trim();
+        }
+      }
+      var w = warnaDari(warnaTeks);
+      if (!w) return null;
+      titik.push({ color: w, position: posisi });
+    }
+    if (titik[0].position === null) titik[0].position = 0;
+    if (titik[titik.length - 1].position === null) titik[titik.length - 1].position = 1;
+    var terakhir = 0;
+    for (var m = 1; m < titik.length; m += 1) {
+      if (titik[m].position !== null) {
+        var jarakTitik = m - terakhir;
+        for (var n = terakhir + 1; n < m; n += 1) {
+          titik[n].position = titik[terakhir].position + (titik[m].position - titik[terakhir].position) * (n - terakhir) / jarakTitik;
+        }
+        terakhir = m;
+      }
+    }
+    for (var q = 0; q < titik.length; q += 1) {
+      titik[q].position = Math.min(1, Math.max(0, titik[q].position));
+      if (q > 0 && titik[q].position < titik[q - 1].position) titik[q].position = titik[q - 1].position;
+    }
+    return { angle: sudut, stops: titik };
+  }
+
+  // Flex satu baris tanpa margin anak dan tanpa anak mutlak menjadi auto layout.
+  function tataLetakDari(el, cs) {
+    if (cs.display !== "flex" && cs.display !== "inline-flex") return null;
+    if (cs.flexWrap !== "nowrap") return null;
+    var arah = cs.flexDirection === "row" ? "row" : cs.flexDirection === "column" ? "column" : null;
+    if (!arah) return null;
+    var main = { "flex-start": "start", "start": "start", "normal": "start", "center": "center", "flex-end": "end", "end": "end", "space-between": "between" }[cs.justifyContent];
+    var silang = { "normal": "start", "stretch": "start", "flex-start": "start", "start": "start", "center": "center", "flex-end": "end", "end": "end" }[cs.alignItems];
+    if (!main || !silang) return null;
+    for (var i = 0; i < el.children.length; i += 1) {
+      var ac = window.getComputedStyle(el.children[i]);
+      if (ac.display === "none") continue;
+      if (ac.position === "absolute" || ac.position === "fixed") return null;
+      if (angka(ac.marginLeft) !== 0 || angka(ac.marginRight) !== 0 ||
+          angka(ac.marginTop) !== 0 || angka(ac.marginBottom) !== 0) return null;
+    }
+    var gap = arah === "row" ? angka(cs.columnGap) : angka(cs.rowGap);
+    var pad = angka(cs.borderTopWidth);
+    if (pad !== 0 || angka(cs.borderRightWidth) !== 0 || angka(cs.borderBottomWidth) !== 0 ||
+        angka(cs.borderLeftWidth) !== 0) return null;
+    return {
+      direction: arah,
+      gap: gap || 0,
+      padding: [angka(cs.paddingTop), angka(cs.paddingRight), angka(cs.paddingBottom), angka(cs.paddingLeft)],
+      main: main,
+      cross: silang
+    };
+  }
+
   // Bayangan: nilai terhitung berbentuk "rgba(...) 0px 2px 8px 0px" dipisah
   // koma di tingkat atas; warna selalu di depan.
   function bayanganDari(nilai) {
@@ -787,6 +918,10 @@ export const RUNTIME_SOURCE = `(function () {
         node.fill = { r: 0.85, g: 0.85, b: 0.85, a: 1 };
         node.abuCadangan = true;
       }
+      if (gambarLatar) {
+        var grad = gradienDari(cs.backgroundImage, r.width, r.height);
+        if (grad) node.gradient = grad;
+      }
       var tepi = garisTepi(cs);
       if (tepi) node.stroke = tepi;
       var sudut = jejariSudut(cs, r.width, r.height);
@@ -842,6 +977,8 @@ export const RUNTIME_SOURCE = `(function () {
         }
         return;
       }
+      var tata = tataLetakDari(el, cs);
+      if (tata) node.layout = tata;
       anakAnak(el, node.children, kiri, atas, dalam + 1, cs);
     }
 

@@ -45,6 +45,22 @@ export interface SceneImage {
   fit: "fill" | "fit" | "stretch";
 }
 
+/** Gradien linear CSS: sudut CSS dalam derajat (0 = ke atas, 90 = ke kanan). */
+export interface SceneGradient {
+  angle: number;
+  stops: { color: SceneColor; position: number }[];
+}
+
+/** Flex CSS satu baris yang dipetakan ke auto layout Figma. */
+export interface SceneLayout {
+  direction: "row" | "column";
+  gap: number;
+  /** Atas, kanan, bawah, kiri. */
+  padding: [number, number, number, number];
+  main: "start" | "center" | "end" | "between";
+  cross: "start" | "center" | "end";
+}
+
 export interface SceneNode {
   /** `box` menjadi FRAME Figma; gambar dan svg dikirim klien sebagai box abu-abu. */
   kind: "box" | "text";
@@ -62,6 +78,8 @@ export interface SceneNode {
   text?: SceneText;
   shadows?: SceneShadow[];
   image?: SceneImage;
+  gradient?: SceneGradient;
+  layout?: SceneLayout;
   children?: SceneNode[];
 }
 
@@ -85,6 +103,7 @@ const MAX_CHARACTERS = 20000;
 const MAX_FONT_FAMILY = 100;
 const MAX_ABS = 1e6;
 const MAX_SHADOWS = 8;
+const MAX_STOPS = 16;
 const MAX_IMAGE_CHARS = 1_200_000;
 export const MAX_SCENE_IMAGES = 60;
 const BASE64_RE = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -211,6 +230,42 @@ function node(value: unknown, where: string, depth: number, budget: Budget): Sce
         inset: sh.inset,
       };
     });
+  }
+  if (obj.gradient !== undefined) {
+    const g = record(obj.gradient, `${where}.gradient`);
+    if (!Array.isArray(g.stops) || g.stops.length < 2 || g.stops.length > MAX_STOPS) {
+      fail(`${where}.gradient.stops harus 2 sampai ${MAX_STOPS} titik.`);
+    }
+    hasil.gradient = {
+      angle: num(g.angle, `${where}.gradient.angle`),
+      stops: g.stops.map((raw, i) => {
+        const w = `${where}.gradient.stops[${i}]`;
+        const st = record(raw, w);
+        return { color: color(st.color, `${w}.color`), position: unit(st.position, `${w}.position`) };
+      }),
+    };
+  }
+  if (obj.layout !== undefined) {
+    const l = record(obj.layout, `${where}.layout`);
+    const w = `${where}.layout`;
+    if (l.direction !== "row" && l.direction !== "column") fail(`${w}.direction tidak dikenal.`);
+    if (l.main !== "start" && l.main !== "center" && l.main !== "end" && l.main !== "between") {
+      fail(`${w}.main tidak dikenal.`);
+    }
+    if (l.cross !== "start" && l.cross !== "center" && l.cross !== "end") fail(`${w}.cross tidak dikenal.`);
+    if (!Array.isArray(l.padding) || l.padding.length !== 4) fail(`${w}.padding harus 4 bilangan.`);
+    hasil.layout = {
+      direction: l.direction,
+      gap: Math.max(0, num(l.gap, `${w}.gap`)),
+      padding: l.padding.map((v, i) => Math.max(0, num(v, `${w}.padding[${i}]`))) as [
+        number,
+        number,
+        number,
+        number,
+      ],
+      main: l.main,
+      cross: l.cross,
+    };
   }
   if (obj.image !== undefined) {
     if (kind === "text") fail(`${where}: node teks tidak boleh punya gambar.`);

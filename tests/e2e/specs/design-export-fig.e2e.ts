@@ -34,6 +34,7 @@ input{margin:0 40px 40px;padding:10px 12px;width:320px;border:1px solid #888;bor
 </head>
 <body>
 <nav><b>Rumah Tepi Danau</b><a href="#">Kamar</a><a href="#">Galeri</a><a href="#">Kontak</a></nav>
+<div id="banner" style="margin:0 40px;height:60px;border-radius:12px;background:linear-gradient(90deg,#b3261e,#f2c94c)"></div>
 <h1 id="judul">Rumah Tepi Danau</h1>
 <p class="lead">Penginapan kecil di tepi danau, lima kamar, sarapan dari kebun sendiri.</p>
 <button id="tombol">Pesan sekarang</button>
@@ -82,6 +83,7 @@ interface NodeBaca {
   size?: { x: number; y: number };
   textData?: { characters: string };
   strokeWeight?: number;
+  stackMode?: string;
   cornerRadius?: number;
 }
 
@@ -151,4 +153,8 @@ test("ekspor Figma: frame, tombol, dan teks dibaca balik dari berkas .fig", asyn
     expect(g.fillPaints?.some((p) => p.type === "SOLID")).toBe(false);
   }
   expect(nodes.some((n) => (n.effects?.length ?? 0) > 0)).toBe(true);
+  // Gradien linear dan auto layout (deretan kartu flex).
+  const banner = nodes.find((n) => n.name === "div#banner");
+  expect(banner?.fillPaints?.some((p) => p.type === "GRADIENT_LINEAR")).toBe(true);
+  expect(nodes.some((n) => n.stackMode === "HORIZONTAL")).toBe(true);
 });

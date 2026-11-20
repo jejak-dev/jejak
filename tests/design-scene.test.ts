@@ -108,4 +108,18 @@ describe("validateScene", () => {
     expect(validateScene(teks(true)).pages[0]?.root.text?.singleLine).toBe(true);
     expect(galat(teks("ya"))).toContain("singleLine");
   });
+
+  test("gradient dan layout divalidasi", () => {
+    const hitam = { r: 0, g: 0, b: 0, a: 1 };
+    const sah = {
+      ...kotak,
+      gradient: { angle: 90, stops: [{ color: hitam, position: 0 }, { color: hitam, position: 2 }] },
+      layout: { direction: "row", gap: 4, padding: [1, 2, 3, 4], main: "between", cross: "center" },
+    };
+    const hasil = validateScene(scene([halaman(sah)])).pages[0]?.root;
+    expect(hasil?.gradient?.stops[1]?.position).toBe(1);
+    expect(hasil?.layout?.main).toBe("between");
+    expect(galat(scene([halaman({ ...sah, gradient: { angle: 0, stops: [] } })]))).toContain("gradient");
+    expect(galat(scene([halaman({ ...sah, layout: { ...sah.layout, main: "x" } })]))).toContain("layout");
+  });
 });

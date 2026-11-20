@@ -21,6 +21,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Design: menu Ekspor memuat "Berkas Figma (.fig)": runtime frame menangkap kotak, warna, garis tepi, sudut, dan teks dari DOM (pesan `scene`), server menulis .fig; gambar, svg, dan background-image dirasterisasi (maks 800 px) jadi isi kotak, bayangan menjadi efek Figma.
 - Design: ekspor Figma memperbaiki ikon svg yang kosong (style inline membuang gambar dari kanvas) dan teks satu baris tidak lagi menumpuk karena font pengganti lebih lebar (ukuran otomatis).
 - Design: ekspor Figma tidak lagi menaruh kotak abu-abu di bawah gambar dan svg yang berhasil dirasterisasi.
+- Design: ekspor Figma membawa gradien linear (`linear-gradient`) dan auto layout untuk flex satu baris; auto layout hanya dipakai bila hitungan tata letak Figma cocok dengan posisi DOM (selain itu posisi mutlak).
 
 ## [0.1.0-beta.15] - 2026-11-18
 

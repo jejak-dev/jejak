@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseFigBuffer } from "@open-pencil/fig";
-import { buildFig, fontStyle, resolveFont } from "../src/server/design/fig";
-import type { SceneDoc } from "../src/server/design/scene";
+import { buildFig, fontStyle, gradientTransform, layoutCocok, resolveFont } from "../src/server/design/fig";
+import type { SceneDoc, SceneNode } from "../src/server/design/scene";
 
 const putih = { r: 1, g: 1, b: 1, a: 1 };
 const hitam = { r: 0, g: 0, b: 0, a: 1 };
@@ -234,5 +234,56 @@ describe("resolveFont", () => {
     expect(resolveFont("Poppins", 600)).toEqual({ family: "Poppins", weight: 600 });
     expect(resolveFont("FontAneh", 500).family).toBe("Inter");
     expect(resolveFont("", 400).family).toBe("Inter");
+  });
+});
+
+describe("gradientTransform", () => {
+  test("90 derajat pada kotak persegi adalah identitas, 180 derajat memakai bawaan Figma", () => {
+    const a = gradientTransform(90, 100, 100);
+    expect(a.m00).toBeCloseTo(1);
+    expect(a.m01).toBeCloseTo(0);
+    expect(a.m10).toBeCloseTo(0);
+    expect(a.m11).toBeCloseTo(1);
+    const b = gradientTransform(180, 100, 100);
+    expect([b.m00, b.m01, b.m02, b.m10, b.m11, b.m12].map((v) => Math.round(v * 1000) / 1000 + 0)).toEqual([
+      0, 1, 0, -1, 0, 1,
+    ]);
+  });
+});
+
+function kotak(x: number, y: number, w: number, h: number): SceneNode {
+  return { kind: "box", name: "k", x, y, width: w, height: h };
+}
+
+describe("layoutCocok", () => {
+  const base = { direction: "row" as const, gap: 10, padding: [5, 5, 5, 5] as [number, number, number, number], main: "start" as const, cross: "start" as const };
+  test("menerima flex yang posisinya sama dengan hitungan Figma", () => {
+    const induk = { ...kotak(0, 0, 200, 50), children: [kotak(5, 5, 40, 20), kotak(55, 5, 40, 20)] };
+    expect(layoutCocok(induk, base)).toBe(true);
+    const tengah = { ...kotak(0, 0, 200, 50), children: [kotak(5, 15, 40, 20)] };
+    expect(layoutCocok(tengah, { ...base, cross: "center" })).toBe(true);
+    const antara = { ...kotak(0, 0, 200, 50), children: [kotak(5, 5, 40, 20), kotak(155, 5, 40, 20)] };
+    expect(layoutCocok(antara, { ...base, main: "between" })).toBe(true);
+  });
+  test("menolak bila posisi DOM menyimpang", () => {
+    const induk = { ...kotak(0, 0, 200, 50), children: [kotak(5, 5, 40, 20), kotak(80, 5, 40, 20)] };
+    expect(layoutCocok(induk, base)).toBe(false);
+    expect(layoutCocok(kotak(0, 0, 10, 10), base)).toBe(false);
+  });
+  test("buildFig menulis stackMode dan gradien", async () => {
+    const root: SceneNode = {
+      ...kotak(0, 0, 200, 50),
+      layout: base,
+      gradient: { angle: 90, stops: [{ color: hitam, position: 0 }, { color: putih, position: 1 }] },
+      children: [kotak(5, 5, 40, 20), kotak(55, 5, 40, 20)],
+    };
+    const { data } = await buildFig({ name: "x", pages: [{ name: "p", width: 200, height: 50, root }] });
+    const buf = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer;
+    const nodes = (await parseFigBuffer(buf)).nodeChanges as unknown as Array<Record<string, unknown>>;
+    const frame = nodes.find((n) => n.stackMode === "HORIZONTAL");
+    expect(frame).toBeDefined();
+    expect(frame?.stackSpacing).toBe(10);
+    const paints = frame?.fillPaints as Array<{ type: string }>;
+    expect(paints.some((p) => p.type === "GRADIENT_LINEAR")).toBe(true);
   });
 });

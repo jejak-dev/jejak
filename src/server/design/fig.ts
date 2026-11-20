@@ -11,7 +11,7 @@ import {
 } from "@open-pencil/kiwi/fig/codec";
 import { createHash } from "node:crypto";
 import { deflateSync } from "fflate";
-import type { SceneDoc, SceneNode } from "./scene";
+import type { SceneDoc, SceneGradient, SceneLayout, SceneNode } from "./scene";
 
 /**
  * Penulis berkas Figma (.fig) dari scene graph. Format ini tidak punya
@@ -117,6 +117,104 @@ const ALIGN: Record<string, string> = {
   justify: "JUSTIFIED",
 };
 
+type Transform = { m00: number; m01: number; m02: number; m10: number; m11: number; m12: number };
+
+function inversi(t: Transform): Transform {
+  const det = t.m00 * t.m11 - t.m01 * t.m10;
+  if (Math.abs(det) < 1e-12) return { m00: 1, m01: 0, m02: 0, m10: 0, m11: 1, m12: 0 };
+  const m00 = t.m11 / det;
+  const m01 = -t.m01 / det;
+  const m10 = -t.m10 / det;
+  const m11 = t.m00 / det;
+  return {
+    m00,
+    m01,
+    m02: -(m00 * t.m02 + m01 * t.m12),
+    m10,
+    m11,
+    m12: -(m10 * t.m02 + m11 * t.m12),
+  };
+}
+
+/**
+ * Transform paint gradien linear Figma (kotak satuan layer ke ruang gradien,
+ * tempat garis berjalan dari (0, 0.5) ke (1, 0.5)) dari sudut CSS dan ukuran px.
+ */
+export function gradientTransform(angle: number, width: number, height: number): Transform {
+  const w = Math.max(1, width);
+  const h = Math.max(1, height);
+  const rad = (angle * Math.PI) / 180;
+  const dx = Math.sin(rad);
+  const dy = -Math.cos(rad);
+  // Panjang garis gradien CSS menyentuh sudut kotak.
+  const panjang = Math.abs(w * dx) + Math.abs(h * dy);
+  const awal = { x: 0.5 - (dx * panjang) / 2 / w, y: 0.5 - (dy * panjang) / 2 / h };
+  const akhir = { x: 0.5 + (dx * panjang) / 2 / w, y: 0.5 + (dy * panjang) / 2 / h };
+  const sumbu = { x: akhir.x - awal.x, y: akhir.y - awal.y };
+  // Sumbu kedua tegak lurus di layar dan sepanjang sumbu utama.
+  const lintang = { x: (-sumbu.y * h) / w, y: (sumbu.x * w) / h };
+  return inversi({
+    m00: sumbu.x,
+    m01: lintang.x,
+    m02: awal.x - lintang.x / 2,
+    m10: sumbu.y,
+    m11: lintang.y,
+    m12: awal.y - lintang.y / 2,
+  });
+}
+
+function paintGradien(g: SceneGradient, width: number, height: number) {
+  return {
+    type: "GRADIENT_LINEAR" as const,
+    stops: g.stops.map((st) => ({ color: st.color, position: st.position })),
+    transform: gradientTransform(g.angle, width, height),
+    opacity: 1,
+    visible: true,
+    blendMode: "NORMAL",
+  };
+}
+
+/**
+ * Auto layout hanya dipakai bila perhitungan tata letak Figma menaruh semua
+ * anak dalam 1.5 px dari posisi DOM asli; selain itu posisi mutlak dipertahankan.
+ */
+export function layoutCocok(node: SceneNode, layout: SceneLayout): boolean {
+  const anak = node.children ?? [];
+  if (anak.length === 0) return false;
+  const [atas, kanan, bawah, kiri] = layout.padding;
+  const baris = layout.direction === "row";
+  const dalamUtama = (baris ? node.width - kiri - kanan : node.height - atas - bawah);
+  const dalamSilang = (baris ? node.height - atas - bawah : node.width - kiri - kanan);
+  const ukuranUtama = anak.map((c) => (baris ? c.width : c.height));
+  const total = ukuranUtama.reduce((a, b) => a + b, 0);
+  const bebas = dalamUtama - total - layout.gap * (anak.length - 1);
+  let kursor = layout.main === "center" ? bebas / 2 : layout.main === "end" ? bebas : 0;
+  const celah = layout.main === "between" && anak.length > 1
+    ? (dalamUtama - total) / (anak.length - 1)
+    : layout.gap;
+  if (layout.main === "between" && anak.length === 1) kursor = 0;
+  for (let i = 0; i < anak.length; i += 1) {
+    const c = anak[i];
+    if (c === undefined) return false;
+    const silang = baris ? c.height : c.width;
+    const geser = layout.cross === "center" ? (dalamSilang - silang) / 2
+      : layout.cross === "end" ? dalamSilang - silang : 0;
+    const x = baris ? kiri + kursor : kiri + geser;
+    const y = baris ? atas + geser : atas + kursor;
+    if (Math.abs(x - c.x) > 1.5 || Math.abs(y - c.y) > 1.5) return false;
+    kursor += (baris ? c.width : c.height) + celah;
+  }
+  return true;
+}
+
+const JUSTIFY: Record<string, string> = {
+  start: "MIN",
+  center: "CENTER",
+  end: "MAX",
+  between: "SPACE_BETWEEN",
+};
+const ALIGN_ITEMS: Record<string, string> = { start: "MIN", center: "CENTER", end: "MAX" };
+
 interface Counter {
   next: number;
 }
@@ -185,6 +283,27 @@ function emit(
       blendMode: "NORMAL",
       showShadowBehindNode: false,
     }));
+  }
+  if (node.gradient !== undefined && !isText) {
+    change.fillPaints = [
+      ...(change.fillPaints ?? []),
+      paintGradien(node.gradient, node.width, node.height),
+    ];
+  }
+  const layout = node.layout;
+  const autoLayout = !isText && layout !== undefined && layoutCocok(node, layout);
+  if (autoLayout && layout !== undefined) {
+    const [atas, kanan, bawah, kiri] = layout.padding;
+    change.stackMode = layout.direction === "row" ? "HORIZONTAL" : "VERTICAL";
+    change.stackSpacing = layout.gap;
+    change.stackHorizontalPadding = kiri;
+    change.stackPaddingRight = kanan;
+    change.stackVerticalPadding = atas;
+    change.stackPaddingBottom = bawah;
+    change.stackPrimaryAlignItems = JUSTIFY[layout.main] ?? "MIN";
+    change.stackCounterAlignItems = ALIGN_ITEMS[layout.cross] ?? "MIN";
+    change.stackPrimarySizing = "FIXED";
+    change.stackCounterSizing = "FIXED";
   }
   if (node.image !== undefined && !isText) {
     const bytes = new Uint8Array(Buffer.from(node.image.data, "base64"));
