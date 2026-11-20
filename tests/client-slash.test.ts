@@ -11,11 +11,19 @@ import {
   findAll,
   findByAttr,
   fire,
-  flushEffects,
+  flushEffects as flushSekali,
   installDom,
   mount,
   type FakeNode,
 } from "./helpers/dom";
+
+/**
+ * Efek Preact dan pembaruan menu lambat di runner CI yang sibuk; satu jeda 60 ms
+ * kadang belum cukup, jadi tiap tunggu memakai tiga putaran.
+ */
+async function flushEffects(): Promise<void> {
+  for (let i = 0; i < 3; i += 1) await flushSekali();
+}
 
 let bersihkan: (() => void) | undefined;
 
