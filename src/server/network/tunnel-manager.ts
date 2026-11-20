@@ -331,8 +331,10 @@ export class TunnelManager {
 
     let proc: TunnelProcess;
     try {
+      // Jalur lengkap: aplikasi desktop tak mewarisi PATH Homebrew.
+      const binary = this.deps.which(CLOUDFLARED_BINARY) ?? CLOUDFLARED_BINARY;
       proc = this.deps.spawn(
-        [CLOUDFLARED_BINARY, "tunnel", "--no-autoupdate", "run"],
+        [binary, "tunnel", "--no-autoupdate", "run"],
         env,
       );
     } catch (error) {

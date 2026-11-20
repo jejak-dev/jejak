@@ -218,7 +218,7 @@ describe("manajer tunnel: proses", () => {
     expect(status.url).toBe(`https://${HOST}`);
     expect(h.spawns).toHaveLength(1);
     const spawn = h.spawns[0]!;
-    expect(spawn.cmd).toEqual(["cloudflared", "tunnel", "--no-autoupdate", "run"]);
+    expect(spawn.cmd).toEqual(["/usr/local/bin/cloudflared", "tunnel", "--no-autoupdate", "run"]);
     expect(spawn.cmd.join(" ")).not.toContain(TOKEN);
     expect(spawn.env.TUNNEL_TOKEN).toBe(TOKEN);
     expect(h.store.settings.tunnelEnabled).toBe(true);
