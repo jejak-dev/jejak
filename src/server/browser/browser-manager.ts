@@ -798,6 +798,9 @@ export function chromeArgs(profileDir: string): string[] {
     `--user-data-dir=${profileDir}`,
     "--no-first-run",
     "--no-default-browser-check",
+    // Chrome menaikkan http:// ke https:// lalu tidak turun balik di mode headless,
+    // sehingga situs http (IP, jaringan kantor) gagal dibuka.
+    "--disable-features=HttpsUpgrades,HttpsFirstBalancedModeAutoEnable,HttpsFirstModeV2ForEngagedSites",
     "--headless=new",
     "--window-size=1280,800",
     "about:blank",

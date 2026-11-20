@@ -22,6 +22,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Design: ekspor Figma memperbaiki ikon svg yang kosong (style inline membuang gambar dari kanvas) dan teks satu baris tidak lagi menumpuk karena font pengganti lebih lebar (ukuran otomatis).
 - Design: ekspor Figma tidak lagi menaruh kotak abu-abu di bawah gambar dan svg yang berhasil dirasterisasi.
 - Design: ekspor Figma membawa gradien linear (`linear-gradient`) dan auto layout untuk flex satu baris; auto layout hanya dipakai bila hitungan tata letak Figma cocok dengan posisi DOM (selain itu posisi mutlak).
+- Browser: situs `http://` (misalnya IP server tanpa HTTPS) kini terbuka; Chrome headless tidak lagi menaikkan ke https lalu gagal tanpa turun balik.
 
 ## [0.1.0-beta.15] - 2026-11-18
 
