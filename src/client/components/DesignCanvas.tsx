@@ -41,6 +41,7 @@ import {
   modeMessage,
   parseFrameMessage,
   pinsMessage,
+  sceneMessage,
 } from "../lib/design-protocol";
 import type { CaptureFn, CaptureOutcome } from "../lib/design-capture";
 import {
@@ -150,6 +151,24 @@ const EXPORT_TIMEOUT_MS = 15000;
 /** Jeda antar pemeriksaan frame siap. */
 const EXPORT_POLL_MS = 100;
 
+/** Satu halaman scene yang dikirim ke server untuk ekspor Figma. */
+interface ScenePageInput {
+  name: string;
+  width: number;
+  height: number;
+  root: Record<string, unknown>;
+}
+
+/** Hasil tangkapan scene satu frame: pohon mentah atau alasan gagal. */
+type SceneOutcome =
+  | { width: number; height: number; root: Record<string, unknown> }
+  | { error: ExportFailure };
+
+interface SceneWaiter {
+  slug: string;
+  resolve: (outcome: SceneOutcome) => void;
+}
+
 interface ShotWaiter {
   slug: string;
   resolve: (outcome: CaptureOutcome) => void;
@@ -255,6 +274,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
   const lastHoverRef = useRef<{ slug: string; label: string } | undefined>(undefined);
   // Penunggu balasan `shot` per id permintaan; kunci sama dengan pesan frame.
   const shotWaiters = useRef(new Map<string, ShotWaiter>());
+  const sceneWaiters = useRef(new Map<string, SceneWaiter>());
   /** Elemen frame yang sudah melapor "ready" per slug. */
   const readyEls = useRef(new Map<string, HTMLIFrameElement>());
   /** Elemen frame yang sudah melapor "size" per slug. */
@@ -364,6 +384,30 @@ export function DesignCanvas(props: DesignCanvasProps) {
         if (tertua !== undefined) waiters.delete(tertua);
       }
       waiters.set(requestId, { slug, resolve });
+      frame.contentWindow?.postMessage(pesan, "*");
+    });
+  };
+
+  /** Minta scene (kotak, warna, teks) satu frame untuk ekspor Figma. */
+  const sceneFrame = (slug: string, requestId: string): Promise<SceneOutcome> => {
+    const frame = frameEls.current.get(slug);
+    if (frame === undefined || frame.contentWindow === null) {
+      return Promise.resolve({ error: "no-frame" });
+    }
+    const pesan = sceneMessage(requestId);
+    if (pesan === undefined) return Promise.resolve({ error: "failed" });
+    const waiters = sceneWaiters.current;
+    return new Promise<SceneOutcome>((resolve) => {
+      const batas = setTimeout(() => {
+        if (waiters.delete(requestId)) resolve({ error: "timeout" });
+      }, EXPORT_TIMEOUT_MS);
+      waiters.set(requestId, {
+        slug,
+        resolve: (hasil) => {
+          clearTimeout(batas);
+          resolve(hasil);
+        },
+      });
       frame.contentWindow?.postMessage(pesan, "*");
     });
   };
@@ -586,7 +630,20 @@ export function DesignCanvas(props: DesignCanvasProps) {
           });
           return;
         }
+        case "scene": {
+          const waiter = sceneWaiters.current.get(message.id);
+          if (waiter === undefined || waiter.slug !== slug) return;
+          sceneWaiters.current.delete(message.id);
+          waiter.resolve({ width: message.width, height: message.height, root: message.root });
+          return;
+        }
         case "shot-error": {
+          const sceneWaiter = sceneWaiters.current.get(message.id);
+          if (sceneWaiter !== undefined && sceneWaiter.slug === slug) {
+            sceneWaiters.current.delete(message.id);
+            sceneWaiter.resolve({ error: message.reason });
+            return;
+          }
           const waiter = shotWaiters.current.get(message.id);
           if (waiter === undefined || waiter.slug !== slug) return;
           shotWaiters.current.delete(message.id);
@@ -1092,11 +1149,14 @@ export function DesignCanvas(props: DesignCanvasProps) {
    * Jalankan satu ekspor. Hanya satu ekspor boleh berjalan; galat tak
    * pernah melempar ke luar, tapi ditulis sebagai pesan status.
    */
-  const jalankanEkspor = async (kerja: () => Promise<HasilEkspor>): Promise<void> => {
+  const jalankanEkspor = async (
+    kerja: () => Promise<HasilEkspor>,
+    label: { awal: string; selesai: string } = { awal: "Menyiapkan PNG…", selesai: "PNG siap diunduh." },
+  ): Promise<void> => {
     if (exportBusyRef.current) return;
     exportBusyRef.current = true;
     setExportBusy(true);
-    setExportInfo({ text: "Menyiapkan PNG…", gagal: false });
+    setExportInfo({ text: label.awal, gagal: false });
     try {
       const hasil = await kerja();
       if (hasil.gagal !== undefined) {
@@ -1104,7 +1164,7 @@ export function DesignCanvas(props: DesignCanvasProps) {
         return;
       }
       const catatan = hasil.catatan === undefined ? "" : ` ${hasil.catatan}`;
-      setExportInfo({ text: `PNG siap diunduh.${catatan}`, gagal: false });
+      setExportInfo({ text: `${label.selesai}${catatan}`, gagal: false });
     } catch {
       // Galat tak terduga (mis. gambar tak bisa dimuat) tak boleh lolos.
       setExportInfo({ text: exportFailureMessage("failed"), gagal: true });
@@ -1189,6 +1249,54 @@ export function DesignCanvas(props: DesignCanvasProps) {
       text: format === "zip" ? "Mengunduh folder desain…" : "Mengunduh proyek React…",
       gagal: false,
     });
+  };
+
+  /**
+   * Ekspor berkas Figma: semua frame dipaksa hidup, scene tiap halaman
+   * ditangkap dari DOM-nya, lalu server lokal menulis .fig. Halaman yang
+   * gagal ditangkap dilewati dan disebut di catatan.
+   */
+  const exportFigma = (): void => {
+    void jalankanEkspor(
+      async () => {
+        const daftar = pages.filter((page) => !page.missing);
+        if (daftar.length === 0) return { gagal: "no-frame" };
+        const asal = forceLiveRef.current;
+        const slugs = daftar.map((page) => page.slug);
+        setForceLive([...new Set([...asal, ...slugs])]);
+        try {
+          for (const slug of slugs) {
+            if (!(await waitFrame(slug, true))) return { gagal: "timeout" };
+          }
+          const halaman: ScenePageInput[] = [];
+          let dilewati = 0;
+          for (const page of daftar) {
+            const hasil = await sceneFrame(page.slug, `fig-${page.slug}`);
+            if ("error" in hasil) {
+              dilewati += 1;
+              continue;
+            }
+            halaman.push({
+              name: page.title,
+              width: hasil.width,
+              height: hasil.height,
+              root: hasil.root,
+            });
+          }
+          if (halaman.length === 0) return { gagal: "failed" };
+          const blob = await api.exportDesignFig(
+            sessionId,
+            { name: "Desain Jejak", pages: halaman },
+            repo,
+          );
+          downloadBlob(blob, "design.fig");
+          return dilewati > 0 ? { catatan: `${dilewati} halaman dilewati.` } : {};
+        } finally {
+          setForceLive(asal);
+        }
+      },
+      { awal: "Menyiapkan berkas Figma…", selesai: "Berkas Figma siap diunduh." },
+    );
   };
 
   /** Tempel prompt pemecahan komponen ke komposer; tak mengirim apa pun. */
@@ -1639,6 +1747,19 @@ export function DesignCanvas(props: DesignCanvasProps) {
                   }}
                 >
                   Proyek React (ZIP)
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="jk-design-pages-item"
+                  onClick={() => {
+                    setExportOpen(false);
+                    exportFigma();
+                  }}
+                >
+                  Berkas Figma (.fig)
                 </button>
               </li>
               <li>

@@ -105,6 +105,8 @@ function emit(
     change.rectangleBottomRightCornerRadius = radius[2];
     change.rectangleBottomLeftCornerRadius = radius[3];
   }
+  // Garis tepi CSS berada di dalam kotak.
+  if (node.stroke !== undefined) change.strokeAlign = "INSIDE";
   if (!isText) {
     change.clipsContent = node.clip === true;
     // FRAME tanpa isi tetap tampil; tanpa fill dibiarkan transparan.

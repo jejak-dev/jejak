@@ -933,6 +933,11 @@ export interface ApiClient {
     slug?: string,
     repo?: string,
   ): string;
+  /**
+   * Kirim scene hasil tangkapan DOM dan terima berkas Figma (.fig) biner.
+   * Tidak ada unggahan keluar: server lokal yang menulis berkasnya.
+   */
+  exportDesignFig(id: string, scene: unknown, repo?: string): Promise<Blob>;
   /** Simpan posisi (dan perangkat) halaman yang sudah terdaftar. */
   saveDesignLayout(
     id: string,
@@ -2671,6 +2676,35 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
 
     designExportUrl(id, format, slug, repo) {
       return designExportUrl(id, format, slug, repo);
+    },
+
+    async exportDesignFig(id, scene, repo) {
+      const query = queryString([["repo", repo]]);
+      let response: Response;
+      try {
+        response = await doFetch(
+          `${baseUrl}/api/sessions/${encodeURIComponent(id)}/design/export-fig${query}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(scene),
+          },
+        );
+      } catch {
+        throw new ApiError("tidak dapat terhubung ke server", 0);
+      }
+      if (!response.ok) {
+        let pesan = "ekspor Figma gagal";
+        try {
+          const data: unknown = JSON.parse(await response.text());
+          if (isRecord(data) && typeof data.error === "string") pesan = data.error;
+        } catch {
+          // Pakai pesan bawaan.
+        }
+        if (response.status === 401) options.onUnauthorized?.();
+        throw new ApiError(pesan, response.status);
+      }
+      return response.blob();
     },
 
     async saveDesignLayout(id, pages, repo) {

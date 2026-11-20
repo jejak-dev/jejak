@@ -46,6 +46,14 @@ describe("frameRuntimeScript", () => {
     expect(() => new Function(sumber)).not.toThrow();
   });
 
+  test("cabang scene ada di sumber dan mengirim pesan scene", () => {
+    const sumber = buildRuntimeSource("beranda");
+    expect(sumber).toContain('data.type === "scene"');
+    expect(sumber).toContain('type: "scene"');
+    expect(sumber).toContain("tangkapScene");
+    expect(() => new Function(sumber)).not.toThrow();
+  });
+
   test("cabang pins dan gambarPin ada di sumber", () => {
     const sumber = buildRuntimeSource("beranda");
     expect(sumber).toContain('data.type === "pins"');

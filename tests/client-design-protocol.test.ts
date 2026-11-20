@@ -8,6 +8,7 @@ import {
   MIN_FRAME_HEIGHT,
   SHOT_DATA_URL_PREFIX,
   captureMessage,
+  sceneMessage,
   clearSelectionMessage,
   highlightMessage,
   isFromFrame,
@@ -394,5 +395,33 @@ describe("parseFrameMessage: pin", () => {
     expect(parseFrameMessage({ channel: DESIGN_CHANNEL, type: "pin", id: "ada spasi" })).toBeUndefined();
     expect(parseFrameMessage({ channel: DESIGN_CHANNEL, type: "pin" })).toBeUndefined();
     expect(parseFrameMessage({ channel: "lain", type: "pin", id: "c_1" })).toBeUndefined();
+  });
+});
+
+describe("pesan scene (ekspor Figma)", () => {
+  test("sceneMessage membentuk pesan dan menolak id tak sah", () => {
+    expect(sceneMessage("fig-beranda")).toEqual({
+      channel: DESIGN_CHANNEL,
+      type: "scene",
+      id: "fig-beranda",
+    });
+    expect(sceneMessage("ada spasi")).toBeUndefined();
+  });
+
+  test("parseFrameMessage menerima scene sah dan menolak yang cacat", () => {
+    const sah = {
+      channel: DESIGN_CHANNEL,
+      type: "scene",
+      id: "fig-a",
+      width: 1440,
+      height: 900,
+      root: { kind: "box", name: "body" },
+    };
+    expect(parseFrameMessage(sah)).toEqual(sah as unknown as ReturnType<typeof parseFrameMessage>);
+    expect(parseFrameMessage({ ...sah, id: "tak sah!" })).toBeUndefined();
+    expect(parseFrameMessage({ ...sah, width: 0 })).toBeUndefined();
+    expect(parseFrameMessage({ ...sah, height: 9000 })).toBeUndefined();
+    expect(parseFrameMessage({ ...sah, root: "bukan objek" })).toBeUndefined();
+    expect(parseFrameMessage({ ...sah, root: [] })).toBeUndefined();
   });
 });

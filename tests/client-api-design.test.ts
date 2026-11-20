@@ -639,3 +639,26 @@ describe("klien API dokumen desain", () => {
     expect((caught as ApiError).status).toBe(403);
   });
 });
+
+describe("exportDesignFig", () => {
+  test("mengirim scene lewat POST dan mengembalikan blob", async () => {
+    const { fetch, calls } = fakeFetch(
+      () => new Response(new Uint8Array([0x50, 0x4b, 1, 2]), { status: 200 }),
+    );
+    const client = createApiClient({ fetch });
+    const blob = await client.exportDesignFig("s 1", { name: "x", pages: [] }, "repo");
+    expect(blob.size).toBe(4);
+    expect(calls[0]?.url).toBe("/api/sessions/s%201/design/export-fig?repo=repo");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({ name: "x", pages: [] });
+  });
+
+  test("galat server menjadi ApiError dengan pesan server", async () => {
+    const { fetch } = fakeFetch(() => jsonResponse({ error: "Scene tak sah." }, 400));
+    const client = createApiClient({ fetch });
+    await expect(client.exportDesignFig("s1", {})).rejects.toMatchObject({
+      message: "Scene tak sah.",
+      status: 400,
+    });
+  });
+});

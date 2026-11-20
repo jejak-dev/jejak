@@ -456,6 +456,309 @@ export const RUNTIME_SOURCE = `(function () {
     } catch (galat) {}
   }
 
+  // Tangkapan scene untuk ekspor Figma: menelusuri DOM dan melaporkan kotak,
+  // warna, garis tepi, sudut, dan teks sebagai pohon sederhana. Hanya membaca
+  // gaya terhitung; tidak mengubah halaman.
+  var BATAS_SCENE = 6000000;
+  var BATAS_NODE_SCENE = 18000;
+  var BATAS_DALAM_SCENE = 55;
+  var kanvasWarna = null;
+  var cacheWarna = {};
+
+  function warnaDari(nilai) {
+    if (!nilai || nilai === "transparent") return null;
+    if (cacheWarna.hasOwnProperty(nilai)) return cacheWarna[nilai];
+    var hasil = null;
+    try {
+      if (!kanvasWarna) {
+        kanvasWarna = document.createElement("canvas");
+        kanvasWarna.width = 1;
+        kanvasWarna.height = 1;
+      }
+      var ctx = kanvasWarna.getContext("2d", { willReadFrequently: true });
+      ctx.clearRect(0, 0, 1, 1);
+      ctx.fillStyle = "#000";
+      ctx.fillStyle = nilai;
+      ctx.fillRect(0, 0, 1, 1);
+      var d = ctx.getImageData(0, 0, 1, 1).data;
+      var a = d[3] / 255;
+      if (a > 0) {
+        // Piksel dari kanvas berpremultiplied; kembalikan ke warna asli.
+        hasil = {
+          r: Math.min(1, d[0] / 255 / a),
+          g: Math.min(1, d[1] / 255 / a),
+          b: Math.min(1, d[2] / 255 / a),
+          a: a
+        };
+      }
+    } catch (galat) {
+      hasil = null;
+    }
+    cacheWarna[nilai] = hasil;
+    return hasil;
+  }
+
+  function angka(nilai) {
+    var n = parseFloat(nilai);
+    return isFinite(n) ? n : 0;
+  }
+
+  function namaNode(el) {
+    var nama = el.tagName.toLowerCase();
+    if (el.id) nama += "#" + String(el.id).slice(0, 40);
+    else if (typeof el.className === "string" && el.className.trim()) {
+      nama += "." + el.className.trim().split(" ")[0].slice(0, 40);
+    }
+    return nama;
+  }
+
+  function jejariSudut(cs, lebar, tinggi) {
+    function satu(nilai) {
+      var teks = String(nilai || "0").split(" ")[0];
+      if (teks.indexOf("%") !== -1) return (angka(teks) * Math.min(lebar, tinggi)) / 100;
+      return angka(teks);
+    }
+    var a = satu(cs.borderTopLeftRadius);
+    var b = satu(cs.borderTopRightRadius);
+    var c = satu(cs.borderBottomRightRadius);
+    var d = satu(cs.borderBottomLeftRadius);
+    var batas = Math.min(lebar, tinggi) / 2;
+    a = Math.min(a, batas);
+    b = Math.min(b, batas);
+    c = Math.min(c, batas);
+    d = Math.min(d, batas);
+    if (a === 0 && b === 0 && c === 0 && d === 0) return undefined;
+    if (a === b && b === c && c === d) return a;
+    return [a, b, c, d];
+  }
+
+  function garisTepi(cs) {
+    var lebar = angka(cs.borderTopWidth);
+    if (lebar <= 0) return undefined;
+    if (angka(cs.borderRightWidth) !== lebar || angka(cs.borderBottomWidth) !== lebar ||
+        angka(cs.borderLeftWidth) !== lebar) return undefined;
+    if (cs.borderTopStyle === "none" || cs.borderTopStyle === "hidden") return undefined;
+    var warna = warnaDari(cs.borderTopColor);
+    if (!warna) return undefined;
+    return { color: warna, weight: lebar };
+  }
+
+  function simpulTeks(teks, el, cs, kotak, offX, offY) {
+    var isi = String(teks.nodeValue || "");
+    if (cs.whiteSpace.indexOf("pre") === -1) {
+      var bersih = "";
+      var spasi = false;
+      for (var i = 0; i < isi.length; i += 1) {
+        var ch = isi.charAt(i);
+        var putih = ch === " " || ch === "\\n" || ch === "\\t" || ch === "\\r" || ch === "\\f";
+        if (putih) {
+          if (!spasi) bersih += " ";
+          spasi = true;
+        } else {
+          bersih += ch;
+          spasi = false;
+        }
+      }
+      isi = bersih.trim();
+    }
+    if (isi.length === 0) return null;
+    if (cs.textTransform === "uppercase") isi = isi.toUpperCase();
+    else if (cs.textTransform === "lowercase") isi = isi.toLowerCase();
+    var warna = warnaDari(cs.color) || { r: 0, g: 0, b: 0, a: 1 };
+    var rentang = document.createRange();
+    rentang.selectNodeContents(teks);
+    var r = rentang.getBoundingClientRect();
+    if (!(r.width > 0) && !(r.height > 0)) return null;
+    var keluarga = String(cs.fontFamily || "Inter").split(",")[0].trim();
+    if ((keluarga.charAt(0) === '"' || keluarga.charAt(0) === "'") && keluarga.length > 1) {
+      keluarga = keluarga.slice(1, keluarga.length - 1);
+    }
+    var rata = cs.textAlign;
+    if (rata === "start") rata = "left";
+    else if (rata === "end") rata = "right";
+    if (rata !== "left" && rata !== "center" && rata !== "right" && rata !== "justify") rata = "left";
+    var spec = {
+      characters: isi.slice(0, 20000),
+      fontSize: Math.max(1, angka(cs.fontSize)),
+      fontFamily: keluarga || "Inter",
+      fontWeight: Math.min(900, Math.max(100, angka(cs.fontWeight) || 400)),
+      italic: cs.fontStyle === "italic" || cs.fontStyle === "oblique",
+      color: warna,
+      align: rata
+    };
+    var tinggiBaris = angka(cs.lineHeight);
+    if (cs.lineHeight !== "normal" && tinggiBaris > 0) spec.lineHeight = tinggiBaris;
+    var jarak = angka(cs.letterSpacing);
+    if (cs.letterSpacing !== "normal" && jarak !== 0) spec.letterSpacing = jarak;
+    var lebarTeks = r.width + 2 + r.width * 0.02;
+    return {
+      kind: "text",
+      name: isi.slice(0, 40),
+      x: r.left + window.pageXOffset - offX,
+      y: r.top + window.pageYOffset - offY,
+      width: lebarTeks,
+      height: r.height,
+      text: spec
+    };
+  }
+
+  function bangunScene() {
+    var jumlah = { n: 0 };
+    var peringatan = 0;
+
+    function telusuri(el, induk, absX, absY, dalam) {
+      if (jumlah.n >= BATAS_NODE_SCENE) return;
+      if (el.nodeType !== 1) return;
+      var tag = el.tagName.toLowerCase();
+      if (tag === "script" || tag === "style" || tag === "meta" || tag === "link" ||
+          tag === "head" || tag === "title" || tag === "noscript" || tag === "template") return;
+      var cs = window.getComputedStyle(el);
+      if (cs.display === "none") return;
+      if (cs.display === "contents") {
+        anakAnak(el, induk, absX, absY, dalam);
+        return;
+      }
+      if (cs.visibility === "hidden" && tag !== "html") {
+        anakAnak(el, induk, absX, absY, dalam);
+        return;
+      }
+      var r = el.getBoundingClientRect();
+      var kiri = r.left + window.pageXOffset;
+      var atas = r.top + window.pageYOffset;
+      if (!(r.width > 0) || !(r.height > 0)) {
+        anakAnak(el, induk, absX, absY, dalam);
+        return;
+      }
+      var opasitas = angka(cs.opacity);
+      if (opasitas <= 0) return;
+      var node = {
+        kind: "box",
+        name: namaNode(el),
+        x: kiri - absX,
+        y: atas - absY,
+        width: r.width,
+        height: r.height
+      };
+      var fill = warnaDari(cs.backgroundColor);
+      var gambarLatar = cs.backgroundImage && cs.backgroundImage !== "none";
+      if (fill) node.fill = fill;
+      else if (gambarLatar && cs.backgroundImage.indexOf("gradient") === -1) {
+        node.fill = { r: 0.85, g: 0.85, b: 0.85, a: 1 };
+      }
+      var tepi = garisTepi(cs);
+      if (tepi) node.stroke = tepi;
+      var sudut = jejariSudut(cs, r.width, r.height);
+      if (sudut !== undefined) node.radius = sudut;
+      if (opasitas < 1) node.opacity = opasitas;
+      if (cs.overflowX !== "visible" || cs.overflowY !== "visible") node.clip = true;
+      jumlah.n += 1;
+      induk.push(node);
+      if (tag === "img" || tag === "svg" || tag === "canvas" || tag === "video" || tag === "picture") {
+        var sumber = "";
+        try {
+          sumber = String(el.getAttribute("src") || "").slice(0, 60);
+        } catch (galat) {}
+        node.name = "gambar: " + (sumber || tag);
+        if (!node.fill) node.fill = { r: 0.85, g: 0.85, b: 0.85, a: 1 };
+        return;
+      }
+      node.children = [];
+      if (tag === "input" || tag === "textarea") {
+        var nilai = String(el.value || el.placeholder || "");
+        if (nilai) {
+          var pad = angka(cs.paddingLeft) + angka(cs.borderLeftWidth);
+          var tinggiHuruf = Math.max(1, angka(cs.fontSize));
+          var warnaIsi = warnaDari(cs.color) || { r: 0, g: 0, b: 0, a: 1 };
+          node.children.push({
+            kind: "text",
+            name: nilai.slice(0, 40),
+            x: pad,
+            y: Math.max(0, (r.height - tinggiHuruf * 1.3) / 2),
+            width: Math.max(1, r.width - pad * 2),
+            height: tinggiHuruf * 1.3,
+            text: {
+              characters: nilai.slice(0, 2000),
+              fontSize: tinggiHuruf,
+              fontFamily: String(cs.fontFamily || "Inter").split(",")[0].trim().split('"').join("").split("'").join("") || "Inter",
+              fontWeight: Math.min(900, Math.max(100, angka(cs.fontWeight) || 400)),
+              italic: false,
+              color: warnaIsi,
+              align: "left"
+            }
+          });
+          jumlah.n += 1;
+        }
+        return;
+      }
+      anakAnak(el, node.children, kiri, atas, dalam + 1, cs);
+    }
+
+    function anakAnak(el, induk, absX, absY, dalam, csInduk) {
+      if (dalam > BATAS_DALAM_SCENE) {
+        peringatan += 1;
+        return;
+      }
+      var cs = csInduk || window.getComputedStyle(el);
+      var anak = el.childNodes;
+      for (var i = 0; i < anak.length; i += 1) {
+        var c = anak[i];
+        if (c.nodeType === 3) {
+          var teks = simpulTeks(c, el, cs, null, absX, absY);
+          if (teks && jumlah.n < BATAS_NODE_SCENE) {
+            jumlah.n += 1;
+            induk.push(teks);
+          }
+        } else if (c.nodeType === 1) {
+          telusuri(c, induk, absX, absY, dalam);
+        }
+      }
+    }
+
+    var html = document.documentElement;
+    var body = document.body || html;
+    var lebar = Math.min(8192, Math.round(Math.max(html.scrollWidth, window.innerWidth, 1)));
+    var tinggi = Math.min(8192, Math.round(Math.max(html.scrollHeight, body.scrollHeight, 1)));
+    var csBody = window.getComputedStyle(body);
+    var csHtml = window.getComputedStyle(html);
+    var latar = warnaDari(csBody.backgroundColor) || warnaDari(csHtml.backgroundColor) ||
+      { r: 1, g: 1, b: 1, a: 1 };
+    var akar = {
+      kind: "box",
+      name: "body",
+      x: 0,
+      y: 0,
+      width: lebar,
+      height: tinggi,
+      fill: latar,
+      clip: true,
+      children: []
+    };
+    anakAnak(body, akar.children, 0, 0, 0, csBody);
+    return { width: lebar, height: tinggi, root: akar };
+  }
+
+  function tangkapScene(id) {
+    var hasil;
+    try {
+      hasil = bangunScene();
+    } catch (galat) {
+      kirimGalatTangkap(id, "failed");
+      return;
+    }
+    var teks = "";
+    try {
+      teks = JSON.stringify(hasil.root);
+    } catch (galat) {
+      kirimGalatTangkap(id, "failed");
+      return;
+    }
+    if (teks.length > BATAS_SCENE) {
+      kirimGalatTangkap(id, "too-large");
+      return;
+    }
+    kirim({ type: "scene", id: id, width: hasil.width, height: hasil.height, root: hasil.root }, BATAS_SCENE + 4096);
+  }
+
   function tangkap(id, skala) {
     if (menangkap) {
       kirimGalatTangkap(id, "failed");
@@ -600,6 +903,11 @@ export const RUNTIME_SOURCE = `(function () {
     }
     if (data.type === "clear-selection") {
       hapusOverlay();
+      return;
+    }
+    if (data.type === "scene") {
+      if (typeof data.id !== "string" || !ID_TANGKAP.test(data.id)) return;
+      tangkapScene(data.id);
       return;
     }
     if (data.type === "capture") {

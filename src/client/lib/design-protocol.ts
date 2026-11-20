@@ -16,6 +16,8 @@ export const MESSAGE_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const MAX_SHOT_CHARS = 6_000_000;
 /** Batas sisi lebar/tinggi gambar tangkapan yang dilaporkan frame. */
 export const MAX_SHOT_DIMENSION = 8192;
+/** Batas panjang JSON scene yang dilaporkan frame (ekspor Figma). */
+export const MAX_SCENE_CHARS = 6_000_000;
 export const SHOT_DATA_URL_PREFIX = "data:image/png;base64,";
 
 const MAX_TEXT_CHARS = 200;
@@ -99,6 +101,15 @@ export type FrameMessage =
     }
   | {
       channel: typeof DESIGN_CHANNEL;
+      type: "scene";
+      id: string;
+      width: number;
+      height: number;
+      /** Pohon scene mentah dari frame; divalidasi ketat oleh server. */
+      root: Record<string, unknown>;
+    }
+  | {
+      channel: typeof DESIGN_CHANNEL;
       type: "shot-error";
       id: string;
       reason: ShotErrorReason;
@@ -115,6 +126,7 @@ export type HostMessage =
   | { channel: typeof DESIGN_CHANNEL; type: "clear-selection" }
   | { channel: typeof DESIGN_CHANNEL; type: "highlight"; selector: string }
   | { channel: typeof DESIGN_CHANNEL; type: "capture"; id: string; scale: 1 | 2 }
+  | { channel: typeof DESIGN_CHANNEL; type: "scene"; id: string }
   | { channel: typeof DESIGN_CHANNEL; type: "pins"; pins: PinSpec[] };
 
 const STYLE_KEYS = [
@@ -197,6 +209,17 @@ function parseShot(data: Record<string, unknown>): FrameMessage | undefined {
   return { channel: DESIGN_CHANNEL, type: "shot", id, width, height, dataUrl };
 }
 
+/** Memvalidasi pesan `scene`: hanya bentuk luar; isi diperiksa server. */
+function parseScene(data: Record<string, unknown>): FrameMessage | undefined {
+  const id = data.id;
+  if (typeof id !== "string" || !MESSAGE_ID_RE.test(id)) return undefined;
+  const width = dimensi(data.width);
+  const height = dimensi(data.height);
+  if (width === undefined || height === undefined) return undefined;
+  if (!isRecord(data.root)) return undefined;
+  return { channel: DESIGN_CHANNEL, type: "scene", id, width, height, root: data.root };
+}
+
 /**
  * Memvalidasi satu pesan dari frame. Mengembalikan `undefined` untuk apa pun
  * yang tidak dikenal, terlalu besar, atau berbentuk salah; tidak pernah
@@ -208,6 +231,7 @@ export function parseFrameMessage(data: unknown): FrameMessage | undefined {
   if (typeof data.type !== "string") return undefined;
   // `shot` membawa data URL besar dengan batasnya sendiri; jangan di-stringify.
   if (data.type === "shot") return parseShot(data);
+  if (data.type === "scene") return parseScene(data);
   let ukuran: number;
   try {
     ukuran = JSON.stringify(data).length;
@@ -343,6 +367,12 @@ export function highlightMessage(selector: string): HostMessage {
 export function captureMessage(id: string, scale: 1 | 2 = 1): HostMessage | undefined {
   if (!MESSAGE_ID_RE.test(id)) return undefined;
   return { channel: DESIGN_CHANNEL, type: "capture", id, scale };
+}
+
+/** Pesan untuk meminta scene (kotak, warna, teks) dari frame; `undefined` bila id tak sah. */
+export function sceneMessage(id: string): HostMessage | undefined {
+  if (!MESSAGE_ID_RE.test(id)) return undefined;
+  return { channel: DESIGN_CHANNEL, type: "scene", id };
 }
 
 /** Nomor pin tertinggi yang diterima frame. */
