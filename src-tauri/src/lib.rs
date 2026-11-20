@@ -85,7 +85,14 @@ pub fn run() {
       }
     }))
     .plugin(tauri_plugin_notification::init())
-    .plugin(tauri_plugin_opener::init())
+    // Skrip klik bawaan opener memanggil IPC yang tak diizinkan untuk halaman
+    // loopback dan membatalkan klik, sehingga `on_new_window` tak pernah jalan.
+    // Dimatikan: tautan web ditangani `on_navigation` dan `on_new_window`.
+    .plugin(
+      tauri_plugin_opener::Builder::new()
+        .open_js_links_on_click(false)
+        .build(),
+    )
     .plugin(tauri_plugin_updater::Builder::new().build())
     .invoke_handler(tauri::generate_handler![
       updater::desktop_info,
