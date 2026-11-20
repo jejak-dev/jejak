@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseFigBuffer } from "@open-pencil/fig";
-import { buildFig, fontStyle } from "../src/server/design/fig";
+import { buildFig, fontStyle, resolveFont } from "../src/server/design/fig";
 import type { SceneDoc } from "../src/server/design/scene";
 
 const putih = { r: 1, g: 1, b: 1, a: 1 };
@@ -165,5 +165,16 @@ describe("fontStyle", () => {
     expect(fontStyle(700, true)).toBe("Bold Italic");
     expect(fontStyle(650, false)).toBe("Bold");
     expect(fontStyle(50, false)).toBe("Thin");
+  });
+});
+
+describe("resolveFont", () => {
+  test("memetakan font sistem ke font yang ada di Figma", () => {
+    expect(resolveFont("Arial", 400)).toEqual({ family: "Inter", weight: 400 });
+    expect(resolveFont("Georgia", 800)).toEqual({ family: "Lora", weight: 700 });
+    expect(resolveFont("monospace", 400).family).toBe("Roboto Mono");
+    expect(resolveFont("Poppins", 600)).toEqual({ family: "Poppins", weight: 600 });
+    expect(resolveFont("FontAneh", 500).family).toBe("Inter");
+    expect(resolveFont("", 400).family).toBe("Inter");
   });
 });

@@ -56,6 +56,59 @@ function positionKey(index: number): string {
   return String.fromCharCode(33 + Math.floor(index / dasar), 33 + (index % dasar));
 }
 
+/** Font Google yang pasti ada di Figma; nama lain dipetakan atau jatuh ke Inter. */
+const FIGMA_FONTS = new Set([
+  "inter",
+  "roboto",
+  "open sans",
+  "lato",
+  "montserrat",
+  "poppins",
+  "lora",
+  "playfair display",
+  "merriweather",
+  "source sans 3",
+  "nunito",
+  "dm sans",
+  "work sans",
+  "roboto mono",
+  "fira code",
+  "jetbrains mono",
+]);
+
+const FONT_ALIAS: Record<string, string> = {
+  arial: "Inter",
+  helvetica: "Inter",
+  "helvetica neue": "Inter",
+  "system-ui": "Inter",
+  "-apple-system": "Inter",
+  "segoe ui": "Inter",
+  "sans-serif": "Inter",
+  georgia: "Lora",
+  "times new roman": "Lora",
+  times: "Lora",
+  serif: "Lora",
+  courier: "Roboto Mono",
+  "courier new": "Roboto Mono",
+  menlo: "Roboto Mono",
+  monaco: "Roboto Mono",
+  monospace: "Roboto Mono",
+};
+
+/**
+ * Pilih font Figma: Figma web tidak punya font sistem (Arial, Georgia),
+ * dan teks dengan font hilang tidak tampil. Nama dikenal dipakai apa adanya,
+ * alias dipetakan, sisanya Inter. Lora hanya punya bobot 400..700.
+ */
+export function resolveFont(family: string, weight: number): { family: string; weight: number } {
+  const kunci = family.trim().toLowerCase();
+  let nama = "Inter";
+  if (FIGMA_FONTS.has(kunci)) nama = family.trim();
+  else nama = FONT_ALIAS[kunci] ?? "Inter";
+  const bobot = nama === "Lora" ? Math.min(700, Math.max(400, weight)) : weight;
+  return { family: nama, weight: bobot };
+}
+
 const ALIGN: Record<string, string> = {
   left: "LEFT",
   center: "CENTER",
@@ -114,8 +167,9 @@ function emit(
   }
   const teks = node.text;
   if (isText && teks !== undefined) {
-    const family = teks.fontFamily.length > 0 ? teks.fontFamily : "Inter";
-    const style = fontStyle(teks.fontWeight, teks.italic);
+    const font = resolveFont(teks.fontFamily, teks.fontWeight);
+    const family = font.family;
+    const style = fontStyle(font.weight, teks.italic);
     change.fontSize = teks.fontSize;
     change.fontName = {
       family,
