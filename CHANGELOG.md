@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.18] - 2026-11-20
+
 ### Diperbaiki
 
 - Build binary: impor `?raw` dari @open-pencil/kiwi (skema Figma) kini dikenali saat kompilasi, sehingga binary desktop kembali terbangun.
