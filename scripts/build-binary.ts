@@ -278,11 +278,30 @@ export async function writeGeneratedSources(entries: readonly EmbeddedEntry[]): 
   await writeFile(join(BUILD_DIR, "compiled-entry.ts"), compiledEntrySource(), "utf8");
 }
 
+/**
+ * Impor `berkas?raw` (gaya Vite) dipakai @open-pencil/kiwi untuk skema Figma;
+ * Bun.build tidak mengenalnya, jadi isi berkas disisipkan sebagai string.
+ */
+const rawQueryPlugin: Bun.BunPlugin = {
+  name: "raw-query",
+  setup(build) {
+    build.onResolve({ filter: /\?raw$/ }, (args) => ({
+      path: resolve(dirname(args.importer), args.path.replace(/\?raw$/, "")),
+      namespace: "raw-query",
+    }));
+    build.onLoad({ filter: /.*/, namespace: "raw-query" }, async (args) => ({
+      contents: `export default ${JSON.stringify(await Bun.file(args.path).text())};`,
+      loader: "js",
+    }));
+  },
+};
+
 /** Kompilasi binary untuk satu target; melempar Error bila gagal. */
 export async function compileBinary(target: BuildTarget, outfile: string): Promise<void> {
   const result = await Bun.build({
     entrypoints: [join(BUILD_DIR, "compiled-entry.ts")],
     compile: { target, outfile },
+    plugins: [rawQueryPlugin],
   });
   if (!result.success) {
     throw new Error(
