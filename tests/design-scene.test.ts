@@ -95,4 +95,17 @@ describe("validateScene", () => {
     };
     expect(galat(scene([halaman(banyak)]))).toContain("Terlalu banyak gambar");
   });
+
+  test("singleLine pada teks harus boolean", () => {
+    const teks = (singleLine: unknown) =>
+      scene([
+        halaman({
+          kind: "text", name: "t", x: 0, y: 0, width: 10, height: 10,
+          text: { characters: "a", fontSize: 12, fontFamily: "Inter", fontWeight: 400, italic: false,
+            color: { r: 0, g: 0, b: 0, a: 1 }, align: "left", singleLine },
+        }),
+      ]);
+    expect(validateScene(teks(true)).pages[0]?.root.text?.singleLine).toBe(true);
+    expect(galat(teks("ya"))).toContain("singleLine");
+  });
 });

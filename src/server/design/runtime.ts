@@ -590,6 +590,10 @@ export const RUNTIME_SOURCE = `(function () {
     if (cs.lineHeight !== "normal" && tinggiBaris > 0) spec.lineHeight = tinggiBaris;
     var jarak = angka(cs.letterSpacing);
     if (cs.letterSpacing !== "normal" && jarak !== 0) spec.letterSpacing = jarak;
+    // Satu baris: Figma memakai ukuran otomatis agar font pengganti yang lebih
+    // lebar tidak membungkus teks.
+    var barisRef = spec.lineHeight || spec.fontSize * 1.4;
+    if (r.height <= barisRef * 1.5) spec.singleLine = true;
     var lebarTeks = r.width + 2 + r.width * 0.02;
     return {
       kind: "text",
@@ -702,6 +706,9 @@ export const RUNTIME_SOURCE = `(function () {
     }
     if (tag === "svg") {
       var salinan = el.cloneNode(true);
+      // Margin/posisi dari style inline menggeser svg mandiri keluar kanvas.
+      salinan.removeAttribute("style");
+      salinan.removeAttribute("class");
       if (!salinan.getAttribute("xmlns")) salinan.setAttribute("xmlns", "http://www.w3.org/2000/svg");
       if (!salinan.getAttribute("width")) salinan.setAttribute("width", String(Math.round(lebar)));
       if (!salinan.getAttribute("height")) salinan.setAttribute("height", String(Math.round(tinggi)));

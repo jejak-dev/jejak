@@ -19,6 +19,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 - Design: menu Ekspor lengkap (HTML per frame, ZIP folder, proyek React, prompt pemecahan komponen).
 - Design: penulis berkas Figma (.fig) di server dari scene graph (`POST design/export-fig`); frame, teks, warna, garis tepi, sudut bulat. Dependensi baru `@open-pencil/fig`, `@open-pencil/kiwi` (MIT) dan `fflate` supaya skema biner Figma tidak ditulis ulang.
 - Design: menu Ekspor memuat "Berkas Figma (.fig)": runtime frame menangkap kotak, warna, garis tepi, sudut, dan teks dari DOM (pesan `scene`), server menulis .fig; gambar, svg, dan background-image dirasterisasi (maks 800 px) jadi isi kotak, bayangan menjadi efek Figma.
+- Design: ekspor Figma memperbaiki ikon svg yang kosong (style inline membuang gambar dari kanvas) dan teks satu baris tidak lagi menumpuk karena font pengganti lebih lebar (ukuran otomatis).
 
 ## [0.1.0-beta.15] - 2026-11-18
 

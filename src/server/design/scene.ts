@@ -26,6 +26,8 @@ export interface SceneText {
   lineHeight?: number;
   /** Jarak antarhuruf dalam px. */
   letterSpacing?: number;
+  /** Teks satu baris: lebar mengikuti isi agar tidak dibungkus. */
+  singleLine?: boolean;
 }
 
 export interface SceneShadow {
@@ -143,6 +145,10 @@ function text(value: unknown, where: string): SceneText {
   if (obj.lineHeight !== undefined) hasil.lineHeight = num(obj.lineHeight, `${where}.lineHeight`);
   if (obj.letterSpacing !== undefined) {
     hasil.letterSpacing = num(obj.letterSpacing, `${where}.letterSpacing`);
+  }
+  if (obj.singleLine !== undefined) {
+    if (typeof obj.singleLine !== "boolean") fail(`${where}.singleLine harus boolean.`);
+    hasil.singleLine = obj.singleLine;
   }
   return hasil;
 }

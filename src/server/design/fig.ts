@@ -217,7 +217,7 @@ function emit(
     // Teks kosong ditolak Figma; ganti dengan satu spasi.
     change.textData = { characters: teks.characters.length > 0 ? teks.characters : " " };
     change.textAlignHorizontal = ALIGN[teks.align] ?? "LEFT";
-    change.textAutoResize = "NONE";
+    change.textAutoResize = teks.singleLine === true ? "WIDTH_AND_HEIGHT" : "NONE";
     if (teks.lineHeight !== undefined) {
       change.lineHeight = { value: teks.lineHeight, units: "PIXELS" };
     }
