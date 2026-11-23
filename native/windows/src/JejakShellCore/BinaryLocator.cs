@@ -28,6 +28,8 @@ public static class BinaryLocator
         }
         var candidates = new[]
         {
+            // `jejak` saja bentrok dengan Jejak.exe di NTFS (tak membedakan huruf besar/kecil).
+            Path.Combine(executableFolder, "jejak-server" + Exe),
             Path.Combine(executableFolder, "jejak" + Exe),
             Path.Combine(executableFolder, $"jejak-{Triple}{Exe}"),
             Path.Combine(executableFolder, "binaries", "jejak" + Exe),

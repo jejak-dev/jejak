@@ -9,4 +9,8 @@
     <AssemblyName>JejakShellCore</AssemblyName>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Ed25519 + BLAKE2b untuk verifikasi minisign; .NET tak punya keduanya. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+  </ItemGroup>
 </Project>

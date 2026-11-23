@@ -1,5 +1,5 @@
 # Membangun Jejak untuk Windows: publish app (framework-dependent, satu folder)
-# lalu menempatkan sidecar `jejak.exe` di sebelah Jejak.exe.
+# lalu menempatkan sidecar `jejak-server.exe` di sebelah Jejak.exe.
 #
 #   pwsh scripts/build-app.ps1 [-Sidecar <jalur jejak.exe>] [-Runtime win-x64|win-arm64]
 #
@@ -19,5 +19,6 @@ $out = Join-Path $akar "build/Jejak"
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 dotnet publish (Join-Path $akar "src/JejakDesktop") -c Release -r $Runtime --self-contained false -o $out
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish gagal" }
-Copy-Item $Sidecar (Join-Path $out "jejak.exe")
+# Bukan jejak.exe: NTFS tak membedakan huruf besar/kecil, sehingga akan menimpa Jejak.exe.
+Copy-Item $Sidecar (Join-Path $out "jejak-server.exe")
 Write-Host "Jejak siap: $out\Jejak.exe"

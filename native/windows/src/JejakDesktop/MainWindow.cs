@@ -24,6 +24,7 @@ public sealed class MainWindow : Window
     private readonly SidecarProcess _sidecar = new();
     private readonly Notifier _notifier;
     private readonly Bridge _bridge;
+    private readonly UpdateController _updates = new(Bridge.AppVersion);
     private int _port;
     private bool _closing;
     private bool _started;
@@ -44,7 +45,7 @@ public sealed class MainWindow : Window
         _web.DefaultBackgroundColor = System.Drawing.Color.FromArgb(bg.R, bg.G, bg.B);
 
         _notifier = new Notifier(ActivateWindow);
-        _bridge = new Bridge(() => _port, _notifier);
+        _bridge = new Bridge(() => _port, _notifier, _updates, Close);
 
         _title.Foreground = new SolidColorBrush(fg);
         _title.FontSize = 20;
@@ -73,7 +74,11 @@ public sealed class MainWindow : Window
         root.Children.Add(_overlay);
         Content = root;
 
-        Loaded += async (_, _) => await StartAsync();
+        Loaded += async (_, _) =>
+        {
+            _updates.StartAutoCheck();
+            await StartAsync();
+        };
         Closing += OnClosing;
         _sidecar.UnexpectedExit += code => Dispatcher.Invoke(() =>
             ShowError(L("error.server_exited", "Server Jejak berhenti tiba-tiba (kode %@)", code), _sidecar.Stderr.Summary()));
@@ -208,6 +213,7 @@ public sealed class MainWindow : Window
         Hide();
         Task.Run(() => _sidecar.Stop()).ContinueWith(_ => Dispatcher.Invoke(() =>
         {
+            _updates.Stop();
             _notifier.Dispose();
             Close();
         }));

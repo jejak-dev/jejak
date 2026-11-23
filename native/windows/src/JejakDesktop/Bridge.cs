@@ -1,6 +1,7 @@
 using System.IO;
 using System.Reflection;
 using System.Text.Json;
+using System.Windows;
 using Jejak.Shell;
 using Microsoft.Web.WebView2.Core;
 using static Jejak.Shell.Localization;
@@ -39,16 +40,17 @@ public sealed class Bridge
 
     private readonly Func<int> _port;
     private readonly Notifier _notifier;
+    private readonly UpdateController _updates;
+    private readonly Action _restart;
     private CoreWebView2? _web;
-    private bool _autoCheck = true;
-    private string _channel;
 
-    public Bridge(Func<int> port, Notifier notifier)
+    /// <param name="restart">Dipanggil di thread UI setelah helper penyalin dimulai; menutup aplikasi.</param>
+    public Bridge(Func<int> port, Notifier notifier, UpdateController updates, Action restart)
     {
         _port = port;
         _notifier = notifier;
-        var version = AppVersion;
-        _channel = version.Contains('-') ? "beta" : "stable";
+        _updates = updates;
+        _restart = restart;
     }
 
     public static string AppVersion =>
@@ -89,7 +91,7 @@ public sealed class Bridge
         }
         catch (JsonException) { return; }
 
-        try { await ReplyAsync(id, true, Handle(cmd, args)); }
+        try { await ReplyAsync(id, true, await HandleAsync(cmd, args)); }
         catch (Exception ex) { await ReplyAsync(id, false, ex.Message); }
     }
 
@@ -100,37 +102,34 @@ public sealed class Bridge
         catch { /* halaman berpindah sebelum balasan tiba */ }
     }
 
-    private static object IdleStatus(string? error = null) =>
-        error == null
-            ? new Dictionary<string, object> { ["state"] = "idle", ["downloaded"] = 0 }
-            : new Dictionary<string, object> { ["state"] = "error", ["downloaded"] = 0, ["error"] = error };
-
-    private object? Handle(string cmd, JsonElement args)
+    private async Task<object?> HandleAsync(string cmd, JsonElement args)
     {
         switch (cmd)
         {
             case "desktop_info":
                 return new { version = AppVersion, platform = "windows" };
             case "updater_get_settings":
-                return new { autoCheck = _autoCheck, channel = _channel };
+                return new { autoCheck = _updates.Settings.AutoCheck, channel = _updates.Settings.Channel };
             case "updater_set_settings":
             {
                 var body = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("settings", out var s) ? s : args;
                 if (body.ValueKind != JsonValueKind.Object
                     || !body.TryGetProperty("autoCheck", out var auto) || auto.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
-                    || !body.TryGetProperty("channel", out var ch) || ch.GetString() is not ("stable" or "beta"))
+                    || !body.TryGetProperty("channel", out var ch) || ch.ValueKind != JsonValueKind.String)
                     throw new ShellException(L("update.incomplete", "pengaturan pembaruan tak lengkap"));
-                _autoCheck = auto.GetBoolean();
-                _channel = ch.GetString()!;
-                return new { autoCheck = _autoCheck, channel = _channel };
+                _updates.Apply(new UpdaterSettings(auto.GetBoolean(), ch.GetString()!));
+                return new { autoCheck = _updates.Settings.AutoCheck, channel = _updates.Settings.Channel };
             }
             case "updater_status":
-                return IdleStatus();
+                return _updates.StatusJson;
             case "updater_check":
-                return IdleStatus(L("bridge.updater_unavailable", "pembaruan otomatis belum tersedia di cangkang Windows"));
+                return await _updates.CheckAsync();
             case "updater_install":
+                return _updates.Install();
             case "updater_restart":
-                throw new ShellException(L("bridge.updater_unavailable", "pembaruan otomatis belum tersedia di cangkang Windows"));
+                _updates.PrepareRestart();
+                _ = Application.Current.Dispatcher.BeginInvoke(_restart);
+                return null;
             case "plugin:notification|is_permission_granted":
                 return true;
             case "plugin:notification|request_permission":
