@@ -9,7 +9,7 @@
 #
 # Kunci platform manifest sengaja `darwin-<arch>-native` (bukan kunci Tauri)
 # supaya cangkang native tak pernah memasang artefak Tauri dan sebaliknya.
-# Menggabungkan potongan ke latest.json di rilis = langkah CI (belum dipasang).
+# Penggabungan ke latest.json di rilis: scripts/merge-latest.sh (dipanggil CI).
 set -euo pipefail
 AKAR="$(cd "$(dirname "$0")/.." && pwd)"
 REPO="$(cd "$AKAR/../.." && pwd)"

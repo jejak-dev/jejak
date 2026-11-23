@@ -8,6 +8,7 @@
 #   - ANDROID_KEY_ALIAS                (alias kunci di keystore APK)
 #   Bila ANDROID_KEYSTORE_BASE64 kosong, job APK dilewati (rilis desktop tetap jalan).
 #   GITHUB_TOKEN disediakan otomatis oleh GitHub.
+#   Bila TAURI_SIGNING_PRIVATE_KEY kosong, build native macOS dilewati.
 #
 # Cara memicu rilis:
 #   bun run release 1.0.0        # naikkan versi, commit, dan tag v1.0.0
@@ -172,6 +173,139 @@ jobs:
           releaseDraft: false
           includeUpdaterJson: true
           args: --target ${{ matrix.triple }} --bundles ${{ matrix.bundles }}
+
+  # Cangkang native macOS (AppKit + WKWebView): dibangun per arsitektur,
+  # arsipnya diunggah ke rilis, lalu satu job menggabungkan potongan platform
+  # `darwin-<arch>-native` ke latest.json (kunci Tauri tidak disentuh).
+  # Dilewati bila TAURI_SIGNING_PRIVATE_KEY kosong.
+  native-macos:
+    name: Bangun native ${{ matrix.triple }}
+    needs: [gerbang, bangun]
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: bun-darwin-arm64
+            triple: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: bun-darwin-x64
+            triple: x86_64-apple-darwin
+    steps:
+      - name: Periksa kunci penandatangan
+        id: kunci
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::notice::TAURI_SIGNING_PRIVATE_KEY kosong, build native dilewati."
+            echo "ada=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ada=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ambil kode
+        if: steps.kunci.outputs.ada == 'true'
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Pasang Bun 1.4.2
+        if: steps.kunci.outputs.ada == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Pasang dependensi
+        if: steps.kunci.outputs.ada == 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Bangun dan tempatkan sidecar
+        if: steps.kunci.outputs.ada == 'true'
+        run: |
+          bun run build:binary --target ${{ matrix.target }}
+          bun run stage:sidecar --target ${{ matrix.target }}
+
+      - name: Uji inti native
+        if: steps.kunci.outputs.ada == 'true'
+        run: |
+          export SDKROOT="$(xcrun --show-sdk-path)"
+          bash native/macos/scripts/build-core.sh test
+
+      - name: Bangun Jejak.app native
+        if: steps.kunci.outputs.ada == 'true'
+        run: |
+          export SDKROOT="$(xcrun --show-sdk-path)"
+          JEJAK_SIDECAR="$PWD/src-tauri/binaries/jejak-${{ matrix.triple }}" bash native/macos/scripts/build-app.sh
+
+      - name: Kemas, tanda tangani, dan unggah arsip native
+        if: steps.kunci.outputs.ada == 'true'
+        run: |
+          if [ "${{ needs.gerbang.outputs.channel }}" = "beta" ]; then TAG=beta; else TAG="$GITHUB_REF_NAME"; fi
+          VERSI="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' native/macos/build/Jejak.app/Contents/Info.plist)"
+          ARCH="$(uname -m | sed 's/arm64/aarch64/')"
+          NAMA="Jejak-native_${VERSI}_${ARCH}.app.tar.gz"
+          URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$NAMA"
+          bash native/macos/scripts/package-update.sh "$URL"
+          OUT=native/macos/build/update
+          mv "$OUT/Jejak_${VERSI}_${ARCH}.app.tar.gz" "$OUT/$NAMA"
+          # Potongan memuat tanda tangan arsip; salin ke berkas bernama per arsitektur.
+          cp "$OUT/platform-native.json" "$OUT/platform-native-${ARCH}.json"
+          # Rilis draf tidak ditemukan lewat tag, jadi cari di daftar rilis.
+          RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
+          [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
+          for BERKAS in "$NAMA" "platform-native-${ARCH}.json"; do
+            gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$BERKAS\") | .id" |
+              while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
+            case "$BERKAS" in
+              *.json) TIPE="application/json" ;;
+              *) TIPE="application/gzip" ;;
+            esac
+            gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$BERKAS" \
+              -H "Content-Type: $TIPE" --input "$OUT/$BERKAS"
+          done
+
+  native-gabung:
+    name: Gabungkan latest.json native
+    needs: [gerbang, native-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+    steps:
+      - name: Ambil kode
+        if: env.TAURI_SIGNING_PRIVATE_KEY != ''
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Gabungkan potongan ke latest.json
+        if: env.TAURI_SIGNING_PRIVATE_KEY != ''
+        run: |
+          if [ "${{ needs.gerbang.outputs.channel }}" = "beta" ]; then TAG=beta; else TAG="$GITHUB_REF_NAME"; fi
+          RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
+          [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
+          unduh() { # nama berkas -> isi (lewat API, berlaku untuk rilis draf)
+            AID="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$1\") | .id")"
+            [ -n "$AID" ] || return 1
+            gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$AID" > "$2"
+          }
+          mkdir -p kerja && cd kerja
+          unduh latest.json latest.json || { echo "latest.json belum ada di rilis $TAG" >&2; exit 1; }
+          POTONGAN=()
+          for ARCH in aarch64 x86_64; do
+            if unduh "platform-native-$ARCH.json" "p-$ARCH.json"; then POTONGAN+=("p-$ARCH.json"); fi
+          done
+          [ "${#POTONGAN[@]}" -ge 1 ] || { echo "tidak ada potongan native" >&2; exit 1; }
+          bash ../native/macos/scripts/merge-latest.sh latest.json "${POTONGAN[@]}" > latest.baru.json
+          AID="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq '.[] | select(.name=="latest.json") | .id')"
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"
+          gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=latest.json" \
+            -H "Content-Type: application/json" --input latest.baru.json
+          jq -c '.platforms | keys' latest.baru.json
 
   # APK Android klien tipis (WebView ke server Jejak). Dibangun setelah rilis
   # desktop supaya rilis draf/beta dari tauri-action sudah ada untuk dilampiri.
