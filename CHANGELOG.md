@@ -8,6 +8,7 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ### Diperbaiki
 
+- Dialog "Pilih folder" di macOS: klik Batal menutup dialog, tidak lagi membuka dialog kedua.
 - Cangkang native (macOS, Windows, Linux): klik kanan tak lagi menampilkan menu peramban bawaan (Back, Reload, dst.); item penyuntingan tetap ada.
 
 ## [0.1.0-beta.21] - 2026-11-23

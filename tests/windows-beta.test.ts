@@ -256,6 +256,22 @@ describe("dialog folder native Windows", () => {
   });
 });
 
+describe("dialog folder native macOS", () => {
+  test("pembatalan (-128) tidak memicu dialog kedua", async () => {
+    let skrip = "";
+    const hasil = await pickFolderNative("/Users/x", {
+      platform: "darwin",
+      run: async (cmd) => {
+        skrip = cmd.join("\n");
+        return { code: 1, stdout: "" };
+      },
+    });
+    expect(hasil).toEqual({});
+    expect(skrip).toContain("on error errMsg number errNum");
+    expect(skrip).toContain("if errNum is -128 then error number -128");
+  });
+});
+
 describe("repo bayangan memakai perangkat null dari platform", () => {
   test("hooks path dan config global menunjuk ke perangkat null", async () => {
     const gitDir = join(dir, "shadow.git");
