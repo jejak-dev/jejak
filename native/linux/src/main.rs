@@ -6,6 +6,7 @@ use javascriptcore::ValueExt;
 use jejak_desktop::bridge::{self, Bridge};
 use jejak_desktop::l10n::l;
 use jejak_desktop::sidecar::{Sidecar, READY_TIMEOUT};
+use jejak_desktop::updater::UpdateService;
 use jejak_desktop::{locator, navigation, token};
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -25,6 +26,8 @@ enum Msg {
     Failed(String),
     ServerExited(i32),
     Quit,
+    /// Tutup lewat jalur jendela (menghentikan sidecar); dipakai mulai ulang setelah pembaruan.
+    Close,
 }
 
 struct Ui {
@@ -79,6 +82,17 @@ fn build_web(bridge: Arc<Bridge>, port: Rc<Cell<u16>>) -> WebView {
         settings.set_enable_media_stream(true);
     }
 
+    // Balasan jembatan (skrip JS) dari thread mana pun → dijalankan di thread GTK.
+    #[allow(deprecated)]
+    let (reply_tx, reply_rx) = glib::MainContext::channel::<String>(glib::Priority::DEFAULT);
+    {
+        let web = web.clone();
+        reply_rx.attach(None, move |script| {
+            web.run_javascript(&script, gtk::gio::Cancellable::NONE, |_| {});
+            glib::ControlFlow::Continue
+        });
+    }
+
     // Pesan halaman → jembatan. Hanya bila halaman teratas adalah Jejak sendiri.
     let web_for_reply = web.clone();
     let port_msg = port.clone();
@@ -87,13 +101,17 @@ fn build_web(bridge: Arc<Bridge>, port: Rc<Cell<u16>>) -> WebView {
         let Some(json) = value.js_value().and_then(|v| v.to_json(0)) else { return };
         let Ok(msg) = serde_json::from_str::<serde_json::Value>(json.as_str()) else { return };
         let Some(id) = msg.get("id").and_then(|v| v.as_i64()) else { return };
-        let result = if navigation::is_local_app_url(&current, port_msg.get()) {
+        if navigation::is_local_app_url(&current, port_msg.get()) {
             let cmd = msg.get("cmd").and_then(|v| v.as_str()).unwrap_or("");
-            bridge.handle(cmd, msg.get("args").unwrap_or(&serde_json::Value::Null))
+            let tx = reply_tx.clone();
+            // Balasan bisa datang dari thread lain; dikirim ke thread GTK lewat kanal.
+            bridge.dispatch(cmd, msg.get("args").unwrap_or(&serde_json::Value::Null), Box::new(move |result| {
+                let _ = tx.send(Bridge::reply_script(id, &result));
+            }));
         } else {
-            Err(l("bridge.rejected", "pesan jembatan ditolak: asal tak dikenal", &[]))
-        };
-        web_for_reply.run_javascript(&Bridge::reply_script(id, &result), gtk::gio::Cancellable::NONE, |_| {});
+            let result = Err(l("bridge.rejected", "pesan jembatan ditolak: asal tak dikenal", &[]));
+            let _ = reply_tx.send(Bridge::reply_script(id, &result));
+        }
     });
 
     // Daftar putih navigasi; tautan luar dibuka di browser sistem.
@@ -191,7 +209,15 @@ fn build(app: &gtk::Application) {
     let notify: Box<dyn Fn(&str, &str) + Send + Sync> = Box::new(|title, body| {
         let _ = Command::new("notify-send").args(["--app-name=Jejak", title, body]).spawn();
     });
-    let bridge = Arc::new(Bridge::new(notify));
+    #[allow(deprecated)]
+    let (tx, rx) = glib::MainContext::channel::<Msg>(glib::Priority::DEFAULT);
+    let updates = Arc::new(UpdateService::from_env(bridge::VERSION));
+    updates.start_auto_check();
+    let restart_tx = std::sync::Mutex::new(tx.clone());
+    let restart: Box<dyn Fn() + Send + Sync> = Box::new(move || {
+        let _ = restart_tx.lock().unwrap().send(Msg::Close);
+    });
+    let bridge = Arc::new(Bridge::with_updates(notify, updates, restart));
     let port = Rc::new(Cell::new(0u16));
     let web = build_web(bridge, port.clone());
 
@@ -238,8 +264,6 @@ fn build(app: &gtk::Application) {
         closing: Cell::new(false),
     });
 
-    #[allow(deprecated)]
-    let (tx, rx) = glib::MainContext::channel::<Msg>(glib::Priority::DEFAULT);
     {
         let ui = ui.clone();
         let port = port.clone();
@@ -253,6 +277,7 @@ fn build(app: &gtk::Application) {
                     ui.web.load_uri(&navigation::enter_url(p, &tok));
                 }
                 Msg::Quit => app.quit(),
+                Msg::Close => ui.window.close(),
                 Msg::Failed(e) => show_error(&ui, &e),
                 Msg::ServerExited(code) => {
                     if !ui.closing.get() {

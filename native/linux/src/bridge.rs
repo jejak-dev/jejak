@@ -3,8 +3,10 @@
 //! diterjemahkan ke perintah native tanpa mengubah klien web. Murni logika (tanpa GTK).
 
 use crate::l10n::l;
+use crate::manifest::{default_channel, is_valid_channel, Settings};
+use crate::updater::UpdateService;
 use serde_json::{json, Value};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub const VERSION: &str = env!("JEJAK_VERSION");
 
@@ -36,49 +38,94 @@ pub const SHIM: &str = r#"
 "#;
 
 pub struct Bridge {
+    /// Dipakai bila tak ada layanan pembaruan (mis. uji): pengaturan hanya di memori.
     settings: Mutex<(bool, String)>,
     notify: Box<dyn Fn(&str, &str) + Send + Sync>,
+    updates: Option<Arc<UpdateService>>,
+    /// Dipanggil setelah berkas pembaruan disalin; menutup aplikasi (di thread UI).
+    restart: Box<dyn Fn() + Send + Sync>,
 }
 
 impl Bridge {
     pub fn new(notify: Box<dyn Fn(&str, &str) + Send + Sync>) -> Self {
-        let channel = if VERSION.contains('-') { "beta" } else { "stable" };
-        Self { settings: Mutex::new((true, channel.to_string())), notify }
+        let channel = default_channel(VERSION);
+        Self { settings: Mutex::new((true, channel.to_string())), notify, updates: None, restart: Box::new(|| {}) }
     }
 
-    fn status(error: Option<String>) -> Value {
-        match error {
-            None => json!({"state": "idle", "downloaded": 0}),
-            Some(e) => json!({"state": "error", "downloaded": 0, "error": e}),
-        }
+    pub fn with_updates(
+        notify: Box<dyn Fn(&str, &str) + Send + Sync>,
+        updates: Arc<UpdateService>,
+        restart: Box<dyn Fn() + Send + Sync>,
+    ) -> Self {
+        let mut b = Self::new(notify);
+        b.updates = Some(updates);
+        b.restart = restart;
+        b
     }
 
     fn unavailable() -> String {
-        l("bridge.updater_unavailable", "pembaruan otomatis belum tersedia di cangkang Linux", &[])
+        l("update.unavailable", "pembaruan otomatis tak tersedia pada build ini", &[])
+    }
+
+    fn settings_json(&self) -> Value {
+        match &self.updates {
+            Some(u) => {
+                let s = u.settings();
+                json!({"autoCheck": s.auto_check, "channel": s.channel})
+            }
+            None => {
+                let s = self.settings.lock().unwrap();
+                json!({"autoCheck": s.0, "channel": s.1})
+            }
+        }
+    }
+
+    /// Menjalankan satu perintah dan membalas lewat `reply` (bisa dari thread lain).
+    /// Perintah lambat (periksa pembaruan memakai jaringan) berjalan di thread sendiri
+    /// supaya thread UI tak macet.
+    pub fn dispatch(self: &Arc<Self>, cmd: &str, args: &Value, reply: Box<dyn FnOnce(Result<Value, String>) + Send>) {
+        if cmd == "updater_check" {
+            if let Some(u) = self.updates.clone() {
+                std::thread::spawn(move || reply(Ok(u.check())));
+                return;
+            }
+        }
+        reply(self.handle(cmd, args));
     }
 
     /// Menjalankan satu perintah; `Err` menjadi penolakan di sisi halaman.
     pub fn handle(&self, cmd: &str, args: &Value) -> Result<Value, String> {
         match cmd {
             "desktop_info" => Ok(json!({"version": VERSION, "platform": "linux"})),
-            "updater_get_settings" => {
-                let s = self.settings.lock().unwrap();
-                Ok(json!({"autoCheck": s.0, "channel": s.1}))
-            }
+            "updater_get_settings" => Ok(self.settings_json()),
             "updater_set_settings" => {
                 // Bentuk bersarang ({settings:{..}}) atau datar ({autoCheck, channel}).
                 let body = args.get("settings").unwrap_or(args);
                 let auto = body.get("autoCheck").and_then(Value::as_bool);
-                let channel = body.get("channel").and_then(Value::as_str).filter(|c| *c == "stable" || *c == "beta");
+                let channel = body.get("channel").and_then(Value::as_str).filter(|c| is_valid_channel(c));
                 let (Some(auto), Some(channel)) = (auto, channel) else {
                     return Err(l("update.incomplete", "pengaturan pembaruan tak lengkap", &[]));
                 };
-                *self.settings.lock().unwrap() = (auto, channel.to_string());
-                Ok(json!({"autoCheck": auto, "channel": channel}))
+                match &self.updates {
+                    Some(u) => u.apply_settings(Settings { auto_check: auto, channel: channel.to_string() })?,
+                    None => *self.settings.lock().unwrap() = (auto, channel.to_string()),
+                }
+                Ok(self.settings_json())
             }
-            "updater_status" => Ok(Self::status(None)),
-            "updater_check" => Ok(Self::status(Some(Self::unavailable()))),
-            "updater_install" | "updater_restart" => Err(Self::unavailable()),
+            "updater_status" => Ok(match &self.updates {
+                Some(u) => u.status_json(),
+                None => json!({"state": "idle", "downloaded": 0}),
+            }),
+            "updater_check" => Ok(match &self.updates {
+                Some(u) => u.check(),
+                None => json!({"state": "idle", "downloaded": 0}),
+            }),
+            "updater_install" => self.updates.as_ref().ok_or_else(Self::unavailable)?.install(),
+            "updater_restart" => {
+                self.updates.as_ref().ok_or_else(Self::unavailable)?.prepare_restart()?;
+                (self.restart)();
+                Ok(Value::Null)
+            }
             "plugin:notification|is_permission_granted" => Ok(json!(true)),
             "plugin:notification|request_permission" => Ok(json!("granted")),
             "plugin:notification|notify" => {

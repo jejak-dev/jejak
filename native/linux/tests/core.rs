@@ -182,10 +182,11 @@ fn bridge_commands() {
     assert_eq!(b.handle("updater_get_settings", &json!(null)).unwrap(), json!({"autoCheck": false, "channel": "beta"}));
     assert!(b.handle("updater_set_settings", &json!({"autoCheck": true, "channel": "nightly"})).is_err());
     assert!(b.handle("updater_set_settings", &json!(null)).is_err());
-    // pembaru belum tersedia
+    // tanpa layanan pembaruan: status diam, pasang/mulai ulang ditolak
     assert_eq!(b.handle("updater_status", &json!(null)).unwrap()["state"], "idle");
-    assert_eq!(b.handle("updater_check", &json!(null)).unwrap()["state"], "error");
+    assert_eq!(b.handle("updater_check", &json!(null)).unwrap()["state"], "idle");
     assert!(b.handle("updater_install", &json!(null)).is_err());
+    assert!(b.handle("updater_restart", &json!(null)).is_err());
     // notifikasi
     assert_eq!(b.handle("plugin:notification|is_permission_granted", &json!(null)).unwrap(), json!(true));
     b.handle("plugin:notification|notify", &json!({"options": {"title": "T", "body": "B"}})).unwrap();

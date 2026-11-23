@@ -27,6 +27,8 @@ mkdir -p "$ST"
 install -m 755 "$APP" "$ST/Jejak"
 install -m 755 "$SIDECAR" "$ST/jejak-server"
 install -m 644 "$REPO/src-tauri/icons/128x128.png" "$ST/jejak.png"
+# VERSION dipakai pembaru untuk memastikan arsip sesuai manifest (arsip ditandatangani).
+printf '%s\n' "$VERSI" > "$ST/VERSION"
 tar -czf "$OUT/Jejak-native_${VERSI}_${ARCH}-linux.tar.gz" -C "$OUT/stage" Jejak
 echo "Arsip: $OUT/Jejak-native_${VERSI}_${ARCH}-linux.tar.gz"
 

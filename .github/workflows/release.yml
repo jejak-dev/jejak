@@ -271,7 +271,7 @@ jobs:
   native-gabung:
     name: Gabungkan latest.json native
     # Windows boleh gagal (continue-on-error); gabungkan apa pun yang sudah terunggah.
-    needs: [gerbang, native-macos, native-windows]
+    needs: [gerbang, native-macos, native-windows, native-linux]
     if: ${{ !cancelled() && needs.gerbang.result == 'success' && needs.native-macos.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
@@ -302,6 +302,9 @@ jobs:
             if unduh "platform-native-$ARCH.json" "p-$ARCH.json"; then POTONGAN+=("p-$ARCH.json"); fi
           done
           if unduh "platform-native-windows-x86_64.json" "p-windows-x86_64.json"; then POTONGAN+=("p-windows-x86_64.json"); fi
+          for ARCH in x86_64 aarch64; do
+            if unduh "platform-native-linux-$ARCH.json" "p-linux-$ARCH.json"; then POTONGAN+=("p-linux-$ARCH.json"); fi
+          done
           [ "${#POTONGAN[@]}" -ge 1 ] || { echo "tidak ada potongan native" >&2; exit 1; }
           bash ../native/macos/scripts/merge-latest.sh latest.json "${POTONGAN[@]}" > latest.baru.json
           AID="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq '.[] | select(.name=="latest.json") | .id')"
@@ -379,8 +382,9 @@ jobs:
           done
 
   # Cangkang native Linux (GTK3 + WebKitGTK): .deb dan tar.gz per arsitektur
-  # dilampirkan ke rilis. Belum ada pembaru otomatis Linux, jadi latest.json
-  # tidak disentuh. Beta: kegagalan tidak memblokir rilis.
+  # dilampirkan ke rilis. Pembaru otomatis hanya untuk tar.gz (folder yang bisa
+  # ditulis pengguna): arsip ditandatangani minisign dan potongan manifest-nya
+  # digabung ke latest.json oleh native-gabung. Beta: kegagalan tidak memblokir rilis.
   native-linux:
     name: Bangun native ${{ matrix.arch }}
     needs: [gerbang, bangun]
@@ -390,6 +394,8 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     strategy:
       fail-fast: false
       matrix:
@@ -434,14 +440,27 @@ jobs:
       - name: Lampirkan ke rilis
         run: |
           if [ "${{ needs.gerbang.outputs.channel }}" = "beta" ]; then TAG=beta; else TAG="$GITHUB_REF_NAME"; fi
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            # Tanda tangan arsip tar.gz dan potongan manifest; kunci platform mengikuti arsitektur.
+            TGZ="$(ls native/linux/build/*.tar.gz)"
+            bun x tauri signer sign "$TGZ" > /dev/null
+            SIG="$(tr -d '\r\n' < "$TGZ.sig")"
+            URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$(basename "$TGZ")"
+            ARCH="$([ '${{ matrix.arch }}' = amd64 ] && echo x86_64 || echo aarch64)"
+            printf '{"linux-%s-native": {"signature": "%s", "url": "%s"}}\n' "$ARCH" "$SIG" "$URL" > "native/linux/build/platform-native-linux-$ARCH.json"
+          else
+            echo "::notice::TAURI_SIGNING_PRIVATE_KEY kosong, arsip tidak ditandatangani (tanpa pembaruan otomatis)."
+          fi
           RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
           [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
-          for BERKAS in native/linux/build/*.tar.gz native/linux/build/*.deb; do
+          for BERKAS in native/linux/build/*.tar.gz native/linux/build/*.deb native/linux/build/platform-native-linux-*.json; do
+            [ -f "$BERKAS" ] || continue
             NAMA="$(basename "$BERKAS")"
+            case "$NAMA" in *.json) TIPE="application/json" ;; *) TIPE="application/octet-stream" ;; esac
             gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$NAMA\") | .id" |
               while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
             gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$NAMA" \
-              -H "Content-Type: application/octet-stream" --input "$BERKAS"
+              -H "Content-Type: $TIPE" --input "$BERKAS"
           done
 
   # APK Android klien tipis (WebView ke server Jejak). Dibangun setelah rilis
