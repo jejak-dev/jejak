@@ -258,7 +258,7 @@ jobs:
           RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
           [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
           for BERKAS in "$NAMA" "platform-native-${ARCH}.json"; do
-            gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$BERKAS\") | .id" |
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RID/assets?per_page=100" --jq ".[] | select(.name==\"$BERKAS\") | .id" |
               while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
             case "$BERKAS" in
               *.json) TIPE="application/json" ;;
@@ -291,7 +291,7 @@ jobs:
           RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
           [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
           unduh() { # nama berkas -> isi (lewat API, berlaku untuk rilis draf)
-            AID="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$1\") | .id")"
+            AID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RID/assets?per_page=100" --jq ".[] | select(.name==\"$1\") | .id")"
             [ -n "$AID" ] || return 1
             gh api -H "Accept: application/octet-stream" "repos/$GITHUB_REPOSITORY/releases/assets/$AID" > "$2"
           }
@@ -307,7 +307,7 @@ jobs:
           done
           [ "${#POTONGAN[@]}" -ge 1 ] || { echo "tidak ada potongan native" >&2; exit 1; }
           bash ../native/macos/scripts/merge-latest.sh latest.json "${POTONGAN[@]}" > latest.baru.json
-          AID="$(gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq '.[] | select(.name=="latest.json") | .id')"
+          AID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RID/assets?per_page=100" --jq '.[] | select(.name=="latest.json") | .id')"
           gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"
           gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=latest.json" \
             -H "Content-Type: application/json" --input latest.baru.json
@@ -374,7 +374,7 @@ jobs:
           RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
           [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
           for B in "${BERKAS[@]}"; do
-            gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$B\") | .id" |
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RID/assets?per_page=100" --jq ".[] | select(.name==\"$B\") | .id" |
               while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
             case "$B" in *.json) TIPE="application/json" ;; *) TIPE="application/zip" ;; esac
             gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$B" \
@@ -457,7 +457,7 @@ jobs:
             [ -f "$BERKAS" ] || continue
             NAMA="$(basename "$BERKAS")"
             case "$NAMA" in *.json) TIPE="application/json" ;; *) TIPE="application/octet-stream" ;; esac
-            gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$NAMA\") | .id" |
+            gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RID/assets?per_page=100" --jq ".[] | select(.name==\"$NAMA\") | .id" |
               while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
             gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$NAMA" \
               -H "Content-Type: $TIPE" --input "$BERKAS"
@@ -517,7 +517,7 @@ jobs:
           RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
           [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
           # Hapus APK lama bernama sama (tag beta bergulir, atau jalan ulang).
-          gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq '.[] | select(.name|test("^Jejak-.*\\.apk$")) | .id' |
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RID/assets?per_page=100" --jq '.[] | select(.name|test("^Jejak-.*\\.apk$")) | .id' |
             while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
           gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$NAMA" \
             -H "Content-Type: application/vnd.android.package-archive" --input "$NAMA"
