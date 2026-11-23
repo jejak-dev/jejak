@@ -6,7 +6,8 @@ import JejakShellCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var window: NSWindow?
-  private let content = ContentController()
+  private let updates = UpdateController()
+  private lazy var content = ContentController(updates: updates)
   private var sidecar: SidecarProcess?
   private var sinyal: [DispatchSourceSignal] = []
   private var sedangKeluar = false
@@ -18,7 +19,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     content.onRetry = { [weak self] in self?.luncurkan() }
     pasangSinyal()
     NSApp.activate(ignoringOtherApps: true)
+    updates.onRestart = { [weak self] bundel in self?.mulaiUlangUntukPembaruan(bundel) }
+    updates.startAutoCheck()
+    updates.startSelfTestIfRequested()
     luncurkan()
+  }
+
+  /// Menjadwalkan pembukaan bundel baru SETELAH proses ini keluar (instance
+  /// tunggal akan menolak bila yang lama masih hidup), lalu keluar.
+  private func mulaiUlangUntukPembaruan(_ bundel: URL) {
+    let p = Process()
+    p.executableURL = URL(fileURLWithPath: "/bin/sh")
+    p.arguments = Updater.relaunchArguments(pid: ProcessInfo.processInfo.processIdentifier, bundle: bundel)
+    p.standardInput = FileHandle.nullDevice
+    p.standardOutput = FileHandle.nullDevice
+    p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return }
+    NSApp.terminate(nil)
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

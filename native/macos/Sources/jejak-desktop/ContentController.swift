@@ -9,7 +9,16 @@ import JejakShellCore
 final class ContentController: NSViewController {
   var onRetry: (() -> Void)?
   private var webView: WKWebView?
-  private let bridge = Bridge()
+  private let bridge: Bridge
+  let updates: UpdateController
+
+  init(updates: UpdateController) {
+    self.updates = updates
+    self.bridge = Bridge(updates: updates)
+    super.init(nibName: nil, bundle: nil)
+  }
+
+  required init?(coder: NSCoder) { fatalError("tak dipakai") }
   private var port: UInt16 = 0
   private var splashView: NSView?
   private var failureView: NSView?

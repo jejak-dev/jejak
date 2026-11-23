@@ -20,5 +20,31 @@ await run("SidecarProcessTests.tokenTidakBocorKeStderr") { try await SidecarProc
 await run("SidecarProcessTests.sidecarAsli") { try await SidecarProcessTests().sidecarAsli() }
 
 await run("LokalisasiTests.gantiArgumen") { try await LokalisasiTests().gantiArgumen() }
+await run("Blake2bTests.vektorResmi") { try await Blake2bTests().vektorResmi() }
+await run("Blake2bTests.streaming") { try await Blake2bTests().streamingSamaDenganSekaliJalan() }
+await run("Blake2bTests.blokJamak") { try await Blake2bTests().vektorBlokJamak() }
+await run("MinisignTests.sah") { try await MinisignTests().berkasSahLolos() }
+await run("MinisignTests.berkasDiubah") { try await MinisignTests().berkasDiubahDitolak() }
+await run("MinisignTests.kunciLain") { try await MinisignTests().kunciLainDitolak() }
+await run("MinisignTests.trustedComment") { try await MinisignTests().trustedCommentDiubahDitolak() }
+await run("MinisignTests.masukanRusak") { try await MinisignTests().masukanRusakDitolak() }
+await run("MinisignTests.dariDisk") { try await MinisignTests().berkasDariDisk() }
+await run("SemverTests.urutan") { try await SemverTests().urutan() }
+await run("SemverTests.tidakSah") { try await SemverTests().tidakSah() }
+await run("UpdaterTests.periksaMenemukanVersiBaru") { try await UpdaterTests().periksaMenemukanVersiBaru() }
+await run("UpdaterTests.versiSamaAtauLebihBaruTakDitawarkan") { try await UpdaterTests().versiSamaAtauLebihBaruTakDitawarkan() }
+await run("UpdaterTests.tanpaArtefakNativeDiabaikan") { try await UpdaterTests().tanpaArtefakNativeDiabaikan() }
+await run("UpdaterTests.pasangPenuhMenggantiBundel") { try await UpdaterTests().pasangPenuhMenggantiBundel() }
+await run("UpdaterTests.tandaTanganSalahDitolakDanBundelUtuh") { try await UpdaterTests().tandaTanganSalahDitolakDanBundelUtuh() }
+await run("UpdaterTests.aplikasiLainDitolak") { try await UpdaterTests().aplikasiLainDitolak() }
+await run("UpdaterTests.versiArsipTakSesuaiManifestDitolak") { try await UpdaterTests().versiArsipTakSesuaiManifestDitolak() }
+await run("UpdaterTests.pasangTanpaPemeriksaanDitolak") { try await UpdaterTests().pasangTanpaPemeriksaanDitolak() }
+await run("UpdaterTests.httpTanpaOverrideDitolak") { try await UpdaterTests().httpTanpaOverrideDitolak() }
+await run("UpdaterTests.kanalTakDikenal") { try await UpdaterTests().kanalTakDikenal() }
+await run("UpdaterTests.arsipTakAmanDitolak") { try await UpdaterTests().arsipTakAmanDitolak() }
+await run("UpdaterTests.argumenMulaiUlang") { try await UpdaterTests().argumenMulaiUlang() }
+await run("PengaturanPembaruTests.kanalBawaan") { try await PengaturanPembaruTests().kanalBawaan() }
+await run("PengaturanPembaruTests.transisiStatus") { try await PengaturanPembaruTests().transisiStatus() }
+await run("PengaturanPembaruTests.manifestRusak") { try await PengaturanPembaruTests().manifestRusak() }
 
 finish()

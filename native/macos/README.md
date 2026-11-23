@@ -38,7 +38,26 @@ teks = tambah kunci di KEDUA tabel; `scripts/check-strings.sh` (dijalankan
 terdaftar. Teks bawaan di kode menjaga pesan tetap terbaca bila tabel tak
 ada (mis. tes di luar bundel .app).
 
+## Pembaru otomatis
+
+Dibangun sendiri (`Updater.swift`), memakai kunci dan format manifest yang sama
+dengan Tauri (`latest.json`, tanda tangan minisign `tauri signer`, kunci publik
+dari `tauri.conf.json` yang ditanam ke Info.plist). Alur: periksa manifest kanal
+(stabil/beta) → unduh `.app.tar.gz` → verifikasi minisign (BLAKE2b-512 + Ed25519,
+varian "ED") → ekstrak aman → cek bundle id, versi, dan `codesign` → ganti `.app`
+secara atomik → mulai ulang setelah proses lama keluar. Cek otomatis 15 detik
+setelah mulai lalu tiap 6 jam (bila `autoCheck`).
+
+- Manifest HARUS memuat platform `darwin-<arch>-native`; kunci Tauri
+  (`darwin-aarch64`) sengaja diabaikan agar artefak Tauri tak pernah menimpa
+  cangkang native. Membuat artefaknya: `scripts/package-update.sh <url>`.
+  Menggabungkannya ke `latest.json` rilis = langkah CI yang belum dipasang.
+- Debug (`JEJAK_DEBUG=1`): `JEJAK_UPDATE_ENDPOINT` dan `JEJAK_UPDATE_PUBKEY`
+  menimpa endpoint (boleh http/file) dan kunci; `JEJAK_UPDATE_SELFTEST=1`
+  menjalankan alur periksa→pasang→mulai ulang otomatis dan melapor ke stderr.
+  Rilis biasa selalu https dan kunci bawaan.
+
 ## Belum ada
 
-Pembaruan otomatis (perintah `updater_*` mengembalikan keadaan `idle`), notarisasi,
-ikon/menu lanjutan, dan paket distribusi (`.dmg`).
+Langkah CI yang membuat dan menggabungkan artefak pembaru native ke rilis,
+notarisasi, ikon/menu lanjutan, dan paket distribusi (`.dmg`).

@@ -19,6 +19,7 @@ swiftc -swift-version 5 -O -module-name JejakDesktop \
   "$AKAR"/Sources/JejakShellCore/*.swift "$AKAR"/Sources/jejak-desktop/*.swift \
   -framework AppKit -framework WebKit -framework UserNotifications
 
+PUBKEY="$(sed -n 's/.*"pubkey": *"\([^"]*\)".*/\1/p' "$REPO/src-tauri/tauri.conf.json" | head -1)"
 VERSI="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$REPO/package.json" | head -1)"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -53,6 +54,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>${VERSI}</string>
   <key>CFBundleIconFile</key><string>icon</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>JejakUpdatePubKey</key><string>${PUBKEY}</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSMicrophoneUsageDescription</key><string>Jejak memakai mikrofon untuk dikte.</string>
 </dict></plist>

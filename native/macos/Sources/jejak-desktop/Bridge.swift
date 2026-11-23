@@ -11,6 +11,12 @@ import JejakShellCore
 @MainActor
 final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
   var port: UInt16 = 0
+  let updates: UpdateController
+
+  init(updates: UpdateController) {
+    self.updates = updates
+    super.init()
+  }
 
   private static let nama = "jejak"
   private static let skrip = """
@@ -56,16 +62,24 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
       let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
       return ["version": v, "platform": "macos"]
     case "updater_get_settings":
-      return ["autoCheck": d.bool(forKey: "updater.autoCheck"), "channel": d.string(forKey: "updater.channel") ?? "stable"]
+      return updates.settingsJSON
     case "updater_set_settings":
-      let s = args?["settings"] as? [String: Any] ?? args ?? [:]
-      if let a = s["autoCheck"] as? Bool { d.set(a, forKey: "updater.autoCheck") }
-      if let c = s["channel"] as? String, ["stable", "beta"].contains(c) { d.set(c, forKey: "updater.channel") }
-      return ["autoCheck": d.bool(forKey: "updater.autoCheck"), "channel": d.string(forKey: "updater.channel") ?? "stable"]
-    case "updater_status", "updater_check":
-      return ["state": "idle"]
-    case "updater_install", "updater_restart":
-      throw Galat(description: L("bridge.updater_unavailable", "pembaruan otomatis belum tersedia di cangkang native"))
+      // Bentuk bersarang ({settings:{..}}) atau datar ({autoCheck, channel}).
+      let b = args?["settings"] as? [String: Any] ?? args ?? [:]
+      guard let auto = b["autoCheck"] as? Bool, let kanal = b["channel"] as? String else {
+        throw Galat(description: L("update.incomplete", "pengaturan pembaruan tak lengkap"))
+      }
+      try updates.apply(settings: UpdaterSettings(autoCheck: auto, channel: kanal))
+      return updates.settingsJSON
+    case "updater_status":
+      return updates.statusJSON
+    case "updater_check":
+      return await updates.check()
+    case "updater_install":
+      return try updates.install()
+    case "updater_restart":
+      try updates.restart()
+      return NSNull()
     case "plugin:notification|is_permission_granted":
       guard Bundle.main.bundleIdentifier != nil else { return false }
       let s = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
