@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentRunner } from "../src/server/agent";
 import { SqliteAuditStore, type AuditStore } from "../src/server/audit/audit-store";
+import { SqliteUsageLedger } from "../src/server/budget/usage-ledger";
+import { WorktreeService } from "../src/server/git/worktree-service";
 import {
   SessionError,
   SessionManager,
@@ -17,7 +19,6 @@ const HOME = "/rumah/uji";
 let root: string;
 let project: string;
 const audits: AuditStore[] = [];
-
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "jejak-tim-"));
   project = join(root, "proyek");
@@ -102,6 +103,35 @@ async function galatDari(promise: Promise<unknown>): Promise<unknown> {
     return error;
   }
   return undefined;
+}
+
+async function git(cwd: string, args: string[]): Promise<string> {
+  const proc = Bun.spawn({
+    cmd: ["git", ...args],
+    cwd,
+    env: { ...process.env, GIT_CONFIG_NOSYSTEM: "1", GIT_TERMINAL_PROMPT: "0", LC_ALL: "C" },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const out = await new Response(proc.stdout).text();
+  const err = await new Response(proc.stderr).text();
+  const code = await proc.exited;
+  if (code !== 0) throw new Error(`git ${args.join(" ")} gagal: ${err}`);
+  return out;
+}
+
+/** Jadikan `project` repo git dengan satu commit. */
+async function initRepo(): Promise<void> {
+  await git(project, ["init", "-q", "-b", "main"]);
+  await git(project, ["config", "user.name", "t"]);
+  await git(project, ["config", "user.email", "t@t"]);
+  await writeFile(join(project, "awal.txt"), "awal\n");
+  await git(project, ["add", "-A"]);
+  await git(project, ["commit", "-q", "-m", "awal"]);
+}
+
+function worktreeService(): WorktreeService {
+  return new WorktreeService({ root: join(root, "worktrees") });
 }
 
 describe("spawnChild", () => {
@@ -331,5 +361,243 @@ describe("spawnChild", () => {
 
     mgr.interrupt(anak.id);
     await tungguSelesai(mgr, anak.id);
+  });
+});
+
+describe("spawnChild worktree auto", () => {
+  test("non-git mode default ditolak dengan pesan repo git", async () => {
+    const { runner } = holdingRunner();
+    const mgr = manager(runner, { worktrees: worktreeService() });
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+
+    const galat = await galatDari(
+      mgr.spawnChild(induk.id, { prompt: "tugas", worktree: "auto" }),
+    );
+    expect(galat).toBeInstanceOf(SessionError);
+    expect((galat as SessionError).code).toBe("tidak-valid");
+    expect((galat as SessionError).message).toBe(
+      "Anak yang mengubah berkas butuh repo git (worktree); gunakan mode plan untuk anak baca-saja.",
+    );
+    expect(mgr.childrenOf(induk.id)).toEqual([]);
+
+    mgr.interrupt(induk.id);
+    await tungguSelesai(mgr, induk.id);
+  });
+
+  test("non-git mode plan lolos tanpa worktree", async () => {
+    const { runner } = holdingRunner();
+    const mgr = manager(runner, { worktrees: worktreeService() });
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+
+    const anak = await mgr.spawnChild(induk.id, {
+      prompt: "tugas",
+      worktree: "auto",
+      permissionMode: "plan",
+    });
+    expect(anak.worktree).toBeUndefined();
+    expect(anak.cwd).toBe(project);
+
+    mgr.interrupt(anak.id);
+    await tungguSelesai(mgr, anak.id);
+    mgr.interrupt(induk.id);
+    await tungguSelesai(mgr, induk.id);
+  });
+
+  test("repo git bersih memakai worktree", async () => {
+    await initRepo();
+    const { runner } = holdingRunner();
+    const mgr = manager(runner, { worktrees: worktreeService() });
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+
+    const anak = await mgr.spawnChild(induk.id, {
+      prompt: "tugas",
+      title: "Fitur",
+      worktree: "auto",
+    });
+    expect(anak.worktree).toBeDefined();
+    expect(anak.worktree?.branch.startsWith("jejak/")).toBe(true);
+    expect(anak.cwd).toBe(anak.worktree!.path);
+
+    mgr.interrupt(anak.id);
+    await tungguSelesai(mgr, anak.id);
+    mgr.interrupt(induk.id);
+    await tungguSelesai(mgr, induk.id);
+  });
+
+  test("worktree mati diperlakukan seperti non-git", async () => {
+    await initRepo();
+    const { runner } = holdingRunner();
+    // Tanpa layanan worktree, `"auto"` tak bisa memakai worktree.
+    const mgr = manager(runner);
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+
+    const galat = await galatDari(
+      mgr.spawnChild(induk.id, { prompt: "tugas", worktree: "auto" }),
+    );
+    expect(galat).toBeInstanceOf(SessionError);
+    expect((galat as SessionError).code).toBe("tidak-valid");
+
+    mgr.interrupt(induk.id);
+    await tungguSelesai(mgr, induk.id);
+  });
+});
+
+describe("childDetail dan childReport", () => {
+  test("kepemilikan: id milik induk lain dijawab undefined", async () => {
+    const { runner } = holdingRunner();
+    const mgr = manager(runner);
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+    const lain = await mgr.create({ prompt: "lain", cwd: project });
+    const anak = await mgr.spawnChild(induk.id, { prompt: "tugas" });
+
+    expect(mgr.childDetail(lain.id, anak.id)).toBeUndefined();
+    expect(mgr.childReport(lain.id, anak.id)).toBeUndefined();
+    expect(mgr.childDetail(induk.id, anak.id)).toBeDefined();
+    expect(mgr.childDetail(induk.id, "s_tidak_ada")).toBeUndefined();
+
+    for (const id of [anak.id, induk.id, lain.id]) {
+      mgr.interrupt(id);
+      await tungguSelesai(mgr, id);
+    }
+  });
+
+  test("ringkasan dari event teks giliran terakhir; status dipetakan", async () => {
+    const mgr = manager(quickRunner());
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+    const anak = await mgr.spawnChild(induk.id, { prompt: "tugas" });
+    await tungguSelesai(mgr, anak.id);
+    await tungguSelesai(mgr, induk.id);
+
+    const laporan = mgr.childReport(induk.id, anak.id);
+    expect(laporan?.status).toBe("selesai");
+    expect(laporan?.summary).toContain("selesai");
+    expect(laporan?.branch).toBeUndefined();
+
+    const detail = mgr.childDetail(induk.id, anak.id);
+    expect(detail?.id).toBe(anak.id);
+    expect(detail?.turns).toBe(1);
+    expect(detail?.recentActions).toEqual([]);
+  });
+
+  test("status dibatalkan dipetakan ke dihentikan", async () => {
+    const { runner } = holdingRunner();
+    const mgr = manager(runner);
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+    const anak = await mgr.spawnChild(induk.id, { prompt: "tugas" });
+    mgr.interrupt(anak.id);
+    await tungguSelesai(mgr, anak.id);
+
+    expect(mgr.childReport(induk.id, anak.id)?.status).toBe("dihentikan");
+
+    mgr.interrupt(induk.id);
+    await tungguSelesai(mgr, induk.id);
+  });
+
+  test("recentActions memuat maks 5 aksi tool terakhir, disamarkan", async () => {
+    const rahasia = "sk-abcdefgh1234";
+    const runner: AgentRunner = {
+      async *run() {
+        yield { type: "session", sessionId: "sdk-0" };
+        for (let index = 0; index < 7; index += 1) {
+          yield {
+            type: "tool_call",
+            id: `t${index}`,
+            name: index === 6 ? "Bash" : "Read",
+            input: { file_path: `/tmp/berkas-${index}.ts`, token: rahasia },
+          };
+        }
+        yield { type: "text", text: "selesai" };
+        yield { type: "result", ok: true };
+      },
+    };
+    const mgr = manager(runner);
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+    const anak = await mgr.spawnChild(induk.id, { prompt: "tugas" });
+    await tungguSelesai(mgr, anak.id);
+    await tungguSelesai(mgr, induk.id);
+
+    const detail = mgr.childDetail(induk.id, anak.id);
+    expect(detail?.recentActions).toHaveLength(5);
+    expect(detail?.recentActions.at(-1)).toContain("Bash");
+    for (const aksi of detail!.recentActions) {
+      expect(aksi.length).toBeLessThanOrEqual(120);
+      expect(aksi).not.toContain(rahasia);
+    }
+  });
+
+  test("biaya dilaporkan bila ledger ada", async () => {
+    const ledger = new SqliteUsageLedger(":memory:");
+    const { runner } = holdingRunner();
+    const mgr = manager(runner, {
+      budget: { ledger, store: { get: () => ({ warnAt: 0.8 }), set: () => undefined } },
+    });
+    const induk = await mgr.create({ prompt: "mulai", cwd: project });
+    const anak = await mgr.spawnChild(induk.id, { prompt: "tugas" });
+    ledger.record({
+      ts: new Date().toISOString(),
+      sessionId: anak.id,
+      profileId: "lokal",
+      costUsd: 0.75,
+    });
+
+    expect(mgr.childReport(induk.id, anak.id)?.costUsd).toBe(0.75);
+    expect(mgr.childDetail(induk.id, anak.id)?.costUsd).toBe(0.75);
+
+    mgr.interrupt(anak.id);
+    await tungguSelesai(mgr, anak.id);
+    mgr.interrupt(induk.id);
+    await tungguSelesai(mgr, induk.id);
+    ledger.close();
+  });
+
+  test("spawnChild paralel tidak melewati batas anak aktif (balapan pemeriksaan)", async () => {
+    const { runner } = holdingRunner();
+    const mgr = manager(runner, { maxConcurrent: 8, team: { maxActiveChildren: 1 } });
+    const induk = await mgr.create({ prompt: "induk", cwd: project });
+
+    const hasil = await Promise.all([
+      galatDari(mgr.spawnChild(induk.id, { prompt: "anak a" })),
+      galatDari(mgr.spawnChild(induk.id, { prompt: "anak b" })),
+      galatDari(mgr.spawnChild(induk.id, { prompt: "anak c" })),
+    ]);
+    const galat = hasil.filter((item) => item instanceof SessionError) as SessionError[];
+    expect(mgr.childrenOf(induk.id).length).toBe(1);
+    expect(galat.length).toBe(2);
+    expect(galat.every((item) => item.code === "penuh")).toBe(true);
+
+    // Penghitung sementara tidak bocor: setelah anak selesai slot bisa dipakai lagi.
+    const anak = mgr.childrenOf(induk.id)[0]!;
+    mgr.interrupt(anak.id);
+    await tungguSelesai(mgr, anak.id);
+    const lagi = await mgr.spawnChild(induk.id, { prompt: "anak d" });
+    expect(lagi.team?.parentId).toBe(induk.id);
+
+    for (const item of mgr.list()) mgr.interrupt(item.id);
+  });
+
+  test("balapan juga tertutup saat ada await probe worktree (worktree: auto)", async () => {
+    const { runner } = holdingRunner();
+    const lambat = {
+      probe: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 15));
+        return false;
+      },
+    } as unknown as SessionManagerOptions["worktrees"];
+    const mgr = manager(runner, {
+      maxConcurrent: 8,
+      team: { maxActiveChildren: 1 },
+      worktrees: lambat,
+    });
+    const induk = await mgr.create({ prompt: "induk", cwd: project });
+    const hasil = await Promise.all(
+      ["a", "b", "c"].map((nama) =>
+        galatDari(
+          mgr.spawnChild(induk.id, { prompt: `anak ${nama}`, worktree: "auto", permissionMode: "plan" }),
+        ),
+      ),
+    );
+    expect(mgr.childrenOf(induk.id).length).toBe(1);
+    expect(hasil.filter((item) => item instanceof SessionError).length).toBe(2);
+    for (const item of mgr.list()) mgr.interrupt(item.id);
   });
 });

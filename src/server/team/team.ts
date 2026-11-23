@@ -106,7 +106,7 @@ export interface SpawnCheckInput {
     | undefined;
   children: readonly { status: "berjalan" | "selesai" | "gagal" | "dibatalkan" }[];
   limits: TeamLimits;
-  /** Bila kosong: "default". */
+  /** Bila kosong: "default" (atau "plan" bila induk plan). */
   requestedMode?: TeamMode;
 }
 
@@ -153,7 +153,8 @@ export function checkSpawn(input: SpawnCheckInput): SpawnCheck {
       message: "Jumlah anak sudah mencapai batas total untuk sesi ini.",
     };
   }
-  const mode = input.requestedMode ?? "default";
+  // Bawaan "default", kecuali induk `plan`: anak ikut `plan` (bukan galat).
+  const mode = input.requestedMode ?? (parent.permissionMode === "plan" ? "plan" : "default");
   if (!childModeAllowed(parent.permissionMode, mode)) {
     return {
       ok: false,

@@ -79,6 +79,11 @@ import {
   type TeamMode,
   type SpawnRefusalCode,
 } from "../team/team";
+import type {
+  TeamChildDetail,
+  TeamChildReport,
+  TeamChildView,
+} from "../team/team-tools";
 import type { SessionStore, StoredSession } from "./session-store";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
@@ -449,6 +454,38 @@ const PERMISSION_MODES: readonly SessionPermissionMode[] = [
 
 const TEAM_MODES: readonly TeamMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
 
+/** Status sesi dipetakan ke status laporan anak. */
+function childReportStatus(
+  status: SessionStatus,
+): TeamChildReport["status"] {
+  switch (status) {
+    case "berjalan":
+      return "berjalan";
+    case "selesai":
+      return "selesai";
+    case "gagal":
+      return "gagal";
+    case "dibatalkan":
+      return "dihentikan";
+  }
+}
+
+/** Ringkasan input tool untuk `recentActions`: satu baris, dipotong 80 karakter. */
+function summarizeToolInput(input: unknown): string {
+  let text: string;
+  if (typeof input === "string") {
+    text = input;
+  } else {
+    try {
+      text = JSON.stringify(input) ?? "";
+    } catch {
+      text = "";
+    }
+  }
+  const satuBaris = text.replace(/\s+/g, " ").trim();
+  return satuBaris.length > 80 ? `${satuBaris.slice(0, 80)}…` : satuBaris;
+}
+
 /** Pemetaan penolakan tim ke kode `SessionError` yang sudah ada. */
 function refusalSessionCode(
   code: SpawnRefusalCode,
@@ -660,6 +697,8 @@ export class SessionManager {
   private readonly commandEnvStore: CommandEnvStore | undefined;
   private readonly teamEnabled: boolean;
   private readonly teamLimits: TeamLimits;
+  /** Spawn anak yang sudah lolos pemeriksaan tapi belum jadi record (ada `await` sebelum `create` selesai). */
+  private readonly pendingSpawns = new Map<string, number>();
   private commandEnvWarned = false;
   private storeWarned = false;
   private memoryWarned = false;
@@ -1438,7 +1477,7 @@ export class SessionManager {
       prompt: string;
       title?: string;
       role?: string;
-      worktree?: boolean;
+      worktree?: boolean | "auto";
       selection?: ProviderSelection;
       permissionMode?: string;
     },
@@ -1455,9 +1494,14 @@ export class SessionManager {
     }
 
     const parent = this.sessions.get(parentId);
-    const children = Array.from(this.sessions.values())
+    const children: { status: SessionStatus }[] = Array.from(this.sessions.values())
       .filter((record) => record.info.team?.parentId === parentId)
       .map((record) => ({ status: record.info.status }));
+    // Spawn paralel: ada `await` sebelum record anak ada, jadi yang sedang
+    // diproses dihitung sebagai anak berjalan agar batas tak terlewati.
+    for (let i = this.pendingSpawns.get(parentId) ?? 0; i > 0; i -= 1) {
+      children.push({ status: "berjalan" });
+    }
 
     const check = checkSpawn({
       enabled: this.teamEnabled,
@@ -1477,40 +1521,166 @@ export class SessionManager {
       throw new SessionError(check.message, refusalSessionCode(check.code));
     }
 
-    const team: TeamInfo = {
-      parentId,
-      spawnedAt: this.now().toISOString(),
-      brief: clampBrief(this.redactText(input.prompt)),
-    };
-    const role = clampRole(input.role);
-    if (role !== undefined) team.role = role;
+    // Naikkan penghitung secara sinkron setelah pemeriksaan (tanpa `await` di
+    // antaranya) dan turunkan di `finally`, apa pun hasilnya.
+    this.pendingSpawns.set(parentId, (this.pendingSpawns.get(parentId) ?? 0) + 1);
+    try {
+      const team: TeamInfo = {
+        parentId,
+        spawnedAt: this.now().toISOString(),
+        brief: clampBrief(this.redactText(input.prompt)),
+      };
+      const role = clampRole(input.role);
+      if (role !== undefined) team.role = role;
 
-    const parentRecord = parent!;
-    const worktree = input.worktree ?? false;
-    const createInput: CreateSessionInput = {
-      prompt: input.prompt,
-      cwd: parentRecord.info.cwd,
-      permissionMode: check.mode,
-      worktree,
-    };
-    if (input.title !== undefined) createInput.title = input.title;
-    if (input.selection !== undefined) createInput.selection = input.selection;
-    // Workspace hanya diwarisi untuk sesi non-worktree; worktree belum
-    // didukung untuk sesi workspace (lihat `validate`).
-    if (parentRecord.info.workspaceId !== undefined && !worktree) {
-      createInput.workspaceId = parentRecord.info.workspaceId;
-    }
-    // Sandbox diwarisi dari mode efektif induk; tanpa store sandbox tak diisi.
-    if (this.sandboxStore !== undefined) {
-      createInput.sandbox = this.effectiveSandboxMode(parentRecord);
-    }
+      const parentRecord = parent!;
+      const worktree = await this.resolveChildWorktree(parentRecord, input.worktree, check.mode);
+      const createInput: CreateSessionInput = {
+        prompt: input.prompt,
+        cwd: parentRecord.info.cwd,
+        permissionMode: check.mode,
+        worktree,
+      };
+      if (input.title !== undefined) createInput.title = input.title;
+      if (input.selection !== undefined) createInput.selection = input.selection;
+      // Workspace hanya diwarisi untuk sesi non-worktree; worktree belum
+      // didukung untuk sesi workspace (lihat `validate`).
+      if (parentRecord.info.workspaceId !== undefined && !worktree) {
+        createInput.workspaceId = parentRecord.info.workspaceId;
+      }
+      // Sandbox diwarisi dari mode efektif induk; tanpa store sandbox tak diisi.
+      if (this.sandboxStore !== undefined) {
+        createInput.sandbox = this.effectiveSandboxMode(parentRecord);
+      }
 
-    const child = await this.create(createInput, { team });
-    this.audit("pengaturan", "Anak tim dibuat", parentId, {
-      aksi: "team-spawn",
-      anak: child.id,
-    });
-    return child;
+      const child = await this.create(createInput, { team });
+      this.audit("pengaturan", "Anak tim dibuat", parentId, {
+        aksi: "team-spawn",
+        anak: child.id,
+      });
+      return child;
+    } finally {
+      const left = (this.pendingSpawns.get(parentId) ?? 1) - 1;
+      if (left <= 0) this.pendingSpawns.delete(parentId);
+      else this.pendingSpawns.set(parentId, left);
+    }
+  }
+
+  /**
+   * Putuskan pemakaian worktree untuk anak. `"auto"` memakai worktree bila cwd
+   * induk adalah repo git yang bisa dipakai; anak baca-saja (`plan`) boleh di
+   * folder non-git, sedangkan anak yang menulis ditolak.
+   */
+  private async resolveChildWorktree(
+    parent: SessionRecord,
+    worktree: boolean | "auto" | undefined,
+    mode: TeamMode,
+  ): Promise<boolean> {
+    if (worktree !== "auto") return worktree ?? false;
+    const bisaWorktree =
+      parent.info.workspaceId === undefined &&
+      this.worktrees !== undefined &&
+      (await this.worktrees.probe(parent.info.cwd));
+    if (bisaWorktree) return true;
+    if (mode === "plan") return false;
+    throw new SessionError(
+      "Anak yang mengubah berkas butuh repo git (worktree); gunakan mode plan untuk anak baca-saja.",
+      "tidak-valid",
+    );
+  }
+
+  /** Sesi boleh membuat anak: fitur tim menyala, sesi ada, dan bukan anak. */
+  teamAvailable(sessionId: string): boolean {
+    const record = this.sessions.get(sessionId);
+    if (record === undefined) return false;
+    return this.teamEnabled && record.info.team?.parentId === undefined;
+  }
+
+  /**
+   * Rincian satu anak milik `parentId`; `undefined` bila bukan anaknya
+   * (tak ada maupun milik sesi lain tidak dibedakan).
+   */
+  childDetail(parentId: string, childId: string): TeamChildDetail | undefined {
+    const record = this.childRecordOf(parentId, childId);
+    if (record === undefined) return undefined;
+    const events = this.sessionEvents(record);
+    return {
+      ...this.childView(record),
+      recentActions: this.recentActions(events),
+    };
+  }
+
+  /**
+   * Laporan anak dihitung saat diminta dari event: status yang dipetakan,
+   * jawaban akhir giliran terakhir, cabang worktree, dan biaya ledger.
+   */
+  childReport(parentId: string, childId: string): TeamChildReport | undefined {
+    const record = this.childRecordOf(parentId, childId);
+    if (record === undefined) return undefined;
+    const events = this.sessionEvents(record);
+    const report: TeamChildReport = {
+      status: childReportStatus(record.info.status),
+    };
+    const summary = this.finalAnswer(events);
+    if (summary !== undefined) report.summary = summary;
+    if (record.info.worktree !== undefined) report.branch = record.info.worktree.branch;
+    const ledger = this.budgetLedger;
+    if (ledger !== undefined) report.costUsd = ledger.sumForSession(childId);
+    return report;
+  }
+
+  /** Record anak bila benar-benar milik `parentId`. */
+  private childRecordOf(parentId: string, childId: string): SessionRecord | undefined {
+    const record = this.sessions.get(childId);
+    if (record === undefined || record.info.team?.parentId !== parentId) return undefined;
+    return record;
+  }
+
+  /** Bentuk ringkas anak untuk daftar/status. */
+  private childView(record: SessionRecord): TeamChildView {
+    const info = record.info;
+    const view: TeamChildView = {
+      id: info.id,
+      title: info.title,
+      status: info.status,
+      turns: record.turns,
+    };
+    if (info.team?.role !== undefined) view.role = info.team.role;
+    const ledger = this.budgetLedger;
+    if (ledger !== undefined) view.costUsd = ledger.sumForSession(info.id);
+    return view;
+  }
+
+  /** Maks 5 aksi tool terakhir; tiap baris sudah disamarkan. */
+  private recentActions(events: readonly SequencedEvent[]): string[] {
+    const lines: string[] = [];
+    for (let index = events.length - 1; index >= 0 && lines.length < 5; index -= 1) {
+      const event = events[index]!.event;
+      if (event.type !== "tool_call") continue;
+      const ringkas = summarizeToolInput(event.input);
+      lines.push(this.redactText(`${event.name}: ${ringkas}`).slice(0, 120));
+    }
+    return lines.reverse();
+  }
+
+  /** Gabungan teks assistant pada giliran terakhir, dipotong 4000, disamarkan. */
+  private finalAnswer(events: readonly SequencedEvent[]): string | undefined {
+    let awal = 0;
+    for (let index = events.length - 1; index >= 0; index -= 1) {
+      if (events[index]!.event.type === "user_message") {
+        awal = index + 1;
+        break;
+      }
+    }
+    const parts: string[] = [];
+    for (let index = awal; index < events.length; index += 1) {
+      const event = events[index]!.event;
+      if (event.type !== "text") continue;
+      const teks = event.text.trim();
+      if (teks !== "") parts.push(teks);
+    }
+    if (parts.length === 0) return undefined;
+    return this.redactText(parts.join("\n\n")).slice(0, 4000);
   }
 
   /**

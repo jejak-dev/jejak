@@ -106,12 +106,18 @@ export class WorktreeService {
     return path;
   }
 
-  async create(input: WorktreeCreateInput): Promise<WorktreeCreateResult> {
-    const path = this.pathFor(input.sessionId);
-
+  /**
+   * Periksa cwd bisa dipakai worktree: repo git dengan commit. Mengembalikan
+   * akar repo, commit dasar, dan subdir asal; galat `tidak-valid` bila bukan.
+   */
+  private async repoFor(cwd: string): Promise<{
+    repoRoot: string;
+    baseCommit: string;
+    subdir?: string;
+  }> {
     const top = await runGit(
       ["rev-parse", "--show-toplevel"],
-      input.cwd,
+      cwd,
       this.git,
       SMALL_OUTPUT_BYTES,
     );
@@ -139,12 +145,32 @@ export class WorktreeService {
 
     const prefix = await runGit(
       ["rev-parse", "--show-prefix"],
-      input.cwd,
+      cwd,
       this.git,
       SMALL_OUTPUT_BYTES,
     );
     const subdirRaw = prefix.code === 0 ? prefix.stdout.trim().replace(/\/$/, "") : "";
-    const subdir = subdirRaw === "" ? undefined : subdirRaw;
+    return {
+      repoRoot,
+      baseCommit,
+      ...(subdirRaw === "" ? {} : { subdir: subdirRaw }),
+    };
+  }
+
+  /** Apakah cwd bisa dipakai worktree (repo git dengan commit); tidak melempar. */
+  async probe(cwd: string): Promise<boolean> {
+    try {
+      await this.repoFor(cwd);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async create(input: WorktreeCreateInput): Promise<WorktreeCreateResult> {
+    const path = this.pathFor(input.sessionId);
+
+    const { repoRoot, baseCommit, subdir } = await this.repoFor(input.cwd);
 
     const branch = `jejak/${worktreeSlug(input.title)}-${input.sessionId}`;
     const check = await runGit(

@@ -243,3 +243,14 @@ describe("isTeamEnabled", () => {
     expect(isTeamEnabled({ JEJAK_TEAM: "0" })).toBe(false);
   });
 });
+
+test("checkSpawn: induk plan tanpa permintaan mode menghasilkan anak plan, bukan galat", () => {
+  const base = {
+    enabled: true,
+    parent: { exists: true, isChild: false, permissionMode: "plan" as const },
+    children: [],
+    limits: teamLimits({ maxConcurrent: 4 }),
+  };
+  expect(checkSpawn(base)).toEqual({ ok: true, mode: "plan" });
+  expect(checkSpawn({ ...base, requestedMode: "default" }).ok).toBe(false);
+});

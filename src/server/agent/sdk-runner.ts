@@ -396,6 +396,16 @@ const WORKSPACE_TOOL_ALLOWLIST = [
  */
 const BROWSER_READ_TOOLS = new Set(["browser_tabs", "browser_snapshot", "browser_screenshot"]);
 
+/**
+ * Tool tim yang hanya membaca; otomatis diizinkan.
+ *
+ * `team_spawn`, `team_message`, dan `team_stop` sengaja tak ada di sini:
+ * ketiganya berbiaya atau berefek samping (membuat sesi baru yang memakai
+ * kuota dan uang, mengirim pesan, menghentikan pekerjaan), jadi tetap lewat
+ * kartu izin pengguna.
+ */
+const TEAM_READ_TOOLS = new Set(["team_list", "team_status", "team_result"]);
+
 const MCP_SERVER_NAME = "mcp__jejak-memory__";
 
 /** Daftar tool yang diizinkan dari nama tool mentah pada RunMemory. */
@@ -410,6 +420,8 @@ function allowedToolsFor(input: RunInput): string[] {
       } else if (hasWorkspace && (tool === "workspace_overview" || tool === "workspace_service")) {
         allowed.push(`${MCP_SERVER_NAME}${tool}`);
       } else if (BROWSER_READ_TOOLS.has(tool)) {
+        allowed.push(`${MCP_SERVER_NAME}${tool}`);
+      } else if (TEAM_READ_TOOLS.has(tool)) {
         allowed.push(`${MCP_SERVER_NAME}${tool}`);
       }
     }

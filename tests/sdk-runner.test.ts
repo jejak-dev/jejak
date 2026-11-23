@@ -1470,3 +1470,41 @@ test("event context yang melewati jendela tidak dipancarkan", async () => {
   expect(events.filter((event) => event.type === "context")).toEqual([]);
   expect(events.some((event) => event.type === "result")).toBe(true);
 });
+
+test("tool tim baca-saja diizinkan otomatis; spawn/message/stop lewat izin", async () => {
+  let received: Record<string, unknown> | undefined;
+  const sdk = fakeSdk({ messages: [RESULT_OK], onOptions: (options) => (received = options) });
+
+  await collect(
+    createSdkRunner({ load: async () => sdk.module, baseEnv: {} }).run(
+      memoryInput({
+        memory: {
+          url: "http://127.0.0.1:3000/mcp",
+          token: MEMORY_TOKEN,
+          indexLine: "Indeks.",
+          tools: [
+            "memory_search",
+            "team_spawn",
+            "team_list",
+            "team_status",
+            "team_result",
+            "team_message",
+            "team_stop",
+          ],
+          call: async () => ({ text: "", isError: false }),
+        },
+      }),
+    ),
+  );
+
+  expect(received?.allowedTools).toEqual([
+    "mcp__jejak-memory__memory_search",
+    "mcp__jejak-memory__team_list",
+    "mcp__jejak-memory__team_status",
+    "mcp__jejak-memory__team_result",
+  ]);
+  const daftar = JSON.stringify(received?.allowedTools ?? []);
+  for (const aksi of ["team_spawn", "team_message", "team_stop"]) {
+    expect(daftar).not.toContain(aksi);
+  }
+});

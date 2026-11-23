@@ -40,6 +40,12 @@ import { defaultTunnelTokenStore } from "./network/token-store";
 import { TunnelManager, spawnCloudflared, whichBinary } from "./network/tunnel-manager";
 import { tunnelRoutes } from "./routes/tunnel";
 import { GoalReporterHolder } from "./goals/goal-reporter";
+import {
+  TeamPortHolder,
+  type TeamChildDetail,
+  type TeamChildReport,
+  type TeamChildView,
+} from "./team/team-tools";
 import { createMemoryBridge, type MemoryBridge } from "./memory/memory-bridge";
 import { defaultMemoryStore } from "./memory/memory-store";
 import { MemoryService } from "./memory/memory-service";
@@ -149,6 +155,7 @@ import { locateClaude } from "./sdk/claude-locator";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import {
   SessionManager,
+  type SessionInfo,
   type SessionManagerOptions,
   type WorkspaceResolver,
 } from "./sessions/session-manager";
@@ -454,6 +461,10 @@ export function createApp(options: CreateAppOptions = {}) {
   // begitu manajer siap (tool `goal_update` menolak sebelum itu).
   const goalReporter = new GoalReporterHolder();
 
+  // Adaptor tim juga ditautkan setelah manajer siap; sebelum itu tool tim
+  // tidak tampil dan panggilannya dijawab galat.
+  const teamPort = new TeamPortHolder();
+
   // Tool browser ikut jembatan supaya agent memakai browser yang sama dengan
   // panel. Sumber manajer dibaca setiap permintaan: saklar fitur berlaku
   // seketika (tool tak tampil dan panggilan ditolak saat browser mati).
@@ -479,6 +490,7 @@ export function createApp(options: CreateAppOptions = {}) {
     },
     goalReporter: (sessionId, report) => goalReporter.report(sessionId, report),
     goalActive: (sessionId) => goalReporter.hasGoal(sessionId),
+    team: { port: teamPort },
     mcpUrl: options.mcpUrl,
   });
 
@@ -585,6 +597,52 @@ export function createApp(options: CreateAppOptions = {}) {
     (sessionId, report) => manager.reportGoal(sessionId, report),
     (sessionId) => manager.hasActiveGoal(sessionId),
   );
+
+  // Adaptor tim: tipis di atas manajer sesi. Kepemilikan id diperiksa oleh
+  // manajer (`childrenOf`/`childDetail`/`childReport`), bukan di sini.
+  const childViewOf = (info: SessionInfo): TeamChildView => {
+    const view: TeamChildView = {
+      id: info.id,
+      title: info.title,
+      status: info.status,
+    };
+    if (info.team?.role !== undefined) view.role = info.team.role;
+    return view;
+  };
+  // Rincian per anak dipakai agar giliran dan biaya ikut terisi.
+  const childView = (parentId: string, info: SessionInfo): TeamChildView => {
+    const detail = manager.childDetail(parentId, info.id);
+    if (detail === undefined) return childViewOf(info);
+    return {
+      id: detail.id,
+      title: detail.title,
+      status: detail.status,
+      ...(detail.role === undefined ? {} : { role: detail.role }),
+      ...(detail.turns === undefined ? {} : { turns: detail.turns }),
+      ...(detail.costUsd === undefined ? {} : { costUsd: detail.costUsd }),
+    };
+  };
+  teamPort.attach({
+    canSpawn: (sessionId) => manager.teamAvailable(sessionId),
+    spawn: async (parentId, input) => {
+      const info = await manager.spawnChild(parentId, input);
+      return childView(parentId, info);
+    },
+    list: (parentId) => manager.childrenOf(parentId).map((info) => childView(parentId, info)),
+    status: (parentId, childId): TeamChildDetail | undefined =>
+      manager.childDetail(parentId, childId),
+    result: (parentId, childId): TeamChildReport | undefined =>
+      manager.childReport(parentId, childId),
+    message: async (parentId, childId, text) => {
+      // Kepemilikan diperiksa lebih dulu: `send`/`interrupt` tak memeriksanya.
+      if (manager.childDetail(parentId, childId) === undefined) return undefined;
+      return manager.send(childId, text);
+    },
+    stop: (parentId, childId) => {
+      if (manager.childDetail(parentId, childId) === undefined) return undefined;
+      return manager.interrupt(childId);
+    },
+  });
 
   // Katalog perintah slash: daftar dibaca dari SDK lalu disimpan sebentar
   // per folder kerja.
