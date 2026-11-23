@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.22] - 2026-11-23
+
 ### Diperbaiki
 
 - Dialog "Pilih folder" di macOS: klik Batal menutup dialog, tidak lagi membuka dialog kedua.
