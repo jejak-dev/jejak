@@ -51,9 +51,21 @@ impl Sidecar {
         for (k, v) in extra_env {
             cmd.env(k, v);
         }
-        let mut child: Child = cmd.spawn().map_err(|e| {
-            l("sidecar.spawn", "gagal menjalankan sidecar %@: %@", &[&binary.display().to_string(), &e.to_string()])
-        })?;
+        // ETXTBSY ("Text file busy"): biner baru saja ditulis dan fork thread lain masih memegang
+        // fd tulisnya sesaat (mis. setelah pembaruan, atau uji paralel). Coba lagi sebentar.
+        let mut attempt = 0;
+        let mut child: Child = loop {
+            match cmd.spawn() {
+                Ok(c) => break c,
+                Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && attempt < 20 => {
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                Err(e) => {
+                    return Err(l("sidecar.spawn", "gagal menjalankan sidecar %@: %@", &[&binary.display().to_string(), &e.to_string()]));
+                }
+            }
+        };
         let pid = child.id() as i32;
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("stdout piped");
