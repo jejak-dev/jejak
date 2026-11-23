@@ -16,8 +16,12 @@ describe("bundlesForTarget", () => {
     expect(bundlesForTarget("bun-windows-x64")).toEqual(["nsis"]);
   });
 
+  test("Linux menghasilkan deb", () => {
+    expect(bundlesForTarget("bun-linux-x64")).toEqual(["deb"]);
+  });
+
   test("target tak dikenal ditolak", () => {
-    expect(() => bundlesForTarget("bun-linux-x64")).toThrow(/Target tidak dikenal/);
+    expect(() => bundlesForTarget("bun-freebsd-x64")).toThrow(/Target tidak dikenal/);
   });
 });
 
@@ -80,7 +84,7 @@ describe("parseDesktopArgs", () => {
   });
 
   test("target tak dikenal ditolak", () => {
-    const parsed = parseDesktopArgs(["--target", "bun-linux-x64"], null);
+    const parsed = parseDesktopArgs(["--target", "bun-freebsd-x64"], null);
     expect(parsed.target).toBeNull();
     expect(parsed.error).toMatch(/Target tidak dikenal/);
   });

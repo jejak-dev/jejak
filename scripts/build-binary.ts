@@ -25,6 +25,8 @@ export const BUILD_TARGETS = [
   "bun-darwin-arm64",
   "bun-darwin-x64",
   "bun-windows-x64",
+  "bun-linux-x64",
+  "bun-linux-arm64",
 ] as const;
 
 export type BuildTarget = (typeof BUILD_TARGETS)[number];
@@ -36,7 +38,7 @@ export function isBuildTarget(value: string): value is BuildTarget {
 
 /**
  * Target untuk platform mesin ini, atau `null` bila platform ini tidak punya
- * target sah (mis. Linux; cakupan R2 hanya macOS dan Windows).
+ * target sah (mis. platform lain di luar macOS, Windows, dan Linux).
  */
 export function currentBuildTarget(): BuildTarget | null {
   const nama = `bun-${process.platform}-${process.arch}`;

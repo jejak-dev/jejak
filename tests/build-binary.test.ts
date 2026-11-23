@@ -148,7 +148,7 @@ describe("parseBuildArgs", () => {
   });
 
   test("target tidak dikenal ditolak", () => {
-    const hasil = parseBuildArgs(["--target", "bun-linux-x64"], bawaan);
+    const hasil = parseBuildArgs(["--target", "bun-freebsd-x64"], bawaan);
     expect(hasil.targets).toEqual([]);
     expect(hasil.error).toContain("Target tidak dikenal");
   });
@@ -198,7 +198,9 @@ describe("isBuildTarget", () => {
   test("menerima target sah dan menolak yang lain", () => {
     expect(isBuildTarget("bun-darwin-arm64")).toBe(true);
     expect(isBuildTarget("bun-windows-x64")).toBe(true);
-    expect(isBuildTarget("bun-linux-x64")).toBe(false);
+    expect(isBuildTarget("bun-freebsd-x64")).toBe(false);
+    expect(isBuildTarget("bun-linux-x64")).toBe(true);
+    expect(isBuildTarget("bun-linux-arm64")).toBe(true);
     expect(isBuildTarget("")).toBe(false);
   });
 });

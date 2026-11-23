@@ -18,10 +18,12 @@ describe("tripleForBuildTarget", () => {
     expect(tripleForBuildTarget("bun-windows-x64")).toBe(
       "x86_64-pc-windows-msvc",
     );
+    expect(tripleForBuildTarget("bun-linux-x64")).toBe("x86_64-unknown-linux-gnu");
+    expect(tripleForBuildTarget("bun-linux-arm64")).toBe("aarch64-unknown-linux-gnu");
   });
 
   test("target lain galat dengan pesan jelas", () => {
-    expect(() => tripleForBuildTarget("bun-linux-arm64")).toThrow(
+    expect(() => tripleForBuildTarget("bun-freebsd-arm64")).toThrow(
       /Target tidak dikenal/,
     );
     expect(() => tripleForBuildTarget("")).toThrow(/Target tidak dikenal/);
@@ -70,7 +72,7 @@ describe("parseStageArgs", () => {
   test("--all memakai semua target sah", () => {
     const parsed = parseStageArgs(["--all"], "bun-darwin-arm64");
     expect(parsed.error).toBeUndefined();
-    expect(parsed.targets).toHaveLength(3);
+    expect(parsed.targets).toHaveLength(5);
   });
 
   test("argumen tak sah memberi pesan jelas", () => {
@@ -126,6 +128,6 @@ describe("stageSidecar", () => {
   });
 
   test("target tak dikenal dilempar sebelum menyentuh berkas", () => {
-    expect(stageSidecar("bun-linux-arm64")).rejects.toThrow(/Target tidak dikenal/);
+    expect(stageSidecar("bun-freebsd-arm64")).rejects.toThrow(/Target tidak dikenal/);
   });
 });

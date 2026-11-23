@@ -28,6 +28,8 @@ const TRIPLE: Record<BuildTarget, string> = {
   "bun-darwin-arm64": "aarch64-apple-darwin",
   "bun-darwin-x64": "x86_64-apple-darwin",
   "bun-windows-x64": "x86_64-pc-windows-msvc",
+  "bun-linux-x64": "x86_64-unknown-linux-gnu",
+  "bun-linux-arm64": "aarch64-unknown-linux-gnu",
 };
 
 /**

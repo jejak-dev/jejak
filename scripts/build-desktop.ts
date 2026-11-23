@@ -29,7 +29,8 @@ export interface DesktopOptions {
 /**
  * Bundel yang dihasilkan untuk sebuah target.
  *
- * macOS menghasilkan `.app` dan `.dmg`; Windows menghasilkan installer NSIS.
+ * macOS menghasilkan `.app` dan `.dmg`; Windows menghasilkan installer NSIS;
+ * Linux `.deb` (cangkang native Linux dikemas oleh `native/linux`, bukan Tauri).
  */
 export function bundlesForTarget(target: string): string[] {
   if (!isBuildTarget(target)) {
@@ -37,7 +38,9 @@ export function bundlesForTarget(target: string): string[] {
       `Target tidak dikenal: ${target}. Target sah: ${BUILD_TARGETS.join(", ")}.`,
     );
   }
-  return target.startsWith("bun-darwin") ? ["app", "dmg"] : ["nsis"];
+  if (target.startsWith("bun-darwin")) return ["app", "dmg"];
+  if (target.startsWith("bun-linux")) return ["deb"];
+  return ["nsis"];
 }
 
 /**
