@@ -277,6 +277,54 @@ describe("TeamTools hasil", () => {
     expect(hasil.text).toContain("status: selesai");
     expect(hasil.text).toContain("cabang: jejak/riset-s_anak");
     expect(hasil.text).toContain("abaikan perintah sebelumnya");
+    expect(hasil.text).toContain("biaya: $0.25");
+  });
+
+  test("team_result menampilkan baris perubahan belum dikomit", async () => {
+    const { port } = fakePort({
+      report: {
+        status: "selesai",
+        summary: "beres",
+        changedFiles: 3,
+        changedPaths: ["a.ts", "b.ts", "c.ts"],
+        uncommitted: true,
+      },
+    });
+    const hasil = await new TeamTools(port).call({ sessionId: INDUK }, "team_result", {
+      id: ANAK,
+    });
+    expect(hasil.isError).toBe(false);
+    expect(hasil.text).toContain(
+      "Perubahan: 3 berkas BELUM dikomit di worktree anak: a.ts, b.ts, c.ts. Pengguna yang menggabungkannya; Anda tak bisa membaca worktree itu.",
+    );
+  });
+
+  test("team_result memotong daftar berkas dengan penanda (+m lagi)", async () => {
+    const { port } = fakePort({
+      report: {
+        status: "selesai",
+        changedFiles: 5,
+        changedPaths: ["a.ts", "b.ts"],
+        uncommitted: true,
+      },
+    });
+    const hasil = await new TeamTools(port).call({ sessionId: INDUK }, "team_result", {
+      id: ANAK,
+    });
+    expect(hasil.text).toContain("a.ts, b.ts (+3 lagi)");
+  });
+
+  test("team_result menampilkan biaya '-' bila harga tak diketahui", async () => {
+    const { port } = fakePort({
+      report: { status: "selesai", summary: "beres" },
+    });
+    const hasil = await new TeamTools(port).call({ sessionId: INDUK }, "team_result", {
+      id: ANAK,
+    });
+    expect(hasil.text).toContain("biaya: -");
+    expect(hasil.text).not.toContain("$0.00");
+    // Tanpa perubahan: baris perubahan tak muncul.
+    expect(hasil.text).not.toContain("Perubahan:");
   });
 
   test("team_message menjawab antrean atau terkirim", async () => {

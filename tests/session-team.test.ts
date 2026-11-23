@@ -540,7 +540,8 @@ describe("childDetail dan childReport", () => {
       costUsd: 0.75,
     });
 
-    expect(mgr.childReport(induk.id, anak.id)?.costUsd).toBe(0.75);
+    // Sesi anak masih berjalan: laporan hanya menyebut status (tanpa hasil lama).
+    expect(mgr.childReport(induk.id, anak.id)).toEqual({ status: "berjalan" });
     expect(mgr.childDetail(induk.id, anak.id)?.costUsd).toBe(0.75);
 
     mgr.interrupt(anak.id);

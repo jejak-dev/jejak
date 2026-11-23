@@ -5,12 +5,20 @@
  */
 
 export interface TeamResult {
-  /** <= 4000 karakter. */
+  /** <= 4000 karakter, sudah disamarkan (boleh kosong bila anak tak menjawab). */
   summary: string;
   status: "selesai" | "buntu" | "dihentikan" | "gagal";
   branch?: string;
+  /** Jumlah berkas berubah di cwd anak, termasuk yang belum dikomit. */
   changedFiles?: number;
-  costUsd: number;
+  /** Maks 20 path relatif, sudah disamarkan. */
+  changedPaths?: string[];
+  /** true bila ada perubahan belum dikomit. */
+  uncommitted?: boolean;
+  /** Hanya bila harga model diketahui (`record.price !== undefined`). */
+  costUsd?: number;
+  /** ISO. */
+  finishedAt: string;
 }
 
 export interface TeamInfo {
