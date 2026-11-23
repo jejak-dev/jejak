@@ -1,0 +1,38 @@
+[package]
+name = "jejak-desktop"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Cangkang native Linux untuk Jejak (GTK3 + WebKitGTK)"
+license = "MIT"
+publish = false
+
+[lib]
+name = "jejak_desktop"
+path = "src/lib.rs"
+
+# Biner bernama `Jejak`: GTK menurunkan nama proses, WM_CLASS, dan label taskbar
+# dari nama executable.
+[[bin]]
+name = "Jejak"
+path = "src/main.rs"
+required-features = ["ui"]
+
+[features]
+# Inti (tanpa GTK) selalu terbangun dan teruji di mesin mana pun; jendela GTK
+# hanya dengan fitur `ui` (butuh libgtk-3-dev dan libwebkit2gtk-4.1-dev).
+default = []
+ui = ["dep:gtk", "dep:webkit2gtk", "dep:glib", "dep:javascriptcore-rs"]
+
+[dependencies]
+serde_json = "1"
+libc = "0.2"
+gtk = { version = "0.18", optional = true }
+glib = { version = "0.18", optional = true }
+javascriptcore-rs = { version = "1.1", optional = true }
+# v2_34: lantai API yang dipakai (user script, message channel); Ubuntu 22.04 punya 2.36.
+webkit2gtk = { version = "2.0", optional = true, features = ["v2_34"] }
+
+[profile.release]
+strip = true
+lto = "thin"
