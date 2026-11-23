@@ -6,6 +6,11 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Diperbaiki
+
+- CI rilis membaca semua aset rilis (paginasi), sehingga potongan pembaruan native macOS Intel dan Linux masuk ke `latest.json`.
+- Cangkang native Linux mencoba lagi menjalankan sidecar saat biner masih "busy" (ETXTBSY); tes Linux arm64 tidak lagi gagal acak.
+
 ## [0.1.0-beta.20] - 2026-11-23
 
 ### Ditambahkan
