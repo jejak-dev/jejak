@@ -1,0 +1,55 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Jendela: net8.0-windows + WPF + WebView2 sistem. EnableWindowsTargeting
+    membuat proyek bisa DIBANGUN (tidak dijalankan) dari Mac/Linux untuk
+    gerbang kompilasi. WPF dipilih karena WindowChrome/geometri jendela benar.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <!-- Hanya untuk NotifyIcon (balon notifikasi tanpa paket MSIX). -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Jejak.Desktop</RootNamespace>
+    <AssemblyName>Jejak</AssemblyName>
+    <AssemblyTitle>Jejak</AssemblyTitle>
+    <Product>Jejak</Product>
+    <Description>Jejak: jendela native di sekitar server Jejak.</Description>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../JejakShellCore/JejakShellCore.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+  </ItemGroup>
+
+  <!-- WinForms mengimpor System.Windows.Forms/System.Drawing ke semua berkas dan bentrok dengan WPF. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <!-- Shim Notification API lama di atas jembatan; satu-satunya salinan ada di src-tauri/shim. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\..\..\src-tauri\shim\notification.js" LogicalName="notification.js" />
+  </ItemGroup>
+
+  <!-- Versi dibaca dari package.json (satu sumber, sama dengan cangkang macOS). -->
+  <Target Name="ReadAppVersion" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+    <PropertyGroup>
+      <_PkgText Condition="Exists('$(MSBuildThisFileDirectory)../../../../package.json')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)../../../../package.json'))</_PkgText>
+      <_PkgVersion>$([System.Text.RegularExpressions.Regex]::Match($(_PkgText), '"version"\s*:\s*"([^"]+)"').Groups[1].Value)</_PkgVersion>
+      <InformationalVersion Condition="'$(_PkgVersion)' != ''">$(_PkgVersion)</InformationalVersion>
+      <_Numeric>$([System.Text.RegularExpressions.Regex]::Match('$(_PkgVersion)', '^[0-9]+\.[0-9]+\.[0-9]+').Value)</_Numeric>
+      <Version Condition="'$(_Numeric)' != ''">$(_Numeric)</Version>
+    </PropertyGroup>
+    <Error Condition="'$(_PkgVersion)' == ''" Text="package.json tidak memuat version." />
+  </Target>
+</Project>
