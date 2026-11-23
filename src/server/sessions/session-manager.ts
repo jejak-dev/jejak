@@ -68,6 +68,17 @@ import { redactEnvFileText } from "../security/env-redact";
 import type { SecretAllowStore } from "../security/secret-allow-store";
 import { readCommandEnv, type CommandEnvStore } from "../security/command-env-store";
 import { WorktreeError, type WorktreeInfo, type WorktreeService } from "../git/worktree-service";
+import {
+  checkSpawn,
+  clampBrief,
+  clampRole,
+  isTeamEnabled,
+  teamLimits,
+  type TeamInfo,
+  type TeamLimits,
+  type TeamMode,
+  type SpawnRefusalCode,
+} from "../team/team";
 import type { SessionStore, StoredSession } from "./session-store";
 
 export type SessionStatus = "berjalan" | "selesai" | "gagal" | "dibatalkan";
@@ -121,6 +132,8 @@ export interface SessionInfo {
    * field internal seperti `startCostUsd`).
    */
   goal?: GoalView;
+  /** Data tim agent: ada berarti sesi ini anak (lihat `team/team.ts`). */
+  team?: TeamInfo;
   /**
    * Sesi bisa dilanjutkan setelah aplikasi berhenti mendadak: sesi tak
    * berjalan dan punya riwayat SDK. Dihitung saat dibaca, tidak disimpan.
@@ -257,6 +270,8 @@ export interface SessionManagerOptions {
     /** Daftar izin eksplisit per proyek; tanpa opsi ini semua jalur rahasia diblokir. */
     allow?: SecretAllowStore;
   };
+  /** Tim agent (sesi anak); bawaan aktif kecuali `JEJAK_TEAM=0`. */
+  team?: { enabled?: boolean; maxActiveChildren?: number; maxTotalChildren?: number };
 }
 
 export class SessionError extends Error {
@@ -431,6 +446,26 @@ const PERMISSION_MODES: readonly SessionPermissionMode[] = [
   "plan",
   "bypassPermissions",
 ];
+
+const TEAM_MODES: readonly TeamMode[] = ["default", "acceptEdits", "plan", "bypassPermissions"];
+
+/** Pemetaan penolakan tim ke kode `SessionError` yang sudah ada. */
+function refusalSessionCode(
+  code: SpawnRefusalCode,
+): "tidak-valid" | "tidak-ditemukan" | "penuh" | "konflik" {
+  switch (code) {
+    case "induk-tak-ada":
+      return "tidak-ditemukan";
+    case "dinonaktifkan":
+    case "anak-tak-boleh-beranak":
+      return "konflik";
+    case "penuh-aktif":
+    case "penuh-total":
+      return "penuh";
+    case "mode-lebih-longgar":
+      return "tidak-valid";
+  }
+}
 
 const DEFAULTS = {
   maxConcurrent: 4,
@@ -623,6 +658,8 @@ export class SessionManager {
   private readonly blockSecretPaths: boolean;
   private readonly secretAllow: SecretAllowStore | undefined;
   private readonly commandEnvStore: CommandEnvStore | undefined;
+  private readonly teamEnabled: boolean;
+  private readonly teamLimits: TeamLimits;
   private commandEnvWarned = false;
   private storeWarned = false;
   private memoryWarned = false;
@@ -668,6 +705,16 @@ export class SessionManager {
       this.secretsMode !== "off" && options.secrets?.blockPaths !== false;
     this.secretAllow = options.secrets?.allow;
     this.commandEnvStore = options.commandEnv;
+    this.teamEnabled = options.team?.enabled ?? isTeamEnabled(process.env);
+    this.teamLimits = teamLimits({
+      maxConcurrent: this.maxConcurrent,
+      ...(options.team?.maxActiveChildren === undefined
+        ? {}
+        : { maxActiveChildren: options.team.maxActiveChildren }),
+      ...(options.team?.maxTotalChildren === undefined
+        ? {}
+        : { maxTotalChildren: options.team.maxTotalChildren }),
+    });
     if (this.store !== undefined) {
       this.restore();
     }
@@ -1153,6 +1200,9 @@ export class SessionManager {
    */
   private dropSession(record: SessionRecord): void {
     const id = record.info.id;
+    // Anak tidak ikut dihapus; mereka dilepas menjadi sesi biasa. Lakukan
+    // sebelum induk dibuang agar `childrenOf` induk tak tersisa.
+    this.detachChildren(id);
     this.sessions.delete(id);
 
     record.queue.length = 0;
@@ -1170,6 +1220,20 @@ export class SessionManager {
     this.notify(record);
 
     this.runDeleteHook(id);
+  }
+
+  /** Lepas semua anak dari induk yang dihapus; anak menjadi sesi biasa. */
+  private detachChildren(parentId: string): void {
+    for (const child of this.sessions.values()) {
+      if (child.info.team?.parentId !== parentId) continue;
+      delete child.info.team;
+      this.persistSession(child);
+      this.notify(child);
+      this.audit("pengaturan", "Anak tim dilepas", parentId, {
+        aksi: "team-lepas",
+        anak: child.info.id,
+      });
+    }
   }
 
   private runDeleteHook(id: string): void {
@@ -1200,7 +1264,11 @@ export class SessionManager {
     }
   }
 
-  async create(input: CreateSessionInput): Promise<SessionInfo> {
+  /**
+   * Buat sesi. Parameter `internal` hanya diisi jalur server (mis. `spawnChild`);
+   * rute HTTP tidak pernah mengisinya sehingga `team` tak bisa disuntik klien.
+   */
+  async create(input: CreateSessionInput, internal?: { team?: TeamInfo }): Promise<SessionInfo> {
     const validated = await this.validate(input);
     this.ensureCapacity();
 
@@ -1271,6 +1339,11 @@ export class SessionManager {
       if (validated.sandbox !== undefined) {
         info.sandbox = validated.sandbox;
       }
+      // Data tim diset sebelum persist/notify/giliran pertama agar anak
+      // langsung terlihat sebagai anak dan tak bisa diubah belakangan.
+      if (internal?.team !== undefined) {
+        info.team = { ...internal.team };
+      }
 
       let settle: () => void = () => {};
       const done = new Promise<void>((resolve) => {
@@ -1340,6 +1413,104 @@ export class SessionManager {
   get(id: string): SessionInfo | undefined {
     const record = this.sessions.get(id);
     return record === undefined ? undefined : this.viewInfo(record);
+  }
+
+  /**
+   * Anak dari satu induk, urut waktu pembuatan naik. Daftar diturunkan dari
+   * `team.parentId` (satu sumber kebenaran); bentuknya sama dengan `list()`.
+   */
+  childrenOf(parentId: string): SessionInfo[] {
+    return Array.from(this.sessions.values())
+      .filter((record) => record.info.team?.parentId === parentId)
+      .sort((a, b) =>
+        (a.info.team?.spawnedAt ?? "").localeCompare(b.info.team?.spawnedAt ?? ""),
+      )
+      .map((record) => this.viewInfo(record));
+  }
+
+  /**
+   * Buat sesi anak di bawah `parentId`. Batas dan mode diperiksa lebih dulu;
+   * `create` tetap memeriksa kapasitas bersama seperti sesi biasa.
+   */
+  async spawnChild(
+    parentId: string,
+    input: {
+      prompt: string;
+      title?: string;
+      role?: string;
+      worktree?: boolean;
+      selection?: ProviderSelection;
+      permissionMode?: string;
+    },
+  ): Promise<SessionInfo> {
+    let requestedMode: TeamMode | undefined;
+    if (input.permissionMode !== undefined) {
+      if (!TEAM_MODES.includes(input.permissionMode as TeamMode)) {
+        throw new SessionError(
+          `Mode izin "${String(input.permissionMode)}" belum didukung.`,
+          "tidak-valid",
+        );
+      }
+      requestedMode = input.permissionMode as TeamMode;
+    }
+
+    const parent = this.sessions.get(parentId);
+    const children = Array.from(this.sessions.values())
+      .filter((record) => record.info.team?.parentId === parentId)
+      .map((record) => ({ status: record.info.status }));
+
+    const check = checkSpawn({
+      enabled: this.teamEnabled,
+      parent:
+        parent === undefined
+          ? undefined
+          : {
+              exists: true,
+              isChild: parent.info.team?.parentId !== undefined,
+              permissionMode: parent.info.permissionMode as TeamMode,
+            },
+      children,
+      limits: this.teamLimits,
+      ...(requestedMode === undefined ? {} : { requestedMode }),
+    });
+    if (!check.ok) {
+      throw new SessionError(check.message, refusalSessionCode(check.code));
+    }
+
+    const team: TeamInfo = {
+      parentId,
+      spawnedAt: this.now().toISOString(),
+      brief: clampBrief(this.redactText(input.prompt)),
+    };
+    const role = clampRole(input.role);
+    if (role !== undefined) team.role = role;
+
+    const parentRecord = parent!;
+    const worktree = input.worktree ?? false;
+    const createInput: CreateSessionInput = {
+      prompt: input.prompt,
+      cwd: parentRecord.info.cwd,
+      permissionMode: check.mode,
+      worktree,
+    };
+    if (input.title !== undefined) createInput.title = input.title;
+    if (input.selection !== undefined) createInput.selection = input.selection;
+    // Workspace hanya diwarisi untuk sesi non-worktree; worktree belum
+    // didukung untuk sesi workspace (lihat `validate`).
+    if (parentRecord.info.workspaceId !== undefined && !worktree) {
+      createInput.workspaceId = parentRecord.info.workspaceId;
+    }
+    // Sandbox diwarisi dari mode efektif induk; tanpa store sandbox tak diisi.
+    if (this.sandboxStore !== undefined) {
+      createInput.sandbox = this.effectiveSandboxMode(parentRecord);
+    }
+
+    const child = await this.create(createInput, { team });
+    this.audit("pengaturan", "Anak tim dibuat", parentId, {
+      aksi: "team-spawn",
+      anak: child.id,
+    });
+    return child;
   }
 
   /**
