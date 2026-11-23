@@ -106,3 +106,19 @@ jobs:
       - name: Lint Rust
         run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
+
+  # Cangkang native Windows (WPF + WebView2): uji inti dan gerbang kompilasi.
+  # Beta: kegagalan tidak memblokir PR sampai pernah terbukti hijau di runner.
+  native-windows:
+    name: Native Windows
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Uji inti
+        run: dotnet run --project native/windows/tests/JejakShellCore.Tests -c Release
+
+      - name: Bangun app WPF
+        run: dotnet build native/windows/src/JejakDesktop -c Release

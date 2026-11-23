@@ -307,6 +307,56 @@ jobs:
             -H "Content-Type: application/json" --input latest.baru.json
           jq -c '.platforms | keys' latest.baru.json
 
+  # Cangkang native Windows (WPF + WebView2): folder aplikasi di-zip dan
+  # dilampirkan ke rilis. Belum ada pembaru otomatis Windows, jadi latest.json
+  # tidak disentuh. Beta: kegagalan tidak memblokir rilis.
+  native-windows:
+    name: Bangun native Windows
+    needs: [gerbang, bangun]
+    runs-on: windows-latest
+    continue-on-error: true
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Pasang Bun 1.4.2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Pasang dependensi
+        run: bun install --frozen-lockfile
+
+      - name: Bangun dan tempatkan sidecar
+        run: |
+          bun run build:binary --target bun-windows-x64
+          bun run stage:sidecar --target bun-windows-x64
+
+      - name: Uji inti native
+        run: dotnet run --project native/windows/tests/JejakShellCore.Tests -c Release
+
+      - name: Bangun folder aplikasi
+        shell: pwsh
+        run: ./native/windows/scripts/build-app.ps1
+
+      - name: Zip dan lampirkan ke rilis
+        shell: bash
+        run: |
+          VERSI="$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' package.json | head -1)"
+          if [ "${{ needs.gerbang.outputs.channel }}" = "beta" ]; then TAG=beta; else TAG="$GITHUB_REF_NAME"; fi
+          NAMA="Jejak-native_${VERSI}_x64-windows.zip"
+          (cd native/windows/build && powershell -NoProfile -Command "Compress-Archive -Path Jejak -DestinationPath ../$NAMA -Force")
+          RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
+          [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$NAMA\") | .id" |
+            while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
+          gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$NAMA" \
+            -H "Content-Type: application/zip" --input "native/windows/$NAMA"
+
   # APK Android klien tipis (WebView ke server Jejak). Dibangun setelah rilis
   # desktop supaya rilis draf/beta dari tauri-action sudah ada untuk dilampiri.
   apk:
