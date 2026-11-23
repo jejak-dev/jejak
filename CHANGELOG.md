@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.20] - 2026-11-23
+
 ### Ditambahkan
 
 - Cangkang native (pratinjau, di samping aplikasi Tauri): jendela tipis dengan WebView sistem yang memuat UI web yang sama, untuk macOS (AppKit + WKWebView), Windows (WPF + WebView2), dan Linux (GTK3 + WebKitGTK; paket .deb dan tar.gz). Server berjalan sebagai sidecar dan berhenti bersih saat jendela ditutup.
