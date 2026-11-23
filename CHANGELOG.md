@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.21] - 2026-11-23
+
 ### Diperbaiki
 
 - CI rilis membaca semua aset rilis (paginasi), sehingga potongan pembaruan native macOS Intel dan Linux masuk ke `latest.json`.
