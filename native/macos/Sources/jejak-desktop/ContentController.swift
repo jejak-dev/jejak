@@ -116,7 +116,7 @@ final class ContentController: NSViewController {
     let config = WKWebViewConfiguration()
     config.websiteDataStore = .default()  // persisten: cookie sesi 30 hari bertahan
     bridge.pasang(di: config.userContentController)
-    let wv = WKWebView(frame: view.bounds, configuration: config)
+    let wv = JejakWebView(frame: view.bounds, configuration: config)
     wv.autoresizingMask = [.width, .height]
     wv.navigationDelegate = self
     wv.uiDelegate = self
@@ -200,5 +200,23 @@ extension ContentController: WKUIDelegate {
     let ok = origin.protocol == "http" && origin.host == NavigationPolicy.loopback
       && origin.port == Int(port)
     decisionHandler(ok ? .grant : .deny)
+  }
+}
+
+
+/// WKWebView tanpa menu navigasi bawaan (Back/Reload/Forward) di klik kanan.
+/// Item penyuntingan (Copy, Paste, dst.) tetap ada; bila tak ada sisa, menu tak muncul.
+final class JejakWebView: WKWebView {
+  private static let dibuang: Set<String> = [
+    "WKMenuItemIdentifierGoBack", "WKMenuItemIdentifierGoForward", "WKMenuItemIdentifierReload",
+  ]
+
+  override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+    super.willOpenMenu(menu, with: event)
+    for item in menu.items where Self.dibuang.contains(item.identifier?.rawValue ?? "") {
+      menu.removeItem(item)
+    }
+    while let last = menu.items.last, last.isSeparatorItem { menu.removeItem(last) }
+    while let first = menu.items.first, first.isSeparatorItem { menu.removeItem(first) }
   }
 }
