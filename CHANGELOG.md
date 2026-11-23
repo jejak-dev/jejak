@@ -6,6 +6,13 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambahkan
+
+- Cangkang native (pratinjau, di samping aplikasi Tauri): jendela tipis dengan WebView sistem yang memuat UI web yang sama, untuk macOS (AppKit + WKWebView), Windows (WPF + WebView2), dan Linux (GTK3 + WebKitGTK; paket .deb dan tar.gz). Server berjalan sebagai sidecar dan berhenti bersih saat jendela ditutup.
+- Pembaru otomatis cangkang native di tiga sistem operasi: manifest `latest.json` yang sama, tanda tangan minisign diverifikasi sebelum arsip dibuka, kunci platform `*-native` terpisah dari artefak Tauri.
+- Teks cangkang native dua bahasa (Indonesia dan Inggris).
+- CI rilis membangun, menandatangani, dan melampirkan artefak native macOS, Windows, dan Linux; kegagalan build native tidak memblokir rilis.
+
 ## [0.1.0-beta.19] - 2026-11-20
 
 ### Ditambahkan
