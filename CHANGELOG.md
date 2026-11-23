@@ -6,6 +6,10 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Diubah
+
+- CI rilis beta membersihkan aset versi lama otomatis: hanya dua versi terbaru yang tersisa di rilis `beta`.
+
 ## [0.1.0-beta.22] - 2026-11-23
 
 ### Diperbaiki

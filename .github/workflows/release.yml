@@ -313,6 +313,37 @@ jobs:
             -H "Content-Type: application/json" --input latest.baru.json
           jq -c '.platforms | keys' latest.baru.json
 
+  # Rilis beta memakai tag bergulir, jadi aset tiap versi menumpuk. Sisakan dua versi
+  # terbaru (nomor di nama berkas); berkas tanpa nomor versi (latest.json dst.) tak disentuh.
+  bersihkan:
+    name: Bersihkan aset versi lama
+    needs: [gerbang, native-gabung]
+    if: ${{ !cancelled() && needs.gerbang.outputs.channel == 'beta' && needs.native-gabung.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Hapus aset di luar dua versi terbaru
+        run: |
+          RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq '.[] | select(.tag_name=="beta") | .id' | head -1)"
+          [ -n "$RID" ] || { echo "Rilis beta tidak ditemukan" >&2; exit 1; }
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases/$RID/assets?per_page=100" --jq '.[] | "\(.id) \(.name)"' > aset.txt
+          # Versi dari nama berkas; ".beta." (paket deb) disamakan dengan "-beta.".
+          verof() { printf '%s' "$1" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[-.]beta\.[0-9]+' | head -1 | sed -E 's/\.beta\./-beta./'; }
+          while read -r ID NAME; do v="$(verof "$NAME")"; [ -n "$v" ] && echo "$v"; done < aset.txt | sort -uV > versi.txt
+          cat versi.txt
+          KEEP="$(tail -n 2 versi.txt)"
+          [ "$(wc -l < versi.txt)" -gt 2 ] || { echo "Tak ada yang perlu dibersihkan"; exit 0; }
+          while read -r ID NAME; do
+            v="$(verof "$NAME")"
+            [ -n "$v" ] || continue
+            if ! printf '%s\n' "$KEEP" | grep -qx "$v"; then
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$ID" && echo "hapus $NAME"
+            fi
+          done < aset.txt
+
   # Cangkang native Windows (WPF + WebView2): folder aplikasi di-zip, ditandatangani
   # minisign (kunci yang sama dengan Tauri) dan dilampirkan ke rilis bersama potongan
   # manifest untuk pembaru otomatis; native-gabung memasukkannya ke latest.json.
