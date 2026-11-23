@@ -22,10 +22,11 @@ pub fn locate(exe_dir: &Path, env: &dyn Fn(&str) -> Option<String>) -> Result<Pa
         };
     }
     let candidates = [
+        exe_dir.join("jejak-server"),
         exe_dir.join("jejak"),
         exe_dir.join(format!("jejak-{TRIPLE}")),
         exe_dir.join("binaries/jejak"),
-        exe_dir.join("../lib/jejak/jejak"),
+        exe_dir.join("../lib/jejak/jejak-server"),
     ];
     for c in &candidates {
         if is_executable(c) {

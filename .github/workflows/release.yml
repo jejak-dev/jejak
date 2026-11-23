@@ -357,6 +357,72 @@ jobs:
           gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$NAMA" \
             -H "Content-Type: application/zip" --input "native/windows/$NAMA"
 
+  # Cangkang native Linux (GTK3 + WebKitGTK): .deb dan tar.gz per arsitektur
+  # dilampirkan ke rilis. Belum ada pembaru otomatis Linux, jadi latest.json
+  # tidak disentuh. Beta: kegagalan tidak memblokir rilis.
+  native-linux:
+    name: Bangun native ${{ matrix.arch }}
+    needs: [gerbang, bangun]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            arch: amd64
+            target: bun-linux-x64
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            target: bun-linux-arm64
+    steps:
+      - name: Ambil kode
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Pasang Bun 1.4.2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Pasang dependensi
+        run: bun install --frozen-lockfile
+
+      - name: Pasang pustaka GTK dan WebKitGTK
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Bangun sidecar
+        run: bun run build:binary --target ${{ matrix.target }}
+
+      - name: Uji inti native
+        working-directory: native/linux
+        run: cargo test --locked
+
+      - name: Bangun jendela GTK
+        working-directory: native/linux
+        run: cargo build --release --locked --features ui
+
+      - name: Kemas
+        run: |
+          SIDECAR="dist/jejak-linux-$([ '${{ matrix.arch }}' = amd64 ] && echo x64 || echo arm64)"
+          bash native/linux/scripts/package.sh native/linux/target/release/Jejak "$SIDECAR" ${{ matrix.arch }}
+
+      - name: Lampirkan ke rilis
+        run: |
+          if [ "${{ needs.gerbang.outputs.channel }}" = "beta" ]; then TAG=beta; else TAG="$GITHUB_REF_NAME"; fi
+          RID="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases" --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)"
+          [ -n "$RID" ] || { echo "Rilis $TAG tidak ditemukan" >&2; exit 1; }
+          for BERKAS in native/linux/build/*.tar.gz native/linux/build/*.deb; do
+            NAMA="$(basename "$BERKAS")"
+            gh api "repos/$GITHUB_REPOSITORY/releases/$RID/assets" --jq ".[] | select(.name==\"$NAMA\") | .id" |
+              while read -r AID; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$AID"; done
+            gh api -X POST "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$RID/assets?name=$NAMA" \
+              -H "Content-Type: application/octet-stream" --input "$BERKAS"
+          done
+
   # APK Android klien tipis (WebView ke server Jejak). Dibangun setelah rilis
   # desktop supaya rilis draf/beta dari tauri-action sudah ada untuk dilampiri.
   apk:

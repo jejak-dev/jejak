@@ -182,6 +182,7 @@ fn build(app: &gtk::Application) {
         existing.present();
         return;
     }
+    gtk::Window::set_default_icon_name("jejak");
     let window = gtk::ApplicationWindow::new(app);
     window.set_title("Jejak");
     window.set_default_size(1280, 820);
@@ -332,6 +333,9 @@ fn build(app: &gtk::Application) {
 }
 
 fn main() -> glib::ExitCode {
+    // WM_CLASS / nama di taskbar: tanpa ini GTK memakai argv[0] (`jejak-desktop` lewat symlink deb).
+    glib::set_prgname(Some("Jejak"));
+    glib::set_application_name("Jejak");
     let app = gtk::Application::builder().application_id("io.github.jejak-dev.jejak.native").build();
     app.connect_activate(build);
     app.run()
