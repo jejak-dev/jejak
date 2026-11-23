@@ -72,7 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   // MARK: - Sidecar
 
   private func luncurkan() {
-    content.showSplash("Memulai Jejak…")
+    content.showSplash(L("splash.starting", "Memulai Jejak…"))
     let lama = sidecar
     let baru = SidecarProcess()
     sidecar = baru
@@ -88,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         await MainActor.run { self?.siap(info: info, token: token, proses: baru) }
       } catch {
         let rincian = "\(error)"
-        await MainActor.run { self?.gagal("Jejak tak bisa dimulai", rincian) }
+        await MainActor.run { self?.gagal(L("error.start_failed", "Jejak tak bisa dimulai"), rincian) }
       }
     }
   }
@@ -98,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     proses.onUnexpectedExit { [weak self] kode in
       let ringkas = proses.stderr.summary()
       Task { @MainActor in
-        self?.gagal("Server Jejak berhenti tiba-tiba (kode \(kode))", ringkas)
+        self?.gagal(L("error.server_exited", "Server Jejak berhenti tiba-tiba (kode %@)", "\(kode)"), ringkas)
       }
     }
     content.showWeb(port: info.port, enterURL: NavigationPolicy.enterURL(port: info.port, token: token))

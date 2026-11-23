@@ -19,4 +19,6 @@ await run("SidecarProcessTests.timeout") { try await SidecarProcessTests().timeo
 await run("SidecarProcessTests.tokenTidakBocorKeStderr") { try await SidecarProcessTests().tokenTidakBocorKeStderr() }
 await run("SidecarProcessTests.sidecarAsli") { try await SidecarProcessTests().sidecarAsli() }
 
+await run("LokalisasiTests.gantiArgumen") { try await LokalisasiTests().gantiArgumen() }
+
 finish()

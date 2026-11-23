@@ -25,6 +25,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$OUT/jejak-desktop" "$APP/Contents/MacOS/jejak-desktop"
 cp "$REPO/src-tauri/icons/icon.icns" "$APP/Contents/Resources/icon.icns"
 cp "$REPO/src-tauri/shim/notification.js" "$APP/Contents/Resources/notification.js"
+bash "$AKAR/scripts/check-strings.sh"
+for lproj in "$AKAR"/Resources/*.lproj; do
+  cp -R "$lproj" "$APP/Contents/Resources/"
+done
 
 SIDECAR="${JEJAK_SIDECAR:-$REPO/src-tauri/binaries/jejak-aarch64-apple-darwin}"
 if [ -f "$SIDECAR" ]; then
@@ -38,6 +42,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+  <key>CFBundleDevelopmentRegion</key><string>id</string>
+  <key>CFBundleLocalizations</key><array><string>id</string><string>en</string></array>
   <key>CFBundleExecutable</key><string>jejak-desktop</string>
   <key>CFBundleIdentifier</key><string>io.github.jejak-dev.jejak.native</string>
   <key>CFBundleName</key><string>Jejak</string>

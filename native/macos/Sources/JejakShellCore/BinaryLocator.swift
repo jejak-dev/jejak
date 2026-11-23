@@ -19,7 +19,7 @@ public enum BinaryLocator {
     let fm = FileManager.default
     if let nilai = env["JEJAK_SIDECAR"], !nilai.isEmpty {
       if fm.isExecutableFile(atPath: nilai) { return URL(fileURLWithPath: nilai) }
-      throw ReadyLineError(description: "JEJAK_SIDECAR menunjuk berkas yang tak ada: \(nilai)")
+      throw ReadyLineError(description: L("locator.env_missing", "JEJAK_SIDECAR menunjuk berkas yang tak ada: %@", nilai))
     }
     let kandidat: [URL] = [
       executableFolder.appendingPathComponent("jejak"),
@@ -29,6 +29,6 @@ public enum BinaryLocator {
     ]
     for url in kandidat where fm.isExecutableFile(atPath: url.path) { return url }
     let dicoba = kandidat.map(\.path).joined(separator: ", ")
-    throw ReadyLineError(description: "binary sidecar tak ditemukan. Dicoba: \(dicoba)")
+    throw ReadyLineError(description: L("locator.not_found", "binary sidecar tak ditemukan. Dicoba: %@", dicoba))
   }
 }

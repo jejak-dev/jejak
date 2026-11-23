@@ -49,7 +49,7 @@ public final class SidecarProcess: @unchecked Sendable {
     var stdoutPipe: [Int32] = [0, 0]
     var stderrPipe: [Int32] = [0, 0]
     guard pipe(&stdinPipe) == 0, pipe(&stdoutPipe) == 0, pipe(&stderrPipe) == 0 else {
-      throw ReadyLineError(description: "gagal membuat pipa: \(String(cString: strerror(errno)))")
+      throw ReadyLineError(description: L("sidecar.pipe", "gagal membuat pipa: %@", String(cString: strerror(errno))))
     }
 
     var actions: posix_spawn_file_actions_t?
@@ -86,7 +86,7 @@ public final class SidecarProcess: @unchecked Sendable {
     guard hasil == 0 else {
       close(stdinPipe[1]); close(stdoutPipe[0]); close(stderrPipe[0])
       throw ReadyLineError(
-        description: "gagal menjalankan sidecar \(binary.path): \(String(cString: strerror(hasil)))")
+        description: L("sidecar.spawn", "gagal menjalankan sidecar %@: %@", binary.path, String(cString: strerror(hasil))))
     }
 
     lock.lock()
@@ -149,7 +149,7 @@ public final class SidecarProcess: @unchecked Sendable {
     let sudahSiap = readyInfo != nil
     let handler = exitHandler
     if readyInfo == nil && failure == nil {
-      failure = "Server Jejak berhenti sebelum siap"
+      failure = L("sidecar.exited_before_ready", "Server Jejak berhenti sebelum siap")
     }
     let pending = waiters
     waiters = []
@@ -176,7 +176,7 @@ public final class SidecarProcess: @unchecked Sendable {
   public func waitReady(timeout: TimeInterval = SidecarProcess.readyTimeout) async throws -> ReadyInfo {
     let batas = Task { [self] in
       try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-      selesaiSiap(info: nil, galat: "Server Jejak tak siap dalam \(Int(timeout)) detik")
+      selesaiSiap(info: nil, galat: L("sidecar.timeout", "Server Jejak tak siap dalam %@ detik", "\(Int(timeout))"))
     }
     defer { batas.cancel() }
     await withCheckedContinuation { (k: CheckedContinuation<Void, Never>) in
@@ -193,7 +193,7 @@ public final class SidecarProcess: @unchecked Sendable {
     if let info { return info }
     let ringkas = stderr.summary()
     throw ReadyLineError(
-      description: [galat ?? "Server Jejak tak bisa dimulai", ringkas]
+      description: [galat ?? L("sidecar.start_failed_generic", "Server Jejak tak bisa dimulai"), ringkas]
         .filter { !$0.isEmpty }.joined(separator: "\n"))
   }
 

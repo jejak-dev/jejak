@@ -174,3 +174,12 @@ struct SidecarProcessTests {
     expect(!p.isRunning)
   }
 }
+
+struct LokalisasiTests {
+  func gantiArgumen() {
+    expect(L("tak.ada", "a %@ b %@", "1", "2") == "a 1 b 2")
+    expect(L("tak.ada", "100%", "x") == "100%")
+    expect(L("tak.ada", "polos") == "polos")
+    expect(L("tak.ada", "nilai %@", "50% lagi") == "nilai 50% lagi")
+  }
+}

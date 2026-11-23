@@ -11,7 +11,7 @@ public enum DesktopToken {
     var bytes = [UInt8](repeating: 0, count: 32)
     let status = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
     guard status == errSecSuccess else {
-      throw ReadyLineError(description: "tak bisa membuat token acak (kode \(status))")
+      throw ReadyLineError(description: L("token.random", "tak bisa membuat token acak (kode %@)", "\(status)"))
     }
     return Data(bytes).base64EncodedString()
       .replacingOccurrences(of: "+", with: "-")

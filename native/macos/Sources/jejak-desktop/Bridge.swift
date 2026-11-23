@@ -39,7 +39,7 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
     let o = message.frameInfo.securityOrigin
     guard message.frameInfo.isMainFrame, o.protocol == "http", o.host == NavigationPolicy.loopback,
           o.port == Int(port), let isi = message.body as? [String: Any], let cmd = isi["cmd"] as? String
-    else { return replyHandler(nil, "pesan jembatan ditolak: asal tak dikenal") }
+    else { return replyHandler(nil, L("bridge.rejected", "pesan jembatan ditolak: asal tak dikenal")) }
     let args = isi["args"] as? [String: Any]
     Task { @MainActor in
       do { replyHandler(try await self.tangani(cmd, args), nil) }
@@ -65,7 +65,7 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
     case "updater_status", "updater_check":
       return ["state": "idle"]
     case "updater_install", "updater_restart":
-      throw Galat(description: "pembaruan otomatis belum tersedia di cangkang native")
+      throw Galat(description: L("bridge.updater_unavailable", "pembaruan otomatis belum tersedia di cangkang native"))
     case "plugin:notification|is_permission_granted":
       guard Bundle.main.bundleIdentifier != nil else { return false }
       let s = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
@@ -79,7 +79,7 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
       let ok = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
       return ok ? "granted" : "denied"
     case "plugin:notification|notify":
-      guard Bundle.main.bundleIdentifier != nil else { throw Galat(description: "notifikasi butuh aplikasi terbungkus (.app)") }
+      guard Bundle.main.bundleIdentifier != nil else { throw Galat(description: L("bridge.notif_needs_app", "notifikasi butuh aplikasi terbungkus (.app)")) }
       let opsi = args?["options"] as? [String: Any] ?? [:]
       let isi = UNMutableNotificationContent()
       isi.title = opsi["title"] as? String ?? "Jejak"
@@ -88,7 +88,7 @@ final class Bridge: NSObject, WKScriptMessageHandlerWithReply {
       try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: isi, trigger: nil))
       return NSNull()
     default:
-      throw Galat(description: "perintah tak dikenal: \(cmd)")
+      throw Galat(description: L("bridge.unknown_command", "perintah tak dikenal: %@", cmd))
     }
   }
 }

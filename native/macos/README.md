@@ -28,6 +28,16 @@ yang tak serasi (SDK lebih baru dari compiler) `swift-package` gagal dimuat dan
 juga tak bisa dipakai di sana, jadi tes memakai harness mini (`Tests/.../Harness.swift`).
 `Package.swift` dipertahankan untuk mesin dengan toolchain yang sehat.
 
+## Bahasa (id/en)
+
+Teks tampilan lewat `L("kunci", "teks bawaan Indonesia")` (`Localization.swift`);
+tabelnya di `Resources/{id,en}.lproj/Localizable.strings`, mengikuti bahasa
+sistem (coba: `open build/Jejak.app --args -AppleLanguages "(en)"`). Menambah
+teks = tambah kunci di KEDUA tabel; `scripts/check-strings.sh` (dijalankan
+`build-app.sh`) gagal bila kunci tak sama atau ada kunci kode yang tak
+terdaftar. Teks bawaan di kode menjaga pesan tetap terbaca bila tabel tak
+ada (mis. tes di luar bundel .app).
+
 ## Belum ada
 
 Pembaruan otomatis (perintah `updater_*` mengembalikan keadaan `idle`), notarisasi,

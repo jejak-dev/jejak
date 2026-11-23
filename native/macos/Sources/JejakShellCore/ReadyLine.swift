@@ -25,27 +25,27 @@ public enum ReadyLine {
     guard bersih.hasPrefix(readyPrefix) else { return nil }
     let sisa = bersih.dropFirst(readyPrefix.count)
     guard let pertama = sisa.first else {
-      throw ReadyLineError(description: "baris JEJAK_READY tanpa payload JSON")
+      throw ReadyLineError(description: L("ready.no_payload", "baris JEJAK_READY tanpa payload JSON"))
     }
     // "JEJAK_READYX" bukan pengumuman.
     guard pertama.isWhitespace else { return nil }
     let isi = sisa.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !isi.isEmpty else {
-      throw ReadyLineError(description: "baris JEJAK_READY tanpa payload JSON")
+      throw ReadyLineError(description: L("ready.no_payload", "baris JEJAK_READY tanpa payload JSON"))
     }
     guard
       let data = isi.data(using: .utf8),
       let objek = try? JSONSerialization.jsonObject(with: data),
       let kamus = objek as? [String: Any]
     else {
-      throw ReadyLineError(description: "payload JEJAK_READY bukan JSON yang sah")
+      throw ReadyLineError(description: L("ready.bad_json", "payload JEJAK_READY bukan JSON yang sah"))
     }
     guard let angka = kamus["port"] as? NSNumber, CFGetTypeID(angka) != CFBooleanGetTypeID() else {
-      throw ReadyLineError(description: "payload JEJAK_READY tanpa port")
+      throw ReadyLineError(description: L("ready.no_port", "payload JEJAK_READY tanpa port"))
     }
     let port = angka.int64Value
     guard port > 0, port <= Int64(UInt16.max) else {
-      throw ReadyLineError(description: "port JEJAK_READY di luar rentang: \(port)")
+      throw ReadyLineError(description: L("ready.port_range", "port JEJAK_READY di luar rentang: %@", "\(port)"))
     }
     return ReadyInfo(
       port: UInt16(port),

@@ -41,7 +41,7 @@ final class ContentController: NSViewController {
     let judul = NSTextField(labelWithString: title)
     judul.font = .boldSystemFont(ofSize: 18)
     let teks = NSTextView()
-    teks.string = detail.isEmpty ? "(tak ada keluaran dari server)" : detail
+    teks.string = detail.isEmpty ? L("error.no_output", "(tak ada keluaran dari server)") : detail
     teks.isEditable = false
     teks.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
     let gulung = NSScrollView()
@@ -51,9 +51,9 @@ final class ContentController: NSViewController {
     gulung.translatesAutoresizingMaskIntoConstraints = false
     gulung.widthAnchor.constraint(equalToConstant: 620).isActive = true
     gulung.heightAnchor.constraint(equalToConstant: 260).isActive = true
-    let coba = NSButton(title: "Coba lagi", target: self, action: #selector(cobaLagi))
+    let coba = NSButton(title: L("button.retry", "Coba lagi"), target: self, action: #selector(cobaLagi))
     coba.keyEquivalent = "\r"
-    let salin = NSButton(title: "Salin", target: self, action: #selector(salinGalat))
+    let salin = NSButton(title: L("button.copy", "Salin"), target: self, action: #selector(salinGalat))
     let baris = NSStackView(views: [coba, salin])
     baris.spacing = 8
     let stack = NSStackView(views: [judul, gulung, baris])
@@ -159,7 +159,7 @@ extension ContentController: WKUIDelegate {
   func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String,
                initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
     let a = NSAlert(); a.messageText = message
-    a.addButton(withTitle: "OK"); a.addButton(withTitle: "Batal")
+    a.addButton(withTitle: L("button.ok", "OK")); a.addButton(withTitle: L("button.cancel", "Batal"))
     completionHandler(a.runModal() == .alertFirstButtonReturn)
   }
 
@@ -167,7 +167,7 @@ extension ContentController: WKUIDelegate {
                defaultText: String?, initiatedByFrame frame: WKFrameInfo,
                completionHandler: @escaping (String?) -> Void) {
     let a = NSAlert(); a.messageText = prompt
-    a.addButton(withTitle: "OK"); a.addButton(withTitle: "Batal")
+    a.addButton(withTitle: L("button.ok", "OK")); a.addButton(withTitle: L("button.cancel", "Batal"))
     let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
     field.stringValue = defaultText ?? ""
     a.accessoryView = field
