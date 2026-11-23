@@ -14,7 +14,7 @@ use std::process::Command;
 use std::rc::Rc;
 use std::sync::Arc;
 use webkit2gtk::{
-    CookieManagerExt, CookiePersistentStorage, LoadEvent, NavigationPolicyDecision, NavigationPolicyDecisionExt,
+    ContextMenuAction, ContextMenuExt, ContextMenuItemExt, CookieManagerExt, CookiePersistentStorage, LoadEvent, NavigationPolicyDecision, NavigationPolicyDecisionExt,
     PermissionRequestExt, PolicyDecisionExt, PolicyDecisionType, SettingsExt, URIRequestExt, UserContentInjectedFrames,
     UserContentManager, UserContentManagerExt, UserMediaPermissionRequest, UserScript, UserScriptInjectionTime, WebContext,
     WebView, WebViewExt, WebsiteDataManager, WebsiteDataManagerExt,
@@ -146,6 +146,26 @@ fn build_web(bridge: Arc<Bridge>, port: Rc<Cell<u16>>) -> WebView {
 
     // Proses render mati: muat ulang.
     web.connect_web_process_terminated(|web, _| web.reload());
+    // Klik kanan tanpa Back/Forward/Stop/Reload bawaan; item penyuntingan tetap, menu kosong ditekan.
+    web.connect_context_menu(|_, menu, _, _| {
+        for item in menu.items() {
+            if matches!(
+                item.stock_action(),
+                ContextMenuAction::GoBack | ContextMenuAction::GoForward | ContextMenuAction::Stop | ContextMenuAction::Reload
+            ) {
+                menu.remove(&item);
+            }
+        }
+        loop {
+            let items = menu.items();
+            match (items.first(), items.last()) {
+                (Some(f), _) if f.is_separator() => menu.remove(f),
+                (_, Some(la)) if la.is_separator() => menu.remove(la),
+                _ => break,
+            }
+        }
+        menu.n_items() == 0
+    });
     web
 }
 

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Diagnostics;
 using System.Windows;
@@ -178,6 +179,7 @@ public sealed class MainWindow : Window
             e.Handled = true;
             OpenExternal(e.Uri);
         };
+        core.ContextMenuRequested += (_, e) => TrimContextMenu(e);
         core.PermissionRequested += (_, e) =>
         {
             // Hanya mikrofon (dikte) untuk halaman Jejak sendiri; selainnya ditolak.
@@ -195,6 +197,23 @@ public sealed class MainWindow : Window
             if (e.IsSuccess && NavigationPolicy.IsLocalAppUrl(core.Source, _port)) _overlay.Visibility = Visibility.Collapsed;
         };
         _webReady = true;
+    }
+
+    // Menu klik kanan tanpa navigasi/peramban (Back, Reload, Save as, ...). Item penyuntingan
+    // (Cut/Copy/Paste, dst.) tetap; bila tak ada sisa, menu tak ditampilkan.
+    private static readonly HashSet<string> DroppedMenuItems = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "back", "forward", "reload", "saveAs", "print", "share", "webCapture", "savePageAs", "inspectElement", "other",
+    };
+
+    private static void TrimContextMenu(CoreWebView2ContextMenuRequestedEventArgs e)
+    {
+        var items = e.MenuItems;
+        for (var i = items.Count - 1; i >= 0; i--)
+            if (DroppedMenuItems.Contains(items[i].Name)) items.RemoveAt(i);
+        while (items.Count > 0 && items[0].Kind == CoreWebView2ContextMenuItemKind.Separator) items.RemoveAt(0);
+        while (items.Count > 0 && items[^1].Kind == CoreWebView2ContextMenuItemKind.Separator) items.RemoveAt(items.Count - 1);
+        if (items.Count == 0) e.Handled = true;
     }
 
     private static void OpenExternal(string url)
