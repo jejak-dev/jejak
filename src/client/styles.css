@@ -6798,6 +6798,12 @@ h2.jk-md-heading {
   font-weight: 600;
 }
 
+/* Agent eksternal: lencana status duduk di samping nama. */
+.jk-feature-name .jk-badge {
+  margin-left: 6px;
+  font-weight: 500;
+}
+
 .jk-switch {
   flex: none;
   position: relative;

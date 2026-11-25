@@ -83,6 +83,12 @@ import type {
 import type { WorkspaceView } from "../../server/workspaces/workspace-service";
 import type { WikiPage, WikiPageRef, WikiProject, WikiSync } from "./wiki";
 import { parseFeatureStatus, type FeatureName, type FeatureStatus } from "./features";
+import {
+  parseAcpAgentList,
+  parseAcpAgentStatus,
+  type AcpAgentInfo,
+  type AcpAgentStatus,
+} from "./acp-agents";
 
 export type AuditEntryItem = AuditEntry;
 export type AuditSummaryResult = AuditSummary;
@@ -1132,6 +1138,10 @@ export interface ApiClient {
   getFeatures(): Promise<FeatureStatus>;
   /** Nyalakan atau matikan fitur; status terbaru dikembalikan. */
   putFeatures(patch: Partial<Record<FeatureName, boolean>>): Promise<FeatureStatus>;
+  /** Daftar agent eksternal (ACP); tidak menjalankan agent. */
+  getAcpAgents(): Promise<AcpAgentInfo[]>;
+  /** Periksa satu agent eksternal (terpasang, login, siap). */
+  probeAcpAgent(id: string): Promise<AcpAgentStatus>;
   /** Status SDK yang dipasang pengguna. */
   getSdk(): Promise<SdkStatus>;
   /** Periksa versi terbaru di registry npm; tidak memasang apa pun. */
@@ -3638,6 +3648,16 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       const parsed = parseFeatureStatus(data);
       if (parsed === undefined) throw new ApiError("respons server tidak valid", 200);
       return parsed;
+    },
+
+    async getAcpAgents() {
+      return parseAcpAgentList(await request("GET", "/api/acp/agents"));
+    },
+
+    async probeAcpAgent(id) {
+      return parseAcpAgentStatus(
+        await request("POST", `/api/acp/agents/${encodeURIComponent(id)}/probe`, {}),
+      );
     },
 
     async getSdk() {

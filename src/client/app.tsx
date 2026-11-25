@@ -13,6 +13,7 @@ import { Panel } from "./components/Panel";
 import { RecentSessions } from "./components/RecentSessions";
 import { ProviderSettings } from "./components/ProviderSettings";
 import { FeatureSettings } from "./components/FeatureSettings";
+import { AcpAgentSettings } from "./components/AcpAgentSettings";
 import { AccessSettings } from "./components/AccessSettings";
 import { AppUpdateSettings } from "./components/AppUpdateSettings";
 import { BudgetSettings } from "./components/BudgetSettings";
@@ -1178,7 +1179,10 @@ export function App() {
                 ) : settingsSection === "biaya" ? (
                   <BudgetSettings api={api} />
                 ) : settingsSection === "fitur" ? (
-                  <FeatureSettings api={api} />
+                  <>
+                    <FeatureSettings api={api} />
+                    <AcpAgentSettings api={api} />
+                  </>
                 ) : (
                   <>
                     <AppUpdateSettings sessions={sessions} />

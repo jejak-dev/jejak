@@ -3,7 +3,8 @@ import { networkInterfaces as osNetworkInterfaces } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
-import { ACP_AGENTS } from "./acp/agent-defs";
+import { ACP_AGENTS, getAcpAgent } from "./acp/agent-defs";
+import type { AcpAgentStatus } from "./acp/agent-probe";
 import { createAcpRunner, type AcpRunner } from "./acp/acp-runner";
 import { defaultAuditStore, type AuditStore } from "./audit/audit-store";
 import { authGuard } from "./auth/auth-guard";
@@ -108,6 +109,7 @@ import {
   type ClaudeProjectSeed,
 } from "./memory/claude-memory";
 import { featuresRoutes } from "./routes/features";
+import { acpAgentsRoutes } from "./routes/acp-agents";
 import { terminalRoutes } from "./routes/terminal";
 import { TerminalManager } from "./terminal/terminal-manager";
 import { maybeUpgradeTerminal, terminalWebsocket } from "./terminal/terminal-ws";
@@ -273,6 +275,10 @@ export interface CreateAppOptions {
   browser?: BrowserManager;
   /** Penyimpanan status fitur (terminal, browser); default berkas di JEJAK_HOME. */
   features?: FeatureStore;
+  /** Probe agent ACP; disuntikkan tes agar tidak menjalankan agent sungguhan. */
+  acpProbe?: (id: string) => Promise<AcpAgentStatus | undefined>;
+  /** Pencari perintah di PATH untuk daftar agent; bawaan `Bun.which`. */
+  acpWhich?: (cmd: string) => string | null;
   /** Penyimpanan status sinkron memory ke Claude Code; default berkas di JEJAK_HOME. */
   memorySync?: MemorySyncStore;
   /** Layanan peluncur perintah; tanpa opsi ini dibuat dari store bawaan. */
@@ -400,6 +406,19 @@ export function createApp(options: CreateAppOptions = {}) {
   // sebelum ada permintaan pemasangan.
   const pluginInstaller =
     options.pluginInstaller ?? defaultPluginInstaller(env, options.home);
+
+  // Probe agent ACP: di mode MOCK tak pernah menjalankan agent sungguhan;
+  // tanpa suntikan, jawabannya "tidak-terpasang" tanpa spawn.
+  const modeMock = env.MOCK?.trim().toLowerCase() === "true";
+  const acpProbe =
+    options.acpProbe ??
+    (modeMock
+      ? async (id: string): Promise<AcpAgentStatus | undefined> => {
+          const def = getAcpAgent(id);
+          if (def === undefined) return undefined;
+          return { id: def.id, label: def.label, state: "tidak-terpasang", hint: def.installHint };
+        }
+      : undefined);
 
   // Fitur (terminal, browser) mati secara default. Saklar ada di Pengaturan;
   // env `JEJAK_TERMINAL`/`JEJAK_BROWSER` tetap menang atas berkas.
@@ -999,6 +1018,15 @@ export function createApp(options: CreateAppOptions = {}) {
   // terlalu panjang membuat tipe Elysia terlalu dalam untuk dihitung
   // TypeScript, jadi pemasangan ini dibiarkan di luar rantai.
   (app as unknown as Elysia).use(scheduleRoutes({ service: scheduledTasks }));
+  // Rute agent ACP (Pengaturan) juga di luar rantai demi alasan yang sama.
+  (app as unknown as Elysia).use(
+    acpAgentsRoutes({
+      ...(acpProbe === undefined ? {} : { probe: acpProbe }),
+      ...(options.acpWhich === undefined ? {} : { which: options.acpWhich }),
+      cwd: jejakHome(env),
+      audit: options.audit,
+    }),
+  );
   // Rute desain dipasang di luar rantai demi alasan yang sama.
   (app as unknown as Elysia).use(
     designRoutes({
