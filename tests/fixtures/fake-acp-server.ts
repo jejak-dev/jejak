@@ -16,6 +16,10 @@ interface Balasan {
 
 let idAgent = 100;
 const tertunda = new Map<number, (balasan: Balasan) => void>();
+/** Prompt mode `hang` yang belum dijawab, per sesi. */
+const promptTertunda = new Map<string, number>();
+/** Urutan prompt pada proses ini (mode `multi`). */
+let jumlahPrompt = 0;
 
 /** Kirim request dari agent ke klien dan tunggu balasannya. */
 function minta(method: string, params: unknown): Promise<Balasan> {
@@ -26,8 +30,79 @@ function minta(method: string, params: unknown): Promise<Balasan> {
   });
 }
 
+function kirimUpdate(update: Record<string, unknown>): void {
+  send({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId: "s1", update },
+  });
+}
+
+function kirimTeksChunk(sessionUpdate: string, text: string): void {
+  kirimUpdate({ sessionUpdate, content: { type: "text", text } });
+}
+
+/** Mode `rich`: seluruh urutan update + satu permintaan izin. */
+async function tanganiPromptRich(id: number): Promise<void> {
+  kirimTeksChunk("agent_thought_chunk", "pikir");
+  kirimTeksChunk("agent_message_chunk", "ha");
+  kirimTeksChunk("agent_message_chunk", "lo");
+  kirimUpdate({
+    sessionUpdate: "tool_call",
+    toolCallId: "t1",
+    title: "Edit a.txt",
+    kind: "edit",
+    rawInput: { path: "a.txt" },
+  });
+
+  const balasan = await minta("session/request_permission", {
+    sessionId: "s1",
+    toolCall: { toolCallId: "t1", title: "Edit a.txt", kind: "edit", rawInput: { path: "a.txt" } },
+    options: [
+      { optionId: "ya-sekali", name: "Ya sekali", kind: "allow_once" },
+      { optionId: "ya-selalu", name: "Ya selalu", kind: "allow_always" },
+      { optionId: "tidak", name: "Tidak", kind: "reject_once" },
+    ],
+  });
+  let dipilih = "cancelled";
+  const outcome = balasan.result?.outcome;
+  if (typeof outcome === "object" && outcome !== null) {
+    const data = outcome as Record<string, unknown>;
+    if (data.outcome === "selected" && typeof data.optionId === "string") dipilih = data.optionId;
+  }
+
+  kirimUpdate({
+    sessionUpdate: "tool_call_update",
+    toolCallId: "t1",
+    status: "completed",
+    content: [{ type: "content", content: { type: "text", text: "selesai" } }],
+  });
+  kirimUpdate({ sessionUpdate: "usage_update", used: 120, size: 1000 });
+  kirimTeksChunk("agent_message_chunk", `dipilih:${dipilih}`);
+  send({ jsonrpc: "2.0", id, result: { stopReason: "end_turn" } });
+}
+
 async function tanganiPrompt(msg: Record<string, unknown>): Promise<void> {
   const id = msg.id as number;
+
+  if (mode === "rich") {
+    await tanganiPromptRich(id);
+    return;
+  }
+
+  if (mode === "multi") {
+    jumlahPrompt += 1;
+    kirimTeksChunk("agent_message_chunk", `giliran-${jumlahPrompt}:${process.pid}`);
+    send({ jsonrpc: "2.0", id, result: { stopReason: "end_turn" } });
+    return;
+  }
+
+  if (mode === "hang") {
+    // Tidak dijawab sampai klien mengirim session/cancel.
+    promptTertunda.set("s1", id);
+    return;
+  }
+
   send({
     jsonrpc: "2.0",
     method: "session/update",
@@ -131,6 +206,20 @@ function tanganiBaris(baris: string): void {
     return;
   }
   if (typeof msg.method === "string") {
+    if (msg.method === "session/cancel") {
+      // Mode `hang`: cancel menjawab prompt yang tertunda.
+      const params = msg.params;
+      const sid =
+        typeof params === "object" && params !== null
+          ? String((params as Record<string, unknown>).sessionId ?? "s1")
+          : "s1";
+      const promptId = promptTertunda.get(sid);
+      if (promptId !== undefined) {
+        promptTertunda.delete(sid);
+        send({ jsonrpc: "2.0", id: promptId, result: { stopReason: "cancelled" } });
+      }
+      return;
+    }
     if (msg.id !== undefined && msg.id !== null) tanganiRequest(msg, msg.method);
     return; // notifikasi dari klien diabaikan
   }
