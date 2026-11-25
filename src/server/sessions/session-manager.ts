@@ -99,6 +99,11 @@ export interface SessionInfo {
   cwd: string;
   profileId: string;
   model?: string;
+  /**
+   * Id agent eksternal ACP (mis. "antigravity") untuk sesi ber-harness; tak ada
+   * untuk sesi Claude biasa. Hanya jalur internal tim yang bisa mengisinya.
+   */
+  harness?: string;
   permissionMode: SessionPermissionMode;
   status: SessionStatus;
   createdAt: string;
@@ -212,8 +217,19 @@ export interface McpServerResolver {
   resolved(): Promise<ResolvedMcpServer[]>;
 }
 
+/**
+ * Runner agent eksternal (ACP) untuk sesi ber-harness. `release` menutup proses
+ * agent milik satu sesi (mis. saat sesi Jejak dihapus).
+ */
+export type HarnessRunner = AgentRunner & { release?(acpSessionId: string): void };
+
 export interface SessionManagerOptions {
   runner: AgentRunner;
+  /**
+   * Runner per agent eksternal, dikunci id agent (mis. "antigravity"). Sesi
+   * ber-harness memakai runner di sini alih-alih `runner`.
+   */
+  harnessRunners?: Record<string, HarnessRunner>;
   resolveProvider: (selection: ProviderSelection) => Promise<ResolvedProvider>;
   /**
    * Profil cadangan untuk satu kali percobaan ulang bila giliran gagal oleh
@@ -746,6 +762,7 @@ function waitForChange(
 
 export class SessionManager {
   private readonly runner: AgentRunner;
+  private readonly harnessRunners: Record<string, HarnessRunner>;
   private readonly resolveProvider: (selection: ProviderSelection) => Promise<ResolvedProvider>;
   private readonly fallback: ((profileId: string) => Promise<ResolvedProvider | undefined>) | undefined;
   private readonly maxConcurrent: number;
@@ -799,6 +816,7 @@ export class SessionManager {
 
   constructor(options: SessionManagerOptions) {
     this.runner = options.runner;
+    this.harnessRunners = options.harnessRunners ?? {};
     this.resolveProvider = options.resolveProvider;
     this.fallback = options.fallback;
     this.maxConcurrent = options.maxConcurrent ?? DEFAULTS.maxConcurrent;
@@ -1336,6 +1354,15 @@ export class SessionManager {
    */
   private dropSession(record: SessionRecord): void {
     const id = record.info.id;
+    // Sesi ber-harness: tutup proses agent milik sesi ini (bila runner punya).
+    const harness = record.info.harness;
+    if (harness !== undefined && record.sdkSessionId !== undefined) {
+      try {
+        this.harnessRunner(harness)?.release?.(record.sdkSessionId);
+      } catch {
+        // Penutupan proses agent tak boleh menggagalkan penghapusan sesi.
+      }
+    }
     // Anak tidak ikut dihapus; mereka dilepas menjadi sesi biasa. Lakukan
     // sebelum induk dibuang agar `childrenOf` induk tak tersisa.
     this.detachChildren(id);
@@ -1403,17 +1430,50 @@ export class SessionManager {
 
   /**
    * Buat sesi. Parameter `internal` hanya diisi jalur server (mis. `spawnChild`);
-   * rute HTTP tidak pernah mengisinya sehingga `team` tak bisa disuntik klien.
+   * rute HTTP tidak pernah mengisinya sehingga `team`/`harness` tak bisa
+   * disuntik klien.
    */
-  async create(input: CreateSessionInput, internal?: { team?: TeamInfo }): Promise<SessionInfo> {
+  async create(
+    input: CreateSessionInput,
+    internal?: { team?: TeamInfo; harness?: string },
+  ): Promise<SessionInfo> {
+    const harness = internal?.harness;
+    if (harness !== undefined) {
+      // Sesi ber-harness memakai agent eksternal: tanpa profil/model dan tanpa
+      // bypass. Semua pemeriksaan lain tetap seperti sesi biasa.
+      if (this.harnessRunner(harness) === undefined) {
+        throw new SessionError(
+          `Agent "${harness}" tidak tersedia di server ini.`,
+          "tidak-valid",
+        );
+      }
+      if (input.selection !== undefined) {
+        throw new SessionError(
+          "Sesi agent eksternal tidak memakai profil/model.",
+          "tidak-valid",
+        );
+      }
+      if (input.permissionMode === "bypassPermissions") {
+        throw new SessionError(
+          "Agent eksternal tidak mendukung mode bypass.",
+          "tidak-valid",
+        );
+      }
+    }
+
     const validated = await this.validate(input);
     this.ensureCapacity();
 
     let resolved: ResolvedProvider;
-    try {
-      resolved = await this.resolveProvider(input.selection ?? {});
-    } catch (error) {
-      throw new SessionError(errorMessage(error), "tidak-valid");
+    if (harness !== undefined) {
+      // Provider tiruan: hanya identitas agent; tanpa model/harga (biaya tak dihitung).
+      resolved = { profileId: harness };
+    } else {
+      try {
+        resolved = await this.resolveProvider(input.selection ?? {});
+      } catch (error) {
+        throw new SessionError(errorMessage(error), "tidak-valid");
+      }
     }
 
     // Periksa lagi setelah await agar pembuatan serentak tidak melewati batas.
@@ -1466,6 +1526,9 @@ export class SessionManager {
       if (resolved.model !== undefined) {
         info.model = resolved.model;
       }
+      if (harness !== undefined) {
+        info.harness = harness;
+      }
       if (validated.workspaceId !== undefined) {
         info.workspaceId = validated.workspaceId;
         info.workspaceName = validated.workspaceName;
@@ -1515,6 +1578,17 @@ export class SessionManager {
       if (info.sandbox === "mati") {
         this.audit("pengaturan", "Sesi dibuat tanpa sandbox", info.id, {
           aksi: "sandbox-mati",
+        });
+      }
+
+      if (harness !== undefined) {
+        // Sandbox Bash, pelindung rahasia, dan memory Jejak adalah mekanisme sisi
+        // Claude; agent eksternal berjalan di luarnya. Beri tahu pengguna sejak awal.
+        this.append(record, {
+          type: "notice",
+          text:
+            "Agent eksternal: sandbox Bash, pelindung rahasia, dan memory Jejak tidak berlaku. Hanya kartu izin yang menjaga aksinya.",
+          level: "warn",
         });
       }
 
@@ -1578,8 +1652,15 @@ export class SessionManager {
       worktree?: boolean | "auto";
       selection?: ProviderSelection;
       permissionMode?: string;
+      harness?: string;
     },
   ): Promise<SessionInfo> {
+    if (input.harness !== undefined && input.selection !== undefined) {
+      throw new SessionError(
+        "Sesi agent eksternal tidak boleh memakai profil/model.",
+        "tidak-valid",
+      );
+    }
     let requestedMode: TeamMode | undefined;
     if (input.permissionMode !== undefined) {
       if (!TEAM_MODES.includes(input.permissionMode as TeamMode)) {
@@ -1651,7 +1732,12 @@ export class SessionManager {
         createInput.sandbox = this.effectiveSandboxMode(parentRecord);
       }
 
-      const child = await this.create(createInput, { team });
+      const child = await this.create(
+        createInput,
+        input.harness === undefined
+          ? { team }
+          : { team, harness: input.harness },
+      );
       this.audit("pengaturan", "Anak tim dibuat", parentId, {
         aksi: "team-spawn",
         anak: child.id,
@@ -1894,6 +1980,7 @@ export class SessionManager {
    */
   async setProvider(id: string, selection: { profileId?: string; model?: string }): Promise<SessionInfo> {
     const record = this.requireRecord(id);
+    this.assertSdkSession(record);
     let resolved: ResolvedProvider;
     try {
       resolved = await this.resolveProvider({
@@ -1994,6 +2081,7 @@ export class SessionManager {
    */
   startGoal(id: string, input: unknown): SessionInfo {
     const record = this.requireRecord(id);
+    this.assertSdkSession(record);
     // Jembatan internal harus bisa menyajikan tool `goal_update`; jembatan
     // tanpa layanan memory (misalnya hanya tool browser) tak memenuhi syarat.
     if (this.memoryBridge === undefined || this.memoryBridge.goalTools === false) {
@@ -2391,6 +2479,35 @@ export class SessionManager {
     return record;
   }
 
+  /** Runner agent eksternal milik `id`; `undefined` bila tak terdaftar. */
+  private harnessRunner(id: string): HarnessRunner | undefined {
+    if (!Object.hasOwn(this.harnessRunners, id)) return undefined;
+    return this.harnessRunners[id];
+  }
+
+  /** Runner giliran: agent eksternal untuk sesi ber-harness, selain itu runner utama. */
+  private runnerFor(record: SessionRecord): AgentRunner {
+    const harness = record.info.harness;
+    if (harness === undefined) return this.runner;
+    const runner = this.harnessRunner(harness);
+    if (runner === undefined) {
+      throw new SessionError(
+        `Agent "${harness}" tidak tersedia di server ini.`,
+        "tidak-valid",
+      );
+    }
+    return runner;
+  }
+
+  /** Tolak fitur yang bergantung pada SDK Claude untuk sesi ber-harness. */
+  private assertSdkSession(record: SessionRecord): void {
+    if (record.info.harness === undefined) return;
+    throw new SessionError(
+      "Fitur ini tidak tersedia untuk sesi agent eksternal.",
+      "tidak-valid",
+    );
+  }
+
   private validateTitle(title: unknown): string {
     if (typeof title !== "string") {
       throw new SessionError("Judul harus berupa teks.", "tidak-valid");
@@ -2561,6 +2678,7 @@ export class SessionManager {
     if (record === undefined) {
       throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
     }
+    this.assertSdkSession(record);
     const goal = record.goal;
     if (goal !== undefined && goal.status === "active") {
       throw new SessionError(
@@ -2653,6 +2771,7 @@ export class SessionManager {
     if (record === undefined) {
       throw new SessionError(`Sesi "${id}" tidak ditemukan.`, "tidak-ditemukan");
     }
+    this.assertSdkSession(record);
 
     const text = this.validateMessage(question as string);
 
@@ -3216,11 +3335,12 @@ export class SessionManager {
     }
 
     // Profil cadangan dicek di depan: membatasi retry SDK dan menambah host
-    // cadangan ke allowlist jaringan Bash.
+    // cadangan ke allowlist jaringan Bash. Tak berlaku untuk sesi ber-harness.
+    const useFallback = this.fallback !== undefined && record.info.harness === undefined;
     let plannedFallback: ResolvedProvider | undefined;
-    if (this.fallback !== undefined) {
+    if (useFallback) {
       try {
-        plannedFallback = await this.fallback(provider.profileId);
+        plannedFallback = await this.fallback!(provider.profileId);
       } catch {
         plannedFallback = undefined;
       }
@@ -3331,7 +3451,7 @@ export class SessionManager {
 
     record.turnActive = true;
     try {
-      if (this.fallback === undefined) {
+      if (!useFallback) {
         await this.runPlain(record, input);
       } else {
         await this.runWithFallback(record, input, provider, plannedFallback);
@@ -3598,6 +3718,19 @@ export class SessionManager {
   /** Selesaikan provider record bila belum ada; galat diteruskan sebagai SessionError. */
   private async ensureProvider(record: SessionRecord): Promise<void> {
     if (record.resolved !== undefined) return;
+    const harness = record.info.harness;
+    if (harness !== undefined) {
+      // Sesi ber-harness tak punya profil sungguhan; provider tiruan yang sama
+      // dengan `create`, juga setelah restart (tanpa memanggil resolveProvider).
+      if (this.harnessRunner(harness) === undefined) {
+        throw new SessionError(
+          `Agent "${harness}" tidak tersedia di server ini.`,
+          "tidak-valid",
+        );
+      }
+      record.resolved = { profileId: harness };
+      return;
+    }
     let resolved: ResolvedProvider;
     try {
       resolved = await this.resolveProvider({
@@ -3642,7 +3775,7 @@ export class SessionManager {
     record: SessionRecord,
     input: Parameters<AgentRunner["run"]>[0],
   ): AsyncGenerator<AgentEvent, void, undefined> {
-    const iterator = this.runner.run(input)[Symbol.asyncIterator]();
+    const iterator = this.runnerFor(record).run(input)[Symbol.asyncIterator]();
     const signal = record.controller.signal;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stop: (() => void) | undefined;

@@ -3,6 +3,8 @@ import { networkInterfaces as osNetworkInterfaces } from "node:os";
 import { join } from "node:path";
 import { VERSION } from "../shared/version";
 import { createRunner, type AgentRunner } from "./agent";
+import { ACP_AGENTS } from "./acp/agent-defs";
+import { createAcpRunner, type AcpRunner } from "./acp/acp-runner";
 import { defaultAuditStore, type AuditStore } from "./audit/audit-store";
 import { authGuard } from "./auth/auth-guard";
 import { createVerifier, type PasswordVerifier } from "./auth/password";
@@ -155,6 +157,7 @@ import { locateClaude } from "./sdk/claude-locator";
 import { defaultWorkspaceService, workspaceRoutes } from "./routes/workspaces";
 import {
   SessionManager,
+  type HarnessRunner,
   type SessionInfo,
   type SessionManagerOptions,
   type WorkspaceResolver,
@@ -298,6 +301,11 @@ export interface CreateAppOptions {
   scheduledTasks?: ScheduledTaskService;
   /** Penyimpanan tugas terjadwal; default store memori (persistensi di server). */
   scheduledTaskStore?: ScheduledTaskStore;
+  /**
+   * Runner agent eksternal per id (mis. antigravity) untuk sesi tim ber-harness.
+   * Bawaan: dibuat dari `ACP_AGENTS` kecuali mode MOCK.
+   */
+  harnessRunners?: Record<string, HarnessRunner>;
   /** Mode desktop: rute masuk sekali pakai dan cookie sesi 30 hari. */
   desktop?: DesktopOptions;
 }
@@ -534,10 +542,25 @@ export function createApp(options: CreateAppOptions = {}) {
   // Satu runner dipakai sesi dan katalog perintah, supaya keduanya
   // membaca perintah dari sumber yang sama.
   const agentRunner = options.runner ?? createRunner(env);
+  // Runner agent eksternal (ACP) untuk sesi tim ber-harness. Mode MOCK tak
+  // membuat runner nyata supaya tes dan demo tak menjalankan `agy`.
+  const acpRunners: AcpRunner[] = [];
+  const harnessRunners: Record<string, HarnessRunner> =
+    options.harnessRunners ??
+    (env.MOCK?.trim().toLowerCase() === "true"
+      ? {}
+      : Object.fromEntries(
+          Object.values(ACP_AGENTS).map((def) => {
+            const runner = createAcpRunner(def);
+            acpRunners.push(runner);
+            return [def.id, runner];
+          }),
+        ));
   const manager =
     options.sessions ??
     new SessionManager({
       runner: agentRunner,
+      harnessRunners,
       resolveProvider: async (selection) =>
         resolveRegistryProvider(await loadRegistry(path, env), selection),
       fallback: async (profileId) => {
@@ -1023,6 +1046,8 @@ export function createApp(options: CreateAppOptions = {}) {
     terminal: terminalGate,
     browser: browserGate,
   };
+  // Seam untuk penutupan runner ACP yang dibuat di sini.
+  (result as unknown as { acpRunners?: AcpRunner[] }).acpRunners = acpRunners;
   // Seam untuk jam tahanan: server menyalakan dan mematikan layanannya.
   (result as unknown as { heldPrompts?: HeldPromptService }).heldPrompts = heldPrompts;
   // Seam untuk jam tugas terjadwal: sama seperti tahanan.
@@ -1261,6 +1286,19 @@ export function startServer(options: ServeOptions = {}): ServeHandle {
   if (memoryStore !== undefined) closers.push(() => memoryStore.close());
   if (audit !== undefined) closers.push(() => audit.close());
   if (usageLedger !== undefined) closers.push(() => usageLedger.close());
+  // Proses agent eksternal (ACP) ditutup saat server berhenti.
+  const acpRunners = (app as unknown as { acpRunners?: AcpRunner[] }).acpRunners;
+  if (acpRunners !== undefined) {
+    closers.push(() => {
+      for (const runner of acpRunners) {
+        try {
+          runner.dispose();
+        } catch {
+          // Penutupan proses agent tak boleh menahan penghentian server.
+        }
+      }
+    });
+  }
   // Jalur keluar proses (sinyal/`exit`) tak boleh menunggu: bunuh Chrome seketika.
   if (gates !== undefined) {
     closers.push(() => {

@@ -162,6 +162,57 @@ describe("TeamTools skema", () => {
     expect((spawned[0] as { worktree: unknown }).worktree).toBe(true);
   });
 
+  test("skema team_spawn memuat enum harness dari ACP_AGENTS", () => {
+    const tools = new TeamTools(fakePort().port);
+    const spawn = tools.definitions.find((def) => def.name === "team_spawn");
+    const properties = spawn?.inputSchema.properties as
+      | Record<string, { enum?: unknown }>
+      | undefined;
+    expect(properties?.harness?.enum).toEqual(["antigravity"]);
+  });
+
+  test("harness diteruskan ke port tanpa selection", async () => {
+    const { port, spawned } = fakePort();
+    const tools = new TeamTools(port);
+    const hasil = await tools.call({ sessionId: INDUK }, "team_spawn", {
+      title: "riset",
+      prompt: "cari",
+      harness: "antigravity",
+    });
+    expect(hasil.isError).toBe(false);
+    expect(spawned).toEqual([
+      {
+        title: "riset",
+        prompt: "cari",
+        worktree: "auto",
+        harness: "antigravity",
+      },
+    ]);
+  });
+
+  test("harness tak dikenal, prototype, dan gabungan model ditolak", async () => {
+    const { port, spawned } = fakePort();
+    const tools = new TeamTools(port);
+    for (const harness of ["tidak-ada", "__proto__", "constructor"]) {
+      const hasil = await tools.call({ sessionId: INDUK }, "team_spawn", {
+        title: "riset",
+        prompt: "cari",
+        harness,
+      });
+      expect(hasil.isError).toBe(true);
+      expect(hasil.text).toContain("harness");
+    }
+    const gabungan = await tools.call({ sessionId: INDUK }, "team_spawn", {
+      title: "riset",
+      prompt: "cari",
+      harness: "antigravity",
+      model: "kecil",
+    });
+    expect(gabungan.isError).toBe(true);
+    expect(gabungan.text).toContain("harness");
+    expect(spawned).toEqual([]);
+  });
+
   test("team_list menolak argumen tak dikenal", async () => {
     const { port } = fakePort();
     const tools = new TeamTools(port);

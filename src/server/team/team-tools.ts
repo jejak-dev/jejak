@@ -1,3 +1,4 @@
+import { ACP_AGENTS, getAcpAgent } from "../acp/agent-defs";
 import type { McpToolDefinition, McpToolOutcome } from "../memory/mcp-http";
 
 /** Konteks tool tim: sesi pemanggil selalu induk. */
@@ -45,6 +46,7 @@ export interface TeamPort {
       worktree?: boolean | "auto";
       selection?: { profileId?: string; model?: string };
       permissionMode?: string;
+      harness?: string;
     },
   ): Promise<TeamChildView>;
   list(parentId: string): TeamChildView[];
@@ -82,6 +84,7 @@ export class TeamPortHolder implements TeamPort {
       worktree?: boolean | "auto";
       selection?: { profileId?: string; model?: string };
       permissionMode?: string;
+      harness?: string;
     },
   ): Promise<TeamChildView> {
     const port = this.port;
@@ -143,7 +146,7 @@ const MESSAGE_MAX = 4000;
 const SPAWN_DEFINITION: McpToolDefinition = {
   name: "team_spawn",
   description:
-    "Buat sesi anak paralel untuk pekerjaan panjang yang bisa dipisah. Tool ini TIDAK menunggu; pantau dengan team_list dan ambil hasil dengan team_result. Setiap anak membutuhkan persetujuan pengguna dan punya izin sendiri. Jangan membuat anak yang menyentuh berkas yang sama.",
+    "Buat sesi anak paralel untuk pekerjaan panjang yang bisa dipisah; bisa juga dijalankan dengan agent eksternal (harness). Tool ini TIDAK menunggu; pantau dengan team_list dan ambil hasil dengan team_result. Setiap anak membutuhkan persetujuan pengguna dan punya izin sendiri. Jangan membuat anak yang menyentuh berkas yang sama.",
   inputSchema: {
     type: "object",
     properties: {
@@ -157,6 +160,12 @@ const SPAWN_DEFINITION: McpToolDefinition = {
       profile: { type: "string", maxLength: PROFILE_MAX },
       model: { type: "string", maxLength: MODEL_MAX },
       mode: { type: "string", enum: ["plan", "default", "acceptEdits"] },
+      harness: {
+        type: "string",
+        enum: Object.keys(ACP_AGENTS),
+        description:
+          "Jalankan anak dengan agent eksternal (mis. antigravity) alih-alih Claude. Tak boleh dikombinasi dengan profile/model.",
+      },
     },
     required: ["title", "prompt"],
     additionalProperties: false,
@@ -231,7 +240,16 @@ const STOP_DEFINITION: McpToolDefinition = {
   },
 };
 
-const SPAWN_FIELDS = ["title", "prompt", "role", "worktree", "profile", "model", "mode"] as const;
+const SPAWN_FIELDS = [
+  "title",
+  "prompt",
+  "role",
+  "worktree",
+  "profile",
+  "model",
+  "mode",
+  "harness",
+] as const;
 const ID_FIELDS = ["id"] as const;
 const MESSAGE_FIELDS = ["id", "text"] as const;
 
@@ -294,6 +312,7 @@ interface SpawnArgs {
   profile?: string;
   model?: string;
   mode?: "plan" | "default" | "acceptEdits";
+  harness?: string;
 }
 
 function parseSpawn(args: unknown): SpawnArgs {
@@ -304,6 +323,17 @@ function parseSpawn(args: unknown): SpawnArgs {
   const role = teksOpsional(rec.role, "role", ROLE_MAX);
   const profile = teksOpsional(rec.profile, "profile", PROFILE_MAX);
   const model = teksOpsional(rec.model, "model", MODEL_MAX);
+  let harness: string | undefined;
+  if (rec.harness !== undefined) {
+    const id = teksOpsional(rec.harness, "harness", PROFILE_MAX);
+    if (id === undefined || getAcpAgent(id) === undefined) {
+      throw new ArgumenError("Argumen harness tidak valid.");
+    }
+    if (profile !== undefined || model !== undefined) {
+      throw new ArgumenError("Argumen harness tidak boleh digabung dengan profile/model.");
+    }
+    harness = id;
+  }
   if (rec.worktree !== undefined && typeof rec.worktree !== "boolean") {
     throw new ArgumenError("Argumen worktree tidak valid.");
   }
@@ -323,6 +353,7 @@ function parseSpawn(args: unknown): SpawnArgs {
   if (profile !== undefined) parsed.profile = profile;
   if (model !== undefined) parsed.model = model;
   if (mode !== undefined) parsed.mode = mode;
+  if (harness !== undefined) parsed.harness = harness;
   return parsed;
 }
 
@@ -434,6 +465,7 @@ export class TeamTools {
           ? {}
           : { selection }),
         ...(input.mode === undefined ? {} : { permissionMode: input.mode }),
+        ...(input.harness === undefined ? {} : { harness: input.harness }),
       });
       return {
         text: `Anak dibuat: id=${child.id} status=${child.status}. Tool ini tidak menunggu; gunakan team_list atau team_result untuk memantau.`,
