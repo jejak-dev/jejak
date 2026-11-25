@@ -91,6 +91,25 @@ function tanganiRequest(msg: Record<string, unknown>, method: string): void {
       return;
     }
     if (mode === "slow") return; // tidak pernah menjawab
+    if (mode === "models") {
+      balas({
+        result: {
+          sessionId: "s1",
+          configOptions: [
+            {
+              id: "model",
+              category: "model",
+              options: [
+                { optionId: "model-a", name: "Model A" },
+                { optionId: "model-b", name: "Model B" },
+              ],
+            },
+            { id: "mode", category: "mode" },
+          ],
+        },
+      });
+      return;
+    }
     balas({ result: { sessionId: "s1", configOptions: [] } });
     return;
   }
