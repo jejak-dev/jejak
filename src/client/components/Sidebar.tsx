@@ -1,9 +1,11 @@
+import { Fragment } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import type { SessionInfo } from "../../server/sessions/session-manager";
 import type { HeldPrompt } from "../lib/api";
-import { formatAgo, groupSessions } from "../lib/format";
+import { formatAgo, formatCost, groupSessions } from "../lib/format";
 import { showsBypassMarker } from "../lib/permission-mode";
-import { canMutate, filterSessions, splitArchived, validateTitle } from "../lib/sessions";
+import { canMutate, filterSessions, isArchived, splitArchived, validateTitle } from "../lib/sessions";
+import { childCostUsd, nestChildren, teamStats } from "../lib/team";
 import { notificationSupport, type NotifyPrefs } from "../lib/notify";
 import { applyTheme, loadTheme, nextTheme, saveTheme, themeLabel, type ThemePref } from "../lib/theme";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -179,7 +181,18 @@ export function Sidebar({
 
   const visible = filterSessions(sessions, query, false);
   const archivedVisible = filterSessions(splitArchived(sessions).archived, query, true);
-  const groups = groupSessions(visible);
+  // Anak tampil bersarang di bawah induk; anak yatim, atau yang induknya tak
+  // lolos filter, tetap sesi biasa.
+  const aktif = nestChildren(visible.filter((session) => !isArchived(session)));
+  const parentVisible = new Set(aktif.roots.map((session) => session.id));
+  for (const id of archivedVisible.map((session) => session.id)) parentVisible.add(id);
+  const childrenByParent = new Map<string, SessionInfo[]>();
+  for (const [parentId, children] of aktif.byParent) {
+    if (parentVisible.has(parentId)) childrenByParent.set(parentId, children);
+  }
+  const groups = groupSessions(
+    visible.filter((session) => parentVisible.has(session.id)),
+  );
   const orderedIds = [...visible.map((session) => session.id), ...archivedVisible.map((session) => session.id)];
 
   const closeRow = useCallback((): void => {
@@ -317,7 +330,18 @@ export function Sidebar({
     }
   };
 
-  const renderRow = (session: SessionInfo, archived: boolean) => {
+  /** Lencana kecil di induk: jumlah anak aktif dan/atau yang menunggu izin. */
+  const childBadge = (session: SessionInfo): string | undefined => {
+    const children = childrenByParent.get(session.id);
+    if (children === undefined) return undefined;
+    const stats = teamStats(children);
+    const parts: string[] = [];
+    if (stats.active > 0) parts.push(`${stats.active} aktif`);
+    if (stats.waiting > 0) parts.push(`${stats.waiting} menunggu izin`);
+    return parts.length === 0 ? undefined : parts.join(" · ");
+  };
+
+  const renderRow = (session: SessionInfo, archived: boolean, nested = false) => {
     const open = openRowId === session.id;
     const renaming = open && mode === "rename";
     const error = open ? rowError : undefined;
@@ -376,7 +400,9 @@ export function Sidebar({
                 else rowRefs.current.set(session.id, element);
               }}
               type="button"
-              class={`jk-session-row${session.id === selectedId ? " jk-session-row-active" : ""}`}
+              class={`jk-session-row${nested ? " jk-session-row-child" : ""}${
+                session.id === selectedId ? " jk-session-row-active" : ""
+              }`}
               onClick={() => onSelect(session.id)}
               aria-current={session.id === selectedId ? "page" : undefined}
               title={`${session.title} — ${formatAgo(session.updatedAt, now)}`}
@@ -389,8 +415,15 @@ export function Sidebar({
                 aria-hidden={label === undefined ? "true" : undefined}
               />
               <span class="jk-session-title">{session.title}</span>
-              {session.goal?.status === "active" && <GoalMark status="active" />}
+              {nested && childCostUsd(session) !== undefined ? (
+                <span class="jk-session-time">{formatCost(childCostUsd(session))}</span>
+              ) : (
+                session.goal?.status === "active" && <GoalMark status="active" />
+              )}
               {session.goal?.status === "paused" && <GoalMark status="paused" />}
+              {childrenByParent.has(session.id) && childBadge(session) !== undefined && (
+                <span class="jk-session-badge">{childBadge(session)}</span>
+              )}
               {showsBypassMarker(session.permissionMode) && (
                 <span
                   class="jk-session-bypass"
@@ -660,7 +693,16 @@ export function Sidebar({
                   )}
                 </div>
                 <ul class="jk-session-items">
-                  {group.items.map((session) => renderRow(session, false))}
+                  {group.items.map((session) => (
+                    <Fragment key={session.id}>
+                      {renderRow(session, false)}
+                      {childrenByParent.has(session.id) && (
+                        <ul class="jk-session-children">
+                          {childrenByParent.get(session.id)?.map((child) => renderRow(child, false, true))}
+                        </ul>
+                      )}
+                    </Fragment>
+                  ))}
                 </ul>
               </section>
             ))

@@ -1,6 +1,10 @@
 import { formatCount } from "../lib/format";
 import type { PanelTab } from "../lib/panel-prefs";
-import { PANEL_RAIL_GROUPS, PANEL_RAIL_TABS } from "../lib/panel-rail";
+import {
+  PANEL_RAIL_GROUPS,
+  PANEL_RAIL_TABS,
+  type PanelRailGroup,
+} from "../lib/panel-rail";
 import { Icon } from "./Icon";
 
 export interface PanelRailViewProps {
@@ -18,6 +22,8 @@ export interface PanelRailViewProps {
   onKeyDown?: (event: globalThis.KeyboardEvent, index: number) => void;
   /** Referensi tombol untuk pemindahan fokus. */
   railRefs?: Record<string, HTMLButtonElement | null>;
+  /** Grup untuk indeks navigasi keyboard; bawaan seluruh tab rel. */
+  groups?: readonly PanelRailGroup[];
 }
 
 /**
@@ -26,6 +32,7 @@ export interface PanelRailViewProps {
  */
 export function PanelRailView(props: PanelRailViewProps) {
   const { openTabs, activeTab, focusIndex, countFor, onOpen, onKeyDown, railRefs } = props;
+  const groups = props.groups ?? PANEL_RAIL_GROUPS;
   const terbuka = new Set(openTabs);
 
   return (
@@ -35,7 +42,7 @@ export function PanelRailView(props: PanelRailViewProps) {
       aria-orientation="vertical"
       aria-label="Alat panel"
     >
-      {PANEL_RAIL_GROUPS.map((group) => (
+      {groups.map((group) => (
         <div class="jk-rail-group" role="group" aria-label={group.label} key={group.id}>
           {group.tabs.map((entry) => {
             const index = PANEL_RAIL_TABS.findIndex((item) => item.id === entry.id);

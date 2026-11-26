@@ -26,7 +26,7 @@ import { useNarrowViewport } from "../lib/pane-narrow";
 import { readPaneLayout, writePaneLayout } from "../lib/pane-prefs";
 import type { PanelTab } from "../lib/panel-prefs";
 import {
-  PANEL_RAIL_TABS,
+  PANEL_RAIL_GROUPS,
   TABS_WITH_REFRESH,
   TABS_WITH_REPO,
   nextPanelTabIndex,
@@ -57,6 +57,7 @@ import { PlanTab } from "./PlanTab";
 import { RunnerTab } from "./RunnerTab";
 import { SecretsTab } from "./SecretsTab";
 import { TerminalTab } from "./TerminalTab";
+import { TeamTab } from "./TeamTab";
 import { TodosTab } from "./TodosTab";
 import { WikiTab } from "./WikiTab";
 
@@ -97,10 +98,14 @@ export interface PanelProps {
   focus?: boolean;
   /** Nyalakan atau matikan mode fokus dari tab Desain. */
   onFocusChange?: (on: boolean) => void;
+  /** Semua sesi yang diketahui; sumber daftar anak di tab Tim. */
+  sessions?: readonly SessionInfo[];
+  /** Pindah ke sesi lain dari tab Tim (Buka pada anak). */
+  onOpenSession?: (id: string) => void;
 }
 
 const PANEL_LABEL =
-  "Perubahan, langkah, konteks, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, browser, dan rencana";
+  "Perubahan, langkah, tim, konteks, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, browser, dan rencana";
 
 /** Kunci navigasi keyboard pada rel ikon. */
 const RAIL_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End"]);
@@ -150,6 +155,8 @@ interface PanelTabBodyProps {
   focus?: boolean;
   /** Nyalakan atau matikan mode fokus dari tab Desain. */
   onFocusChange?: (on: boolean) => void;
+  sessions?: readonly SessionInfo[];
+  onOpenSession?: (id: string) => void;
 }
 
 /** Badan tab yang aktif; hanya tab aktif yang dipasang di jendela. */
@@ -187,7 +194,21 @@ function PanelTabBody(props: PanelTabBodyProps) {
     onWideChange,
     focus,
     onFocusChange,
+    sessions,
+    onOpenSession,
   } = props;
+
+  if (tab === "team" && session !== undefined) {
+    return (
+      <TeamTab
+        api={api}
+        session={session}
+        sessions={sessions ?? [session]}
+        onOpenSession={onOpenSession ?? ((): void => {})}
+        onChanged={onSessionChanged}
+      />
+    );
+  }
 
   if (tab === "changes") {
     return (
@@ -315,6 +336,8 @@ export function Panel({
   onWideChange,
   focus,
   onFocusChange,
+  sessions,
+  onOpenSession,
 }: PanelProps) {
   const [layout, setLayout] = useState<PaneLayout>(() => readPaneLayout());
   // Jendela yang terakhir difokuskan; menentukan tab aktif pada rel ikon.
@@ -374,11 +397,25 @@ export function Panel({
       layout.panes[layout.panes.length - 1],
     [layout, focusPaneId],
   );
+  // Tab Tim hanya relevan untuk sesi induk yang punya anak.
+  const hasTeam = useMemo(
+    () => (sessions ?? []).some((entry) => entry.team?.parentId === sessionId),
+    [sessions, sessionId],
+  );
+  const railGroups = useMemo(
+    () =>
+      PANEL_RAIL_GROUPS.map((group) => ({
+        ...group,
+        tabs: group.tabs.filter((entry) => entry.parentOnly !== true || hasTeam),
+      })),
+    [hasTeam],
+  );
+  const railTabs = useMemo(() => railGroups.flatMap((group) => group.tabs), [railGroups]);
   const railActiveId = paneTerfokus?.active;
   const terbuka = useMemo(() => new Set(openTools(layout)), [layout]);
   const tersedia = useMemo(
-    () => PANEL_RAIL_TABS.filter((entry) => !terbuka.has(entry.id)),
-    [terbuka],
+    () => railTabs.filter((entry) => !terbuka.has(entry.id)),
+    [railTabs, terbuka],
   );
 
   // Tata letak yang digambar: layar sempit menggabungkan seluruh tab, dan
@@ -400,9 +437,9 @@ export function Panel({
 
   // Fokus rel mengikuti tab aktif jendela yang difokuskan.
   useEffect(() => {
-    const index = PANEL_RAIL_TABS.findIndex((entry) => entry.id === railActiveId);
+    const index = railTabs.findIndex((entry) => entry.id === railActiveId);
     if (index >= 0) setRailFocus(index);
-  }, [railActiveId]);
+  }, [railActiveId, railTabs]);
 
   // Tab yang baru berpindah atau jendela yang baru jadi aktif difokuskan.
   useEffect(() => {
@@ -536,9 +573,9 @@ export function Panel({
   const onRailKeyDown = (event: KeyboardEvent, index: number): void => {
     if (!RAIL_KEYS.has(event.key)) return;
     event.preventDefault();
-    const next = PANEL_RAIL_TABS[nextPanelTabIndex(event.key, index)];
+    const next = railTabs[nextPanelTabIndex(event.key, index, railTabs.length)];
     if (!next) return;
-    setRailFocus(PANEL_RAIL_TABS.findIndex((entry) => entry.id === next.id));
+    setRailFocus(railTabs.findIndex((entry) => entry.id === next.id));
     railRefs.current[next.id]?.focus();
   };
 
@@ -627,6 +664,8 @@ export function Panel({
                   onWideChange={onWideChange}
                   focus={focus}
                   onFocusChange={onFocusChange}
+                  sessions={sessions}
+                  onOpenSession={onOpenSession}
                 />
               </PaneWindow>
             </Fragment>
@@ -642,6 +681,7 @@ export function Panel({
         onOpen={(id) => bukaTool(id)}
         onKeyDown={(event, index) => onRailKeyDown(event, index)}
         railRefs={railRefs.current}
+        groups={railGroups}
       />
     </aside>
   );

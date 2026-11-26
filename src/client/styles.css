@@ -11788,3 +11788,133 @@ h2.jk-md-heading {
     flex: 1 1 100%;
   }
 }
+
+/* Tim agent: anak bersarang di sidebar */
+.jk-session-row-child {
+  padding-left: 26px;
+  font-size: 13px;
+}
+
+.jk-session-children {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.jk-session-badge {
+  flex: none;
+  font-size: var(--fs-micro);
+  color: var(--t3);
+  white-space: nowrap;
+}
+
+/* Tim agent: pita sesi anak */
+.jk-team-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--t2);
+}
+
+.jk-team-strip-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--t3);
+}
+
+/* Tim agent: tab Tim */
+.jk-team-tab {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jk-team-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--t2);
+}
+
+.jk-team-count {
+  margin-left: auto;
+  color: var(--t3);
+}
+
+.jk-team-table-wrap {
+  overflow-x: auto;
+}
+
+.jk-team-title {
+  display: block;
+  color: var(--t1);
+  overflow-wrap: anywhere;
+}
+
+.jk-team-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--fs-micro);
+  color: var(--t3);
+}
+
+.jk-team-actions {
+  display: inline-flex;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.jk-team-msg {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.jk-team-msg .jk-input {
+  min-width: 0;
+  flex: 1;
+}
+
+/* Tim agent: kartu ringkas di timeline */
+.jk-team-banner-actions {
+  margin: 8px 14px 12px;
+}
+
+.jk-team-status {
+  font-size: 12px;
+  color: var(--t3);
+}
+
+.jk-team-status-run {
+  color: var(--link);
+}
+
+.jk-team-status-ok {
+  color: var(--ok);
+}
+
+.jk-team-status-bad {
+  color: var(--bad);
+}
+
+.jk-team-report {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--t2);
+}
+
+.jk-team-report > summary {
+  cursor: pointer;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

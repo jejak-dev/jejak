@@ -22,6 +22,7 @@ import { SdkSettings } from "./components/SdkSettings";
 import { SettingsNav } from "./components/SettingsNav";
 import { ReplyBar } from "./components/ReplyBar";
 import { GoalBar } from "./components/GoalBar";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 import { SessionHeader, Topbar } from "./components/SessionHeader";
 import { ShortcutHelp } from "./components/ShortcutHelp";
 import { Sidebar } from "./components/Sidebar";
@@ -71,6 +72,8 @@ import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 import { rewindableSeqs } from "./lib/rewind";
 import { latestSuggestion } from "./lib/suggestion";
+import { TeamStrip } from "./components/TeamStrip";
+import { activeChildrenOf, parentOf } from "./lib/team";
 import type { GoalView } from "./lib/goal";
 
 /**
@@ -209,6 +212,18 @@ export function App() {
     },
     [navigate],
   );
+
+  // Sesi ini anak dari sesi lain beserta induknya (bila masih ada di daftar).
+  const parent = selected === undefined ? undefined : parentOf(sessions, selected);
+  const teamStrip =
+    selected?.team?.parentId === undefined
+      ? undefined
+      : {
+          parentTitle: parent?.title ?? "sesi induk",
+          parentId: parent?.id,
+          status: selected.status,
+          pendingPermissions: selected.pendingPermissions,
+        };
 
   useNotifications(sessions, notifyPrefs, onOpenSession);
 
@@ -905,22 +920,46 @@ export function App() {
   );
 
   const interruptId = selected?.id;
-  const onInterrupt = useCallback((): void => {
+  // Menunggu jawaban "hentikan juga anak aktif?" pada sesi induk.
+  const [stopAsk, setStopAsk] = useState(false);
+  const onInterrupt = useCallback(
+    (includeChildren = false): void => {
+      if (interruptId === undefined) return;
+      const targetId = interruptId;
+      setInterrupting(true);
+      setInterruptError(undefined);
+      void (async () => {
+        try {
+          const aktif = includeChildren ? activeChildrenOf(sessions, targetId) : [];
+          for (const child of aktif) {
+            try {
+              await api.interruptSession(child.id);
+            } catch {
+              // Anak bisa saja sudah selesai; induk tetap dihentikan.
+            }
+          }
+          await api.interruptSession(targetId);
+          await refresh();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "gagal menghentikan sesi";
+          setInterruptError(message);
+        } finally {
+          setInterrupting(false);
+        }
+      })();
+    },
+    [api, interruptId, refresh, sessions],
+  );
+  // Hentikan giliran induk: tanya dulu bila ada anak yang masih berjalan.
+  const onStopParent = useCallback((): void => {
     if (interruptId === undefined) return;
-    setInterrupting(true);
-    setInterruptError(undefined);
-    void (async () => {
-      try {
-        await api.interruptSession(interruptId);
-        await refresh();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "gagal menghentikan sesi";
-        setInterruptError(message);
-      } finally {
-        setInterrupting(false);
-      }
-    })();
-  }, [api, interruptId, refresh]);
+    if (activeChildrenOf(sessions, interruptId).length > 0) {
+      setStopAsk(true);
+      return;
+    }
+    onInterrupt();
+  }, [interruptId, onInterrupt, sessions]);
+  const aktifHentikan = interruptId === undefined ? 0 : activeChildrenOf(sessions, interruptId).length;
 
   // Aksi pita Goal: jeda, lanjut, atau hentikan tujuan.
   const goalAction = async (action: "pause" | "resume" | "stop"): Promise<void> => {
@@ -1272,6 +1311,15 @@ export function App() {
                     </button>
                   </div>
                 )}
+                {teamStrip !== undefined && (
+                  <TeamStrip
+                    parentTitle={teamStrip.parentTitle}
+                    {...(teamStrip.parentId === undefined ? {} : { parentId: teamStrip.parentId })}
+                    status={teamStrip.status}
+                    pendingPermissions={teamStrip.pendingPermissions}
+                    onOpenParent={onSelect}
+                  />
+                )}
                 <Timeline
                   items={timeline.items}
                   connection={timeline.connection}
@@ -1285,6 +1333,7 @@ export function App() {
                   onOpenPlan={openPlanTab}
                   canContinue={selected.canContinue === true}
                   onContinue={onContinue}
+                  onOpenSession={onSelect}
                 />
                 {goalVisible && sessionGoal !== undefined && sessionGoal !== null && (
                   <div class="jk-goal-slot">
@@ -1321,7 +1370,7 @@ export function App() {
                   onGoalChanged={(goal) =>
                     setGoalOverride({ sessionId: selected.id, goal })
                   }
-                  onInterrupt={onInterrupt}
+                  onInterrupt={onStopParent}
                   interrupting={interrupting}
                 />
               </div>
@@ -1347,6 +1396,8 @@ export function App() {
                   onWideChange={openDesignWide}
                   focus={focusActive}
                   onFocusChange={setDesignFocus}
+                  sessions={sessions}
+                  onOpenSession={onSelect}
                 />
               )}
               {panelOpenNow && !sempit && !focusActive && (
@@ -1420,6 +1471,26 @@ export function App() {
         <CommandPalette commands={commands} onRun={runCommand} onClose={closePalette} />
       )}
       {helpOpen && <ShortcutHelp onClose={() => setHelpOpen(false)} />}
+      {/* Hentikan induk: tanyakan juga anak yang masih berjalan; bawaan hentikan semua. */}
+      <ConfirmDialog
+        open={stopAsk && aktifHentikan > 0}
+        title={`Hentikan juga ${aktifHentikan} anak aktif?`}
+        message="Anak yang sedang berjalan akan dihentikan bersamaan."
+        confirmLabel="Hentikan semua"
+        cancelLabel="Hanya induk"
+        busy={interrupting}
+        busyLabel="Menghentikan…"
+        error={interruptError}
+        confirmAriaLabel={`Hentikan induk dan ${aktifHentikan} anak aktif`}
+        onConfirm={() => {
+          setStopAsk(false);
+          onInterrupt(true);
+        }}
+        onCancel={() => {
+          setStopAsk(false);
+          onInterrupt();
+        }}
+      />
     </div>
   );
 }

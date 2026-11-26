@@ -10,6 +10,8 @@ export interface PanelRailTab {
   /** Label Bahasa Indonesia untuk header, tooltip, dan aria-label. */
   label: string;
   icon: IconName;
+  /** Hanya tampil bila sesi punya anak tim (dan untuk sesi induk). */
+  parentOnly?: boolean;
 }
 
 export interface PanelRailGroup {
@@ -39,6 +41,7 @@ export const PANEL_RAIL_GROUPS: readonly PanelRailGroup[] = [
     label: "Agent",
     tabs: [
       { id: "plan", label: "Rencana", icon: "eye" },
+      { id: "team", label: "Tim", icon: "workspace", parentOnly: true },
       { id: "todos", label: "Langkah", icon: "checklist" },
       { id: "context", label: "Konteks", icon: "chart" },
       { id: "commands", label: "Perintah", icon: "play" },

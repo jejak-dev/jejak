@@ -11,6 +11,7 @@ export type PanelTab =
   | "terminal"
   | "browser"
   | "plan"
+  | "team"
   | "context";
 
 export interface PanelPrefs {
@@ -34,6 +35,7 @@ export const PANEL_TAB_IDS: readonly PanelTab[] = [
   "terminal",
   "browser",
   "plan",
+  "team",
   "context",
 ];
 

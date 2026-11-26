@@ -2,6 +2,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 import { CANCELLED_MESSAGE, dedupeToolPermission, type TimelineItem } from "../lib/timeline";
 import { resumablePermissionIds } from "../lib/plans";
+import { isChildReportNotice, isSpawnToolName } from "../lib/team";
 import { endedByRestart } from "../lib/sessions";
 import { StepsGroup } from "./StepsGroup";
 import { foldWork, groupSteps, stepsStatus, summarizeSteps, workTitle, type StepItem, type TextItem } from "../lib/step-groups";
@@ -16,6 +17,7 @@ import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { MediaStrip } from "./MediaStrip";
 import { PermissionCard } from "./PermissionCard";
+import { TeamItemView } from "./TeamItem";
 
 export interface TimelineProps {
   items: TimelineItem[];
@@ -43,6 +45,8 @@ export interface TimelineProps {
   canContinue?: boolean;
   /** Lanjutkan sesi yang terputus. */
   onContinue?: () => Promise<void>;
+  /** Pindah ke sesi anak dari kartu tim (team_spawn, laporan anak). */
+  onOpenSession?: (id: string) => void;
 }
 
 const MAX_INPUT_CHARS = 2000;
@@ -296,6 +300,7 @@ export function Timeline({
   onOpenPlan,
   canContinue,
   onContinue,
+  onOpenSession,
 }: TimelineProps) {
   // Sesi sudah berhenti (gagal, selesai, server restart): izin yang masih "menunggu"
   // tidak bisa diputuskan lagi, jadi tampilkan sebagai dihentikan.
@@ -440,6 +445,14 @@ export function Timeline({
     }
               // Pertanyaan agent ditampilkan oleh kartu izin; baris tool-nya dobel.
               if (item.name === "AskUserQuestion" || item.name === "ExitPlanMode") return null;
+              // Pembuatan anak tim memakai kartu ringkas bergaya kartu rencana.
+              if (isSpawnToolName(item.name)) {
+                return (
+                  <div key={index} style={depthStyle(item.depth)}>
+                    <TeamItemView item={item} onOpenSession={onOpenSession} />
+                  </div>
+                );
+              }
               const view = toolView(item.name, item.input);
               const input = prettyInput(item.input);
               const media =
@@ -624,6 +637,9 @@ export function Timeline({
                 );
 
               case "notice":
+                if (isChildReportNotice(item.text)) {
+                  return <TeamItemView key={index} item={item} onOpenSession={onOpenSession} />;
+                }
                 return (
                   <p
                     class={`jk-notice${item.level === "warn" ? " jk-notice-warn" : ""}`}
