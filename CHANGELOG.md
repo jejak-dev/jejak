@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.23] - 2026-11-27
+
 ### Ditambahkan
 
 - Tim agent: sesi induk membagi pekerjaan ke sesi anak paralel lewat tool `team_spawn`, `team_list`, `team_status`, `team_result`, `team_message`, dan `team_stop`. Anak memakai worktree sendiri, mode tak pernah lebih longgar dari induk, dan hasilnya kembali ke induk sebagai pesan terbingkai. `JEJAK_TEAM=0` mematikan fitur.
