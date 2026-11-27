@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { SessionError } from "../src/server/sessions/session-manager";
+import { findRolePreset } from "../src/server/team/roles";
 import {
   TeamPortHolder,
   TeamTools,
@@ -132,7 +133,7 @@ describe("TeamTools skema", () => {
       title: "riset",
       prompt: "cari",
       mode: "plan",
-      role: "peneliti",
+      role: "khusus",
       profile: "murah",
       model: "kecil",
     });
@@ -144,7 +145,7 @@ describe("TeamTools skema", () => {
         title: "riset",
         prompt: "cari",
         worktree: "auto",
-        role: "peneliti",
+        role: "khusus",
         selection: { profileId: "murah", model: "kecil" },
         permissionMode: "plan",
       },
@@ -433,6 +434,62 @@ describe("TeamTools hasil", () => {
     expect(calls).toContain(`result:${INDUK}:${ANAK}`);
     expect(calls).toContain(`message:${INDUK}:${ANAK}`);
     expect(calls).toContain(`stop:${INDUK}:${ANAK}`);
+  });
+});
+
+describe("TeamTools preset peran", () => {
+  test("role peneliti memakai mode plan dan prompt berawalan templat", async () => {
+    const { port, spawned } = fakePort();
+    const hasil = await new TeamTools(port).call({ sessionId: INDUK }, "team_spawn", {
+      title: "riset",
+      prompt: "cari bug",
+      role: "peneliti",
+    });
+    expect(hasil.isError).toBe(false);
+    const input = spawned[0] as { prompt: string; permissionMode?: string; role?: string };
+    expect(input.permissionMode).toBe("plan");
+    expect(input.role).toBe("peneliti");
+    expect(input.prompt.startsWith(findRolePreset("peneliti")?.briefPrefix ?? "?")).toBe(true);
+    expect(input.prompt.endsWith("cari bug")).toBe(true);
+    expect(hasil.text).toContain("Peran peneliti dipakai (mode plan).");
+  });
+
+  test("role pelaksana tanpa permissionMode (bawaan manajer)", async () => {
+    const { port, spawned } = fakePort();
+    const hasil = await new TeamTools(port).call({ sessionId: INDUK }, "team_spawn", {
+      title: "kerja",
+      prompt: "perbaiki tes",
+      role: "pelaksana",
+    });
+    expect(hasil.isError).toBe(false);
+    const input = spawned[0] as { prompt: string; permissionMode?: string };
+    expect(input.permissionMode).toBeUndefined();
+    expect(input.prompt.startsWith(findRolePreset("pelaksana")?.briefPrefix ?? "?")).toBe(true);
+    expect(hasil.text).toContain("Peran pelaksana dipakai (mode bawaan).");
+  });
+
+  test("mode eksplisit acceptEdits menang atas preset peneliti", async () => {
+    const { port, spawned } = fakePort();
+    await new TeamTools(port).call({ sessionId: INDUK }, "team_spawn", {
+      title: "riset",
+      prompt: "cari",
+      role: "peneliti",
+      mode: "acceptEdits",
+    });
+    expect((spawned[0] as { permissionMode?: string }).permissionMode).toBe("acceptEdits");
+  });
+
+  test("role bebas tidak diubah dan tanpa penanda preset", async () => {
+    const { port, spawned } = fakePort();
+    const hasil = await new TeamTools(port).call({ sessionId: INDUK }, "team_spawn", {
+      title: "riset",
+      prompt: "cari",
+      role: "lain",
+    });
+    expect(spawned).toEqual([
+      { title: "riset", prompt: "cari", worktree: "auto", role: "lain" },
+    ]);
+    expect(hasil.text).not.toContain("Peran");
   });
 });
 

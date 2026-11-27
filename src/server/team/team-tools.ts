@@ -1,5 +1,6 @@
 import { ACP_AGENTS, getAcpAgent } from "../acp/agent-defs";
 import type { McpToolDefinition, McpToolOutcome } from "../memory/mcp-http";
+import { applyRolePreset, findRolePreset } from "./roles";
 
 /** Konteks tool tim: sesi pemanggil selalu induk. */
 export interface TeamToolContext {
@@ -146,13 +147,18 @@ const MESSAGE_MAX = 4000;
 const SPAWN_DEFINITION: McpToolDefinition = {
   name: "team_spawn",
   description:
-    "Buat sesi anak paralel untuk pekerjaan panjang yang bisa dipisah; bisa juga dijalankan dengan agent eksternal (harness). Tool ini TIDAK menunggu; pantau dengan team_list dan ambil hasil dengan team_result. Setiap anak membutuhkan persetujuan pengguna dan punya izin sendiri. Jangan membuat anak yang menyentuh berkas yang sama.",
+    "Buat sesi anak paralel untuk pekerjaan panjang yang bisa dipisah; bisa juga dijalankan dengan agent eksternal (harness). Tool ini TIDAK menunggu; pantau dengan team_list dan ambil hasil dengan team_result. Setiap anak membutuhkan persetujuan pengguna dan punya izin sendiri. Jangan membuat anak yang menyentuh berkas yang sama. Peran bernama peneliti, pengulas, atau pelaksana memakai preset; peneliti/pengulas berjalan baca-saja (mode plan) kecuali mode diisi.",
   inputSchema: {
     type: "object",
     properties: {
       title: { type: "string", minLength: 1, maxLength: TITLE_MAX },
       prompt: { type: "string", minLength: 1, maxLength: PROMPT_MAX },
-      role: { type: "string", maxLength: ROLE_MAX },
+      role: {
+        type: "string",
+        maxLength: ROLE_MAX,
+        description:
+          "Label peran bebas. peneliti, pengulas, dan pelaksana memakai preset; peneliti/pengulas baca-saja (mode plan) kecuali mode diisi.",
+      },
       worktree: {
         type: "boolean",
         description: "true memakai worktree terisolasi; kosong berarti otomatis.",
@@ -455,20 +461,30 @@ export class TeamTools {
     const selection: { profileId?: string; model?: string } = {};
     if (input.profile !== undefined) selection.profileId = input.profile;
     if (input.model !== undefined) selection.model = input.model;
+    const preset = findRolePreset(input.role);
+    const brief = applyRolePreset({
+      ...(input.role === undefined ? {} : { role: input.role }),
+      prompt: input.prompt,
+      ...(input.mode === undefined ? {} : { mode: input.mode }),
+    });
     try {
       const child = await this.port.spawn(ctx.sessionId, {
         title: input.title,
-        prompt: input.prompt,
+        prompt: brief.prompt,
         worktree: input.worktree,
         ...(input.role === undefined ? {} : { role: input.role }),
         ...(input.profile === undefined && input.model === undefined
           ? {}
           : { selection }),
-        ...(input.mode === undefined ? {} : { permissionMode: input.mode }),
+        ...(brief.mode === undefined ? {} : { permissionMode: brief.mode }),
         ...(input.harness === undefined ? {} : { harness: input.harness }),
       });
+      const penanda =
+        preset === undefined
+          ? ""
+          : ` Peran ${preset.name} dipakai (mode ${brief.mode ?? "bawaan"}).`;
       return {
-        text: `Anak dibuat: id=${child.id} status=${child.status}. Tool ini tidak menunggu; gunakan team_list atau team_result untuk memantau.`,
+        text: `Anak dibuat: id=${child.id} status=${child.status}. Tool ini tidak menunggu; gunakan team_list atau team_result untuk memantau.${penanda}`,
         isError: false,
       };
     } catch (error) {
