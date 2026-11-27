@@ -25,9 +25,10 @@ import type { ClaudeConfigStore } from "../claude-config/config-store";
 import { enabledPluginPaths } from "../claude-config/plugins";
 import { listSkills } from "../claude-config/skills";
 import {
-  evaluateBudget,
   formatUsd,
+  levelFor,
   localDayStartIso,
+  type BudgetConfig,
   type BudgetLevel,
 } from "../budget/budget";
 import type { BudgetStore } from "../budget/budget-store";
@@ -298,6 +299,8 @@ export interface SessionManagerOptions {
     enabled?: boolean;
     maxActiveChildren?: number;
     maxTotalChildren?: number;
+    /** Plafon biaya tim (USD) untuk induk + anak; tanpa ini tak ada plafon. */
+    costCapUsd?: number;
     /** Jendela penggabungan pemberitahuan hasil anak (ms); bawaan 10 detik. */
     notifyWindowMs?: number;
   };
@@ -602,6 +605,7 @@ function refusalSessionCode(
       return "konflik";
     case "penuh-aktif":
     case "penuh-total":
+    case "penuh-biaya":
       return "penuh";
     case "mode-lebih-longgar":
       return "tidak-valid";
@@ -802,6 +806,9 @@ export class SessionManager {
   private readonly commandEnvStore: CommandEnvStore | undefined;
   private readonly teamEnabled: boolean;
   private readonly teamLimits: TeamLimits;
+  private readonly teamCostCapUsd: number | undefined;
+  /** Induk yang plafon biaya timnya sudah ditembus; dicek sekali per induk. */
+  private readonly teamCapHit = new Set<string>();
   private readonly teamNotifyWindowMs: number;
   /** Catatan hasil anak yang menunggu digabung per induk. */
   private readonly teamNotices = new Map<string, TeamNoticeBuffer>();
@@ -869,6 +876,9 @@ export class SessionManager {
       options.team.notifyWindowMs >= 0
         ? options.team.notifyWindowMs
         : DEFAULT_TEAM_NOTIFY_WINDOW_MS;
+    const cap = options.team?.costCapUsd;
+    this.teamCostCapUsd =
+      typeof cap === "number" && Number.isFinite(cap) && cap > 0 ? cap : undefined;
     if (this.store !== undefined) {
       this.restore();
     }
@@ -962,46 +972,125 @@ export class SessionManager {
       }
 
       const config = store.get();
-      const sessionUsd =
-        ledger !== undefined
-          ? ledger.sumForSession(record.info.id)
-          : (record.info.usage?.estimatedCostUsd ?? 0);
+      // Sesi induk memakai biaya tim (induk + anak) agar anggaran berlaku
+      // untuk seluruh tim; anak tetap dinilai dari biayanya sendiri.
+      const sessionUsd = this.teamCostUsd(record.info.id);
       const dayStart = localDayStartIso(this.now());
       const dayUsd = ledger !== undefined ? ledger.sumSince(dayStart) : 0;
-      const levels = evaluateBudget({ config, sessionUsd, dayUsd });
 
-      const previousSession = record.info.budget?.session;
+      this.applySessionBudget(record, config, sessionUsd);
+
       const previousDay =
         this.budgetDay?.key === dayStart ? this.budgetDay.level : undefined;
-
-      if (levels.session === undefined && levels.day === undefined) {
-        delete record.info.budget;
+      const dayLevel = levelFor(dayUsd, config.dailyUsd, config.warnAt);
+      if (dayLevel === undefined) {
+        if (record.info.budget !== undefined) {
+          delete record.info.budget.day;
+          if (record.info.budget.session === undefined) delete record.info.budget;
+        }
       } else {
-        record.info.budget = levels;
+        record.info.budget = { ...record.info.budget, day: dayLevel };
       }
-      this.budgetDay = { key: dayStart, level: levels.day };
-
-      this.maybeBudgetNotice(
-        record,
-        "sesi",
-        previousSession,
-        levels.session,
-        config.sessionUsd,
-        config.warnAt,
-        sessionUsd,
-      );
+      this.budgetDay = { key: dayStart, level: dayLevel };
       this.maybeBudgetNotice(
         record,
         "hari",
         previousDay,
-        levels.day,
+        dayLevel,
         config.dailyUsd,
         config.warnAt,
         dayUsd,
       );
+
+      // Biaya anak juga bisa menembus anggaran induk; nilai ulang tingkat
+      // sesi induk (cakupan hari sudah dihitung sekali di atas).
+      const parentId = record.info.team?.parentId;
+      let parentTouched = false;
+      if (parentId !== undefined) {
+        const parent = this.sessions.get(parentId);
+        if (parent !== undefined && parent.info.team?.parentId === undefined) {
+          parentTouched = this.applySessionBudget(
+            parent,
+            config,
+            this.teamCostUsd(parentId),
+          );
+        }
+      }
+      const capTouched = this.enforceTeamCostCap(record);
+      if ((parentTouched || capTouched) && parentId !== undefined) {
+        const parent = this.sessions.get(parentId);
+        if (parent !== undefined) {
+          this.persistSession(parent);
+          this.notify(parent);
+        }
+      }
     } catch {
       // Galat anggaran tidak boleh menggagalkan sesi.
     }
+  }
+
+  /**
+   * Tingkat anggaran cakupan sesi untuk satu record. Mengembalikan `true`
+   * bila tingkatnya berubah (termasuk hilang), supaya pemanggil bisa
+   * menyegarkan induk tanpa membangunkan pelanggan di setiap giliran.
+   */
+  private applySessionBudget(
+    record: SessionRecord,
+    config: BudgetConfig,
+    sessionUsd: number,
+  ): boolean {
+    const previous = record.info.budget?.session;
+    const next = levelFor(sessionUsd, config.sessionUsd, config.warnAt);
+    if (next === undefined) {
+      if (record.info.budget !== undefined) {
+        delete record.info.budget.session;
+        if (record.info.budget.day === undefined) delete record.info.budget;
+      }
+    } else {
+      record.info.budget = { ...record.info.budget, session: next };
+    }
+    if (previous === next) return false;
+    this.maybeBudgetNotice(
+      record,
+      "sesi",
+      previous,
+      next,
+      config.sessionUsd,
+      config.warnAt,
+      sessionUsd,
+    );
+    return true;
+  }
+
+  /**
+   * Hentikan anak yang masih berjalan dan beri tahu induk SATU kali saat
+   * biaya tim mencapai plafon. Mengembalikan `true` bila induk disentuh.
+   */
+  private enforceTeamCostCap(record: SessionRecord): boolean {
+    const cap = this.teamCostCapUsd;
+    if (cap === undefined) return false;
+    const parentId = record.info.team?.parentId ?? record.info.id;
+    const parent = this.sessions.get(parentId);
+    if (parent === undefined || parent.info.team?.parentId !== undefined) return false;
+    const cost = this.teamCostUsd(parentId);
+    if (cost < cap || this.teamCapHit.has(parentId)) return false;
+    this.teamCapHit.add(parentId);
+    for (const child of this.sessions.values()) {
+      if (child.info.team?.parentId !== parentId) continue;
+      if (child.info.status === "berjalan") this.interrupt(child.info.id);
+    }
+    this.append(parent, {
+      type: "notice",
+      text: "Plafon biaya tim tercapai; anak dihentikan.",
+      level: "warn",
+    });
+    this.audit("anggaran", "Plafon biaya tim tercapai", parentId, {
+      aksi: "team-plafon",
+      induk: parentId,
+      biaya: cost,
+      plafon: cap,
+    });
+    return true;
   }
 
   /** Satu notice + satu audit per kenaikan tingkat untuk satu cakupan. */
@@ -1367,6 +1456,7 @@ export class SessionManager {
     // sebelum induk dibuang agar `childrenOf` induk tak tersisa.
     this.detachChildren(id);
     this.dropChildNotes(id);
+    this.teamCapHit.delete(id);
     this.sessions.delete(id);
 
     record.queue.length = 0;
@@ -1627,6 +1717,33 @@ export class SessionManager {
   }
 
   /**
+   * Biaya satu sesi. Untuk induk tim nilainya mencakup seluruh anak; anak
+   * (dan sesi biasa) hanya biayanya sendiri. Dipakai rute anggaran.
+   */
+  sessionCostUsd(id: string): number {
+    return this.teamCostUsd(id);
+  }
+
+  /** Biaya milik satu sesi saja; tanpa ledger memakai perkiraan usage. */
+  private ownCostUsd(id: string): number {
+    const ledger = this.budgetLedger;
+    if (ledger !== undefined) return ledger.sumForSession(id);
+    return this.sessions.get(id)?.info.usage?.estimatedCostUsd ?? 0;
+  }
+
+  /** Biaya tim: induk + seluruh anaknya. Anak tidak menghitung anak lagi. */
+  private teamCostUsd(id: string): number {
+    let total = this.ownCostUsd(id);
+    const record = this.sessions.get(id);
+    if (record === undefined || record.info.team?.parentId !== undefined) return total;
+    for (const child of this.sessions.values()) {
+      if (child.info.team?.parentId !== id) continue;
+      total += this.ownCostUsd(child.info.id);
+    }
+    return total;
+  }
+
+  /**
    * Anak dari satu induk, urut waktu pembuatan naik. Daftar diturunkan dari
    * `team.parentId` (satu sumber kebenaran); bentuknya sama dengan `list()`.
    */
@@ -1695,6 +1812,12 @@ export class SessionManager {
       children,
       limits: this.teamLimits,
       ...(requestedMode === undefined ? {} : { requestedMode }),
+      ...(this.teamCostCapUsd === undefined
+        ? {}
+        : {
+            teamCostUsd: this.teamCostUsd(parentId),
+            costCapUsd: this.teamCostCapUsd,
+          }),
     });
     if (!check.ok) {
       throw new SessionError(check.message, refusalSessionCode(check.code));
@@ -2082,6 +2205,9 @@ export class SessionManager {
   startGoal(id: string, input: unknown): SessionInfo {
     const record = this.requireRecord(id);
     this.assertSdkSession(record);
+    if (record.info.team?.parentId !== undefined) {
+      throw new SessionError("Anak tim tidak bisa menjalankan Goal sendiri.", "tidak-valid");
+    }
     // Jembatan internal harus bisa menyajikan tool `goal_update`; jembatan
     // tanpa layanan memory (misalnya hanya tool browser) tak memenuhi syarat.
     if (this.memoryBridge === undefined || this.memoryBridge.goalTools === false) {
@@ -2117,7 +2243,7 @@ export class SessionManager {
     const ledger = this.budgetLedger;
     const goal = createGoal(parsed, {
       id: `g_${crypto.randomUUID().slice(0, 8)}`,
-      startCostUsd: ledger === undefined ? 0 : ledger.sumForSession(record.info.id),
+      startCostUsd: ledger === undefined ? 0 : this.teamCostUsd(record.info.id),
       now: this.now().toISOString(),
     });
     record.goal = goal;
@@ -2317,7 +2443,7 @@ export class SessionManager {
     const cost =
       goal === undefined || ledger === undefined
         ? 0
-        : Math.max(0, ledger.sumForSession(record.info.id) - goal.startCostUsd);
+        : Math.max(0, this.teamCostUsd(record.info.id) - goal.startCostUsd);
     const budget = record.info.budget?.session;
     const outcome: GoalOutcome = {
       turnStatus: "selesai",

@@ -399,8 +399,17 @@ function defaultPluginInstaller(
   });
 }
 
+/** Plafon biaya tim dari env; nilai tak valid diabaikan. */
+function teamCostCapFromEnv(env: Record<string, string | undefined>): number | undefined {
+  const raw = env.JEJAK_TEAM_COST_CAP_USD?.trim();
+  if (raw === undefined || raw === "") return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
 export function createApp(options: CreateAppOptions = {}) {
   const env = options.env ?? process.env;
+  const teamCostCapUsd = teamCostCapFromEnv(env);
   const path = options.providersPath ?? providersPath(env);
   // Pemasang plugin: CLI `claude` milik pengguna, tak pernah dijalankan
   // sebelum ada permintaan pemasangan.
@@ -628,6 +637,7 @@ export function createApp(options: CreateAppOptions = {}) {
           : {}),
       },
       ...(options.commandEnv === undefined ? {} : { commandEnv: options.commandEnv }),
+      ...(teamCostCapUsd === undefined ? {} : { team: { costCapUsd: teamCostCapUsd } }),
       onSessionDeleted: (id) =>
         removeSessionUndo(
           options.undoDir ?? join(jejakHome(env), "undo"),
@@ -977,6 +987,11 @@ export function createApp(options: CreateAppOptions = {}) {
       budgetRoutes({
         store: options.budget,
         ledger: options.usageLedger,
+        ...(options.sessions !== undefined ||
+          options.usageLedger === undefined ||
+          options.budget === undefined
+          ? {}
+          : { sessionCostUsd: (id: string) => manager.sessionCostUsd(id) }),
         audit: options.audit,
       }),
     )

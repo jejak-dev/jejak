@@ -5,6 +5,7 @@ import {
   barHeights,
   formatCost,
   formatTokensShort,
+  groupUsageSessions,
   rangeLabel,
   shareOf,
 } from "../src/client/lib/usage";
@@ -284,5 +285,52 @@ describe("UsageError", () => {
     const tombol = byTag(vnode, "button")[0];
     expect(tombol).toBeDefined();
     expect(propsOf(tombol).onClick).toBeDefined();
+  });
+});
+
+describe("groupUsageSessions", () => {
+  const row = (sessionId: string, costUsd: number, turns = 1) => ({
+    sessionId,
+    costUsd,
+    inputTokens: 10,
+    outputTokens: 5,
+    turns,
+    lastTs: "2026-11-27T00:00:00.000Z",
+  });
+
+  test("menggabungkan induk dan anak menjadi satu grup tim", () => {
+    const groups = groupUsageSessions(
+      [row("anak-1", 0.2), row("induk", 0.1), row("biasa", 0.05)],
+      {
+        parentOf: (id) => (id === "anak-1" ? "induk" : undefined),
+        childCount: (id) => (id === "induk" ? 1 : 0),
+      },
+    );
+
+    expect(groups.map((group) => group.id)).toEqual(["induk", "biasa"]);
+    const tim = groups[0]!;
+    expect(tim.team).toBe(true);
+    expect(tim.childCount).toBe(1);
+    expect(tim.costUsd).toBeCloseTo(0.3, 6);
+    expect(tim.turns).toBe(2);
+    expect(tim.members.map((member) => member.sessionId)).toEqual(["anak-1", "induk"]);
+    expect(groups[1]).toMatchObject({ id: "biasa", team: false, childCount: 0 });
+  });
+
+  test("tanpa tim hasilnya identik dengan masukan", () => {
+    const rows = [row("a", 0.5), row("b", 0.2)];
+    const groups = groupUsageSessions(rows, {
+      parentOf: () => undefined,
+      childCount: () => 0,
+    });
+    expect(groups).toEqual(
+      rows.map((item) => ({
+        ...item,
+        id: item.sessionId,
+        team: false,
+        childCount: 0,
+        members: [item],
+      })),
+    );
   });
 });

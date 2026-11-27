@@ -15,6 +15,11 @@ export interface BudgetRoutesOptions {
   store?: BudgetStore;
   /** Buku pemakaian; tanpa ledger angka harian/sesi dianggap 0. */
   ledger?: UsageLedger;
+  /**
+   * Biaya per sesi; bila ada, induk tim memuat biaya anaknya. Tanpa ini
+   * perilaku lama (`ledger.sumForSession`) dipakai.
+   */
+  sessionCostUsd?: (sessionId: string) => number;
   /** Penyimpanan log audit; tanpa opsi ini tidak ada pencatatan. */
   audit?: AuditStore;
 }
@@ -102,7 +107,12 @@ export function budgetRoutes(options: BudgetRoutesOptions = {}): Elysia {
         };
       }
 
-      const sessionUsd = ledger === undefined ? 0 : ledger.sumForSession(session);
+      const sessionUsd =
+        options.sessionCostUsd !== undefined
+          ? options.sessionCostUsd(session)
+          : ledger === undefined
+            ? 0
+            : ledger.sumForSession(session);
       const sessionLevel = levelFor(sessionUsd, config.sessionUsd, config.warnAt);
       return {
         config,

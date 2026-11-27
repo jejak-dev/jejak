@@ -5,6 +5,7 @@ import {
   barHeights,
   formatCost,
   formatTokensShort,
+  groupUsageSessions,
   rangeLabel,
   shareOf,
 } from "../lib/usage";
@@ -78,6 +79,20 @@ export function UsageBody({ data, sessions }: UsageBodyProps) {
   const firstDay = days[0];
   const lastDay = days[days.length - 1];
   const empty = summary.turns === 0;
+
+  // Tim ditampilkan sebagai satu baris induk; anak digabung menurut induknya.
+  const parentOf = new Map<string, string>();
+  const childCount = new Map<string, number>();
+  for (const session of sessions) {
+    const parentId = session.team?.parentId;
+    if (parentId === undefined) continue;
+    parentOf.set(session.id, parentId);
+    childCount.set(parentId, (childCount.get(parentId) ?? 0) + 1);
+  }
+  const groups = groupUsageSessions(summary.bySession, {
+    parentOf: (id) => parentOf.get(id),
+    childCount: (id) => childCount.get(id) ?? 0,
+  });
 
   const sessionLabel = (id: string): string => {
     const fromApi = data.sessions[id];
@@ -230,7 +245,7 @@ export function UsageBody({ data, sessions }: UsageBodyProps) {
 
           <section class="jk-usage-panel">
             <h3 class="jk-usage-panel-title">Sesi teratas</h3>
-            {summary.bySession.length === 0 ? (
+            {groups.length === 0 ? (
               <p class="jk-note">Belum ada data sesi.</p>
             ) : (
               <table class="jk-usage-table">
@@ -243,16 +258,49 @@ export function UsageBody({ data, sessions }: UsageBodyProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {summary.bySession.map((row) => (
-                    <tr key={row.sessionId}>
-                      <td>{sessionCell(row.sessionId)}</td>
-                      <td class="jk-usage-num">{formatCost(row.costUsd)}</td>
-                      <td class="jk-usage-num">
-                        {formatTokensShort(row.inputTokens + row.outputTokens)}
-                      </td>
-                      <td class="jk-usage-num">{row.turns}</td>
-                    </tr>
-                  ))}
+                  {groups.map((group) =>
+                    !group.team ? (
+                      <tr key={group.id}>
+                        <td>{sessionCell(group.sessionId)}</td>
+                        <td class="jk-usage-num">{formatCost(group.costUsd)}</td>
+                        <td class="jk-usage-num">
+                          {formatTokensShort(group.inputTokens + group.outputTokens)}
+                        </td>
+                        <td class="jk-usage-num">{group.turns}</td>
+                      </tr>
+                    ) : (
+                      <tr key={group.id}>
+                        <td>
+                          <details class="jk-usage-team">
+                            <summary>
+                              {sessionCell(group.id)}{" "}
+                              <span class="jk-note">tim {group.childCount} anak</span>
+                            </summary>
+                            <ul class="jk-usage-team-members">
+                              {group.members.map((member) => (
+                                <li key={member.sessionId}>
+                                  <span class="jk-usage-team-role">
+                                    {member.sessionId === group.id ? "induk" : "anak"}
+                                  </span>{" "}
+                                  {sessionCell(member.sessionId)} ·{" "}
+                                  {formatCost(member.costUsd)} ·{" "}
+                                  {formatTokensShort(
+                                    member.inputTokens + member.outputTokens,
+                                  )}{" "}
+                                  token · {member.turns} giliran
+                                </li>
+                              ))}
+                            </ul>
+                          </details>
+                        </td>
+                        <td class="jk-usage-num">{formatCost(group.costUsd)}</td>
+                        <td class="jk-usage-num">
+                          {formatTokensShort(group.inputTokens + group.outputTokens)}
+                        </td>
+                        <td class="jk-usage-num">{group.turns}</td>
+                      </tr>
+                    ),
+                  )}
                 </tbody>
               </table>
             )}

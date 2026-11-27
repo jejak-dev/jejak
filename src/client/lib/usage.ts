@@ -56,3 +56,74 @@ export function rangeLabel(days: number): string {
   if (!Number.isFinite(days) || days <= 0) return "rentang ini";
   return `${Math.round(days)} hari terakhir`;
 }
+
+/** Baris sesi dari ringkasan pemakaian (bentuk `UsageSessionBucket`). */
+export interface UsageSessionRow {
+  sessionId: string;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  turns: number;
+  lastTs: string;
+}
+
+export interface UsageSessionGroup extends UsageSessionRow {
+  /** Id induk untuk tim; untuk sesi biasa sama dengan `sessionId`. */
+  id: string;
+  /** true bila sesi ini punya anak (tim). */
+  team: boolean;
+  /** Jumlah anak menurut daftar sesi klien. */
+  childCount: number;
+  /** Anggota yang tampil saat baris dibuka; induk lebih dulu bila ada. */
+  members: UsageSessionRow[];
+}
+
+export interface UsageTeamLookup {
+  /** Induk dari satu sesi; `undefined` untuk sesi biasa. */
+  parentOf: (sessionId: string) => string | undefined;
+  /** Jumlah anak milik satu induk; 0 untuk sesi biasa. */
+  childCount: (parentId: string) => number;
+}
+
+/**
+ * Gabungkan baris sesi menjadi satu baris per tim (induk + anak) dan biarkan
+ * sesi biasa apa adanya. Urutan mengikuti biaya grup menurun; nilai anggota
+ * tidak diubah sehingga total keseluruhan tetap. Tanpa tim hasilnya identik
+ * dengan masukan.
+ */
+export function groupUsageSessions(
+  rows: readonly UsageSessionRow[],
+  lookup: UsageTeamLookup,
+): UsageSessionGroup[] {
+  const groups = new Map<string, UsageSessionGroup>();
+  for (const row of rows) {
+    const parentId = lookup.parentOf(row.sessionId);
+    const id = parentId ?? row.sessionId;
+    let group = groups.get(id);
+    if (group === undefined) {
+      const childCount = lookup.childCount(id);
+      group = {
+        id,
+        sessionId: id,
+        team: childCount > 0,
+        childCount,
+        costUsd: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        turns: 0,
+        lastTs: row.lastTs,
+        members: [],
+      };
+      groups.set(id, group);
+    }
+    group.costUsd += row.costUsd;
+    group.inputTokens += row.inputTokens;
+    group.outputTokens += row.outputTokens;
+    group.turns += row.turns;
+    if (row.lastTs > group.lastTs) group.lastTs = row.lastTs;
+    group.members.push(row);
+  }
+  return Array.from(groups.values()).sort(
+    (a, b) => b.costUsd - a.costUsd || a.id.localeCompare(b.id),
+  );
+}

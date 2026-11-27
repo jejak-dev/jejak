@@ -192,6 +192,18 @@ describe("checkSpawn", () => {
     expect(result).toMatchObject({ ok: false, code: "penuh-total" });
   });
 
+  test("plafon biaya tim menolak saat biaya mencapai batas", () => {
+    const result = check({ teamCostUsd: 0.5, costCapUsd: 0.5 });
+    expect(result).toMatchObject({ ok: false, code: "penuh-biaya" });
+    expect((result as { message: string }).message).toContain("laporkan ke pengguna");
+    expect(check({ teamCostUsd: 0.4, costCapUsd: 0.5 })).toEqual({
+      ok: true,
+      mode: "default",
+    });
+    // Tanpa plafon biaya tidak diperiksa.
+    expect(check({ teamCostUsd: 99 })).toEqual({ ok: true, mode: "default" });
+  });
+
   test("mode lebih longgar ditolak", () => {
     expect(check({ requestedMode: "acceptEdits" })).toMatchObject({
       ok: false,

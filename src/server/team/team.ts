@@ -105,6 +105,7 @@ export type SpawnRefusalCode =
   | "anak-tak-boleh-beranak"
   | "penuh-aktif"
   | "penuh-total"
+  | "penuh-biaya"
   | "mode-lebih-longgar";
 
 export interface SpawnCheckInput {
@@ -116,6 +117,10 @@ export interface SpawnCheckInput {
   limits: TeamLimits;
   /** Bila kosong: "default" (atau "plan" bila induk plan). */
   requestedMode?: TeamMode;
+  /** Biaya tim berjalan (induk + anak); hanya diperiksa bila `costCapUsd` diisi. */
+  teamCostUsd?: number;
+  /** Plafon biaya tim; `undefined` berarti tanpa plafon. */
+  costCapUsd?: number;
 }
 
 export type SpawnCheck =
@@ -159,6 +164,17 @@ export function checkSpawn(input: SpawnCheckInput): SpawnCheck {
       ok: false,
       code: "penuh-total",
       message: "Jumlah anak sudah mencapai batas total untuk sesi ini.",
+    };
+  }
+  if (
+    input.costCapUsd !== undefined &&
+    (input.teamCostUsd ?? 0) >= input.costCapUsd
+  ) {
+    return {
+      ok: false,
+      code: "penuh-biaya",
+      message:
+        "Plafon biaya tim tercapai; hentikan pembuatan anak dan laporkan ke pengguna.",
     };
   }
   // Bawaan "default", kecuali induk `plan`: anak ikut `plan` (bukan galat).
