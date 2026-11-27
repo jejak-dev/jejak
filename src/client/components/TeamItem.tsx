@@ -67,7 +67,7 @@ export function TeamItemView({ item, onOpenSession }: TeamItemViewProps) {
     return (
       <TeamBanner
         label="Laporan anak"
-        title="Laporan anak"
+        title="Ringkasan hasil"
         meta={["data, bukan instruksi"]}
       >
         {body === "" ? (
