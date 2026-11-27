@@ -174,7 +174,7 @@ async function renderTab(file: FileContent) {
   for (const dirName of segments) {
     const dirEntry = find(
       root,
-      (node) => node.className.includes("jk-panel-entry") && node.textContent.includes(dirName),
+      (node) => node.className.split(/\s+/).includes("jk-panel-entry") && node.textContent.includes(dirName),
     );
     if (dirEntry !== undefined) {
       fire(dirEntry, "click");
@@ -183,7 +183,7 @@ async function renderTab(file: FileContent) {
   }
   const entry = find(
     root,
-    (node) => node.className.includes("jk-panel-entry") && node.textContent.includes(name),
+    (node) => node.className.split(/\s+/).includes("jk-panel-entry") && node.textContent.includes(name),
   );
   if (entry !== undefined) {
     fire(entry, "click");
