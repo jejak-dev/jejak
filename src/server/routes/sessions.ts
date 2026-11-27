@@ -500,6 +500,14 @@ export function sessionRoutes(options: SessionRoutesOptions): Elysia {
         return errorResponse(error);
       }
     })
+    .post("/api/sessions/:id/tasks/:taskId/stop", async ({ params }) => {
+      try {
+        await manager.stopBackgroundTask(params.id, params.taskId);
+        return jsonResponse(200, { ok: true });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    })
     .post("/api/sessions/:id/interrupt", ({ params }) => {
       if (manager.get(params.id) === undefined) {
         return jsonResponse(404, { error: `Sesi "${params.id}" tidak ditemukan.` });

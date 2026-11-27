@@ -59,6 +59,8 @@ import { SecretsTab } from "./SecretsTab";
 import { TerminalTab } from "./TerminalTab";
 import { TeamTab } from "./TeamTab";
 import { TodosTab } from "./TodosTab";
+import { TasksTab } from "./TasksTab";
+import { foldBackgroundTasks, type BackgroundTask } from "../lib/background-tasks";
 import { WikiTab } from "./WikiTab";
 
 export interface PanelProps {
@@ -105,7 +107,7 @@ export interface PanelProps {
 }
 
 const PANEL_LABEL =
-  "Perubahan, langkah, tim, konteks, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, browser, dan rencana";
+  "Perubahan, langkah, tugas latar, tim, konteks, berkas, git, checkpoint, rahasia, wiki, perintah, terminal, browser, dan rencana";
 
 /** Kunci navigasi keyboard pada rel ikon. */
 const RAIL_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End"]);
@@ -122,6 +124,7 @@ interface PanelTabBodyProps {
   refreshToken: number;
   repo?: string;
   todos: readonly TodoItem[];
+  backgroundTasks: readonly BackgroundTask[];
   plans: readonly PlanEntry[];
   /** Telemetri sesi untuk tab Konteks. */
   telemetry: Telemetry;
@@ -172,6 +175,7 @@ function PanelTabBody(props: PanelTabBodyProps) {
     refreshToken,
     repo,
     todos,
+    backgroundTasks,
     plans,
     telemetry,
     focusedPlanId,
@@ -225,6 +229,9 @@ function PanelTabBody(props: PanelTabBodyProps) {
     );
   }
   if (tab === "todos") return <TodosTab todos={todos} />;
+  if (tab === "tasks") {
+    return <TasksTab api={api} sessionId={sessionId} status={status} tasks={backgroundTasks} />;
+  }
   if (tab === "context") {
     return (
       <ContextTab
@@ -379,6 +386,13 @@ export function Panel({
   const todos = useMemo(() => latestTodos(timelineItems ?? []), [timelineItems]);
   const todoProgressValue = todoProgress(todos);
   const todoPending = todoProgressValue.total - todoProgressValue.done;
+
+  // Tugas latar belakang dilipat dari event sesi.
+  const backgroundTasks = useMemo(
+    () => foldBackgroundTasks((timelineEvents ?? []).map((entry) => entry.event)),
+    [timelineEvents],
+  );
+  const backgroundRunning = backgroundTasks.filter((task) => task.status === "running").length;
 
   // Dokumen rencana (ExitPlanMode) tak pernah tampil di chat; hidup di tab Rencana.
   const plans = useMemo(() => extractPlans(timelineItems ?? []), [timelineItems]);
@@ -551,6 +565,8 @@ export function Panel({
     switch (id) {
       case "todos":
         return todoPending;
+      case "tasks":
+        return backgroundRunning > 0 ? backgroundRunning : undefined;
       case "changes":
         return fileCount;
       case "git":
@@ -642,6 +658,7 @@ export function Panel({
                   refreshToken={refreshToken}
                   repo={repo}
                   todos={todos}
+                  backgroundTasks={backgroundTasks}
                   plans={plans}
                   telemetry={telemetry}
                   focusedPlanId={focusedPlanId}

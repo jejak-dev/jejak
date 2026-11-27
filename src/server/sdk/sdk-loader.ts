@@ -53,6 +53,8 @@ export interface SdkQuery extends AsyncIterable<unknown> {
    * bawaan.
    */
   supportedCommands?(): Promise<SdkSlashCommand[]>;
+  /** Hentikan satu tugas latar (kontrol `stop_task`); ada pada SDK baru. */
+  stopTask?(taskId: string): Promise<void>;
 }
 
 export interface SdkModule {

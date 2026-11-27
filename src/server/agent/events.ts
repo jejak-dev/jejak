@@ -66,7 +66,29 @@ export type AgentEvent =
    * Pesan pengguna. `auto: "goal"` menandai pesan yang dibuat otomatis oleh
    * loop Goal (bukan ketikan pengguna); pesan ini tidak bisa dimundurkan.
    */
-  | { type: "user_message"; text: string; auto?: "goal" };
+  | { type: "user_message"; text: string; auto?: "goal" }
+  /**
+   * Perubahan satu tugas latar belakang (pesan SDK `task_started`,
+   * `task_updated`, `task_notification`). `status` "running" untuk awal;
+   * lainnya status akhir. `at` = waktu event (ms epoch) untuk lama berjalan.
+   */
+  | {
+      type: "bg_task";
+      taskId: string;
+      status: BackgroundTaskStatus;
+      at: number;
+      description?: string;
+      /** Jenis tugas SDK, mis. `local_bash`, `local_agent`, `monitor`. */
+      kind?: string;
+      toolUseId?: string;
+      summary?: string;
+      /** `false` untuk tugas latar depan (tak masuk daftar tugas latar). */
+      background?: boolean;
+    }
+  /** Himpunan id tugas latar yang masih hidup (`background_tasks_changed`; ganti total). */
+  | { type: "bg_tasks_sync"; taskIds: string[]; at: number };
+
+export type BackgroundTaskStatus = "running" | "completed" | "failed" | "stopped";
 
 export const PERMISSION_EXPIRED_MESSAGE = "waktu izin habis";
 export const PERMISSION_STOPPED_MESSAGE = "sesi dihentikan";
@@ -182,6 +204,11 @@ export interface RunInput {
    * menganggap pesan belum terkirim).
    */
   registerSteer?: (steer: ((text: string) => boolean) | undefined) => void;
+  /**
+   * Mendaftarkan fungsi penghenti tugas latar (`Query.stopTask`) selama giliran
+   * berjalan, lalu `undefined` saat giliran berakhir.
+   */
+  registerStopTask?: (stop: ((taskId: string) => Promise<void>) | undefined) => void;
 }
 
 /** Satu perintah slash yang tersedia untuk sebuah folder kerja. */

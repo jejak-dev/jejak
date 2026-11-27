@@ -909,6 +909,8 @@ export interface ApiClient {
   sendQueuedNow(id: string, queueId: string): Promise<{ ok: true }>;
   /** Arahkan satu pesan antrean ke giliran yang berjalan tanpa menghentikannya. */
   steerQueued(id: string, queueId: string): Promise<{ ok: true }>;
+  /** Hentikan satu tugas latar (hanya saat giliran berjalan). */
+  stopBackgroundTask(id: string, taskId: string): Promise<{ ok: true }>;
   /** Pertanyaan sampingan dari salinan percakapan sesi (tidak masuk riwayat). */
   askSideQuestion(id: string, question: string): Promise<{ answer: string }>;
   /** Mundur percakapan ke pesan pengguna; mengembalikan teks pesan yang dibuang. */
@@ -2605,6 +2607,15 @@ export function createApiClient(options: ApiClientOptions = {}): ApiClient {
       await request(
         "POST",
         `/api/sessions/${encodeURIComponent(id)}/queue/${encodeURIComponent(queueId)}/steer`,
+        {},
+      );
+      return { ok: true as const };
+    },
+
+    async stopBackgroundTask(id, taskId) {
+      await request(
+        "POST",
+        `/api/sessions/${encodeURIComponent(id)}/tasks/${encodeURIComponent(taskId)}/stop`,
         {},
       );
       return { ok: true as const };

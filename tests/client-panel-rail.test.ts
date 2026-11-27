@@ -23,7 +23,7 @@ describe("rel ikon panel", () => {
     ]);
     expect(PANEL_RAIL_GROUPS.map((group) => group.tabs.map((tab) => tab.id))).toEqual([
       ["changes", "git", "files", "checkpoints", "design"],
-      ["plan", "team", "todos", "context", "commands", "terminal", "browser"],
+      ["plan", "team", "todos", "tasks", "context", "commands", "terminal", "browser"],
       ["wiki", "rahasia"],
     ]);
   });
@@ -44,6 +44,7 @@ describe("rel ikon panel", () => {
       "plan",
       "team",
       "todos",
+      "tasks",
       "context",
       "commands",
       "terminal",

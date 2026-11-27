@@ -1,4 +1,4 @@
-import type { AgentEvent } from "./events";
+import type { AgentEvent, BackgroundTaskStatus } from "./events";
 
 const MAX_OUTPUT = 4000;
 const TRUNCATION_SUFFIX = "\n…(dipotong)";
@@ -247,6 +247,89 @@ function mapPromptSuggestion(message: Record<string, unknown>): AgentEvent[] {
   return [{ type: "suggestion", text: text.slice(0, MAX_SUGGESTION) }];
 }
 
+function str(value: unknown): string | undefined {
+  return typeof value === "string" && value !== "" ? value : undefined;
+}
+
+/** Status akhir tugas dari `task_updated.patch.status`; `undefined` bila belum final. */
+function patchStatus(value: unknown): BackgroundTaskStatus | undefined {
+  switch (value) {
+    case "running":
+      return "running";
+    case "completed":
+      return "completed";
+    case "failed":
+      return "failed";
+    case "killed":
+      return "stopped";
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Pesan `system` tugas latar belakang. Tugas ambient/housekeeping
+ * (`ambient`, `skip_transcript`) tidak ditampilkan.
+ */
+function mapTaskMessage(message: Record<string, unknown>): AgentEvent[] {
+  const at = Date.now();
+  if (message.subtype === "background_tasks_changed") {
+    if (!Array.isArray(message.tasks)) return [];
+    const taskIds: string[] = [];
+    for (const task of message.tasks) {
+      if (!isRecord(task) || task.ambient === true) continue;
+      const id = str(task.task_id);
+      if (id !== undefined) taskIds.push(id);
+    }
+    return [{ type: "bg_tasks_sync", taskIds, at }];
+  }
+  const taskId = str(message.task_id);
+  if (taskId === undefined) return [];
+  if (message.ambient === true || message.skip_transcript === true) return [];
+  const event: Extract<AgentEvent, { type: "bg_task" }> = {
+    type: "bg_task",
+    taskId,
+    status: "running",
+    at,
+  };
+  const toolUseId = str(message.tool_use_id);
+  if (toolUseId !== undefined) event.toolUseId = toolUseId;
+  switch (message.subtype) {
+    case "task_started": {
+      const description = str(message.description);
+      if (description !== undefined) event.description = description.slice(0, 300);
+      const kind = str(message.task_type);
+      if (kind !== undefined) event.kind = kind;
+      event.background = message.is_backgrounded !== false;
+      return [event];
+    }
+    case "task_updated": {
+      const patch = isRecord(message.patch) ? message.patch : {};
+      const status = patchStatus(patch.status);
+      const description = str(patch.description);
+      if (status === undefined && description === undefined && typeof patch.is_backgrounded !== "boolean") {
+        return [];
+      }
+      if (status !== undefined) event.status = status;
+      if (description !== undefined) event.description = description.slice(0, 300);
+      if (typeof patch.is_backgrounded === "boolean") event.background = patch.is_backgrounded;
+      // Patch tanpa status tak boleh membuka kembali tugas yang sudah selesai.
+      if (status === undefined) event.status = "running";
+      return [event];
+    }
+    case "task_notification": {
+      const status = message.status;
+      if (status !== "completed" && status !== "failed" && status !== "stopped") return [];
+      event.status = status;
+      const summary = str(message.summary);
+      if (summary !== undefined) event.summary = summary.slice(0, 500);
+      return [event];
+    }
+    default:
+      return [];
+  }
+}
+
 export function mapSdkMessage(
   message: unknown,
   opts?: { compacted?: boolean },
@@ -255,6 +338,14 @@ export function mapSdkMessage(
 
   switch (message.type) {
     case "system":
+      if (
+        message.subtype === "task_started" ||
+        message.subtype === "task_updated" ||
+        message.subtype === "task_notification" ||
+        message.subtype === "background_tasks_changed"
+      ) {
+        return mapTaskMessage(message);
+      }
       if (message.subtype !== "init") return [];
       if (typeof message.session_id !== "string") return [];
       const session: Extract<AgentEvent, { type: "session" }> = {

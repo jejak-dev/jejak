@@ -848,6 +848,15 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           delete sdkOptions.promptSuggestions;
           query = sdk.query({ prompt: promptValue, options: sdkOptions });
         }
+        if (input.registerStopTask !== undefined) {
+          const active = query;
+          input.registerStopTask(async (taskId) => {
+            if (typeof active.stopTask !== "function") {
+              throw new Error("SDK ini tidak mendukung penghentian tugas latar.");
+            }
+            await active.stopTask(taskId);
+          });
+        }
         // Delta teks digabung ~50 ms agar tidak membanjiri SSE; event final menggantikannya.
         let pendingDelta = "";
         let pendingParent: string | undefined;
@@ -973,6 +982,11 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         if (!sawResult) yield { type: "result", ok: false, error: message };
       } finally {
         if (graceTimer !== undefined) clearTimeout(graceTimer);
+        try {
+          input.registerStopTask?.(undefined);
+        } catch {
+          // Pembersihan tidak boleh menggagalkan giliran.
+        }
         if (steerInput !== undefined) {
           try {
             registerSteer?.(undefined);

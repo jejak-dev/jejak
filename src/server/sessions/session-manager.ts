@@ -361,6 +361,8 @@ interface SessionRecord {
    * Hilang saat giliran berakhir.
    */
   steer?: (text: string) => boolean;
+  /** Penghenti tugas latar giliran berjalan; hilang saat giliran berakhir. */
+  stopTask?: (taskId: string) => Promise<void>;
   /** Jumlah giliran yang sudah dimulai; giliran pertama = 1. */
   turns: number;
   /**
@@ -2974,6 +2976,27 @@ export class SessionManager {
     return { answer };
   }
 
+  /**
+   * Hentikan satu tugas latar sesi yang sedang berjalan. Hanya mungkin saat
+   * giliran berjalan: proses CLI ditutup di akhir giliran dan tugas latar ikut
+   * berhenti (statusnya sudah "dihentikan" di panel).
+   */
+  async stopBackgroundTask(id: string, taskId: string): Promise<void> {
+    const record = this.requireRecord(id);
+    const stop = record.stopTask;
+    if (record.info.status !== "berjalan" || stop === undefined) {
+      throw new SessionError("Tugas latar hanya bisa dihentikan saat giliran berjalan.", "konflik");
+    }
+    try {
+      await stop(taskId);
+    } catch (error) {
+      throw new SessionError(
+        error instanceof Error && error.message !== "" ? error.message : "gagal menghentikan tugas",
+        "konflik",
+      );
+    }
+  }
+
   interrupt(id: string): boolean {
     const record = this.sessions.get(id);
     if (record === undefined || record.info.status !== "berjalan") {
@@ -3434,6 +3457,9 @@ export class SessionManager {
       registerSteer: (steer) => {
         record.steer = steer;
       },
+      registerStopTask: (stop) => {
+        record.stopTask = stop;
+      },
     };
     if (resumeSessionId !== undefined) {
       input.resumeSessionId = resumeSessionId;
@@ -3594,6 +3620,7 @@ export class SessionManager {
       }
       // Giliran selesai: tak ada lagi pesan yang bisa diarahkan ke giliran ini.
       record.steer = undefined;
+      record.stopTask = undefined;
       record.settle();
       this.notify(record);
       this.reportTurnEnd(record);
