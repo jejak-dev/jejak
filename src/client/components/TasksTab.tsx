@@ -106,7 +106,7 @@ export function TasksTab({ api, sessionId, status, tasks }: TasksTabProps) {
                   <span class="jk-bgtask-title">{task.description}</span>
                   <span class="jk-bgtask-meta">
                     {backgroundStatusLabel(task)}
-                    {task.summary !== undefined ? ` · ${task.summary}` : ""}
+                    {task.summary !== undefined && task.summary !== task.description ? ` · ${task.summary}` : ""}
                   </span>
                 </span>
               </li>
