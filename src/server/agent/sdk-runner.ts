@@ -29,6 +29,7 @@ import {
   assistantUuidOf,
   contextTokensOf,
   contextWindowOf,
+  EMPTY_TURN_ERROR,
   mapSdkMessage,
   reconcileContextTokens,
 } from "./sdk-mapper";
@@ -65,7 +66,15 @@ export interface SdkRunnerOptions {
   now?: () => number;
   /** Batas waktu membaca daftar perintah; bawaan 20 detik. */
   commandTimeoutMs?: number;
+  /**
+   * Tunggu hasil giliran sesungguhnya setelah hasil kosong "basa-basi"
+   * (notifikasi tugas latar); bawaan 20 detik.
+   */
+  emptyResultGraceMs?: number;
 }
+
+/** Batas tunggu giliran sesungguhnya setelah hasil kosong dari notifikasi latar. */
+const EMPTY_RESULT_GRACE_MS = 20_000;
 
 const defaultLoad = defaultSdkLoader;
 
@@ -591,6 +600,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
   const isCompiled = options.isCompiled ?? detectCompiled;
   const now = options.now ?? Date.now;
   const commandTimeoutMs = options.commandTimeoutMs ?? COMMAND_TIMEOUT_MS;
+  const emptyResultGraceMs = options.emptyResultGraceMs ?? EMPTY_RESULT_GRACE_MS;
   // Kunci cache unik per runner supaya dua runner di proses yang sama tidak saling menimpa.
   const cacheKey = nextClaudeCacheKey("runner");
 
@@ -615,6 +625,8 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
       const promptValue: string | AsyncIterable<SteerUserMessage> =
         steerInput !== undefined ? steerInput.iterable : input.prompt;
 
+      let graceTimer: ReturnType<typeof setTimeout> | undefined;
+      let graceExpired = false;
       const abortController = new AbortController();
       if (steerInput !== undefined) {
         // Sinyal batal menutup input supaya iterasi prompt selesai.
@@ -845,7 +857,17 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         let anchorUuid: string | undefined;
         // `/compact` menghasilkan result kosong; itu bukan giliran kosong.
         let compacted = false;
+        // Hasil kosong dari notifikasi tugas latar yang tertinggal ("dihentikan"
+        // saat proses sebelumnya ditutup): CLI memprosesnya lebih dulu sebagai
+        // giliran 0 langkah, baru prompt kita. Dilewati sekali; bila giliran
+        // sesungguhnya tak muncul dalam batas waktu, input ditutup.
+        let skippedEmptyResult = false;
+        let producedContent = false;
         for await (const message of query) {
+          if (graceTimer !== undefined) {
+            clearTimeout(graceTimer);
+            graceTimer = undefined;
+          }
           if (isRecord(message) && message.type === "system" && message.subtype === "compact_boundary") {
             compacted = true;
           }
@@ -872,7 +894,22 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
               continue;
             }
             pendingDelta = "";
+            if (event.type === "text" || event.type === "tool_call") producedContent = true;
             if (event.type === "result") {
+              if (
+                steerInput !== undefined &&
+                !skippedEmptyResult &&
+                !producedContent &&
+                event.ok === false &&
+                event.error === EMPTY_TURN_ERROR
+              ) {
+                skippedEmptyResult = true;
+                graceTimer = setTimeout(() => {
+                  graceExpired = true;
+                  steerInput.close();
+                }, emptyResultGraceMs);
+                continue;
+              }
               if (steerInput !== undefined) {
                 const queued = queuedTurnCountOf(message);
                 const pending = steerInput.pendingCount();
@@ -908,9 +945,12 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
           }
         }
 
+        if (graceTimer !== undefined) clearTimeout(graceTimer);
         if (!sawResult) {
           if (abortController.signal.aborted) {
             yield { type: "result", ok: false, error: "dibatalkan" };
+          } else if (graceExpired) {
+            yield { type: "result", ok: false, error: EMPTY_TURN_ERROR };
           } else {
             yield { type: "result", ok: false, error: "sesi berakhir tanpa hasil" };
           }
@@ -932,6 +972,7 @@ export function createSdkRunner(options: SdkRunnerOptions = {}): AgentRunner {
         yield { type: "error", message };
         if (!sawResult) yield { type: "result", ok: false, error: message };
       } finally {
+        if (graceTimer !== undefined) clearTimeout(graceTimer);
         if (steerInput !== undefined) {
           try {
             registerSteer?.(undefined);

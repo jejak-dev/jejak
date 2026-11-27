@@ -158,7 +158,7 @@ function mapUser(message: Record<string, unknown>): AgentEvent[] {
 }
 
 /** Pesan untuk giliran "sukses" yang ternyata tak memproses apa pun. */
-const EMPTY_TURN_ERROR =
+export const EMPTY_TURN_ERROR =
   "Giliran kosong: agent tidak memproses pesan (sesi mungkin terlalu besar atau gagal dilanjutkan). Kirim ulang pesan, atau mulai sesi baru bila berulang.";
 /** Awalan teks hasil yang sebenarnya galat kompaksi otomatis. */
 const COMPACTION_ERROR_PREFIX = "error during compaction";

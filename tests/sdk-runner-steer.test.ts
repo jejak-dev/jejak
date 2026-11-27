@@ -253,3 +253,66 @@ test("batal menutup input prompt", async () => {
   expect(hasil?.type === "result" && hasil.ok).toBe(false);
   expect(hasil?.type === "result" && hasil.error).toBe("dibatalkan");
 });
+
+const RESULT_KOSONG = {
+  type: "result",
+  subtype: "success",
+  is_error: false,
+  result: "",
+  total_cost_usd: 0,
+  num_turns: 0,
+  usage: { input_tokens: 0, output_tokens: 0 },
+};
+const ASSISTANT_TEKS = {
+  type: "assistant",
+  message: { role: "assistant", content: [{ type: "text", text: "halo" }] },
+};
+
+test("hasil kosong dari notifikasi latar dilewati; hasil giliran sungguhan dipakai", async () => {
+  // CLI memproses notifikasi tugas latar yang tertinggal lebih dulu (0 langkah),
+  // baru prompt: hasil pertama bukan jawaban dan tak boleh menutup input.
+  const fake = steerSdk([
+    { kind: "sdk", message: INIT },
+    { kind: "sdk", message: RESULT_KOSONG },
+    { kind: "sdk", message: INIT },
+    { kind: "sdk", message: ASSISTANT_TEKS },
+    { kind: "sdk", message: RESULT_OK },
+  ]);
+  const runner = createSdkRunner({ load: async () => fake.module, baseEnv: {} });
+  const events = await collect(
+    runner.run(baseInput({ registerSteer: (steer) => { fake.holder.steer = steer; } })),
+  );
+  const hasil = events.filter((event) => event.type === "result");
+  expect(hasil).toHaveLength(1);
+  expect(hasil[0]?.type === "result" && hasil[0].ok).toBe(true);
+});
+
+test("hasil kosong tanpa giliran sungguhan: galat giliran kosong setelah batas tunggu", async () => {
+  const fake = steerSdk([
+    { kind: "sdk", message: INIT },
+    { kind: "sdk", message: RESULT_KOSONG },
+  ]);
+  const runner = createSdkRunner({
+    load: async () => fake.module,
+    baseEnv: {},
+    emptyResultGraceMs: 20,
+  });
+  const events = await collect(
+    runner.run(baseInput({ registerSteer: (steer) => { fake.holder.steer = steer; } })),
+  );
+  const hasil = events.filter((event) => event.type === "result");
+  expect(hasil).toHaveLength(1);
+  expect(hasil[0]?.type === "result" && hasil[0].ok).toBe(false);
+  expect(hasil[0]?.type === "result" && hasil[0].error).toContain("Giliran kosong");
+});
+
+test("tanpa registerSteer hasil kosong tetap galat giliran kosong (perilaku lama)", async () => {
+  const fake = steerSdk([
+    { kind: "sdk", message: INIT },
+    { kind: "sdk", message: RESULT_KOSONG },
+  ]);
+  const runner = createSdkRunner({ load: async () => fake.module, baseEnv: {} });
+  const events = await collect(runner.run(baseInput()));
+  const hasil = events.find((event) => event.type === "result");
+  expect(hasil?.type === "result" && hasil.ok).toBe(false);
+});
