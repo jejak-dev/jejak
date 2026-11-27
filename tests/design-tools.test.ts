@@ -225,7 +225,7 @@ describe("design_screenshot", () => {
         slug: "home",
         scale: 2,
       });
-      await Bun.sleep(5);
+      for (let i = 0; i < 200 && broker.pending("s_design").length === 0; i += 1) await Bun.sleep(5);
       const pending = broker.pending("s_design");
       expect(pending).toHaveLength(1);
       expect(pending[0]?.scale).toBe(2);
@@ -293,7 +293,7 @@ describe("design_screenshot", () => {
         "design_screenshot",
         { slug: "home" },
       );
-      await Bun.sleep(5);
+      for (let i = 0; i < 200 && broker.pending("s_design").length === 0; i += 1) await Bun.sleep(5);
       broker.fail("s_design", broker.pending("s_design")[0]!.id, "tainted");
       const hasil = await janji;
       expect(hasil.isError).toBe(true);
