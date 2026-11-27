@@ -92,6 +92,8 @@ export interface PanelProps {
   onSessionChanged?: () => void;
   /** Kutipan wiki yang ditempel ke kolom pesan; tidak mengirim apa pun. */
   onQuote?: (text: string) => void;
+  /** Tambah referensi berkas ke kolom pesan; tidak mengirim apa pun. */
+  onAddContext?: (path: string, repo?: string) => void;
   /** Mode lebar: panel mengambil sisa jendela, batas lebar CSS dilepas. */
   wide?: boolean;
   /** Nyalakan atau matikan mode lebar dari tab Desain. */
@@ -146,6 +148,8 @@ interface PanelTabBodyProps {
   onChanged: () => void;
   onSessionChanged?: () => void;
   onQuote?: (text: string) => void;
+  /** Tambah referensi berkas ke kolom pesan sesi aktif. */
+  onAddContext?: (path: string, repo?: string) => void;
   /** Perbesar atau pulihkan jendela panel; cadangan tombol layar penuh browser. */
   onToggleMaximize?: () => void;
   /** Jendela panel sedang diperbesar? */
@@ -192,6 +196,7 @@ function PanelTabBody(props: PanelTabBodyProps) {
     onChanged,
     onSessionChanged,
     onQuote,
+    onAddContext,
     onToggleMaximize,
     maximized,
     wide,
@@ -224,6 +229,7 @@ function PanelTabBody(props: PanelTabBodyProps) {
         status={status}
         refreshToken={refreshToken}
         repo={repo}
+        onAddContext={onAddContext}
         onFileCount={onFileCount}
       />
     );
@@ -319,6 +325,7 @@ function PanelTabBody(props: PanelTabBodyProps) {
       refreshToken={refreshToken}
       repo={repo}
       sessionRunning={status === "berjalan"}
+      onAddContext={onAddContext}
     />
   );
 }
@@ -339,6 +346,7 @@ export function Panel({
   tabRequest,
   onSessionChanged,
   onQuote,
+  onAddContext,
   wide,
   onWideChange,
   focus,
@@ -675,6 +683,7 @@ export function Panel({
                   onChanged={() => setRefreshToken((value) => value + 1)}
                   onSessionChanged={onSessionChanged}
                   onQuote={onQuote}
+                  onAddContext={onAddContext}
                   onToggleMaximize={sempit ? undefined : () => perbesar(pane.id)}
                   maximized={layout.maximized === pane.id}
                   wide={wide}

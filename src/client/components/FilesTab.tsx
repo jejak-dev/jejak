@@ -25,6 +25,7 @@ import { prepareMarkdownPreview } from "../lib/md-preview";
 import { CodeEditor } from "./CodeEditor";
 import { CodeView } from "./CodeView";
 import { FileTree } from "./FileTree";
+import { AddContextButton } from "./AddContextButton";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 
@@ -37,6 +38,8 @@ export interface FilesTabProps {
   repo?: string;
   /** Sesi sedang berjalan: penyuntingan dinonaktifkan sampai selesai. */
   sessionRunning?: boolean;
+  /** Tambah referensi berkas ke kolom pesan (jalur relatif repo + repo). */
+  onAddContext?: (path: string, repo?: string) => void;
 }
 
 interface Listing {
@@ -82,7 +85,9 @@ export function FilesTab({
   refreshToken,
   repo,
   sessionRunning = false,
+  onAddContext,
 }: FilesTabProps) {
+  const addContext = onAddContext === undefined ? undefined : (path: string): void => onAddContext(path, repo);
   const [dir, setDir] = useState("");
   const [listing, setListing] = useState<Listing | undefined>(undefined);
   const [file, setFile] = useState<FileContent | undefined>(undefined);
@@ -594,6 +599,7 @@ export function FilesTab({
                   <Icon name={codeMode ? "eye" : "code"} />
                 </button>
               )}
+              {addContext !== undefined && <AddContextButton path={file.path} onAdd={addContext} />}
               <button
                 type="button"
                 class="jk-icon-btn jk-panel-tool-btn"
@@ -710,6 +716,7 @@ export function FilesTab({
               onFilterChange={setTreeFilter}
               onToggle={toggleTreeDir}
               onOpen={openFile}
+              onAddContext={addContext}
             />
           )}
           </div>
@@ -806,6 +813,9 @@ export function FilesTab({
                         <div class="jk-search-file">
                           <span class="jk-search-path">{group.path}</span>
                           <span class="jk-search-count">{group.items.length}</span>
+                          {addContext !== undefined && (
+                            <AddContextButton path={group.path} onAdd={addContext} />
+                          )}
                         </div>
                         {group.items.map((match, index) => {
                           const segments =
@@ -854,11 +864,12 @@ export function FilesTab({
                 {listing.entries.map((entry) => {
                   const isLink = entry.type === "link";
                   const isDir = entry.type === "dir";
+                  const entryPath = joinPath(dir, entry.name);
                   return (
+                    <div class="jk-panel-entry-row" key={entry.name}>
                     <button
                       type="button"
                       class="jk-panel-entry"
-                      key={entry.name}
                       disabled={isLink}
                       onClick={() => {
                         if (isDir) enterDir(entry);
@@ -873,6 +884,10 @@ export function FilesTab({
                         <span class="jk-panel-size">{isDir ? "" : formatSize(entry.size)}</span>
                       )}
                     </button>
+                    {addContext !== undefined && !isDir && !isLink && (
+                      <AddContextButton path={entryPath} onAdd={addContext} subtle />
+                    )}
+                    </div>
                   );
                 })}
                 {listing.truncated && (

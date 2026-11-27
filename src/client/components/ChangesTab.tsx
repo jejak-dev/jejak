@@ -19,6 +19,7 @@ import {
 } from "../lib/files";
 import { formatCount } from "../lib/format";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { AddContextButton } from "./AddContextButton";
 import { Icon } from "./Icon";
 
 export interface ChangesTabProps {
@@ -30,6 +31,8 @@ export interface ChangesTabProps {
   refreshToken: number;
   /** Nama repo workspace; undefined berarti repo utama (cwd sesi). */
   repo?: string;
+  /** Tambah referensi berkas ke kolom pesan. */
+  onAddContext?: (path: string, repo?: string) => void;
   /** Jumlah berkas untuk lencana angka di tab; undefined saat belum diketahui. */
   onFileCount?: (count: number | undefined) => void;
 }
@@ -85,6 +88,7 @@ interface FileRowProps {
   failures: Record<string, RejectFailure | undefined>;
   onAsk: (target: RejectTarget) => void;
   onRefresh: () => void;
+  onAddContext?: (path: string) => void;
 }
 
 function FileRow({
@@ -96,6 +100,7 @@ function FileRow({
   failures,
   onAsk,
   onRefresh,
+  onAddContext,
 }: FileRowProps) {
   const slash = file.path.lastIndexOf("/");
   const dir = slash > 0 ? file.path.slice(0, slash) : "";
@@ -130,6 +135,9 @@ function FileRow({
           <span class="jk-ok">+{formatCount(file.additions)}</span>{" "}
           <span class="jk-bad">−{formatCount(file.deletions)}</span>
         </span>
+        {onAddContext !== undefined && file.status !== "D" && (
+          <AddContextButton path={file.path} onAdd={onAddContext} />
+        )}
       </summary>
       <div class="jk-panel-file-body">
         {file.binary ? (
@@ -207,6 +215,7 @@ export function ChangesTab({
   status,
   refreshToken,
   repo,
+  onAddContext,
   onFileCount,
 }: ChangesTabProps) {
   const [data, setData] = useState<Changes | undefined>(undefined);
@@ -478,6 +487,7 @@ export function ChangesTab({
                     failures={failures}
                     onAsk={setConfirmTarget}
                     onRefresh={() => void load()}
+                    onAddContext={onAddContext === undefined ? undefined : (path) => onAddContext(path, repo)}
                   />
                 ))}
               </div>

@@ -11965,3 +11965,38 @@ h2.jk-md-heading {
   font-size: 12px;
   color: var(--t2);
 }
+
+/* Tambah ke konteks: tombol di baris daftar/pohon muncul saat disorot atau difokus. */
+.jk-panel-entry-row,
+.jk-file-tree-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.jk-panel-entry-row > .jk-panel-entry,
+.jk-file-tree-item > .jk-file-tree-row {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
+.jk-add-context {
+  flex: none;
+}
+
+.jk-add-context-subtle {
+  opacity: 0;
+}
+
+.jk-panel-entry-row:hover .jk-add-context-subtle,
+.jk-file-tree-item:hover .jk-add-context-subtle,
+.jk-add-context-subtle:focus-visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .jk-add-context-subtle {
+    opacity: 1;
+  }
+}

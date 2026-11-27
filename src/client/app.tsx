@@ -71,6 +71,7 @@ import { loadSidebarHidden, saveSidebarHidden } from "./lib/sidebar-hidden";
 import { adjacentSession, matchShortcut, targetKindOf } from "./lib/shortcuts";
 import { dirtyWarning } from "./lib/worktree";
 import { rewindableSeqs } from "./lib/rewind";
+import { fileMention } from "./lib/file-mention";
 import { latestSuggestion } from "./lib/suggestion";
 import { TeamStrip } from "./components/TeamStrip";
 import { activeChildrenOf, parentOf } from "./lib/team";
@@ -322,7 +323,7 @@ export function App() {
   const [promptFocusTick, setPromptFocusTick] = useState(0);
   // Teks yang ditaruh di kolom input (pesan yang dibuang saat mundur percakapan).
   const [draft, setDraft] = useState<
-    { sessionId: string; text: string; nonce: number; append?: boolean } | undefined
+    { sessionId: string; text: string; nonce: number; append?: boolean; mention?: boolean } | undefined
   >(undefined);
   const draftNonceRef = useRef(0);
   // Draf yang dipulihkan dari tahanan prompt yang dibatalkan.
@@ -511,6 +512,20 @@ export function App() {
         text,
         nonce: draftNonceRef.current,
         append: true,
+      });
+    },
+    [selected],
+  );
+  // "Tambah ke konteks": referensi berkas ditaruh di kolom pesan, tanpa kirim.
+  const onAddContext = useCallback(
+    (path: string, repo?: string): void => {
+      if (selected === undefined) return;
+      draftNonceRef.current += 1;
+      setDraft({
+        sessionId: selected.id,
+        text: fileMention(path, repo),
+        nonce: draftNonceRef.current,
+        mention: true,
       });
     },
     [selected],
@@ -1391,6 +1406,7 @@ export function App() {
                   tabRequest={panelTabRequest}
                   onSessionChanged={() => void refresh()}
                   onQuote={onQuote}
+                  onAddContext={onAddContext}
                   width={focusActive ? undefined : panelNow}
                   wide={wideActive}
                   onWideChange={openDesignWide}

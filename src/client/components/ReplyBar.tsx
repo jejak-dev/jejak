@@ -17,6 +17,7 @@ import { AttachButton, AttachmentTray, DropHint } from "./AttachmentParts";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { DictationButton } from "./DictationButton";
 import { Dropdown, type DropdownSection } from "./Dropdown";
+import { mergeMention } from "../lib/file-mention";
 import { Icon } from "./Icon";
 import { Markdown } from "./Markdown";
 import { QueueList } from "./QueueList";
@@ -32,7 +33,7 @@ export interface ReplyBarProps {
   /** Profil provider untuk pemilih provider/model; tanpa ini pemilih tidak tampil. */
   registry?: RegistryView;
   /** Teks yang ditaruh di kolom input (mis. pesan yang dibuang saat mundur). */
-  draft?: { text: string; nonce: number; append?: boolean };
+  draft?: { text: string; nonce: number; append?: boolean; mention?: boolean };
   /** Saran prompt berikutnya; chipnya tampil di atas komposer. */
   suggestion?: Suggestion;
   /**
@@ -199,7 +200,9 @@ export function ReplyBar({
   useEffect(() => {
     if (draft === undefined) return;
     const value = draft.text;
-    if (draft.append === true) {
+    if (draft.mention === true) {
+      setText((current) => mergeMention(current, value));
+    } else if (draft.append === true) {
       setText((current) => (current.trim() === "" ? value : `${current}\n${value}`));
     } else {
       setText(value);

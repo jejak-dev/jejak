@@ -1,5 +1,6 @@
 import type { DirEntry } from "../lib/api";
 import { filterRows, flattenTree } from "../lib/file-tree";
+import { AddContextButton } from "./AddContextButton";
 import { Icon } from "./Icon";
 
 export interface FileTreeProps {
@@ -12,6 +13,8 @@ export interface FileTreeProps {
   onFilterChange: (value: string) => void;
   onToggle: (path: string) => void;
   onOpen: (path: string) => void;
+  /** Tambah berkas ke konteks; tombol muncul di baris berkas. */
+  onAddContext?: (path: string) => void;
 }
 
 /** Pohon berkas di sisi kanan penampil berkas. */
@@ -23,6 +26,7 @@ export function FileTree({
   onFilterChange,
   onToggle,
   onOpen,
+  onAddContext,
 }: FileTreeProps) {
   const rows = filterRows(flattenTree(listings, expanded), filter);
   return (
@@ -37,11 +41,11 @@ export function FileTree({
       />
       <div class="jk-file-tree-rows" role="tree" aria-label="Pohon berkas">
         {rows.map((row) => (
+          <div class="jk-file-tree-item" key={row.path}>
           <button
             type="button"
             role="treeitem"
             class="jk-file-tree-row"
-            key={row.path}
             aria-expanded={row.isDir ? row.expanded : undefined}
             aria-current={row.path === activePath ? "true" : undefined}
             style={{ paddingLeft: `${6 + row.depth * 14}px` }}
@@ -56,6 +60,10 @@ export function FileTree({
             <Icon name={row.isDir ? "folder" : "file"} />
             <span class="jk-file-tree-name">{row.name}</span>
           </button>
+          {onAddContext !== undefined && !row.isDir && (
+            <AddContextButton path={row.path} onAdd={onAddContext} subtle />
+          )}
+          </div>
         ))}
       </div>
     </div>
