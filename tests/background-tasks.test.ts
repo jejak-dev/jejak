@@ -6,7 +6,7 @@ import { foldBackgroundTasks } from "../src/server/agent/background-tasks";
 import type { AgentEvent, AgentRunner } from "../src/server/agent";
 import { mapSdkMessage } from "../src/server/agent/sdk-mapper";
 import { SessionError, SessionManager } from "../src/server/sessions/session-manager";
-import { backgroundStatusLabel, formatElapsed, groupBackgroundTasks } from "../src/client/lib/background-tasks";
+import { backgroundKindLabel, backgroundStatusLabel, formatElapsed, groupBackgroundTasks } from "../src/client/lib/background-tasks";
 
 const started = { type: "system", subtype: "task_started", task_id: "t1", tool_use_id: "tu1", description: "npm run dev", task_type: "local_bash", is_backgrounded: true };
 
@@ -96,6 +96,8 @@ describe("foldBackgroundTasks", () => {
     expect(g.running).toHaveLength(1);
     expect(g.finished.map((t) => t.taskId)).toEqual(["c", "a"]);
     expect(g.failed).toBe(1);
+    expect(backgroundKindLabel("local_agent")).toBe("Subagent");
+    expect(backgroundKindLabel("lainnya")).toBe("lainnya");
     expect(formatElapsed(5000)).toBe("5 dtk");
     expect(formatElapsed(185000)).toBe("3 mnt 5 dtk");
     expect(formatElapsed(3720000)).toBe("1 j 2 mnt");

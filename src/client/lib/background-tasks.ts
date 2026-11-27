@@ -37,3 +37,20 @@ export function backgroundStatusLabel(task: BackgroundTask): string {
   }
   return "berjalan";
 }
+
+/** Nama ramah untuk jenis tugas SDK; jenis asing dipakai apa adanya. */
+export function backgroundKindLabel(kind: string): string {
+  switch (kind) {
+    case "local_bash":
+      return "Bash";
+    case "local_agent":
+      return "Subagent";
+    case "monitor":
+    case "local_monitor":
+      return "Monitor";
+    case "local_workflow":
+      return "Workflow";
+    default:
+      return kind;
+  }
+}

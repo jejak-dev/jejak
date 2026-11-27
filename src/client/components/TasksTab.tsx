@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import type { ApiClient } from "../lib/api";
 import {
+  backgroundKindLabel,
   backgroundStatusLabel,
   formatElapsed,
   groupBackgroundTasks,
@@ -71,7 +72,7 @@ export function TasksTab({ api, sessionId, status, tasks }: TasksTabProps) {
               <span class="jk-bgtask-text">
                 <span class="jk-bgtask-title">{task.description}</span>
                 <span class="jk-bgtask-meta">
-                  {task.kind !== undefined ? `${task.kind} · ` : ""}
+                  {task.kind !== undefined ? `${backgroundKindLabel(task.kind)} · ` : ""}
                   {formatElapsed(now - task.startedAt)}
                 </span>
               </span>
