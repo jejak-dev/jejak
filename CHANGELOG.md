@@ -6,6 +6,18 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambahkan
+
+- Tim agent: sesi induk membagi pekerjaan ke sesi anak paralel lewat tool `team_spawn`, `team_list`, `team_status`, `team_result`, `team_message`, dan `team_stop`. Anak memakai worktree sendiri, mode tak pernah lebih longgar dari induk, dan hasilnya kembali ke induk sebagai pesan terbingkai. `JEJAK_TEAM=0` mematikan fitur.
+- UI tim: sidebar bersarang, tab Tim, kartu laporan anak di timeline, pita sesi anak, dan konfirmasi menghentikan anak bersama induk.
+- Biaya tim: anggaran dan Goal induk menghitung biaya anak, plafon opsional `JEJAK_TEAM_COST_CAP_USD`, dan halaman Usage mengelompokkan per tim.
+- Preset peran `peneliti`, `pengulas` (baca-saja), dan `pelaksana` pada `team_spawn`.
+- Anak tim bisa dijalankan agent eksternal ACP; daftar dan status agent eksternal ada di Pengaturan.
+
+### Diperbaiki
+
+- Auto compact model non-Claude tidak lagi terpicu di 200 rb token; batas mengikuti jendela konteks provider.
+
 ### Diubah
 
 - CI rilis beta membersihkan aset versi lama otomatis: hanya dua versi terbaru yang tersisa di rilis `beta`.
