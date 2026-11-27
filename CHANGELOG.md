@@ -6,6 +6,16 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+### Ditambahkan
+
+- Tab "Tugas latar" di panel kanan: tugas latar belakang sesi (Bash latar, Monitor, subagent) dengan lama berjalan, tombol Berhenti (saat giliran berjalan), dan bagian terlipat "Selesai". Tugas yang tersisa saat giliran berakhir ditandai "dihentikan saat giliran berakhir".
+- Tombol "Tambah ke konteks" di penampil berkas, daftar, pohon, dan tab Perubahan.
+
+### Diperbaiki
+
+- Pesan pertama setelah giliran dengan tugas latar tak lagi gagal "Giliran kosong".
+- Judul kartu laporan anak tim tidak lagi ganda dengan labelnya.
+
 ## [0.1.0-beta.23] - 2026-11-27
 
 ### Ditambahkan
