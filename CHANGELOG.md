@@ -6,6 +6,8 @@ Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/), dan n
 
 ## [Belum dirilis]
 
+## [0.1.0-beta.24] - 2026-11-27
+
 ### Ditambahkan
 
 - Tab "Tugas latar" di panel kanan: tugas latar belakang sesi (Bash latar, Monitor, subagent) dengan lama berjalan, tombol Berhenti (saat giliran berjalan), dan bagian terlipat "Selesai". Tugas yang tersisa saat giliran berakhir ditandai "dihentikan saat giliran berakhir".
